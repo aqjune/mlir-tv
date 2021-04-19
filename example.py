@@ -275,10 +275,31 @@ def matmul(a: MemRef, b: MemRef, preconds):
 
 
 # Inputs
-#imagesz = [1, 16, 16, 4]
-#filtrsz = [3, 3, 4, 16]
-imagesz = [1, 4, 4, 1]
-filtrsz = [3, 3, 1, 1]
+testcase = 5
+if testcase == 0:
+  imagesz = [1, 16, 16, 4]
+  filtrsz = [3, 3, 4, 16]
+elif testcase == 1:
+  # simplest
+  imagesz = [1, 4, 4, 1]
+  filtrsz = [3, 3, 2, 1]
+elif testcase == 2:
+  # channel is 2
+  imagesz = [1, 4, 4, 2]
+  filtrsz = [3, 3, 2, 1]
+elif testcase == 3:
+  # channel is 2, 2 filters
+  imagesz = [1, 4, 4, 2]
+  filtrsz = [3, 3, 2, 2]
+elif testcase == 4:
+  # larger image
+  imagesz = [1, 6, 6, 2]
+  filtrsz = [3, 3, 2, 2]
+elif testcase == 5:
+  # many filters
+  imagesz = [1, 6, 6, 2]
+  filtrsz = [3, 3, 2, 16]
+
 s_src = dict()
 s_src["image"] = MemRef.newVar("image",  4, ns=toBitVecs(imagesz, BITS_INDEX))
 s_src["filtr"] = MemRef.newVar("filtr",  4, ns=toBitVecs(filtrsz, BITS_INDEX))
