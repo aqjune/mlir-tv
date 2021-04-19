@@ -179,41 +179,36 @@ def dot(a, b, n):
     Lambda([i], If(ULT(i, n), Select(b, i), 0)))
 
 
+def rotate(mr: MemRef):
+  output_ns = list(mr.ns)
+  output_ns.insert(0, output_ns.pop())
+
+  i, j, k, l = BitVecs("i j k l", BITS_INDEX) # h, w, c, f
+  output = mr.affine([l, i, j, k], [i, j, k, l], output_ns)
+  return output
+
+
 def convolution(inp: MemRef, filtr: MemRef, preconds):
   # TODO: expand this to an input with batch size > 1
   assert(len(inp.ns) == 4)
   assert(len(filtr.ns) == 4)
   assert(isConstInt(inp.ns[0], 1)), "Unknown value: %s" % inp.ns
 
-  # 1. Make a filter that has dimension f as its primary index
-  filter_ffirst = MemRef.newVar("conv_tmp%d" % nextTmpId(), 4,
-                                ns=filtr.ns)
-  dim_f = filter_ffirst.ns.pop()
-  filter_ffirst.ns.insert(0, dim_f)
-
-  i, j, k, l = BitVecs("i j k l", BITS_INDEX) # h, w, c, f
-  idxs = [i, j, k, l]
-  preconds.append(
-    ForAllInRanges(idxs, filtr.ns,
-                   filtr.get([i, j, k, l]) == filter_ffirst.get([l, i, j, k])))
-
-  # 2. evaluate the result using dot
   output_ns = toBitVecs([
       1,           # TODO: support an input with batch size > 1
       inp.ns[1] + 1 - filtr.ns[0],
       inp.ns[2] + 1 - filtr.ns[1],
       filtr.ns[3]], BITS_INDEX) # channel(inp.ns[3] = filtr.ns[2]) disappears
   output = MemRef.newVar("conv_output%d" % nextTmpId(), 4, ns=output_ns)
-  h_half = LShR(filtr.ns[0], 1)
-  w_half = LShR(filtr.ns[1], 1)
 
   cube_size = [1] + filtr.ns[0:3]
+  i, j, k, l = BitVecs("i j k l", BITS_INDEX) # h, w, c, f
   input_cube = inp.to1DArrayWithOfs(
       [0, i, j, 0], # batch: 0, img size: (h, w), channel starts from zero
       cube_size)
 
   # get l'th filter
-  filter_cube = filter_ffirst.to1DArrayWithOfs([l, 0, 0, 0], cube_size)
+  filter_cube = rotate(filtr).to1DArrayWithOfs([l, 0, 0, 0], cube_size)
 
   res = dot(input_cube, filter_cube,
             cube_size[0] * cube_size[1] * cube_size[2] * cube_size[3])
@@ -280,8 +275,8 @@ def matmul(a: MemRef, b: MemRef, preconds):
 
 
 # Inputs
-#image = MemRef("image",  4, ns=toBitVecs([1, 16, 16, 4], BITS_INDEX))
-#filtr = MemRef("filter", 4, ns=toBitVecs([3, 3, 4, 16], BITS_INDEX))
+#imagesz = [1, 16, 16, 4]
+#filtrsz = [3, 3, 4, 16]
 imagesz = [1, 4, 4, 1]
 filtrsz = [3, 3, 1, 1]
 s_src = dict()
