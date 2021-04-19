@@ -213,18 +213,21 @@ def convolution(inp: MemRef, filtr: MemRef, preconds):
   assert(len(inp.ns) == 4)
   assert(len(filtr.ns) == 4)
   assert(isConstInt(inp.ns[0], 1)), "Unknown value: %s" % inp.ns
+  assert(not isConstInt(
+    simplify(And(ULE(filtr.ns[0], inp.ns[1]), ULE(filtr.ns[1], inp.ns[2]),
+                 filtr.ns[2] == inp.ns[3])), 0)), \
+    "Size mismatch: image: %s, filter: %s" % (str(inp.ns), str(filtr.ns))
 
   output_ns = toBitVecs([
       1,           # TODO: support an input with batch size > 1
       inp.ns[1] + 1 - filtr.ns[0],
       inp.ns[2] + 1 - filtr.ns[1],
       filtr.ns[3]], BITS_INDEX) # channel(inp.ns[3] = filtr.ns[2]) disappears
-  output = MemRef.newVar("conv_output%d" % nextTmpId(), 4, ns=output_ns)
-
   cube_size = [1] + filtr.ns[0:3]
-  i, j, k, l = BitVecs("i j k l", BITS_INDEX) # h, w, c, f
+
+  i, j, k, l = BitVecs("i j k l", BITS_INDEX) # n, h, w, f
   input_cube = inp.to1DArrayWithOfs(
-      [0, i, j, 0], # batch: 0, img size: (h, w), channel starts from zero
+      [0, j, k, 0], # batch: 0, img size: (h, w), channel starts from zero
       cube_size)
 
   # get l'th filter
@@ -232,8 +235,7 @@ def convolution(inp: MemRef, filtr: MemRef, preconds):
 
   res = dot(input_cube, filter_cube,
             cube_size[0] * cube_size[1] * cube_size[2] * cube_size[3])
-  idxs = [k, i, j, l]
-  preconds.append(ForAllInRanges(idxs, output.ns, output.get(idxs) == res))
+  output = MemRef.mkLambda(output_ns, [i, j, k, l], res)
 
   if DEBUG:
     print("convolution(): result memref size: %s" % str(output.ns))
@@ -286,7 +288,7 @@ def matmul(a: MemRef, b: MemRef, preconds):
 
 
 # Inputs
-testcase = 5
+testcase = 0
 if testcase == 0:
   imagesz = [1, 16, 16, 4]
   filtrsz = [3, 3, 4, 16]
@@ -342,7 +344,7 @@ s_tgt["filtr2"] = reshape(s_tgt["filtr"], [
 s_tgt["output"] = matmul(s_tgt["mat2"], s_tgt["filtr2"], preconds)
 
 
-s = SolverFor("UFBV")
+s = SolverFor("QF_UFBV")
 
 # Goal
 s.add(And(preconds))
