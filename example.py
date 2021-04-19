@@ -1,4 +1,5 @@
 from z3 import *
+from functools import reduce
 import time
 
 DEBUG=True
@@ -113,6 +114,16 @@ class MemRef:
                                  BitVecSort(BITS_FLOAT))
     return MemRef(ns, val)
 
+  @staticmethod
+  def mkLambda(ns, indexvars, body):
+    assert(len(ns) == len(indexvars))
+
+    idx1dvar = BitVec("idx", BITS_INDEX)
+    idxvars = from1DIdx(idx1dvar, ns)
+    body = substitute(body, *zip(indexvars, idxvars))
+
+    return MemRef(ns, Lambda([idx1dvar], body))
+
   def __init__(self, ns, val):
     self.ns = ns
     self.val = val
@@ -140,7 +151,16 @@ class MemRef:
     return ret
 
   def to1DArrayWithOfs(self, idxs, sizes):
+    if all([isConstInt(x) for x in self.ns]) and \
+       all([isConstInt(x) for x in sizes]):
+      sz1 = toPyInt(get1DSize(sizes))
+      sz2 = toPyInt(get1DSize(self.ns))
+      assert(sz1 <= sz2), \
+            "new size cannot be larger than the original size: %s vs. %s" % \
+              (str(sz1), str(sz2))
+
     assert(len(idxs) == len(sizes))
+
     idxvar = BitVec("idx", BITS_INDEX)
     indices = from1DIdx(idxvar, sizes)
     return Lambda([idxvar], If(ULT(idxvar, get1DSize(sizes)), self.get(indices), 0))
@@ -247,30 +267,21 @@ def reshape(a: MemRef, newsize):
 def transpose(a: MemRef):
   assert(len(a.ns) == 2)
   ns = [a.ns[1], a.ns[0]]
-  idx = BitVec("idx", BITS_INDEX)
-  idxs = from1DIdx(idx, ns)
-  return MemRef(ns, Lambda([idx], a.get([idxs[1], idxs[0]])))
+  i, j = BitVecs("i j", BITS_INDEX)
+  return MemRef.mkLambda(ns, [i, j], a.get([j, i]))
 
 
 def matmul(a: MemRef, b: MemRef, preconds):
   assert(len(a.ns) == 2 and len(b.ns) == 2)
   bt = transpose(b)
 
-  output = MemRef.newVar("matmul%d" % nextTmpId(), 2, ns=[a.ns[0], bt.ns[0]])
   i, j = BitVecs("i j", BITS_INDEX)
 
   a_row = a.to1DArrayWithOfs([i, 0], [1, a.ns[1]])
   bt_row = bt.to1DArrayWithOfs([j, 0], [1, bt.ns[1]])
 
-  preconds.append(
-      ForAllInRanges([i, j], output.ns,
-                     output.get([i, j]) == dot(a_row, bt_row, a.ns[1])))
-
-  if DEBUG:
-    print("matmul(): result memref size: %s" % str(output.ns))
-
-  return output
-
+  return MemRef.mkLambda([a.ns[0], bt.ns[0]], [i, j],
+      dot(a_row, bt_row, a.ns[1]))
 
 
 
@@ -282,7 +293,7 @@ if testcase == 0:
 elif testcase == 1:
   # simplest
   imagesz = [1, 4, 4, 1]
-  filtrsz = [3, 3, 2, 1]
+  filtrsz = [3, 3, 1, 1]
 elif testcase == 2:
   # channel is 2
   imagesz = [1, 4, 4, 2]
