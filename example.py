@@ -17,7 +17,7 @@ def toBitVecs(idxs_const, bw):
   l = []
   for val in idxs_const:
     if is_bv(val):
-      l.append(val)
+      l.append(simplify(val))
     else:
       l.append(BitVecVal(val, bw))
   return l
@@ -58,8 +58,14 @@ def from1DIdx(idx, sizes):
       idxs.append(BitVecVal(0, BITS_INDEX))
       continue
 
-    idxs.append(URem(idx, sizes[i]))
-    idx = UDiv(idx, sizes[i])
+    a = URem(idx, sizes[i])
+    b = UDiv(idx, sizes[i])
+    if isConstInt(idx) and isConstInt(sizes[i]):
+      a = simplify(a)
+      b = simplify(a)
+
+    idxs.append(a)
+    idx = b
 
   idxs.reverse()
   return idxs
@@ -102,14 +108,7 @@ def ForAllInRanges(idxs, sizes, body):
 
 class MemRef:
   @staticmethod
-  def newVar(name: str, dims: int, **kwargs):
-    ns = []
-    if "ns" in kwargs:
-      ns = simplifyList(kwargs["ns"])
-      assert(len(ns) == dims)
-    else:
-      for i in range(0, dims):
-        ns.append(BitVec("%s_dim%d" % (name, i), BITS_INDEX))
+  def newVar(name: str, ns):
     val = Array("%s_val" % name, BitVecSort(BITS_INDEX),
                                  BitVecSort(BITS_FLOAT))
     return MemRef(ns, val)
@@ -139,12 +138,21 @@ class MemRef:
         indices.pop()
 
   def dump(self):
-    print("val: %s" % self.val)
-    print("ns: %s" % self.ns)
+    print("(dim: %s, val: %s)" % (str(self.ns), str(self.val)))
     if not all([isConstInt(i) for i in self.ns]):
-      print("Cannot dump values")
+      print("Cannot dump elements")
     else:
       self._dump([])
+
+  def __str__(self):
+    sval = str(self.val)
+    if (len(sval) > 100):
+      sval = "(omitted)"
+    return "memref(dim: %s, val: %s)" % (str(self.ns), sval)
+
+  def evaluateFromModel(self, model):
+    return MemRef([model.evaluate(n) for n in self.ns],
+                  model.evaluate(self.val))
 
   def get(self, idxs):
     ret = Select(self.val, to1DIdx(idxs, self.ns))
@@ -208,7 +216,7 @@ def rotate(mr: MemRef):
   return output
 
 
-def convolution(inp: MemRef, filtr: MemRef, preconds):
+def convolution(inp: MemRef, filtr: MemRef):
   # TODO: expand this to an input with batch size > 1
   assert(len(inp.ns) == 4)
   assert(len(filtr.ns) == 4)
@@ -243,7 +251,7 @@ def convolution(inp: MemRef, filtr: MemRef, preconds):
   return output
 
 
-def convertImageToMatrix(inp: MemRef, filtr_ns, preconds):
+def convertImageToMatrix(inp: MemRef, filtr_ns):
   newsize = [
     inp.ns[0],
     inp.ns[1] - filtr_ns[0] + 1,
@@ -273,7 +281,7 @@ def transpose(a: MemRef):
   return MemRef.mkLambda(ns, [i, j], a.get([j, i]))
 
 
-def matmul(a: MemRef, b: MemRef, preconds):
+def matmul(a: MemRef, b: MemRef):
   assert(len(a.ns) == 2 and len(b.ns) == 2)
   bt = transpose(b)
 
@@ -313,20 +321,18 @@ elif testcase == 5:
   imagesz = [1, 6, 6, 2]
   filtrsz = [3, 3, 2, 16]
 
-s_src = dict()
-s_src["image"] = MemRef.newVar("image",  4, ns=toBitVecs(imagesz, BITS_INDEX))
-s_src["filtr"] = MemRef.newVar("filtr",  4, ns=toBitVecs(filtrsz, BITS_INDEX))
+s_input = dict()
+s_input["image"] = MemRef.newVar("image", toBitVecs(imagesz, BITS_INDEX))
+s_input["filtr"] = MemRef.newVar("filtr", toBitVecs(filtrsz, BITS_INDEX))
 
-s_tgt = dict(s_src)
-
-# Preconditions
-preconds = []
+s_src = dict(s_input)
+s_tgt = dict(s_input)
 
 # Source program
-s_src["output"] = convolution(s_src["image"], s_src["filtr"], preconds)
+s_src["output"] = convolution(s_src["image"], s_src["filtr"])
 
 # Target program
-s_tgt["mat"] = convertImageToMatrix(s_tgt["image"], s_tgt["filtr"].ns, preconds)
+s_tgt["mat"] = convertImageToMatrix(s_tgt["image"], s_tgt["filtr"].ns)
 
 image_val = s_tgt["image"]
 filtr_val = s_tgt["filtr"]
@@ -341,43 +347,62 @@ s_tgt["filtr2"] = reshape(s_tgt["filtr"], [
     filtr_val.ns[3]
 ])
 
-s_tgt["output"] = matmul(s_tgt["mat2"], s_tgt["filtr2"], preconds)
-
+s_tgt["output"] = matmul(s_tgt["mat2"], s_tgt["filtr2"])
 
 s = SolverFor("QF_UFBV")
 
 # Goal
-s.add(And(preconds))
 
 i_counterex = BitVec("i_counterex", BITS_INDEX)
-neg_goal = And(ULT(i_counterex, s_tgt["output"].ns[0] * s_tgt["output"].ns[1]),
-                Select(s_src["output"].val, i_counterex) !=
-                Select(s_tgt["output"].val, i_counterex))
+neg_goal = Or(
+  get1DSize(s_src["output"].ns) != get1DSize(s_tgt["output"].ns),
+  And(ULT(i_counterex, get1DSize(s_src["output"].ns)),
+      Select(s_src["output"].val, i_counterex) !=
+      Select(s_tgt["output"].val, i_counterex)))
+
 s.add(neg_goal)
 
-
 with open("dump.txt", mode='w') as f:
-  f.write("\n".join([str(x) for x in preconds]))
   f.write("\n" + str(neg_goal))
 with open("dump.smt2", mode='w') as f:
   f.write(s.to_smt2())
+
 
 # Solve
 timeStart = time.time()
 result = s.check()
 timeEnd = time.time()
 
-def z3ResToStr(result):
-  if result == unsat:
-    return "CORRECT"
-  elif result == sat:
-    return "INCORRECT"
-  return "UNKNOWN"
-
-print("== Result: %s ==\nRunning time: %s secs" % 
-      (z3ResToStr(result), timeEnd - timeStart))
-if result == unknown:
+print()
+if result == unsat:
+  print("== Result: correct ==")
+elif result == unknown:
+  print("== Result: Z3 gives up ==")
   print(s.reason_unknown())
 elif result == sat:
+  print("== Result: return value mismatch ==")
   model = s.model()
   print(model)
+
+  print("<Inputs>")
+  for inputvar in s_input:
+    print("%s: %s" % (inputvar,
+        str(s_input[inputvar].evaluateFromModel(model))))
+
+  print("\n<Returns>")
+  print("Src: %s" % (str(s_src["output"].evaluateFromModel(model))))
+  print("Tgt: %s" % (str(s_tgt["output"].evaluateFromModel(model))))
+
+  print("\n<Source>")
+  for v in s_src:
+    if v in s_input or v == "output":
+      continue
+    print("%s: %s" % (v, str(s_src[v].evaluateFromModel(model))))
+
+  print("\n<Target>")
+  for v in s_tgt:
+    if v in s_input or v == "output":
+      continue
+    print("%s: %s" % (v, str(s_tgt[v].evaluateFromModel(model))))
+
+print("\nRunning time: %s secs" % (timeEnd - timeStart))
