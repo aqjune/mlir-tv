@@ -2,6 +2,8 @@ from z3 import *
 from functools import reduce
 import time
 
+INTRODUCE_BUG = "value"
+#INTRODUCE_BUG = "shape"
 BITS_INDEX = 32
 BITS_FLOAT = 4
 
@@ -225,9 +227,9 @@ def convolution(inp: MemRef, filtr: MemRef, shapechks):
                  filtr.ns[2] == inp.ns[3])), 0)), \
     "Size mismatch: image: %s, filter: %s" % (str(inp.ns), str(filtr.ns))
 
-  shapechks.append(inp.ns[3] == filtr.ns[2]) # the num of channels
-  shapechks.append(ULE(filtr.ns[0], inp.ns[1])) # height
-  shapechks.append(ULE(filtr.ns[1], inp.ns[2])) # width
+  shapechks.append((inp.ns[3] == filtr.ns[2], "convol1")) # the num of channels
+  shapechks.append((ULE(filtr.ns[0], inp.ns[1]), "convol2")) # height
+  shapechks.append((ULE(filtr.ns[1], inp.ns[2]), "convol3")) # width
 
   output_ns = toBitVecs([
       1,           # TODO: support an input with batch size > 1
@@ -252,8 +254,8 @@ def convolution(inp: MemRef, filtr: MemRef, shapechks):
 
 
 def convertImageToMatrix(inp: MemRef, filtr_ns, shapechks):
-  shapechks.append(ULE(filtr_ns[0], inp.ns[1])) # height
-  shapechks.append(ULE(filtr_ns[1], inp.ns[2])) # width
+  shapechks.append((ULE(filtr_ns[0], inp.ns[1]), "img2mat1")) # height
+  shapechks.append((ULE(filtr_ns[1], inp.ns[2]), "img2mat2")) # width
 
   newsize = [
     inp.ns[0],
@@ -271,7 +273,7 @@ def convertImageToMatrix(inp: MemRef, filtr_ns, shapechks):
 
 
 def reshape(a: MemRef, newsize, shapechks):
-  shapechks.append(get1DSize(a.ns) == get1DSize(newsize))
+  shapechks.append((get1DSize(a.ns) == get1DSize(newsize), "reshape"))
   return a.reshape(newsize)
 
 def transpose(a: MemRef):
@@ -283,9 +285,14 @@ def transpose(a: MemRef):
 def matmul(a: MemRef, b: MemRef, shapechks):
   assert(len(a.ns) == 2 and len(b.ns) == 2)
 
-  bt = transpose(b)
+  if INTRODUCE_BUG == "value":
+    bt = reshape(b, [b.ns[1], b.ns[0]], shapechks)
+  elif INTRODUCE_BUG == "shape":
+    bt = b
+  else:
+    bt = transpose(b)
 
-  shapechks.append(a.ns[1] == bt.ns[1])
+  shapechks.append((a.ns[1] == bt.ns[1], "matmul"))
 
   i, j = BitVecs("i j", BITS_INDEX)
   a_row = a.to1DArrayWithOfs([i, 0], [1, a.ns[1]])
@@ -363,26 +370,27 @@ s = SolverFor("QF_UFBV")
 i_counterex = BitVec("i_counterex", BITS_INDEX)
 timeStart = time.time()
 
-def printCounterExs(model, inputOnly = False):
-  print("<Inputs>")
-  for inputvar in s_input:
-    print("%s: %s" % (inputvar,
-        str(s_input[inputvar].evaluateFromModel(model))))
+def printFalseShapeChks(model):
+  print("Cannot satisfy this condition(s) at target:")
+  for chk in shapechks_tgt:
+    if model.eval(chk[0]) == False:
+      print("\t%s (at %s)" % (chk[0], chk[1]))
 
-  if inputOnly:
-    return
-
-  print("\n<Returns>")
+def printCounterExs(model):
+  print("\n<Return values>")
   print("Src: %s" % (str(s_src["output"].evaluateFromModel(model))))
   print("Tgt: %s" % (str(s_tgt["output"].evaluateFromModel(model))))
+  print("Location: %s" % str([
+    simplify(model.eval(i)) for i in
+      from1DIdx(i_counterex, s_src["output"].ns)]))
 
-  print("\n<Source>")
+  print("\n<Source variables>")
   for v in s_src:
     if v in s_input or v == "output":
       continue
     print("%s: %s" % (v, str(s_src[v].evaluateFromModel(model))))
 
-  print("\n<Target>")
+  print("\n<Target variables>")
   for v in s_tgt:
     if v in s_input or v == "output":
       continue
@@ -391,8 +399,8 @@ def printCounterExs(model, inputOnly = False):
 
 # Let's check shape mismatch first.
 
-src_no_ub = And(shapechks_src)
-tgt_no_ub = And(shapechks_tgt)
+src_no_ub = And([i[0] for i in shapechks_src])
+tgt_no_ub = And([i[0] for i in shapechks_tgt])
 neg_goal = And(src_no_ub, Not(tgt_no_ub))
 
 s.push()
@@ -400,8 +408,8 @@ s.add(neg_goal)
 result = s.check()
 
 if result == sat:
-  print("== Result: shape mismatch ==")
-  printCounterExs(s.model(), True)
+  print("\n== Result: shape mismatch ==")
+  printFalseShapeChks(s.model())
 
 else:
   neg_goal = And(
