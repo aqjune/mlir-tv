@@ -2,7 +2,6 @@ from z3 import *
 from functools import reduce
 import time
 
-DEBUG=True
 BITS_INDEX = 32
 BITS_FLOAT = 4
 
@@ -216,7 +215,7 @@ def rotate(mr: MemRef):
   return output
 
 
-def convolution(inp: MemRef, filtr: MemRef):
+def convolution(inp: MemRef, filtr: MemRef, shapechks):
   # TODO: expand this to an input with batch size > 1
   assert(len(inp.ns) == 4)
   assert(len(filtr.ns) == 4)
@@ -225,6 +224,10 @@ def convolution(inp: MemRef, filtr: MemRef):
     simplify(And(ULE(filtr.ns[0], inp.ns[1]), ULE(filtr.ns[1], inp.ns[2]),
                  filtr.ns[2] == inp.ns[3])), 0)), \
     "Size mismatch: image: %s, filter: %s" % (str(inp.ns), str(filtr.ns))
+
+  shapechks.append(inp.ns[3] == filtr.ns[2]) # the num of channels
+  shapechks.append(ULE(filtr.ns[0], inp.ns[1])) # height
+  shapechks.append(ULE(filtr.ns[1], inp.ns[2])) # width
 
   output_ns = toBitVecs([
       1,           # TODO: support an input with batch size > 1
@@ -245,13 +248,13 @@ def convolution(inp: MemRef, filtr: MemRef):
             cube_size[0] * cube_size[1] * cube_size[2] * cube_size[3])
   output = MemRef.mkLambda(output_ns, [i, j, k, l], res)
 
-  if DEBUG:
-    print("convolution(): result memref size: %s" % str(output.ns))
-
   return output
 
 
-def convertImageToMatrix(inp: MemRef, filtr_ns):
+def convertImageToMatrix(inp: MemRef, filtr_ns, shapechks):
+  shapechks.append(ULE(filtr_ns[0], inp.ns[1])) # height
+  shapechks.append(ULE(filtr_ns[1], inp.ns[2])) # width
+
   newsize = [
     inp.ns[0],
     inp.ns[1] - filtr_ns[0] + 1,
@@ -264,15 +267,12 @@ def convertImageToMatrix(inp: MemRef, filtr_ns):
   i, j, k, l, m, n = BitVecs("i j k l m n", BITS_INDEX)
   mat = inp.affine([i, j, k, l, m, n], [i, j + l, k + m, n], newsize)
 
-  if DEBUG:
-    print("convertImageToMatrix(): result memref size: %s" % str(mat.ns))
-
   return mat
 
 
-def reshape(a: MemRef, newsize):
+def reshape(a: MemRef, newsize, shapechks):
+  shapechks.append(get1DSize(a.ns) == get1DSize(newsize))
   return a.reshape(newsize)
-
 
 def transpose(a: MemRef):
   assert(len(a.ns) == 2)
@@ -280,16 +280,16 @@ def transpose(a: MemRef):
   i, j = BitVecs("i j", BITS_INDEX)
   return MemRef.mkLambda(ns, [i, j], a.get([j, i]))
 
-
-def matmul(a: MemRef, b: MemRef):
+def matmul(a: MemRef, b: MemRef, shapechks):
   assert(len(a.ns) == 2 and len(b.ns) == 2)
+
   bt = transpose(b)
 
-  i, j = BitVecs("i j", BITS_INDEX)
+  shapechks.append(a.ns[1] == bt.ns[1])
 
+  i, j = BitVecs("i j", BITS_INDEX)
   a_row = a.to1DArrayWithOfs([i, 0], [1, a.ns[1]])
   bt_row = bt.to1DArrayWithOfs([j, 0], [1, bt.ns[1]])
-
   return MemRef.mkLambda([a.ns[0], bt.ns[0]], [i, j],
       dot(a_row, bt_row, a.ns[1]))
 
@@ -325,14 +325,21 @@ s_input = dict()
 s_input["image"] = MemRef.newVar("image", toBitVecs(imagesz, BITS_INDEX))
 s_input["filtr"] = MemRef.newVar("filtr", toBitVecs(filtrsz, BITS_INDEX))
 
+print("Input vars: ")
+for i in s_input:
+  print("\t%s: %s" % (i, s_input[i]))
+
 s_src = dict(s_input)
 s_tgt = dict(s_input)
+shapechks_src = []
+shapechks_tgt = []
 
 # Source program
-s_src["output"] = convolution(s_src["image"], s_src["filtr"])
+s_src["output"] = convolution(s_src["image"], s_src["filtr"], shapechks_src)
 
 # Target program
-s_tgt["mat"] = convertImageToMatrix(s_tgt["image"], s_tgt["filtr"].ns)
+s_tgt["mat"] = convertImageToMatrix(s_tgt["image"], s_tgt["filtr"].ns,
+                                    shapechks_tgt)
 
 image_val = s_tgt["image"]
 filtr_val = s_tgt["filtr"]
@@ -340,54 +347,30 @@ s_tgt["mat2"] = reshape(s_tgt["mat"], [
     image_val.ns[0] * (image_val.ns[1] - filtr_val.ns[0] + 1)
                     * (image_val.ns[2] - filtr_val.ns[1] + 1),
     filtr_val.ns[0] * filtr_val.ns[1] * filtr_val.ns[2]
-])
+], shapechks_tgt)
 
 s_tgt["filtr2"] = reshape(s_tgt["filtr"], [
     filtr_val.ns[0] * filtr_val.ns[1] * filtr_val.ns[2],
     filtr_val.ns[3]
-])
+], shapechks_tgt)
 
-s_tgt["output"] = matmul(s_tgt["mat2"], s_tgt["filtr2"])
+s_tgt["output"] = matmul(s_tgt["mat2"], s_tgt["filtr2"], shapechks_tgt)
+
+
+# Make & prove the goal
 
 s = SolverFor("QF_UFBV")
-
-# Goal
-
 i_counterex = BitVec("i_counterex", BITS_INDEX)
-neg_goal = Or(
-  get1DSize(s_src["output"].ns) != get1DSize(s_tgt["output"].ns),
-  And(ULT(i_counterex, get1DSize(s_src["output"].ns)),
-      Select(s_src["output"].val, i_counterex) !=
-      Select(s_tgt["output"].val, i_counterex)))
-
-s.add(neg_goal)
-
-with open("dump.txt", mode='w') as f:
-  f.write("\n" + str(neg_goal))
-with open("dump.smt2", mode='w') as f:
-  f.write(s.to_smt2())
-
-
-# Solve
 timeStart = time.time()
-result = s.check()
-timeEnd = time.time()
 
-print()
-if result == unsat:
-  print("== Result: correct ==")
-elif result == unknown:
-  print("== Result: Z3 gives up ==")
-  print(s.reason_unknown())
-elif result == sat:
-  print("== Result: return value mismatch ==")
-  model = s.model()
-  print(model)
-
+def printCounterExs(model, inputOnly = False):
   print("<Inputs>")
   for inputvar in s_input:
     print("%s: %s" % (inputvar,
         str(s_input[inputvar].evaluateFromModel(model))))
+
+  if inputOnly:
+    return
 
   print("\n<Returns>")
   print("Src: %s" % (str(s_src["output"].evaluateFromModel(model))))
@@ -405,4 +388,49 @@ elif result == sat:
       continue
     print("%s: %s" % (v, str(s_tgt[v].evaluateFromModel(model))))
 
+
+# Let's check shape mismatch first.
+
+src_no_ub = And(shapechks_src)
+tgt_no_ub = And(shapechks_tgt)
+neg_goal = And(src_no_ub, Not(tgt_no_ub))
+
+s.push()
+s.add(neg_goal)
+result = s.check()
+
+if result == sat:
+  print("== Result: shape mismatch ==")
+  printCounterExs(s.model(), True)
+
+else:
+  neg_goal = And(
+    src_no_ub, # src has no undefined behavior
+    Or( # output_src != output_tgt
+      get1DSize(s_src["output"].ns) != get1DSize(s_tgt["output"].ns),
+      And(ULT(i_counterex, get1DSize(s_src["output"].ns)),
+          Select(s_src["output"].val, i_counterex) !=
+          Select(s_tgt["output"].val, i_counterex))))
+
+  s.pop()
+  s.add(neg_goal)
+
+  with open("dump.txt", mode='w') as f:
+    f.write("\n" + str(neg_goal))
+  with open("dump.smt2", mode='w') as f:
+    f.write(s.to_smt2())
+
+  result = s.check()
+
+  print()
+  if result == unsat:
+    print("== Result: correct ==")
+  elif result == unknown:
+    print("== Result: Z3 gives up ==")
+    print(s.reason_unknown())
+  elif result == sat:
+    print("== Result: return value mismatch ==")
+    printCounterExs(s.model())
+
+timeEnd = time.time()
 print("\nRunning time: %s secs" % (timeEnd - timeStart))
