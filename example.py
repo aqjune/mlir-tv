@@ -13,24 +13,62 @@ def nextTmpId() -> str:
   return tmpidx
 
 def toBitVecs(idxs_const, bw):
-  return [BitVecVal(i, bw) for i in idxs_const]
+  l = []
+  for val in idxs_const:
+    if is_bv(val):
+      l.append(val)
+    else:
+      l.append(BitVecVal(val, bw))
+  return l
 
-def BVToPyInt(bv):
+def toPyInt(bv):
+  if isinstance(bv, int):
+    return bv
   if is_bv_value(bv):
     return bv.as_signed_long()
   return None
 
-def isBVInt(bv, i):
-  return is_bv_value(bv) and bv.as_signed_long() == i
+def isConstInt(bv, i=None):
+  if i is None:
+    return toPyInt(bv) != None
+  return toPyInt(bv) == i
 
 def to1DIdx(idxs, sizes):
   assert(len(idxs) == len(sizes))
   idx = idxs[0]
   for i in range(1, len(sizes)):
-    if not isBVInt(sizes[i], 1):
+    if not isConstInt(sizes[i], 1) and not isConstInt(idx, 0):
       idx = idx * sizes[i]
-    idx = idx + idxs[i]
+
+    if isConstInt(idxs[i], 0):
+      continue
+    elif isConstInt(idx, 0):
+      idx = idxs[i]
+    else:
+      idx = idx + idxs[i]
+
   return idx
+
+def from1DIdx(idx, sizes):
+  idxs = []
+
+  for i in range(len(sizes) - 1, -1, -1):
+    if isConstInt(sizes[i], 1):
+      idxs.append(BitVecVal(0, BITS_INDEX))
+      continue
+
+    idxs.append(URem(idx, sizes[i]))
+    idx = UDiv(idx, sizes[i])
+
+  idxs.reverse()
+  return idxs
+
+def get1DSize(sizes):
+  szaccml = BitVecVal(1, BITS_INDEX)
+  for i in range(0, len(sizes)):
+    szaccml = szaccml * sizes[i]
+  szaccml = simplify(szaccml)
+  return szaccml
 
 def fitsInSize(idxs, sizes):
   preconds = []
@@ -38,64 +76,95 @@ def fitsInSize(idxs, sizes):
     preconds.append(ULT(idxs[i], sizes[i]))
   return And(preconds)
 
+def simplifyList(exprlist):
+  exprlist = list(exprlist)
+  for i in range(0, len(exprlist)):
+    exprlist[i] = simplify(exprlist[i])
+  return exprlist
+
 def ForAllInRanges(idxs, sizes, body):
   assert(len(idxs) == len(sizes))
   idxs = list(idxs)
   sizes = list(sizes)
   i = 0
   while i < len(idxs):
-    if isBVInt(sizes[i], 1):
+    if isConstInt(sizes[i], 1):
       body = substitute(body, (idxs[i], BitVecVal(0, BITS_INDEX)))
       del sizes[i]
       del idxs[i]
     else:
       i = i + 1
 
-  return ForAll(idxs, Implies(fitsInSize(idxs, sizes), body))
+  return ForAll(idxs, Implies(fitsInSize(idxs, sizes), 
+  body))
 
 
 class MemRef:
-  def __init__(self, name: str, dims: int, **kwargs):
-    self.name = name
-    self.ns = []
+  @staticmethod
+  def newVar(name: str, dims: int, **kwargs):
+    ns = []
     if "ns" in kwargs:
-      self.ns = list(kwargs["ns"])
-      assert(len(self.ns) == dims)
+      ns = simplifyList(kwargs["ns"])
+      assert(len(ns) == dims)
     else:
       for i in range(0, dims):
-        self.ns.append(BitVec("%s_dim%d" % (name, i), BITS_INDEX))
-    self.val = Array("%s_val" % name, BitVecSort(BITS_INDEX),
-                                      BitVecSort(BITS_FLOAT))
+        ns.append(BitVec("%s_dim%d" % (name, i), BITS_INDEX))
+    val = Array("%s_val" % name, BitVecSort(BITS_INDEX),
+                                 BitVecSort(BITS_FLOAT))
+    return MemRef(ns, val)
+
+  def __init__(self, ns, val):
+    self.ns = ns
+    self.val = val
+
+  def _dump(self, indices):
+    if len(indices) == len(self.ns):
+      print("value %s: %s" % (str(indices), simplify(self.get(indices))))
+    else:
+      l = len(indices)
+      for i in range(0, toPyInt(self.ns[l])):
+        indices.append(i)
+        self._dump(indices)
+        indices.pop()
+
+  def dump(self):
+    print("val: %s" % self.val)
+    print("ns: %s" % self.ns)
+    if not all([isConstInt(i) for i in self.ns]):
+      print("Cannot dump values")
+    else:
+      self._dump([])
 
   def get(self, idxs):
-    return Select(self.val, to1DIdx(idxs, self.ns))
+    ret = Select(self.val, to1DIdx(idxs, self.ns))
+    return ret
 
   def to1DArrayWithOfs(self, idxs, sizes):
     assert(len(idxs) == len(sizes))
-    idx0 = BitVec("idx", BITS_INDEX)
-    idx  = idx0
-    indices = []
-    szaccml = BitVecVal(1, BITS_INDEX)
-    for i in range(0, len(sizes)):
-      sz = sizes[len(sizes) - i - 1]
-      if isBVInt(sz, 1) or (isinstance(sz, int) and sz == 1):
-        indices.append(BitVecVal(0, BITS_INDEX))
-        continue
+    idxvar = BitVec("idx", BITS_INDEX)
+    indices = from1DIdx(idxvar, sizes)
+    return Lambda([idxvar], If(ULT(idxvar, get1DSize(sizes)), self.get(indices), 0))
 
-      szaccml = simplify(szaccml * sz)
-      indices.append(URem(idx, sz) + idxs[i])
-      idx = UDiv(idx, sz)
+  def affine(self, newidxvars, newtgtidxs, newsizes):
+    idxvar = BitVec("idx", BITS_INDEX)
+    indices = from1DIdx(idxvar, newsizes)
 
-    return Lambda([idx0], If(ULT(idx0, szaccml), self.get(indices), 0))
+    newtgtidxs = list(newtgtidxs)
+    for i in range(0, len(newtgtidxs)):
+      newv = newtgtidxs[i]
+      for j in range(0, len(newidxvars)):
+        newv = substitute(newv, (newidxvars[j], indices[j]))
+      newtgtidxs[i] = newv
+
+    newm = MemRef(newsizes, Lambda([idxvar],
+        If(ULT(idxvar, get1DSize(newsizes)),
+           self.get(newtgtidxs), 0)))
+    return newm
 
   def reshape(self, ns2):
     # Supported only when self.ns is constant
-    newmr = MemRef("%s_reshape%d" % (self.name, nextTmpId()),
-                   len(ns2), ns=ns2)
-    for i in range(0, len(ns2)):
-      newmr.ns[i] = simplify(newmr.ns[i])
-    newmr.val = self.val
-    return newmr
+    newm = MemRef(simplifyList(ns2), self.val)
+    return newm
 
 
 def dot(a, b, n):
@@ -112,10 +181,13 @@ def dot(a, b, n):
 
 def convolution(inp: MemRef, filtr: MemRef, preconds):
   # TODO: expand this to an input with batch size > 1
-  assert(len(inp.ns) == 4 and len(filtr.ns) == 4 and isBVInt(inp.ns[0], 1))
+  assert(len(inp.ns) == 4)
+  assert(len(filtr.ns) == 4)
+  assert(isConstInt(inp.ns[0], 1)), "Unknown value: %s" % inp.ns
 
   # 1. Make a filter that has dimension f as its primary index
-  filter_ffirst = MemRef(filtr.name + "_tmp%d" % nextTmpId(), 4, ns=filtr.ns)
+  filter_ffirst = MemRef.newVar("conv_tmp%d" % nextTmpId(), 4,
+                                ns=filtr.ns)
   dim_f = filter_ffirst.ns.pop()
   filter_ffirst.ns.insert(0, dim_f)
 
@@ -126,12 +198,12 @@ def convolution(inp: MemRef, filtr: MemRef, preconds):
                    filtr.get([i, j, k, l]) == filter_ffirst.get([l, i, j, k])))
 
   # 2. evaluate the result using dot
-  output_ns = [
+  output_ns = toBitVecs([
       1,           # TODO: support an input with batch size > 1
       inp.ns[1] + 1 - filtr.ns[0],
       inp.ns[2] + 1 - filtr.ns[1],
-      filtr.ns[3]] # channel(inp.ns[3] = filtr.ns[2]) disappears
-  output = MemRef("conv_output%d" % nextTmpId(), 4, ns=output_ns)
+      filtr.ns[3]], BITS_INDEX) # channel(inp.ns[3] = filtr.ns[2]) disappears
+  output = MemRef.newVar("conv_output%d" % nextTmpId(), 4, ns=output_ns)
   h_half = LShR(filtr.ns[0], 1)
   w_half = LShR(filtr.ns[1], 1)
 
@@ -155,7 +227,7 @@ def convolution(inp: MemRef, filtr: MemRef, preconds):
 
 
 def convertImageToMatrix(inp: MemRef, filtr_ns, preconds):
-  mat_ns = [
+  newsize = [
     inp.ns[0],
     inp.ns[1] - filtr_ns[0] + 1,
     inp.ns[2] - filtr_ns[1] + 1,
@@ -163,23 +235,9 @@ def convertImageToMatrix(inp: MemRef, filtr_ns, preconds):
     filtr_ns[1],
     filtr_ns[2]
   ]
-  mat_ns = [simplify(x) for x in mat_ns]
-  mat = MemRef("imgtomat_%s%d" % (inp.name, nextTmpId()), 6, ns=mat_ns)
-
+  newsize = [simplify(x) for x in newsize]
   i, j, k, l, m, n = BitVecs("i j k l m n", BITS_INDEX)
-  idxs = [i, j, k, l, m, n]
-  si, sj, sk, sl, sm, sn = (
-    inp.ns[0], # batch
-    inp.ns[1] - filtr_ns[0] + 1, # h
-    inp.ns[2] - filtr_ns[1] + 1, # w
-    filtr_ns[0], # fh
-    filtr_ns[1], # fw
-    filtr_ns[2])
-  sizes = [si, sj, sk, sl, sm, sn]
-
-  res = mat.get([i, j, k, l, m, n])
-  preconds.append(
-      ForAllInRanges(idxs, sizes, inp.get([i, j + l, k + m, n]) == res))
+  mat = inp.affine([i, j, k, l, m, n], [i, j + l, k + m, n], newsize)
 
   if DEBUG:
     print("convertImageToMatrix(): result memref size: %s" % str(mat.ns))
@@ -187,15 +245,24 @@ def convertImageToMatrix(inp: MemRef, filtr_ns, preconds):
   return mat
 
 
+def reshape(a: MemRef, newsize):
+  return a.reshape(newsize)
+
+
+def transpose(a: MemRef):
+  assert(len(a.ns) == 2)
+  ns = [a.ns[1], a.ns[0]]
+  idx = BitVec("idx", BITS_INDEX)
+  idxs = from1DIdx(idx, ns)
+  return MemRef(ns, Lambda([idx], a.get([idxs[1], idxs[0]])))
+
+
 def matmul(a: MemRef, b: MemRef, preconds):
   assert(len(a.ns) == 2 and len(b.ns) == 2)
-  bt = MemRef("%s_transpose%d" % (b.name, nextTmpId()), 2,
-              ns=[b.ns[1], b.ns[0]])
+  bt = transpose(b)
 
+  output = MemRef.newVar("matmul%d" % nextTmpId(), 2, ns=[a.ns[0], bt.ns[0]])
   i, j = BitVecs("i j", BITS_INDEX)
-  preconds.append(ForAllInRanges([i, j], b.ns, b.get([i, j]) == bt.get([j, i])))
-
-  output = MemRef("matmul%d" % nextTmpId(), 2, ns=[a.ns[0], bt.ns[0]])
 
   a_row = a.to1DArrayWithOfs([i, 0], [1, a.ns[1]])
   bt_row = bt.to1DArrayWithOfs([j, 0], [1, bt.ns[1]])
@@ -213,29 +280,39 @@ def matmul(a: MemRef, b: MemRef, preconds):
 
 
 # Inputs
-image = MemRef("image",  4, ns=toBitVecs([1, 4, 4, 1], BITS_INDEX))
-filtr = MemRef("filter", 4, ns=toBitVecs([3, 3, 1, 1], BITS_INDEX))
 #image = MemRef("image",  4, ns=toBitVecs([1, 16, 16, 4], BITS_INDEX))
 #filtr = MemRef("filter", 4, ns=toBitVecs([3, 3, 4, 16], BITS_INDEX))
+imagesz = [1, 4, 4, 1]
+filtrsz = [3, 3, 1, 1]
+s_src = dict()
+s_src["image"] = MemRef.newVar("image",  4, ns=toBitVecs(imagesz, BITS_INDEX))
+s_src["filtr"] = MemRef.newVar("filtr",  4, ns=toBitVecs(filtrsz, BITS_INDEX))
+
+s_tgt = dict(s_src)
 
 # Preconditions
 preconds = []
 
 # Source program
-output_src = convolution(image, filtr, preconds)
+s_src["output"] = convolution(s_src["image"], s_src["filtr"], preconds)
 
 # Target program
-mat = convertImageToMatrix(image, filtr.ns, preconds)
+s_tgt["mat"] = convertImageToMatrix(s_tgt["image"], s_tgt["filtr"].ns, preconds)
 
-mat = mat.reshape([
-    image.ns[0] * (image.ns[1] - filtr.ns[0] + 1)
-                * (image.ns[2] - filtr.ns[1] + 1),
-    filtr.ns[0] * filtr.ns[1] * filtr.ns[2]
+image_val = s_tgt["image"]
+filtr_val = s_tgt["filtr"]
+s_tgt["mat2"] = reshape(s_tgt["mat"], [
+    image_val.ns[0] * (image_val.ns[1] - filtr_val.ns[0] + 1)
+                    * (image_val.ns[2] - filtr_val.ns[1] + 1),
+    filtr_val.ns[0] * filtr_val.ns[1] * filtr_val.ns[2]
 ])
-filtr = filtr.reshape([filtr.ns[0] * filtr.ns[1] * filtr.ns[2],
-                       filtr.ns[3]])
 
-output_tgt = matmul(mat, filtr, preconds)
+s_tgt["filtr2"] = reshape(s_tgt["filtr"], [
+    filtr_val.ns[0] * filtr_val.ns[1] * filtr_val.ns[2],
+    filtr_val.ns[3]
+])
+
+s_tgt["output"] = matmul(s_tgt["mat2"], s_tgt["filtr2"], preconds)
 
 
 s = SolverFor("UFBV")
@@ -244,9 +321,9 @@ s = SolverFor("UFBV")
 s.add(And(preconds))
 
 i_counterex = BitVec("i_counterex", BITS_INDEX)
-neg_goal = And(ULT(i_counterex, output_tgt.ns[0] * output_tgt.ns[1]),
-                Select(output_src.val, i_counterex) !=
-                Select(output_tgt.val, i_counterex))
+neg_goal = And(ULT(i_counterex, s_tgt["output"].ns[0] * s_tgt["output"].ns[1]),
+                Select(s_src["output"].val, i_counterex) !=
+                Select(s_tgt["output"].val, i_counterex))
 s.add(neg_goal)
 
 
