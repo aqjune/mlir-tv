@@ -2,7 +2,8 @@ from z3 import *
 from functools import reduce
 import time
 
-INTRODUCE_BUG = "value"
+INTRODUCE_BUG = False
+#INTRODUCE_BUG = "value"
 #INTRODUCE_BUG = "shape"
 BITS_INDEX = 32
 BITS_FLOAT = 4
@@ -304,6 +305,8 @@ def matmul(a: MemRef, b: MemRef, shapechks):
 
 # Inputs
 testcase = 0
+input_preconds = []
+
 if testcase == 0:
   imagesz = [1, 16, 16, 4]
   filtrsz = [3, 3, 4, 16]
@@ -327,6 +330,14 @@ elif testcase == 5:
   # many filters
   imagesz = [1, 6, 6, 2]
   filtrsz = [3, 3, 2, 16]
+elif testcase == 6:
+  h=BitVec("h", BITS_INDEX)
+  w=BitVec("w", BITS_INDEX)
+  c=BitVec("c", BITS_INDEX)
+  f=BitVec("f", BITS_INDEX)
+  input_preconds = [ULE(h, 100), ULE(w, 100), ULE(c, 100), ULE(f, 100)]
+  imagesz = [1, h, w, c]
+  filtrsz = [5, 5, c, f]
 
 s_input = dict()
 s_input["image"] = MemRef.newVar("image", toBitVecs(imagesz, BITS_INDEX))
@@ -399,7 +410,7 @@ def printCounterExs(model):
 
 # Let's check shape mismatch first.
 
-src_no_ub = And([i[0] for i in shapechks_src])
+src_no_ub = And([i[0] for i in shapechks_src] + input_preconds)
 tgt_no_ub = And([i[0] for i in shapechks_tgt])
 neg_goal = And(src_no_ub, Not(tgt_no_ub))
 
