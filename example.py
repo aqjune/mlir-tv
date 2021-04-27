@@ -3,8 +3,6 @@ from functools import reduce
 import time
 
 INTRODUCE_BUG = False
-#INTRODUCE_BUG = "value"
-#INTRODUCE_BUG = "shape"
 BITS_INDEX = 32
 BITS_FLOAT = 4
 
@@ -203,7 +201,7 @@ def dot(a, b, n):
   bfs = BitVecSort(BITS_FLOAT)
   ars = ArraySort(bis, bfs)
   i = BitVec("idx", bis)
-  dotfn = Function("dot", ars, ars, bfs)
+  dotfn = Function("smt_dot", ars, ars, bfs)
   return dotfn(
     Lambda([i], If(ULT(i, n), Select(a, i), 0)),
     Lambda([i], If(ULT(i, n), Select(b, i), 0)))
@@ -304,7 +302,11 @@ def matmul(a: MemRef, b: MemRef, shapechks):
 
 
 # Inputs
-testcase = 0
+testcase = int(sys.argv[1])
+if len(sys.argv) > 2:
+  INTRODUCE_BUG = sys.argv[2]
+  assert(INTRODUCE_BUG == "value" or INTRODUCE_BUG == "shape")
+
 input_preconds = []
 
 if testcase == 0:
@@ -327,9 +329,9 @@ elif testcase == 4:
   imagesz = [1, 6, 6, 2]
   filtrsz = [3, 3, 2, 2]
 elif testcase == 5:
-  # many filters
-  imagesz = [1, 6, 6, 2]
-  filtrsz = [3, 3, 2, 16]
+  # laarge
+  imagesz = [1, 1000, 1000, 16]
+  filtrsz = [5, 5, 16, 128]
 elif testcase == 6:
   h=BitVec("h", BITS_INDEX)
   w=BitVec("w", BITS_INDEX)
@@ -338,6 +340,8 @@ elif testcase == 6:
   input_preconds = [ULE(h, 100), ULE(w, 100), ULE(c, 100), ULE(f, 100)]
   imagesz = [1, h, w, c]
   filtrsz = [5, 5, c, f]
+else:
+  print("Unknown test case: %s" % testcase)
 
 s_input = dict()
 s_input["image"] = MemRef.newVar("image", toBitVecs(imagesz, BITS_INDEX))
@@ -352,10 +356,10 @@ s_tgt = dict(s_input)
 shapechks_src = []
 shapechks_tgt = []
 
-# Source program
+# Source function
 s_src["output"] = convolution(s_src["image"], s_src["filtr"], shapechks_src)
 
-# Target program
+# Target function
 s_tgt["mat"] = convertImageToMatrix(s_tgt["image"], s_tgt["filtr"].ns,
                                     shapechks_tgt)
 
@@ -375,7 +379,7 @@ s_tgt["filtr2"] = reshape(s_tgt["filtr"], [
 s_tgt["output"] = matmul(s_tgt["mat2"], s_tgt["filtr2"], shapechks_tgt)
 
 
-# Make & prove the goal
+# Write & prove the goal
 
 s = SolverFor("QF_UFBV")
 i_counterex = BitVec("i_counterex", BITS_INDEX)
@@ -412,10 +416,10 @@ def printCounterExs(model):
 
 src_no_ub = And([i[0] for i in shapechks_src] + input_preconds)
 tgt_no_ub = And([i[0] for i in shapechks_tgt])
-neg_goal = And(src_no_ub, Not(tgt_no_ub))
+find_counterexample_suchthat = And(src_no_ub, Not(tgt_no_ub))
 
 s.push()
-s.add(neg_goal)
+s.add(find_counterexample_suchthat)
 result = s.check()
 
 if result == sat:
@@ -423,19 +427,18 @@ if result == sat:
   printFalseShapeChks(s.model())
 
 else:
-  neg_goal = And(
-    src_no_ub, # src has no undefined behavior
-    Or( # output_src != output_tgt
-      get1DSize(s_src["output"].ns) != get1DSize(s_tgt["output"].ns),
-      And(ULT(i_counterex, get1DSize(s_src["output"].ns)),
-          Select(s_src["output"].val, i_counterex) !=
-          Select(s_tgt["output"].val, i_counterex))))
+  find_counterexample_suchthat = And(
+    src_no_ub, # src has no shape mismatch
+    # output_src != output_tgt.
+    And(ULT(i_counterex, get1DSize(s_src["output"].ns)),
+        Select(s_src["output"].val, i_counterex) !=
+        Select(s_tgt["output"].val, i_counterex)))
 
   s.pop()
-  s.add(neg_goal)
+  s.add(find_counterexample_suchthat)
 
   with open("dump.txt", mode='w') as f:
-    f.write("\n" + str(neg_goal))
+    f.write("\n" + str(find_counterexample_suchthat))
   with open("dump.smt2", mode='w') as f:
     f.write(s.to_smt2())
 
