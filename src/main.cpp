@@ -23,7 +23,7 @@ bool compare_opt(mlir::OwningModuleRef &ir_before, mlir::OwningModuleRef &ir_aft
     llvm::outs() << "--- IR after opt ---\n";
     for (auto &func: *ir_after) {
         func.walk([&](mlir::Operation *op) {
-            if (mlir::dyn_cast<mlir::linalg::InitTensorOp>(op) || mlir::dyn_cast<mlir::linalg::GenericOp>(op) || mlir::dyn_cast<mlir::linalg::TensorReshapeOp>(op) || mlir::dyn_cast<mlir::linalg::MatmulOp>(op) || mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
+            if (mlir::dyn_cast<mlir::linalg::InitTensorOp>(op) || mlir::dyn_cast<mlir::linalg::GenericOp>(op) || mlir::dyn_cast<mlir::linalg::TensorCollapseShapeOp>(op) || mlir::dyn_cast<mlir::linalg::TensorExpandShapeOp>(op) || mlir::dyn_cast<mlir::linalg::MatmulOp>(op) || mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
                 llvm::outs() << op->getName() << "\n";
                 for (const auto &operand : op->getOperands()) {
                     llvm::outs() << operand.getType();
