@@ -5,15 +5,14 @@
 
 #include <string>
 
-using namespace llvm;
 using namespace std;
 using namespace mlir;
 
 
 int main(int argc, char* argv[]) {
   if (argc != 3) {
-    errs() << "iree-tv\n";
-    errs() << "USAGE: iree-tv <.mlir before opt> <.mlir after opt>\n";
+    llvm::errs() << "iree-tv\n";
+    llvm::errs() << "USAGE: iree-tv <.mlir before opt> <.mlir after opt>\n";
     return 1;
   }
 
@@ -27,13 +26,13 @@ int main(int argc, char* argv[]) {
 
   auto ir_before = parseSourceFile(filename_src, &context);
   if (!ir_before) {
-    errs() << "Cannot read " << filename_src << "\n";
+    llvm::errs() << "Cannot read " << filename_src << "\n";
     return 1;
   }
 
   auto ir_after = parseSourceFile(filename_tgt, &context);
   if (!ir_after) {
-    errs() << "Cannot read " << filename_tgt << "\n";
+    llvm::errs() << "Cannot read " << filename_tgt << "\n";
     return 1;
   }
 
