@@ -11,7 +11,8 @@ cd build
 # If you want to build a release version, please add -DCMAKE_BUILD_TYPE=RELEASE
 cmake -DIREE_DIR=<dir/to/iree> \
       -DIREE_BUILD_DIR=<dir/to/iree-build> \
-      -DZ3_DIR=<dir/to/z3> \
+      -DZ3_INCLUDE_DIR=<dir/to/z3-install/include> \
+      -DZ3_LIBRARY_DIR=<dir/to/z3-install/lib> \
       ..
 cmake --build .
 ```
