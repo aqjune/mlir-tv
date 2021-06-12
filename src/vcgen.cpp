@@ -1,17 +1,71 @@
 #include "vcgen.h"
+#include "z3++.h"
 #include <functional>
 #include <map>
+#include <sstream>
 
 using namespace mlir;
 using namespace std;
 
+static z3::context c;
+const unsigned BITS_FLOAT = 4;
+const unsigned BITS_INDEX = 32;
+
+
+class Tensor {
+public:
+  vector<z3::expr> dims;
+  z3::expr arr;
+
+  Tensor(): arr(c) {}
+
+  static Tensor newVar(mlir::TensorType tensorTy, const std::string &name) {
+    Tensor t;
+
+    uint64_t rank = tensorTy.getRank();
+    for (auto i = 0; i < rank; ++i) {
+      t.dims.emplace_back(c.bv_val(tensorTy.getDimSize(i), BITS_INDEX));
+    }
+    t.arr = c.constant(name.c_str(),
+          c.array_sort(c.bv_sort(BITS_INDEX), c.bv_sort(BITS_FLOAT)));
+
+    return t;
+  }
+
+  friend ostream& operator<<(ostream&, Tensor &);
+};
+
+ostream& operator<<(ostream& os, Tensor &t) {
+  os << t.arr << "(dim :" << t.dims[0];
+  for (size_t i = 1; i < t.dims.size(); ++i)
+    os << ", " << t.dims[i];
+  os << ")";
+  return os;
+};
+
+
 struct RegFile {
-  // TODO: the value type should be z3 expr
-  map<string, int> m;
+  map<string, Tensor> m;
 };
 
 struct State {
   RegFile regs;
+
+  friend ostream& operator<<(ostream&, State &);
+};
+
+ostream& operator<<(ostream& os, State &s) {
+  for (auto itm: s.regs.m) {
+    os << itm.first << ": " << itm.second << "\n";
+  }
+  return os;
+}
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream &ros, State &s) {
+  stringstream ss;
+  ss << s;
+  ros << ss.str();
+  return ros;
 };
 
 static State createInputState(FuncOp fn) {
@@ -19,8 +73,13 @@ static State createInputState(FuncOp fn) {
   unsigned n = fn.getNumArguments();
   for (unsigned i = 0; i < n; ++i) {
     auto arg = fn.getArgument(i);
-    // FIXME
-    s.regs.m[to_string(arg.getArgNumber())] = 0;
+    if (auto ty = arg.getType().dyn_cast<mlir::TensorType>()) {
+      auto name = to_string(arg.getArgNumber());
+      s.regs.m.emplace(name, Tensor::newVar(ty, name));
+    } else {
+      llvm::errs() << "Unsupported type: " << arg.getType() << "\n";
+      exit(1);
+    }
   }
 
   return s;
@@ -40,6 +99,7 @@ static void verify(FuncOp src, FuncOp tgt) {
 
   auto st_src = createInputState(src);
   auto st_tgt = st_src;
+  llvm::outs() << st_src << "\n";
 
   llvm::outs() << "<src>\n";
   encode(st_src, src);
