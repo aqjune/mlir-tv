@@ -1,8 +1,9 @@
 #include "vcgen.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/Parser.h"
-
 #include <string>
 
 using namespace std;
@@ -21,7 +22,11 @@ int main(int argc, char* argv[]) {
 
   MLIRContext context;
   DialectRegistry registry;
+  // NOTE: we cannot use mlir::registerAllDialects because IREE does not have
+  // dependency on some of those dialects
+  registry.insert<AffineDialect>();
   registry.insert<linalg::LinalgDialect>();
+  registry.insert<memref::MemRefDialect>();
   context.appendDialectRegistry(registry);
 
   auto ir_before = parseSourceFile(filename_src, &context);
