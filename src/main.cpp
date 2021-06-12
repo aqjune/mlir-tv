@@ -1,4 +1,7 @@
 #include "vcgen.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/Signals.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -16,6 +19,10 @@ int main(int argc, char* argv[]) {
     llvm::errs() << "USAGE: iree-tv <.mlir before opt> <.mlir after opt>\n";
     return 1;
   }
+
+  llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+  llvm::PrettyStackTraceProgram X(argc, argv);
+  llvm::EnableDebugBuffering = true;
 
   string filename_src = argv[1];
   string filename_tgt = argv[2];
