@@ -84,23 +84,14 @@ encodeConv(State &st, linalg::ConvInputNHWCFilterHWCFOp op) {
            " supported only";
   auto output = op.getOutputTensors()[0];
 
-  auto &input_z3 = st.regs.get(input);
-  auto &filter_z3 = st.regs.get(filter);
+  auto &t_input = st.regs.get(input);
+  auto &t_filter = st.regs.get(filter);
 
-  std::vector<z3::expr> output_dims = {
-    Tensor::newIdxConst(1),
-    input_z3.dims[1] + 1 - filter_z3.dims[0],
-    input_z3.dims[2] + 1 - filter_z3.dims[1],
-    filter_z3.dims[3]
-  };
-  std::vector<z3::expr> cube_size = {
-    Tensor::newIdxConst(1),
-    filter_z3.dims[0], filter_z3.dims[1], filter_z3.dims[2]
-  };
+  auto t_res = t_input.conv(t_filter);
+  st.regs.add(op.getResult(0), std::move(t_res));
+  // TODO: check whether this semantics is correct.
+  st.regs.add(output, std::move(t_res));
 
-  auto vars = Tensor::newIdxVars({"i", "j", "k", "l"});
-
-  // TODO: fill this
   return {};
 }
 
