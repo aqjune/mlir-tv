@@ -65,8 +65,12 @@ createInputState(FuncOp fn) {
   return s;
 }
 
-static std::optional<std::string>
-encodeConv(State &st, linalg::ConvInputNHWCFilterHWCFOp op) {
+template<class T>
+static std::optional<std::string> encodeOp(State &st, T op);
+
+template<>
+std::optional<std::string>
+encodeOp(State &st, linalg::ConvInputNHWCFilterHWCFOp op) {
   if (!llvm::all_of(op.dilations(), [](auto i) { return i == 1; }))
     return "dilation isn't one\n";
   else if (!llvm::all_of(op.strides(), [](auto i) { return i == 1; }))
@@ -95,16 +99,36 @@ encodeConv(State &st, linalg::ConvInputNHWCFilterHWCFOp op) {
   return {};
 }
 
+template<>
+std::optional<std::string> encodeOp(State &st, linalg::InitTensorOp op) {
+  auto res = op.getResult();
+  auto ty = res.getType().dyn_cast<mlir::TensorType>();
+  assert(ty);
+
+  // FIXME: can we use res's name?
+  static int new_var_idx = 0;
+  auto name = std::string("init_tensor_") + std::to_string(new_var_idx++);
+  st.regs.add(res, Tensor::newVar(ty, name));
+
+  return {};
+}
+
+#define ENCODE(op, ty) { \
+  if (auto op2 = dyn_cast<ty>(op)) { \
+    auto errmsg = encodeOp(st, op2); \
+    if (errmsg) { \
+      RET_STR("Cannot encode " << op << "\n\t" << *errmsg << "\n"); \
+    } \
+    continue; \
+  } \
+}
+
 static std::optional<std::string> encode(State &st, FuncOp &fn) {
   for (auto &region: fn) {
     for (auto &op: region) {
       op.dump();
-      if (auto nwhcOp = dyn_cast<linalg::ConvInputNHWCFilterHWCFOp>(op)) {
-        auto errmsg = encodeConv(st, nwhcOp);
-        if (errmsg) {
-          RET_STR("Cannot encode " << op << "\n\t" << *errmsg << "\n");
-        }
-      }
+      ENCODE(op, linalg::ConvInputNHWCFilterHWCFOp);
+      ENCODE(op, linalg::InitTensorOp);
     }
   }
   return {};
