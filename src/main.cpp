@@ -31,6 +31,7 @@ int main(int argc, char* argv[]) {
   DialectRegistry registry;
   // NOTE: we cannot use mlir::registerAllDialects because IREE does not have
   // dependency on some of those dialects
+  registry.insert<StandardOpsDialect>();
   registry.insert<AffineDialect>();
   registry.insert<linalg::LinalgDialect>();
   registry.insert<memref::MemRefDialect>();
