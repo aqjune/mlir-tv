@@ -33,6 +33,7 @@ public:
   // Return a new tensor which is convolution of this tensor and filter.
   Tensor conv(const Tensor &filter) const;
 
+  static std::vector<z3::expr> getDims(mlir::TensorType tensorTy);
   static Tensor newVar(mlir::TensorType tensorTy, const std::string &name);
   static z3::expr newIdxConst(uint64_t idx);
   static z3::expr newIdxVar(const std::string &name);

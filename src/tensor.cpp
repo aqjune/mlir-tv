@@ -161,13 +161,20 @@ Tensor Tensor::conv(const Tensor &filter) const {
   return res_t;
 }
 
-Tensor Tensor::newVar(mlir::TensorType tensorTy, const string &name) {
-  Tensor t;
+vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
+  vector<z3::expr> dims;
 
   uint64_t rank = tensorTy.getRank();
   for (auto i = 0; i < rank; ++i) {
-    t.dims.emplace_back(ctx.bv_val(tensorTy.getDimSize(i), BITS_INDEX));
+    dims.emplace_back(ctx.bv_val(tensorTy.getDimSize(i), BITS_INDEX));
   }
+
+  return dims;
+}
+
+Tensor Tensor::newVar(mlir::TensorType tensorTy, const string &name) {
+  Tensor t;
+  t.dims = getDims(tensorTy);
   t.arr = ctx.constant(name.c_str(),
         ctx.array_sort(ctx.bv_sort(BITS_INDEX), ctx.bv_sort(BITS_FLOAT)));
 
