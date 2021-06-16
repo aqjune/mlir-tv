@@ -10,6 +10,7 @@ set(Z3_LIBRARY_DIR "~/src/z3" CACHE STRING "Z3 lib directory")
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/vcgen.cpp
+    src/state.cpp
     src/tensor.cpp
     src/smt.cpp)
 

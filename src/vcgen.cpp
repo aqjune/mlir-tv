@@ -1,5 +1,6 @@
 #include "tensor.h"
 #include "smt.h"
+#include "state.h"
 #include "vcgen.h"
 
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
@@ -12,49 +13,6 @@
 #include <vector>
 
 using namespace std;
-
-struct RegFile {
-  vector<pair<mlir::Value, Tensor>> m;
-
-  void add(mlir::Value v, Tensor &&t) {
-    m.emplace_back(v, move(t));
-  }
-
-  Tensor &get(mlir::Value v) {
-    for (auto &[a, b]: m)
-      if (a == v)
-        return b;
-
-    llvm::errs() << "Cannot find key: " << v << "\n";
-    assert(false && "Unknown key");
-  }
-};
-
-struct State {
-  RegFile regs;
-  Tensor retValue;
-  // TODO: add memory
-
-  // Returns (this(tgt) state refines src,
-  //          variables used for encoding refinement)
-  pair<z3::expr, vector<z3::expr>> refines(const State &src);
-
-  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
-};
-
-llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
-  for (auto itm: s.regs.m) {
-    os << "Register: " << itm.first;
-    os << "Value: " << itm.second << "\n";
-  }
-  return os;
-}
-
-pair<z3::expr, vector<z3::expr>> State::refines(const State &src) {
-  // TODO: encode the final memory
-  auto [refines, idx] = retValue.refines(src.retValue);
-  return {move(refines), {idx}};
-}
 
 
 #define RET_STR(V) { \
