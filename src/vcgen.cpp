@@ -282,7 +282,7 @@ static void printCounterEx(
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
     llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
-                  << or_omit(st_src_in.regs.get(argsrc).arr) << "\n";
+                 << or_omit(st_src_in.regs.get(argsrc).arr) << "\n";
   }
 
   llvm::outs() << "\n<Source's variables>\n";

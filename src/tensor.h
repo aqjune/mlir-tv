@@ -6,6 +6,7 @@
 #include <vector>
 
 class Tensor {
+  // dims[0]: the highest dimension
   std::vector<z3::expr> dims;
 
 public:

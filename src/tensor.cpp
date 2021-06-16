@@ -122,9 +122,9 @@ Tensor Tensor::affine(
 
 Tensor Tensor::rotateDimensions() const {
   vector<z3::expr> newdims;
-  for (size_t i = 1; i < dims.size(); ++i)
+  newdims.emplace_back(dims.back());
+  for (size_t i = 0; i < dims.size() - 1; ++i)
     newdims.emplace_back(dims[i]);
-  newdims.emplace_back(dims[0]);
 
   vector<z3::expr> vars, tgtvars;
   for (size_t i = 0; i < dims.size(); ++i) {
@@ -182,9 +182,9 @@ Tensor Tensor::matmul(const Tensor &b) const {
   auto i = newIdxVar("i"), j = newIdxVar("j"), zero = newIdxConst(0),
        one = newIdxConst(1);
   auto a_row = to1DArrayWithOfs({i, zero}, {one, dims[1]});
-  auto b_row = bt.to1DArrayWithOfs({j, zero}, {one, bt.dims[1]});
+  auto bt_row = bt.to1DArrayWithOfs({j, zero}, {one, bt.dims[1]});
 
-  return mkLambda({dims[0], bt.dims[0]}, {i, j}, dot(a_row, b_row, dims[1]));
+  return mkLambda({dims[0], bt.dims[0]}, {i, j}, dot(a_row, bt_row, dims[1]));
 }
 
 pair<z3::expr, z3::expr> Tensor::refines(const Tensor &src) const {
