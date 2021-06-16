@@ -7,11 +7,12 @@
 
 class Tensor {
   std::vector<z3::expr> dims;
-  z3::expr arr;
 
 public:
   static const unsigned BITS_FLOAT = 4;
   static const unsigned BITS_INDEX = 32;
+
+  z3::expr arr;
 
   Tensor();
 

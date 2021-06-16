@@ -20,6 +20,14 @@ struct RegFile {
     llvm::errs() << "Cannot find key: " << v << "\n";
     assert(false && "Unknown key");
   }
+
+  bool contains(mlir::Value v) {
+    for (auto &[a, b]: m) {
+      if (a == v)
+        return true;
+    }
+    return false;
+  }
 };
 
 struct State {

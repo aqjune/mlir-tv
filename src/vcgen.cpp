@@ -38,7 +38,8 @@ createInputState(mlir::FuncOp fn) {
   for (unsigned i = 0; i < n; ++i) {
     auto arg = fn.getArgument(i);
     if (auto ty = arg.getType().dyn_cast<mlir::TensorType>()) {
-      s.regs.add(arg, Tensor::newVar(ty, to_string(arg.getArgNumber())));
+      s.regs.add(arg,
+          Tensor::newVar(ty, "arg" + to_string(arg.getArgNumber())));
     } else {
       RET_STR("Unsupported type: " << arg.getType());
     }
@@ -264,7 +265,53 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
 }
 
 
-static ofstream *fout = nullptr;
+static void printCounterEx(
+    z3::solver &solver, const vector<z3::expr> &params, mlir::FuncOp src,
+    State &st_src, State &st_src_in, State &st_tgt, State &st_tgt_in) {
+  auto m = solver.get_model();
+  auto or_omit = [&](const z3::expr &e) -> string {
+    auto s = m.eval(e, true).simplify().to_string();
+    if (s.size() > 500)
+      return "(omitted)";
+    return s;
+  };
+
+  llvm::outs() << "<Inputs>\n";
+
+  unsigned n = src.getNumArguments();
+  for (unsigned i = 0; i < n; ++i) {
+    auto argsrc = src.getArgument(i);
+    llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
+                  << or_omit(st_src_in.regs.get(argsrc).arr) << "\n";
+  }
+
+  llvm::outs() << "\n<Source's variables>\n";
+  for (auto &[v, e]: st_src.regs.m) {
+    if (st_src_in.regs.contains(v))
+      continue;
+    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e.arr) << "\n";
+  }
+
+  llvm::outs() << "\n<Target's variables>\n";
+  for (auto &[v, e]: st_tgt.regs.m) {
+    if (st_tgt_in.regs.contains(v))
+      continue;
+    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e.arr) << "\n";
+  }
+
+  llvm::outs()
+      << "\n<Return values>\n"
+      << "\tIndex: " << solver.get_model().eval(params[0]) << "\n"
+      << "\tSrc: " << or_omit(z3::select(st_src.retValue.arr, params[0]))
+      << "\n"
+      << "\tTgt: " << or_omit(z3::select(st_tgt.retValue.arr, params[0]))
+      << "\n";
+
+#if FALSE
+  llvm::outs() << solver.get_model().to_string() << "\n";
+#endif
+}
+
 
 static void verify(
     mlir::FuncOp src, mlir::FuncOp tgt, const string &dump_smt_to) {
@@ -280,11 +327,13 @@ static void verify(
   if (holds_alternative<string>(st_src_or_err))
     raiseUnsupported(get<string>(st_src_or_err));
   auto st_src = get<State>(st_src_or_err);
+  auto st_src_in = st_src; // for printing counter ex.
 
   auto st_tgt_or_err = createInputState(tgt);
   if (holds_alternative<string>(st_tgt_or_err))
     raiseUnsupported(get<string>(st_tgt_or_err));
   auto st_tgt = get<State>(st_tgt_or_err);
+  auto st_tgt_in = st_tgt; // for printing counter ex.
 
   llvm::outs() << "<src>\n";
   if (auto msg = encode(st_src, src))
@@ -296,7 +345,7 @@ static void verify(
 
   // Invoke Z3
   auto solver = z3::solver(ctx, "QF_UFBV");
-  auto [refines, _] = st_tgt.refines(st_src);
+  auto [refines, params] = st_tgt.refines(st_src);
   refines = refines.simplify();
 
   solver.add(!refines);
@@ -314,8 +363,7 @@ static void verify(
     llvm::outs() << "== Result: Z3 gives up ==\n";
   } else if (result == z3::sat) {
     llvm::outs() << "== Result: return value mismatch ==\n";
-    // TODO: parse the model
-    llvm::outs() << solver.get_model().to_string() << "\n";
+    printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
   }
 }
 
