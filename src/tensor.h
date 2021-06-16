@@ -40,6 +40,9 @@ public:
   Tensor matmul(const Tensor &b) const;
 
 
+  // Returns (arr[idx] == src.arr[idx], idx var)
+  std::pair<z3::expr, z3::expr> refines(const Tensor &src) const;
+
   static std::vector<z3::expr> getDims(mlir::TensorType tensorTy);
   static Tensor newVar(mlir::TensorType tensorTy, const std::string &name);
   static z3::expr newIdxConst(uint64_t idx);

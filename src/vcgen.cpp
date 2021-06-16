@@ -1,4 +1,5 @@
 #include "tensor.h"
+#include "smt.h"
 #include "vcgen.h"
 
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
@@ -32,6 +33,11 @@ struct RegFile {
 struct State {
   RegFile regs;
   Tensor retValue;
+  // TODO: add memory
+
+  // Returns (this(tgt) state refines src,
+  //          variables used for encoding refinement)
+  pair<z3::expr, vector<z3::expr>> refines(const State &src);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };
@@ -42,6 +48,12 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
     os << "Value: " << itm.second << "\n";
   }
   return os;
+}
+
+pair<z3::expr, vector<z3::expr>> State::refines(const State &src) {
+  // TODO: encode the final memory
+  auto [refines, idx] = retValue.refines(src.retValue);
+  return {move(refines), {idx}};
 }
 
 
@@ -276,7 +288,7 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
 
   auto &block = fn.getRegion().front();
   for (auto &op: block) {
-    op.dump();
+    llvm::outs() << "  " << op << "\n";
     ENCODE(op, mlir::ReturnOp);
     ENCODE(op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
     ENCODE(op, mlir::linalg::GenericOp);
@@ -287,12 +299,14 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
 
     RET_STR("Unknown op: " << op);
   }
+  llvm::outs() << "\n";
+
   return {};
 }
 
 
 static void verify(mlir::FuncOp src, mlir::FuncOp tgt) {
-  llvm::outs() << "<" << src.getName() << ">\n";
+  llvm::outs() << "Function " << src.getName() << "\n\n";
   assert(src.getNumArguments() == tgt.getNumArguments());
 
   auto raiseUnsupported = [](const string &msg) {
@@ -310,18 +324,29 @@ static void verify(mlir::FuncOp src, mlir::FuncOp tgt) {
     raiseUnsupported(get<string>(st_tgt_or_err));
   auto st_tgt = get<State>(st_tgt_or_err);
 
-  llvm::outs() << st_src << "\n";
-
   llvm::outs() << "<src>\n";
   if (auto msg = encode(st_src, src))
     raiseUnsupported(*msg);
 
-  llvm::outs() << "\n";
   llvm::outs() << "<tgt>\n";
   if (auto msg = encode(st_tgt, tgt))
     raiseUnsupported(*msg);
 
-  // TODO: compare the final state
+  // Invoke Z3
+  auto solver = z3::solver(ctx, "QF_UFBV");
+  auto [refines, _] = st_tgt.refines(st_src);
+
+  solver.add(!refines);
+
+  auto result = solver.check();
+  if (result == z3::unsat) {
+    llvm::outs() << "== Result: correct ==\n";
+  } else if (result == z3::unknown) {
+    llvm::outs() << "== Result: Z3 gives up ==\n";
+  } else if (result == z3::sat) {
+    llvm::outs() << "== Result: return value mismatch ==\n";
+    llvm::outs() << solver.get_model().to_string();
+  }
 }
 
 void verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt) {

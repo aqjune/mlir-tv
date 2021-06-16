@@ -163,10 +163,7 @@ Tensor Tensor::conv(const Tensor &filter) const {
   auto res = dot(input_subarr, filter_arr,
       cube_size[0] * cube_size[1] * cube_size[2] * cube_size[3]);
 
-  Tensor res_t;
-  res_t.dims = move(output_dims);
-  res_t.arr = move(res);
-  return res_t;
+  return Tensor::mkLambda(move(output_dims), {i, j, k, l}, move(res));
 }
 
 Tensor Tensor::reshape(const vector<z3::expr> &newdims) const {
@@ -189,6 +186,19 @@ Tensor Tensor::matmul(const Tensor &b) const {
 
   return mkLambda({dims[0], bt.dims[0]}, {i, j}, dot(a_row, b_row, dims[1]));
 }
+
+pair<z3::expr, z3::expr> Tensor::refines(const Tensor &src) const {
+  assert(arr.get_sort().is_array());
+  assert(src.arr.get_sort().is_array());
+
+  // Assume that src and tgt's shape equality is already checked
+  auto i = newIdxVar("i");
+  return {z3::implies(
+      z3::ult(i, get1DSize(dims)),
+      z3::select(arr, i) == z3::select(src.arr, i)),
+    i};
+}
+
 
 vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
   vector<z3::expr> dims;
