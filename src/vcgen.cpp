@@ -31,6 +31,7 @@ struct RegFile {
 
 struct State {
   RegFile regs;
+  Tensor retValue;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };
@@ -251,6 +252,13 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::ReturnOp op) {
+  st.retValue = st.regs.get(op.getOperand(0));
+  return {};
+}
+
+
 
 #define ENCODE(op, ty) { \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
@@ -269,12 +277,15 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
   auto &block = fn.getRegion().front();
   for (auto &op: block) {
     op.dump();
+    ENCODE(op, mlir::ReturnOp);
     ENCODE(op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
-    ENCODE(op, mlir::linalg::InitTensorOp);
     ENCODE(op, mlir::linalg::GenericOp);
-    ENCODE(op, mlir::linalg::TensorCollapseShapeOp);
+    ENCODE(op, mlir::linalg::InitTensorOp);
     ENCODE(op, mlir::linalg::MatmulOp);
+    ENCODE(op, mlir::linalg::TensorCollapseShapeOp);
     ENCODE(op, mlir::linalg::TensorExpandShapeOp);
+
+    RET_STR("Unknown op: " << op);
   }
   return {};
 }
