@@ -253,7 +253,7 @@ Tensor Tensor::mkLambda(
 
   Tensor t2;
   t2.dims = move(newdims);
-  t2.arr = body;
+  t2.arr = z3::lambda({idx}, body);
   return t2;
 }
 
