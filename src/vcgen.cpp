@@ -360,7 +360,7 @@ static void verify(
   if (result == z3::unsat) {
     llvm::outs() << "== Result: correct ==\n";
   } else if (result == z3::unknown) {
-    llvm::outs() << "== Result: Z3 gives up ==\n";
+    llvm::outs() << "== Result: timeout ==\n";
   } else if (result == z3::sat) {
     llvm::outs() << "== Result: return value mismatch ==\n";
     printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
