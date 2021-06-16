@@ -297,8 +297,10 @@ static void verify(
   // Invoke Z3
   auto solver = z3::solver(ctx, "QF_UFBV");
   auto [refines, _] = st_tgt.refines(st_src);
+  refines = refines.simplify();
 
   solver.add(!refines);
+
   if (!dump_smt_to.empty()) {
     ofstream fout(dump_smt_to + "." + src.getName().str());
     fout << refines;
@@ -312,7 +314,8 @@ static void verify(
     llvm::outs() << "== Result: Z3 gives up ==\n";
   } else if (result == z3::sat) {
     llvm::outs() << "== Result: return value mismatch ==\n";
-    llvm::outs() << solver.get_model().to_string();
+    // TODO: parse the model
+    llvm::outs() << solver.get_model().to_string() << "\n";
   }
 }
 

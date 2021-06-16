@@ -34,10 +34,7 @@ int main(int argc, char* argv[]) {
   llvm::PrettyStackTraceProgram X(argc, argv);
   llvm::EnableDebugBuffering = true;
 
-  llvm::cl::ParseCommandLineOptions(argc, argv, R"(
-iree-tv
-USAGE: iree-tv <.mlir before opt> <.mlir after opt>\
-)");
+  llvm::cl::ParseCommandLineOptions(argc, argv);
 
   z3::set_param("timeout", (int)arg_smt_to.getValue());
 
