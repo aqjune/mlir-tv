@@ -26,6 +26,9 @@ llvm::cl::opt<unsigned> arg_smt_to("smt-to",
   llvm::cl::desc("Timeout for SMT queries (default=10000)"),
   llvm::cl::init(10000), llvm::cl::value_desc("ms"));
 
+llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
+  llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"));
+
 int main(int argc, char* argv[]) {
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
   llvm::PrettyStackTraceProgram X(argc, argv);
@@ -60,7 +63,7 @@ USAGE: iree-tv <.mlir before opt> <.mlir after opt>\
     return 1;
   }
 
-  verify(ir_before, ir_after);
+  verify(ir_before, ir_after, arg_dump_smt_to.getValue());
 
   return 0;
 }

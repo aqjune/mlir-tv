@@ -6,6 +6,7 @@
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/IR/Matchers.h"
 #include "z3++.h"
+#include <fstream>
 #include <functional>
 #include <map>
 #include <sstream>
@@ -263,7 +264,10 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
 }
 
 
-static void verify(mlir::FuncOp src, mlir::FuncOp tgt) {
+static ofstream *fout = nullptr;
+
+static void verify(
+    mlir::FuncOp src, mlir::FuncOp tgt, const string &dump_smt_to) {
   llvm::outs() << "Function " << src.getName() << "\n\n";
   assert(src.getNumArguments() == tgt.getNumArguments());
 
@@ -295,6 +299,11 @@ static void verify(mlir::FuncOp src, mlir::FuncOp tgt) {
   auto [refines, _] = st_tgt.refines(st_src);
 
   solver.add(!refines);
+  if (!dump_smt_to.empty()) {
+    ofstream fout(dump_smt_to + "." + src.getName().str());
+    fout << refines;
+    fout.close();
+  }
 
   auto result = solver.check();
   if (result == z3::unsat) {
@@ -307,7 +316,8 @@ static void verify(mlir::FuncOp src, mlir::FuncOp tgt) {
   }
 }
 
-void verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt) {
+void verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
+            const string &dump_smt_to) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -324,6 +334,6 @@ void verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt) {
       continue;
     }
     // TODO: check fn signature
-    verify(srcfn, itr->second);
+    verify(srcfn, itr->second, dump_smt_to);
   }
 }
