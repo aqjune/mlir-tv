@@ -263,16 +263,18 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
 }
 
 static optional<string> encode(State &st, mlir::FuncOp &fn) {
-  for (auto &region: fn) {
-    for (auto &op: region) {
-      op.dump();
-      ENCODE(op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
-      ENCODE(op, mlir::linalg::InitTensorOp);
-      ENCODE(op, mlir::linalg::GenericOp);
-      ENCODE(op, mlir::linalg::TensorCollapseShapeOp);
-      ENCODE(op, mlir::linalg::MatmulOp);
-      ENCODE(op, mlir::linalg::TensorExpandShapeOp);
-    }
+  if (!llvm::hasSingleElement(fn.getRegion()))
+    return "Only a function with one block is supported";
+
+  auto &block = fn.getRegion().front();
+  for (auto &op: block) {
+    op.dump();
+    ENCODE(op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
+    ENCODE(op, mlir::linalg::InitTensorOp);
+    ENCODE(op, mlir::linalg::GenericOp);
+    ENCODE(op, mlir::linalg::TensorCollapseShapeOp);
+    ENCODE(op, mlir::linalg::MatmulOp);
+    ENCODE(op, mlir::linalg::TensorExpandShapeOp);
   }
   return {};
 }
