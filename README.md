@@ -21,4 +21,7 @@ cmake --build .
 Run the built `iree-tv` executable as following:
 ```bash
 iree-tv <.mlir before opt> <.mlir after opt>`
+# ex: ./build/iree-tv \
+#        examples/conv2d_to_img2col/conv2d_to_img2col.mlir \
+#        examples/conv2d_to_img2col/conv2d_to_img2col_opt.mlir
 ```
