@@ -1,4 +1,6 @@
+#include "smt.h"
 #include "vcgen.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
@@ -12,20 +14,29 @@
 using namespace std;
 using namespace mlir;
 
+llvm::cl::opt<string> filename_src(llvm::cl::Positional,
+  llvm::cl::desc("first-mlir-file"),
+  llvm::cl::Required, llvm::cl::value_desc("filename"));
+
+llvm::cl::opt<string> filename_tgt(llvm::cl::Positional,
+  llvm::cl::desc("second-mlir-file"),
+  llvm::cl::Optional, llvm::cl::value_desc("filename"));
+
+llvm::cl::opt<unsigned> arg_smt_to("smt-to",
+  llvm::cl::desc("Timeout for SMT queries (default=10000)"),
+  llvm::cl::init(10000), llvm::cl::value_desc("ms"));
 
 int main(int argc, char* argv[]) {
-  if (argc != 3) {
-    llvm::errs() << "iree-tv\n";
-    llvm::errs() << "USAGE: iree-tv <.mlir before opt> <.mlir after opt>\n";
-    return 1;
-  }
-
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
   llvm::PrettyStackTraceProgram X(argc, argv);
   llvm::EnableDebugBuffering = true;
 
-  string filename_src = argv[1];
-  string filename_tgt = argv[2];
+  llvm::cl::ParseCommandLineOptions(argc, argv, R"(
+iree-tv
+USAGE: iree-tv <.mlir before opt> <.mlir after opt>\
+)");
+
+  z3::set_param("timeout", (int)arg_smt_to.getValue());
 
   MLIRContext context;
   DialectRegistry registry;
