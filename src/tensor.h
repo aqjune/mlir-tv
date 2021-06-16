@@ -33,6 +33,13 @@ public:
   // Return a new tensor which is convolution of this tensor and filter.
   Tensor conv(const Tensor &filter) const;
 
+  Tensor reshape(const std::vector<z3::expr> &ns2) const;
+
+  Tensor transpose() const;
+
+  Tensor matmul(const Tensor &b) const;
+
+
   static std::vector<z3::expr> getDims(mlir::TensorType tensorTy);
   static Tensor newVar(mlir::TensorType tensorTy, const std::string &name);
   static z3::expr newIdxConst(uint64_t idx);
@@ -43,6 +50,10 @@ public:
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, Tensor &);
 
 private:
+  static Tensor mkLambda(
+      std::vector<z3::expr> &&newdims,
+      std::vector<z3::expr> &&indexvars, z3::expr body);
+
   z3::expr to1DArrayWithOfs(
       const std::vector<z3::expr> &offbegins,
       const std::vector<z3::expr> &sizes) const;

@@ -210,6 +210,47 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
+  // TODO: is tensor_collapse_shape with permutated indices valid?
+  //   ex: %2 = linalg.tensor_collapse_shape %1 [[0, 2], [1, 3]]
+  // Then, it isn't simply reinterpretation of the operand; it needs permutation
+  // of elements.
+
+  const Tensor &t = st.regs.get(op.getOperand());
+  st.regs.add(op.getResult(), t.reshape(Tensor::getDims(op.getResultType())));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
+  // TODO: is tensor_expand_shape with permutated indices valid?
+  //   ex: %2 = linalg.tensor_expand_shape %1 [[0], [2], [1, 3]]
+  // Then, it isn't simply reinterpretation of the operand; it needs permutation
+  // of elements.
+
+  const Tensor &t = st.regs.get(op.getOperand());
+  st.regs.add(op.getResult(), t.reshape(Tensor::getDims(op.getResultType())));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
+  if (!op.hasTensorSemantics())
+    return "operation with tensor semantics is supported only";
+
+  if (op.getNumInputs() != 2 || op.getNumOutputs() != 1)
+    return "unsupported form";
+
+  const Tensor &a = st.regs.get(op.getOperand(0));
+  const Tensor &b = st.regs.get(op.getOperand(1));
+  Tensor result = a.matmul(b);
+  st.regs.add(op.getResult(0), Tensor(result));
+  st.regs.add(op.getOutput(0), move(result));
+
+  return {};
+}
+
 
 #define ENCODE(op, ty) { \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
@@ -228,6 +269,9 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
       ENCODE(op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
       ENCODE(op, mlir::linalg::InitTensorOp);
       ENCODE(op, mlir::linalg::GenericOp);
+      ENCODE(op, mlir::linalg::TensorCollapseShapeOp);
+      ENCODE(op, mlir::linalg::MatmulOp);
+      ENCODE(op, mlir::linalg::TensorExpandShapeOp);
     }
   }
   return {};

@@ -78,6 +78,14 @@ static z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
   return dotfn(args);
 }
 
+static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
+  vector<z3::expr> v;
+  for (auto &e: exprs)
+    v.emplace_back(e.simplify());
+  return v;
+}
+
+
 Tensor::Tensor(): arr(ctx) {}
 
 z3::expr Tensor::get(const vector<z3::expr> &idxs) const {
@@ -161,6 +169,27 @@ Tensor Tensor::conv(const Tensor &filter) const {
   return res_t;
 }
 
+Tensor Tensor::reshape(const vector<z3::expr> &newdims) const {
+  // TODO: check whether size(newdims) == size(dims)
+  Tensor t2;
+  t2.dims = simplifyList(newdims);
+  t2.arr = arr;
+  return t2;
+}
+
+Tensor Tensor::matmul(const Tensor &b) const {
+  assert(dims.size() == 2);
+  assert(b.dims.size() == 2);
+
+  auto bt = b.transpose();
+  auto i = newIdxVar("i"), j = newIdxVar("j"), zero = newIdxConst(0),
+       one = newIdxConst(1);
+  auto a_row = to1DArrayWithOfs({i, zero}, {one, dims[1]});
+  auto b_row = bt.to1DArrayWithOfs({j, zero}, {one, bt.dims[1]});
+
+  return mkLambda({dims[0], bt.dims[0]}, {i, j}, dot(a_row, b_row, dims[1]));
+}
+
 vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
   vector<z3::expr> dims;
 
@@ -206,6 +235,27 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, Tensor &t) {
   os << ")";
   return os;
 };
+
+Tensor Tensor::transpose() const {
+  assert(dims.size() == 2);
+  auto i = newIdxVar("i"), j = newIdxVar("j");
+  return Tensor::mkLambda({dims[1], dims[0]}, {j, i}, get({i, j}));
+}
+
+Tensor Tensor::mkLambda(
+    std::vector<z3::expr> &&newdims, std::vector<z3::expr> &&indexvars,
+    z3::expr body) {
+  assert(newdims.size() == indexvars.size());
+
+  auto idx = newIdxVar("idx");
+  auto idxexprs = from1DIdx(idx, newdims);
+  body = body.substitute(toExprVector(indexvars), toExprVector(idxexprs));
+
+  Tensor t2;
+  t2.dims = move(newdims);
+  t2.arr = body;
+  return t2;
+}
 
 z3::expr Tensor::to1DArrayWithOfs(
       const vector<z3::expr> &offbegins,
