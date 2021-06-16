@@ -9,6 +9,12 @@ struct RegFile {
   std::vector<std::pair<mlir::Value, Tensor>> m;
 
   void add(mlir::Value v, Tensor &&t) {
+    for (auto &itm: m) {
+      if (itm.first == v) {
+        itm.second = std::move(t);
+        return;
+      }
+    }
     m.emplace_back(v, std::move(t));
   }
 
