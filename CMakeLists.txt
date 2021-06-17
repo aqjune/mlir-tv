@@ -20,7 +20,7 @@ target_link_libraries(${PROJECT_NAME}
     MLIRSideEffectInterfaces MLIRViewLikeInterface MLIRInferTypeOpInterface
     MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRAffine MLIRMemRef
     MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport MLIRInferTypeOpInterface
-    LLVMSupport z3 pthread m tinfo)
+    LLVMSupport LLVMDemangle z3 pthread m curses)
 target_link_options(${PROJECT_NAME} PUBLIC -fPIC)
 target_compile_options(${PROJECT_NAME} PUBLIC -fno-rtti)
 target_link_directories(${PROJECT_NAME} PUBLIC ${IREE_BUILD_DIR}/third_party/llvm-project/llvm/lib)
