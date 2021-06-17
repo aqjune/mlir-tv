@@ -5,18 +5,38 @@
 #include <string>
 #include <vector>
 
+class Index {
+  z3::expr e;
+
+public:
+  static const unsigned BITS = 32;
+
+  Index();
+  Index(unsigned);
+  Index(const std::string &name);
+
+  operator z3::expr() const { return e; }
+
+  static z3::sort sort();
+  static Index one();
+  static Index zero();
+
+  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
+};
+
+
 class Tensor {
   // dims[0]: the highest dimension
   std::vector<z3::expr> dims;
+  z3::expr arr;
 
 public:
   static const unsigned BITS_FLOAT = 4;
-  static const unsigned BITS_INDEX = 32;
-
-  z3::expr arr;
 
   Tensor();
+  Tensor(const std::string &name, const std::vector<z3::expr> &dims);
 
+  z3::expr asArray() const { return arr; }
   z3::expr get(const std::vector<z3::expr> &indices) const;
 
   // Return a new tensor T2 s.t.
@@ -46,13 +66,7 @@ public:
   std::pair<z3::expr, z3::expr> refines(const Tensor &src) const;
 
   static std::vector<z3::expr> getDims(mlir::TensorType tensorTy);
-  static Tensor newVar(mlir::TensorType tensorTy, const std::string &name);
-  static z3::expr newIdxConst(uint64_t idx);
-  static z3::expr newIdxVar(const std::string &name);
-  static std::vector<z3::expr> newIdxVars(
-      const std::vector<std::string> &names);
-
-  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, Tensor &);
+  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
 
 private:
   static Tensor mkLambda(

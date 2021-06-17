@@ -3,37 +3,38 @@
 #include "tensor.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "z3++.h"
+#include <variant>
 #include <vector>
 
+using ValueTy = std::variant<Tensor, Index>;
+
+class ValuePrinter {
+  llvm::raw_ostream *os;
+public:
+  ValuePrinter(llvm::raw_ostream *os): os(os) {}
+  void operator() (const Tensor &t) { *os << t; }
+  void operator() (const Index &i) { *os << i; }
+};
+
+
 struct RegFile {
-  std::vector<std::pair<mlir::Value, Tensor>> m;
+private:
+  std::vector<std::pair<mlir::Value, ValueTy>> m;
 
-  void add(mlir::Value v, Tensor &&t) {
-    for (auto &itm: m) {
-      if (itm.first == v) {
-        itm.second = std::move(t);
-        return;
-      }
-    }
-    m.emplace_back(v, std::move(t));
-  }
-
-  Tensor &get(mlir::Value v) {
+public:
+  void add(mlir::Value v, ValueTy &&t);
+  template<class T> T get(mlir::Value v) const {
     for (auto &[a, b]: m)
       if (a == v)
-        return b;
+        return std::get<T>(b);
 
     llvm::errs() << "Cannot find key: " << v << "\n";
     assert(false && "Unknown key");
   }
+  bool contains(mlir::Value v) const;
 
-  bool contains(mlir::Value v) {
-    for (auto &[a, b]: m) {
-      if (a == v)
-        return true;
-    }
-    return false;
-  }
+  auto begin() const { return m.begin(); }
+  auto end() const { return m.end(); }
 };
 
 struct State {

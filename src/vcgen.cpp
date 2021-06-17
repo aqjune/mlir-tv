@@ -37,9 +37,12 @@ createInputState(mlir::FuncOp fn) {
   unsigned n = fn.getNumArguments();
   for (unsigned i = 0; i < n; ++i) {
     auto arg = fn.getArgument(i);
-    if (auto ty = arg.getType().dyn_cast<mlir::TensorType>()) {
-      s.regs.add(arg,
-          Tensor::newVar(ty, "arg" + to_string(arg.getArgNumber())));
+    auto argty = arg.getType();
+    if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
+      s.regs.add(arg, Tensor("arg" + to_string(arg.getArgNumber()),
+                             Tensor::getDims(ty)));
+    } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
+      s.regs.add(arg, Index("arg" + to_string(arg.getArgNumber())));
     } else {
       RET_STR("Unsupported type: " << arg.getType());
     }
@@ -88,8 +91,7 @@ encodeOp(State &st, mlir::linalg::ConvInputNHWCFilterHWCFOp op) {
     return "tensor semantics is supported only";
 
   auto inputs = op.getInputTensorOperands();
-  if (inputs.size() != 2)
-    return "operation with (input, filter) input tensors is supported only";
+  assert(inputs.size() == 2);
   auto input = inputs[0]->get();
   auto filter = inputs[1]->get();
 
@@ -97,8 +99,8 @@ encodeOp(State &st, mlir::linalg::ConvInputNHWCFilterHWCFOp op) {
     return "operation with one output tensor is supported only";
   auto output = op.getOutputTensorOperands()[0]->get();
 
-  auto &t_input = st.regs.get(input);
-  auto &t_filter = st.regs.get(filter);
+  auto t_input = st.regs.get<Tensor>(input);
+  auto t_filter = st.regs.get<Tensor>(filter);
 
   auto t_res = t_input.conv(t_filter);
   st.regs.add(op.getResult(0), move(t_res));
@@ -117,7 +119,7 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   // FIXME: can we use res's name?
   static int new_var_idx = 0;
   auto name = string("init_tensor_") + to_string(new_var_idx++);
-  st.regs.add(res, Tensor::newVar(ty, name));
+  st.regs.add(res, Tensor(name, Tensor::getDims(ty)));
 
   return {};
 }
@@ -161,12 +163,12 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     return "yield is allowed only";
 
 
-  const Tensor &t_input = st.regs.get(op.getInputOperand(0)->get());
+  Tensor t_input = st.regs.get<Tensor>(op.getInputOperand(0)->get());
   vector<z3::expr> output_dimvars;
   vector<z3::expr> affine_exprs;
 
   for (unsigned i = 0; i < inputMap.getNumInputs(); ++i)
-    output_dimvars.emplace_back(Tensor::newIdxVar("i" + to_string(i)));
+    output_dimvars.emplace_back(Index("i" + to_string(i)));
   for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
     auto ae_res = encodeAffineExpr(inputMap.getResult(i), output_dimvars);
     if (!ae_res)
@@ -190,7 +192,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
   // Then, it isn't simply reinterpretation of the operand; it needs permutation
   // of elements.
 
-  const Tensor &t = st.regs.get(op.getOperand());
+  Tensor t = st.regs.get<Tensor>(op.getOperand());
   st.regs.add(op.getResult(), t.reshape(Tensor::getDims(op.getResultType())));
   return {};
 }
@@ -202,7 +204,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
   // Then, it isn't simply reinterpretation of the operand; it needs permutation
   // of elements.
 
-  const Tensor &t = st.regs.get(op.getOperand());
+  Tensor t = st.regs.get<Tensor>(op.getOperand());
   st.regs.add(op.getResult(), t.reshape(Tensor::getDims(op.getResultType())));
   return {};
 }
@@ -215,8 +217,8 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
   if (op.getNumInputs() != 2 || op.getNumOutputs() != 1)
     return "unsupported form";
 
-  const Tensor &a = st.regs.get(op.getOperand(0));
-  const Tensor &b = st.regs.get(op.getOperand(1));
+  Tensor a = st.regs.get<Tensor>(op.getOperand(0));
+  Tensor b = st.regs.get<Tensor>(op.getOperand(1));
   Tensor result = a.matmul(b);
   st.regs.add(op.getResult(0), Tensor(result));
   st.regs.add(op.getOutputOperand(0)->get(), move(result));
@@ -226,7 +228,7 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::ReturnOp op) {
-  st.retValue = st.regs.get(op.getOperand(0));
+  st.retValue = st.regs.get<Tensor>(op.getOperand(0));
   return {};
 }
 
@@ -269,7 +271,15 @@ static void printCounterEx(
     z3::solver &solver, const vector<z3::expr> &params, mlir::FuncOp src,
     State &st_src, State &st_src_in, State &st_tgt, State &st_tgt_in) {
   auto m = solver.get_model();
-  auto or_omit = [&](const z3::expr &e) -> string {
+  auto or_omit = [&](const ValueTy &val) -> string {
+    z3::expr e(ctx);
+    if (holds_alternative<Tensor>(val))
+      e = get<Tensor>(val).asArray();
+    else if (holds_alternative<Index>(val))
+      e = get<Index>(val);
+    else
+      assert(false && "Unknown type");
+
     auto s = m.eval(e, true).simplify().to_string();
     if (s.size() > 500)
       return "(omitted)";
@@ -282,29 +292,29 @@ static void printCounterEx(
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
     llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
-                 << or_omit(st_src_in.regs.get(argsrc).arr) << "\n";
+                 << or_omit(st_src_in.regs.get<Tensor>(argsrc)) << "\n";
   }
 
   llvm::outs() << "\n<Source's variables>\n";
-  for (auto &[v, e]: st_src.regs.m) {
+  for (auto &[v, e]: st_src.regs) {
     if (st_src_in.regs.contains(v))
       continue;
-    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e.arr) << "\n";
+    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
   }
 
   llvm::outs() << "\n<Target's variables>\n";
-  for (auto &[v, e]: st_tgt.regs.m) {
+  for (auto &[v, e]: st_tgt.regs) {
     if (st_tgt_in.regs.contains(v))
       continue;
-    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e.arr) << "\n";
+    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
   }
 
   llvm::outs()
       << "\n<Return values>\n"
       << "\tIndex: " << solver.get_model().eval(params[0]) << "\n"
-      << "\tSrc: " << or_omit(z3::select(st_src.retValue.arr, params[0]))
+      << "\tSrc: " << or_omit(st_src.retValue)
       << "\n"
-      << "\tTgt: " << or_omit(z3::select(st_tgt.retValue.arr, params[0]))
+      << "\tTgt: " << or_omit(st_tgt.retValue)
       << "\n";
 
 #if FALSE
@@ -313,7 +323,7 @@ static void printCounterEx(
 }
 
 
-static void verify(
+static void verifyFunction(
     mlir::FuncOp src, mlir::FuncOp tgt, const string &dump_smt_to) {
   llvm::outs() << "Function " << src.getName() << "\n\n";
   assert(src.getNumArguments() == tgt.getNumArguments());
@@ -385,6 +395,6 @@ void verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
       continue;
     }
     // TODO: check fn signature
-    verify(srcfn, itr->second, dump_smt_to);
+    verifyFunction(srcfn, itr->second, dump_smt_to);
   }
 }

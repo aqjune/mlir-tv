@@ -35,7 +35,7 @@ static vector<z3::expr> from1DIdx(
 }
 
 static z3::expr get1DSize(const vector<z3::expr> &dims) {
-  z3::expr szaccml = ctx.bv_val(1, Tensor::BITS_INDEX);
+  z3::expr szaccml = Index::one();
   for (auto &d: dims)
     szaccml = szaccml * d;
   szaccml = szaccml.simplify();
@@ -61,10 +61,10 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
 }
 
 static z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
-  auto ity = ctx.bv_sort(Tensor::BITS_INDEX),
+  auto ity = Index::sort(),
        fty = ctx.bv_sort(Tensor::BITS_FLOAT);
   auto aty = ctx.array_sort(ity, fty);
-  auto i = ctx.bv_const("idx", Tensor::BITS_INDEX);
+  auto i = Index("idx");
 
   z3::sort_vector domain(ctx);
   domain.push_back(aty);
@@ -86,7 +86,32 @@ static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
 }
 
 
+Index::Index(): e(ctx) {}
+
+Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {}
+
+Index::Index(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {}
+
+z3::sort Index::sort() {
+  return ctx.bv_sort(BITS);
+}
+
+Index Index::one() { return Index(1); }
+Index Index::zero() { return Index(0); }
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
+  os << i;
+  return os;
+};
+
+
+
 Tensor::Tensor(): arr(ctx) {}
+Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec):
+  arr(ctx.constant(name.c_str(),
+        ctx.array_sort(Index::sort(), ctx.bv_sort(BITS_FLOAT)))),
+  dims(dimvec) {}
+
 
 z3::expr Tensor::get(const vector<z3::expr> &idxs) const {
   return z3::select(arr, to1DIdx(idxs, dims));
@@ -96,7 +121,7 @@ Tensor Tensor::affine(
     const std::vector<z3::expr> &newidxvars,
     std::vector<z3::expr> srcidxs,
     const std::vector<z3::expr> &newsizes) const {
-  auto idxvar = newIdxVar("idx");
+  auto idxvar = Index("idx");
   auto indices = from1DIdx(idxvar, newsizes);
 
   for (size_t i = 0; i < srcidxs.size(); ++i) {
@@ -128,7 +153,7 @@ Tensor Tensor::rotateDimensions() const {
 
   vector<z3::expr> vars, tgtvars;
   for (size_t i = 0; i < dims.size(); ++i) {
-    auto v = newIdxVar(string("i" + to_string(i)));
+    auto v = Index(string("i" + to_string(i)));
     vars.emplace_back(v);
     if (i != 0)
       tgtvars.emplace_back(v);
@@ -140,25 +165,26 @@ Tensor Tensor::rotateDimensions() const {
 
 Tensor Tensor::conv(const Tensor &filter) const {
   vector<z3::expr> output_dims = {
-    Tensor::newIdxConst(1), // support an input with batch size > 1
+    Index::one(), // support an input with batch size > 1
     dims[1] + 1 - filter.dims[0],
     dims[2] + 1 - filter.dims[1],
     filter.dims[3] // channel(dims[3] = filtr.dims[2]) disappears
   };
   std::vector<z3::expr> cube_size = {
-    Tensor::newIdxConst(1),
+    Index::one(),
     filter.dims[0], filter.dims[1], filter.dims[2]
   };
 
-  auto vars = Tensor::newIdxVars({"i", "j", "k", "l"}); // n, h, w, f
-  auto i = vars[0], j = vars[1], k = vars[2], l = vars[3];
-  auto zero = Tensor::newIdxConst(0);
+  // n, h, w, f 
+  auto i = Index("i"), j = Index("j"), k = Index("k"), l = Index("l");
   auto input_subarr = to1DArrayWithOfs(
-      {zero, j, k, zero}, // batch: 0, img size: (h, w), channel: 0~
+      // batch: 0, img size: (h, w), channel: 0~
+      {Index::zero(), j, k, Index::zero()},
       cube_size);
 
   auto filter_arr = filter.rotateDimensions()
-      .to1DArrayWithOfs({l, zero, zero, zero}, cube_size);
+      .to1DArrayWithOfs({l, Index::zero(), Index::zero(), Index::zero()},
+        cube_size);
 
   auto res = dot(input_subarr, filter_arr,
       cube_size[0] * cube_size[1] * cube_size[2] * cube_size[3]);
@@ -179,10 +205,11 @@ Tensor Tensor::matmul(const Tensor &b) const {
   assert(b.dims.size() == 2);
 
   auto bt = b.transpose();
-  auto i = newIdxVar("i"), j = newIdxVar("j"), zero = newIdxConst(0),
-       one = newIdxConst(1);
-  auto a_row = to1DArrayWithOfs({i, zero}, {one, dims[1]});
-  auto bt_row = bt.to1DArrayWithOfs({j, zero}, {one, bt.dims[1]});
+  auto i = Index("i"), j = Index("j");
+  auto a_row = to1DArrayWithOfs(
+      {i, Index::zero()}, {Index::one(), dims[1]});
+  auto bt_row = bt.to1DArrayWithOfs(
+      {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
   return mkLambda({dims[0], bt.dims[0]}, {i, j}, dot(a_row, bt_row, dims[1]));
 }
@@ -192,7 +219,7 @@ pair<z3::expr, z3::expr> Tensor::refines(const Tensor &src) const {
   assert(src.arr.get_sort().is_array());
 
   // Assume that src and tgt's shape equality is already checked
-  auto i = newIdxVar("i");
+  auto i = Index("i");
   return {z3::implies(
       z3::ult(i, get1DSize(dims)),
       z3::select(arr, i) == z3::select(src.arr, i)),
@@ -205,39 +232,13 @@ vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
 
   uint64_t rank = tensorTy.getRank();
   for (auto i = 0; i < rank; ++i) {
-    dims.emplace_back(ctx.bv_val(tensorTy.getDimSize(i), BITS_INDEX));
+    dims.emplace_back(Index(tensorTy.getDimSize(i)));
   }
 
   return dims;
 }
 
-Tensor Tensor::newVar(mlir::TensorType tensorTy, const string &name) {
-  Tensor t;
-  t.dims = getDims(tensorTy);
-  t.arr = ctx.constant(name.c_str(),
-        ctx.array_sort(ctx.bv_sort(BITS_INDEX), ctx.bv_sort(BITS_FLOAT)));
-
-  return t;
-}
-
-z3::expr Tensor::newIdxConst(uint64_t idx) {
-  return ctx.bv_val(idx, BITS_INDEX);
-}
-
-z3::expr Tensor::newIdxVar(const string &name) {
-  return ctx.bv_const(name.c_str(), BITS_INDEX);
-}
-
-vector<z3::expr>
-Tensor::newIdxVars(const vector<string> &names) {
-  vector<z3::expr> v;
-  for (auto &n: names)
-    v.emplace_back(newIdxVar(n));
-  return v;
-}
-
-
-llvm::raw_ostream& operator<<(llvm::raw_ostream& os, Tensor &t) {
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   assert(t.dims.size() > 0);
   os << t.arr << "(dim :" << t.dims[0];
   for (size_t i = 1; i < t.dims.size(); ++i)
@@ -248,7 +249,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, Tensor &t) {
 
 Tensor Tensor::transpose() const {
   assert(dims.size() == 2);
-  auto i = newIdxVar("i"), j = newIdxVar("j");
+  auto i = Index("i"), j = Index("j");
   return Tensor::mkLambda({dims[1], dims[0]}, {j, i}, get({i, j}));
 }
 
@@ -257,7 +258,7 @@ Tensor Tensor::mkLambda(
     z3::expr body) {
   assert(newdims.size() == indexvars.size());
 
-  auto idx = newIdxVar("idx");
+  auto idx = Index("idx");
   auto idxexprs = from1DIdx(idx, newdims);
   body = body.substitute(toExprVector(indexvars), toExprVector(idxexprs));
 
@@ -272,7 +273,7 @@ z3::expr Tensor::to1DArrayWithOfs(
       const vector<z3::expr> &sizes) const {
   assert(offbegins.size() == sizes.size());
 
-  auto idxvar = newIdxVar("idx");
+  auto idxvar = Index("idx");
   auto relidxs = from1DIdx(idxvar, sizes);
   vector<z3::expr> absidxs;
   for (size_t i = 0; i < relidxs.size(); ++i)
