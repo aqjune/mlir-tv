@@ -87,15 +87,15 @@ encodeOp(State &st, mlir::linalg::ConvInputNHWCFilterHWCFOp op) {
   if (!op.hasTensorSemantics())
     return "tensor semantics is supported only";
 
-  auto inputs = op.getInputTensors();
+  auto inputs = op.getInputTensorOperands();
   if (inputs.size() != 2)
     return "operation with (input, filter) input tensors is supported only";
-  auto input = inputs[0];
-  auto filter = inputs[1];
+  auto input = inputs[0]->get();
+  auto filter = inputs[1]->get();
 
-  if (op.getNumOutputTensors() != 1)
+  if (op.getOutputTensorOperands().size() != 1)
     return "operation with one output tensor is supported only";
-  auto output = op.getOutputTensors()[0];
+  auto output = op.getOutputTensorOperands()[0]->get();
 
   auto &t_input = st.regs.get(input);
   auto &t_filter = st.regs.get(filter);
@@ -161,7 +161,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     return "yield is allowed only";
 
 
-  const Tensor &t_input = st.regs.get(op.getInput(0));
+  const Tensor &t_input = st.regs.get(op.getInputOperand(0)->get());
   vector<z3::expr> output_dimvars;
   vector<z3::expr> affine_exprs;
 
@@ -176,9 +176,9 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   }
 
   auto tensor_sz = Tensor::getDims(
-      op.getOutput(0).getType().cast<mlir::TensorType>());
+      op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
   Tensor t_res = t_input.affine(output_dimvars, affine_exprs, move(tensor_sz));
-  st.regs.add(op.getOutput(0), Tensor(t_res));
+  st.regs.add(op.getOutputOperand(0)->get(), Tensor(t_res));
   st.regs.add(op.getResult(0), move(t_res));
   return {};
 }
@@ -219,7 +219,7 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
   const Tensor &b = st.regs.get(op.getOperand(1));
   Tensor result = a.matmul(b);
   st.regs.add(op.getResult(0), Tensor(result));
-  st.regs.add(op.getOutput(0), move(result));
+  st.regs.add(op.getOutputOperand(0)->get(), move(result));
 
   return {};
 }
