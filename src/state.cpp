@@ -25,7 +25,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
   for (auto itm: s.regs) {
     os << "Register: " << itm.first;
     os << "Value: ";
-    visit(ValuePrinter(&os), itm.second);
+    visit([&](auto &&itm) {
+      os << itm;
+    }, itm.second);
+    os << "\n";
   }
   return os;
 }

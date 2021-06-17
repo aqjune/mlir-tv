@@ -272,15 +272,14 @@ static void printCounterEx(
     State &st_src, State &st_src_in, State &st_tgt, State &st_tgt_in) {
   auto m = solver.get_model();
   auto or_omit = [&](const ValueTy &val) -> string {
-    z3::expr e(ctx);
-    if (holds_alternative<Tensor>(val))
-      e = get<Tensor>(val).asArray();
-    else if (holds_alternative<Index>(val))
-      e = get<Index>(val);
-    else
-      assert(false && "Unknown type");
+    ValueTy evaluatedVal;
+    visit([&](auto &&v) { evaluatedVal = v.eval(m); }, val);
 
-    auto s = m.eval(e, true).simplify().to_string();
+    string s;
+    llvm::raw_string_ostream rso(s);
+    visit([&](auto &&v) { rso << v; }, evaluatedVal);
+    rso.flush();
+
     if (s.size() > 500)
       return "(omitted)";
     return s;

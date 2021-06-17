@@ -104,6 +104,12 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
   return os;
 };
 
+Index Index::eval(z3::model m) const {
+  Index i;
+  i.e = m.eval(e, true).simplify();
+  return i;
+}
+
 
 
 Tensor::Tensor(): arr(ctx) {}
@@ -246,6 +252,14 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   os << ")";
   return os;
 };
+
+Tensor Tensor::eval(z3::model m) const {
+  Tensor t2;
+  for (size_t i = 0; i < dims.size(); ++i)
+    t2.dims[i] = m.eval(dims[i], true).simplify();
+  t2.arr = m.eval(arr, true).simplify();
+  return t2;
+}
 
 Tensor Tensor::transpose() const {
   assert(dims.size() == 2);

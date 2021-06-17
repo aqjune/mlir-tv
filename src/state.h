@@ -8,14 +8,6 @@
 
 using ValueTy = std::variant<Tensor, Index>;
 
-class ValuePrinter {
-  llvm::raw_ostream *os;
-public:
-  ValuePrinter(llvm::raw_ostream *os): os(os) {}
-  void operator() (const Tensor &t) { *os << t; }
-  void operator() (const Index &i) { *os << i; }
-};
-
 
 struct RegFile {
 private:

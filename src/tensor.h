@@ -22,6 +22,7 @@ public:
   static Index zero();
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
+  Index eval(z3::model m) const;
 };
 
 
@@ -66,7 +67,9 @@ public:
   std::pair<z3::expr, z3::expr> refines(const Tensor &src) const;
 
   static std::vector<z3::expr> getDims(mlir::TensorType tensorTy);
+
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
+  Tensor eval(z3::model m) const;
 
 private:
   static Tensor mkLambda(
