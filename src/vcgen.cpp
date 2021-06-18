@@ -3,6 +3,7 @@
 #include "state.h"
 #include "vcgen.h"
 
+#include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/IR/Matchers.h"
 #include "z3++.h"
@@ -95,17 +96,14 @@ encodeOp(State &st, mlir::linalg::ConvInputNHWCFilterHWCFOp op) {
   auto input = inputs[0]->get();
   auto filter = inputs[1]->get();
 
-  if (op.getOutputTensorOperands().size() != 1)
-    return "operation with one output tensor is supported only";
-  auto output = op.getOutputTensorOperands()[0]->get();
+  // NOTE: conv's output tensor (op.getOutputTensorOperands()[0]->get())
+  // aqjune talked with mlir people and it is confirmed by them
 
   auto t_input = st.regs.get<Tensor>(input);
   auto t_filter = st.regs.get<Tensor>(filter);
 
   auto t_res = t_input.conv(t_filter);
   st.regs.add(op.getResult(0), move(t_res));
-  // TODO: check whether this semantics is correct.
-  st.regs.add(output, move(t_res));
 
   return {};
 }
@@ -177,10 +175,12 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     affine_exprs.emplace_back(move(*ae_res));
   }
 
+  // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
+  // aqjune talked with mlir people and it is confirmed by them
+
   auto tensor_sz = Tensor::getDims(
       op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
   Tensor t_res = t_input.affine(output_dimvars, affine_exprs, move(tensor_sz));
-  st.regs.add(op.getOutputOperand(0)->get(), Tensor(t_res));
   st.regs.add(op.getResult(0), move(t_res));
   return {};
 }
@@ -217,11 +217,13 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
   if (op.getNumInputs() != 2 || op.getNumOutputs() != 1)
     return "unsupported form";
 
+  // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
+  // aqjune talked with mlir people and it is confirmed by them
+
   Tensor a = st.regs.get<Tensor>(op.getOperand(0));
   Tensor b = st.regs.get<Tensor>(op.getOperand(1));
   Tensor result = a.matmul(b);
   st.regs.add(op.getResult(0), Tensor(result));
-  st.regs.add(op.getOutputOperand(0)->get(), move(result));
 
   return {};
 }
