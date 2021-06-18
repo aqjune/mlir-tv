@@ -3,12 +3,7 @@
 using namespace std;
 
 void RegFile::add(mlir::Value v, ValueTy &&t) {
-  for (auto &itm: m) {
-    if (itm.first == v) {
-      itm.second = std::move(t);
-      return;
-    }
-  }
+  assert(!contains(v));
   m.emplace_back(v, std::move(t));
 }
 
