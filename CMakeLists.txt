@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.15.0)
 project(iree-tv VERSION 0.1.0)
 set (CMAKE_CXX_STANDARD 17)
 
