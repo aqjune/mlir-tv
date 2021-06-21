@@ -372,9 +372,11 @@ static void verifyFunction(
     llvm::outs() << "== Result: correct ==\n";
   } else if (result == z3::unknown) {
     llvm::outs() << "== Result: timeout ==\n";
+    exit(1);
   } else if (result == z3::sat) {
     llvm::outs() << "== Result: return value mismatch ==\n";
     printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
+    exit(1);
   }
 }
 

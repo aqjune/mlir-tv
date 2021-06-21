@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15.0)
+cmake_minimum_required(VERSION 3.20.0)
 project(iree-tv VERSION 0.1.0)
 set (CMAKE_CXX_STANDARD 17)
 
@@ -6,6 +6,7 @@ set(IREE_DIR "~/src/iree" CACHE STRING "IREE source top-level directory")
 set(IREE_BUILD_DIR "~/src/iree-build" CACHE STRING "IREE build top-level directory")
 set(Z3_INCLUDE_DIR "~/src/z3" CACHE STRING "Z3 include directory")
 set(Z3_LIBRARY_DIR "~/src/z3" CACHE STRING "Z3 lib directory")
+set(PYTHON_BIN "${PROJECT_SOURCE_DIR}/venv/bin/python3" CACHE STRING "python3 executable (with lit module)")
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
@@ -32,3 +33,7 @@ include_directories(${IREE_BUILD_DIR}/third_party/llvm-project/llvm/include ${IR
 
 # Z3 API directories
 include_directories(${Z3_INCLUDE_DIR})
+
+enable_testing()
+add_subdirectory(${PROJECT_SOURCE_DIR}/tests)
+add_subdirectory(${PROJECT_SOURCE_DIR}/unittests)
