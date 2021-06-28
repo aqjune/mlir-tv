@@ -1,5 +1,7 @@
 #!python3
 import lit.formats
+# from lit.TestingConfig import TestingConfig
+# config: TestingConfig()
 
 config.name = "Test"
 config.test_format = lit.formats.ShTest(True)
