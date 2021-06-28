@@ -6,7 +6,6 @@ set(IREE_DIR "~/src/iree" CACHE STRING "IREE source top-level directory")
 set(IREE_BUILD_DIR "~/src/iree-build" CACHE STRING "IREE build top-level directory")
 set(Z3_INCLUDE_DIR "~/src/z3" CACHE STRING "Z3 include directory")
 set(Z3_LIBRARY_DIR "~/src/z3" CACHE STRING "Z3 lib directory")
-set(PYTHON_BIN "${PROJECT_SOURCE_DIR}/venv/bin/python3" CACHE STRING "python3 executable (with lit module)")
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
