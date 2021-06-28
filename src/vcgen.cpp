@@ -373,19 +373,11 @@ static int verifyFunction(
     return 0;
   } else if (result == z3::unknown) {
     llvm::outs() << "== Result: timeout ==\n";
-<<<<<<< Updated upstream
-    exit(1);
-  } else if (result == z3::sat) {
-    llvm::outs() << "== Result: return value mismatch ==\n";
-    printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
-    exit(1);
-=======
     return 1;
   } else if (result == z3::sat) {
     llvm::outs() << "== Result: return value mismatch ==\n";
     printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
     return 2;
->>>>>>> Stashed changes
   }
 }
 
