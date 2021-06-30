@@ -127,16 +127,11 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   if (!op.hasTensorSemantics())
     return "operation with tensor semantics is supported only";
 
-  if (op.getNumInputs() != 1 || op.getNumOutputs() != 1)
+  if (op.getNumOutputs() != 1)
     return "operation with single input and output is supported only";
 
   auto indexingMaps = op.indexing_maps().getValue();
-  if (indexingMaps.size() != 2)
-    // one for input, one for output
-    return "unknown indexing map form";
-
-  auto inputMap = indexingMaps[0].cast<mlir::AffineMapAttr>().getValue();
-  auto outputMap = indexingMaps[1].cast<mlir::AffineMapAttr>().getValue();
+  auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
   if (!outputMap.isIdentity())
     return "identity output map is supported only";
 
@@ -147,32 +142,46 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     return "operation with one block is supported only";
 
   auto &block = region.front();
-  if (block.getNumArguments() != 2 ||
-      !block.getArgument(0).getType().isSignlessIntOrFloat() ||
-      !block.getArgument(1).getType().isSignlessIntOrFloat())
+  if (!std::all_of(block.args_begin(), block.args_end(),
+      [](auto &arg) { return arg.getType().isSignlessIntOrFloat(); }))
     return "unsupported block arguments";
 
-  auto &ops = block.getOperations();
-  using mlir::m_Op;
-  using mlir::matchers::m_Val;
+  // Start from newst
+  State newst = st;
 
-  auto p = m_Op<mlir::linalg::YieldOp>(m_Val(block.getArgument(0)));
-  if (!llvm::hasSingleElement(ops) || !p.match(&ops.back()))
-    return "yield is allowed only";
-
-
-  Tensor t_input = st.regs.get<Tensor>(op.getInputOperand(0)->get());
   vector<z3::expr> output_dimvars;
-  vector<z3::expr> affine_exprs;
-
-  for (unsigned i = 0; i < inputMap.getNumInputs(); ++i)
+  for (unsigned i = 0; i < outputMap.getNumInputs(); ++i)
     output_dimvars.emplace_back(Index("i" + to_string(i)));
-  for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
-    auto ae_res = encodeAffineExpr(inputMap.getResult(i), output_dimvars);
-    if (!ae_res)
-      RET_STR_WITH_PREFIX("unsupported affine expr", inputMap.getResult(i));
 
-    affine_exprs.emplace_back(move(*ae_res));
+  // Fill in args
+  assert(op.getInputOperands().size() + 1 == indexingMaps.size());
+  for (unsigned arg_i = 0; arg_i < indexingMaps.size() - 1; ++arg_i) {
+    auto inputMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
+
+    vector<z3::expr> affine_exprs;
+    for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
+      auto ae_res = encodeAffineExpr(inputMap.getResult(i), output_dimvars);
+      if (!ae_res)
+        RET_STR_WITH_PREFIX("unsupported affine expr", inputMap.getResult(i));
+
+      affine_exprs.emplace_back(move(*ae_res));
+    }
+
+    Tensor t_input = st.regs.get<Tensor>(op.getInputOperand(arg_i)->get());
+    auto t_elem = t_input.get(affine_exprs);
+    newst.regs.add(block.getArgument(arg_i), Float(t_elem));
+  }
+
+  // Encode the loop body
+  auto &ops = block.getOperations();
+  mlir::Value yieldedValue;
+  for (auto &op: ops) {
+    if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
+      yieldedValue = op2.getOperand(0);
+      break;
+    } else {
+      return "unsupported instruction in the loop body";
+    }
   }
 
   // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
@@ -180,7 +189,8 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
 
   auto tensor_sz = Tensor::getDims(
       op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
-  Tensor t_res = t_input.affine(output_dimvars, affine_exprs, move(tensor_sz));
+  Tensor t_res = Tensor::mkLambda(move(tensor_sz), move(output_dimvars),
+      newst.regs.get<Float>(yieldedValue));
   st.regs.add(op.getResult(0), move(t_res));
   return {};
 }
@@ -288,6 +298,7 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     RET_STR("Unknown op: " << op);
   }
   llvm::outs() << "\n";
+  return {};
 }
 
 static optional<string> encode(State &st, mlir::FuncOp &fn) {

@@ -62,7 +62,7 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
 
 static z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
   auto ity = Index::sort(),
-       fty = ctx.bv_sort(Tensor::BITS_FLOAT);
+       fty = ctx.bv_sort(Float::BITS);
   auto aty = ctx.array_sort(ity, fty);
   auto i = Index("idx");
 
@@ -72,7 +72,7 @@ static z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
   auto dotfn = ctx.function("smt_dot", domain, fty);
 
   z3::expr_vector args(ctx);
-  z3::expr zero = ctx.bv_val(0, Tensor::BITS_FLOAT);
+  z3::expr zero = ctx.bv_val(0, Float::BITS);
   args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), z3::select(a, i), zero)));
   args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), z3::select(b, i), zero)));
   return dotfn(args);
@@ -107,17 +107,23 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
 };
 
 Index Index::eval(z3::model m) const {
-  Index i;
-  i.e = m.eval(e, true).simplify();
-  return i;
+  return Index(m.eval(e, true).simplify());
 }
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
+  os << f;
+  return os;
+};
+
+Float Float::eval(z3::model m) const {
+  return Float(m.eval(e, true).simplify());
+}
 
 
 Tensor::Tensor(): arr(ctx) {}
 Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec):
   arr(ctx.constant(name.c_str(),
-        ctx.array_sort(Index::sort(), ctx.bv_sort(BITS_FLOAT)))),
+        ctx.array_sort(Index::sort(), ctx.bv_sort(Float::BITS)))),
   dims(dimvec) {}
 
 
@@ -152,7 +158,7 @@ Tensor Tensor::affine(
       z3::ite(
         z3::ult(idxvar, get1DSize(newsizes)),
         get(srcidxs),
-        ctx.bv_val(0, BITS_FLOAT)
+        ctx.bv_val(0, Float::BITS)
       ));
   return newm;
 }
@@ -304,5 +310,5 @@ z3::expr Tensor::to1DArrayWithOfs(
       z3::ite(
         z3::ult(idxvar, get1DSize(sizes)),
         get(absidxs),
-        ctx.bv_val(0, BITS_FLOAT)));
+        ctx.bv_val(0, Float::BITS)));
 }
