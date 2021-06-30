@@ -92,6 +92,8 @@ Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {}
 
 Index::Index(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {}
 
+Index::Index(const z3::expr &e): e(e) {}
+
 z3::sort Index::sort() {
   return ctx.bv_sort(BITS);
 }
@@ -121,6 +123,10 @@ Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec):
 
 z3::expr Tensor::get(const vector<z3::expr> &idxs) const {
   return z3::select(arr, to1DIdx(idxs, dims));
+}
+
+Index Tensor::getDim(uint64_t idx) const {
+  return Index(dims[idx]);
 }
 
 Tensor Tensor::affine(
