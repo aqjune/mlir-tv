@@ -62,7 +62,7 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
 
 static z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
   auto ity = Index::sort(),
-       fty = ctx.bv_sort(Float::BITS);
+       fty = Float::sort();
   auto aty = ctx.array_sort(ity, fty);
   auto i = Index("idx");
 
@@ -110,6 +110,11 @@ Index Index::eval(z3::model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
+
+z3::sort Float::sort() {
+  return ctx.bv_sort(BITS);
+}
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
   os << f;
   return os;
@@ -119,11 +124,38 @@ Float Float::eval(z3::model m) const {
   return Float(m.eval(e, true).simplify());
 }
 
+Float Float::add(const Float &b) const {
+  auto fty = Float::sort();
+
+  z3::sort_vector domain(ctx);
+  domain.push_back(fty);
+  domain.push_back(fty);
+  auto addfn = ctx.function("smt_add", domain, fty);
+
+  z3::expr_vector args(ctx);
+  args.push_back(e);
+  args.push_back(b.e);
+  return addfn(args);
+}
+
+Float Float::mul(const Float &b) const {
+  auto fty = Float::sort();
+
+  z3::sort_vector domain(ctx);
+  domain.push_back(fty);
+  domain.push_back(fty);
+  auto mulfn = ctx.function("smt_mul", domain, fty);
+
+  z3::expr_vector args(ctx);
+  args.push_back(e);
+  args.push_back(b.e);
+  return mulfn(args);
+}
+
 
 Tensor::Tensor(): arr(ctx) {}
 Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec):
-  arr(ctx.constant(name.c_str(),
-        ctx.array_sort(Index::sort(), ctx.bv_sort(Float::BITS)))),
+  arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), Float::sort()))),
   dims(dimvec) {}
 
 

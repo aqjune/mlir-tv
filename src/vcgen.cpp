@@ -179,8 +179,14 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
       yieldedValue = op2.getOperand(0);
       break;
-    } else {
-      return "unsupported instruction in the loop body";
+    } else if (auto op2 = mlir::dyn_cast<mlir::AddFOp>(op)) {
+      auto a = newst.regs.get<Float>(op2.getOperand(0));
+      auto b = newst.regs.get<Float>(op2.getOperand(1));
+      newst.regs.add(op2, a.add(b));
+    } else if (auto op2 = mlir::dyn_cast<mlir::MulFOp>(op)) {
+      auto a = newst.regs.get<Float>(op2.getOperand(0));
+      auto b = newst.regs.get<Float>(op2.getOperand(1));
+      newst.regs.add(op2, a.mul(b));
     }
   }
 

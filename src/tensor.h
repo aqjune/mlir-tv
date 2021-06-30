@@ -36,8 +36,13 @@ public:
 
   operator z3::expr() const { return e; }
 
+  static z3::sort sort();
+
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
   Float eval(z3::model m) const;
+
+  Float add(const Float &b) const;
+  Float mul(const Float &b) const;
 };
 
 class Tensor {
