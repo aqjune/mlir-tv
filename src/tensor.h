@@ -14,6 +14,7 @@ public:
   Index();
   Index(unsigned);
   Index(const std::string &name);
+  Index(const z3::expr &e);
 
   operator z3::expr() const { return e; }
 
@@ -39,6 +40,7 @@ public:
 
   z3::expr asArray() const { return arr; }
   z3::expr get(const std::vector<z3::expr> &indices) const;
+  Index getDim(uint64_t idx) const;
 
   // Return a new tensor T2 s.t.
   //   T2[newidxvars] = this[srcidxs]

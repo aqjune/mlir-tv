@@ -229,8 +229,30 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::memref::DimOp op) {
+  auto tensor = op.memrefOrTensor();
+  if (!tensor.getType().isa<mlir::TensorType>())
+    return "tensor type is supported only";
+  auto t = st.regs.get<Tensor>(tensor);
+
+  if (auto idx = op.getConstantIndex())
+    st.regs.add(op, t.getDim(*idx));
+  else {
+    // TODO: if-then-else needed
+    return "variable index not implemented yet";
+  }
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::ReturnOp op) {
   st.retValue = st.regs.get<Tensor>(op.getOperand(0));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::ConstantIndexOp op) {
+  st.regs.add(op, Index(op.getValue()));
   return {};
 }
 
@@ -246,14 +268,16 @@ optional<string> encodeOp(State &st, mlir::ReturnOp op) {
   } \
 }
 
-static optional<string> encode(State &st, mlir::FuncOp &fn) {
-  if (!llvm::hasSingleElement(fn.getRegion()))
-    return "Only a function with one block is supported";
+static optional<string> encodeRegion(State &st, mlir::Region &region) {
+  if (!llvm::hasSingleElement(region))
+    return "Only a region with one block is supported";
 
-  auto &block = fn.getRegion().front();
+  auto &block = region.front();
   for (auto &op: block) {
     llvm::outs() << "  " << op << "\n";
+    ENCODE(op, mlir::ConstantIndexOp);
     ENCODE(op, mlir::ReturnOp);
+    ENCODE(op, mlir::memref::DimOp);
     ENCODE(op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
     ENCODE(op, mlir::linalg::GenericOp);
     ENCODE(op, mlir::linalg::InitTensorOp);
@@ -264,8 +288,10 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
     RET_STR("Unknown op: " << op);
   }
   llvm::outs() << "\n";
+}
 
-  return {};
+static optional<string> encode(State &st, mlir::FuncOp &fn) {
+  return encodeRegion(st, fn.getRegion());
 }
 
 
