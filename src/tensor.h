@@ -26,6 +26,19 @@ public:
   Index eval(z3::model m) const;
 };
 
+class Float {
+  z3::expr e;
+
+public:
+  static const unsigned BITS = 4;
+
+  Float(const z3::expr &e): e(e) {}
+
+  operator z3::expr() const { return e; }
+
+  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
+  Float eval(z3::model m) const;
+};
 
 class Tensor {
   // dims[0]: the highest dimension
@@ -33,8 +46,6 @@ class Tensor {
   z3::expr arr;
 
 public:
-  static const unsigned BITS_FLOAT = 4;
-
   Tensor();
   Tensor(const std::string &name, const std::vector<z3::expr> &dims);
 
@@ -70,14 +81,14 @@ public:
 
   static std::vector<z3::expr> getDims(mlir::TensorType tensorTy);
 
-  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
-  Tensor eval(z3::model m) const;
-
-private:
   static Tensor mkLambda(
       std::vector<z3::expr> &&newdims,
       std::vector<z3::expr> &&indexvars, z3::expr body);
 
+  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
+  Tensor eval(z3::model m) const;
+
+private:
   z3::expr to1DArrayWithOfs(
       const std::vector<z3::expr> &offbegins,
       const std::vector<z3::expr> &sizes) const;

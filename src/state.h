@@ -6,7 +6,7 @@
 #include <variant>
 #include <vector>
 
-using ValueTy = std::variant<Tensor, Index>;
+using ValueTy = std::variant<Tensor, Index, Float>;
 
 
 struct RegFile {
