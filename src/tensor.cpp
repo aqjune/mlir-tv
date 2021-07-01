@@ -279,10 +279,17 @@ pair<z3::expr, z3::expr> Tensor::refines(const Tensor &src) const {
 
 vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
   vector<z3::expr> dims;
+  static int dim_var = 0;
 
   uint64_t rank = tensorTy.getRank();
   for (auto i = 0; i < rank; ++i) {
-    dims.emplace_back(Index(tensorTy.getDimSize(i)));
+    uint64_t sz = tensorTy.getDimSize(i);
+    if (sz == (uint64_t)-1ull)
+      // TODO: this requires encoding of well-formedness of input tensors.
+      // dims.emplace_back(Index("dim" + to_string(dim_var++)));
+      dims.emplace_back(Index(100));
+    else
+      dims.emplace_back(Index(sz));
   }
 
   return dims;
