@@ -111,6 +111,8 @@ Index Index::eval(z3::model m) const {
 }
 
 
+Float::Float(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {}
+
 z3::sort Float::sort() {
   return ctx.bv_sort(BITS);
 }
