@@ -7,6 +7,7 @@
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/IR/Matchers.h"
 #include "z3++.h"
+#include <chrono>
 #include <fstream>
 #include <functional>
 #include <map>
@@ -77,6 +78,18 @@ optional<z3::expr> encodeAffineExpr(
   }
 }
 
+
+
+#define ENCODE(op, ty) { \
+  if (auto op2 = mlir::dyn_cast<ty>(op)) { \
+    auto errmsg = encodeOp(st, op2); \
+    if (errmsg) { \
+      RET_STR("Cannot encode " << op << "\n\t" << *errmsg << "\n"); \
+    } \
+    continue; \
+  } \
+}
+
 template<class T>
 static optional<string> encodeOp(State &st, T op);
 
@@ -119,85 +132,6 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   auto name = string("init_tensor_") + to_string(new_var_idx++);
   st.regs.add(res, Tensor(name, Tensor::getDims(ty)));
 
-  return {};
-}
-
-template<>
-optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
-  if (!op.hasTensorSemantics())
-    return "operation with tensor semantics is supported only";
-
-  if (op.getNumOutputs() != 1)
-    return "operation with single input and output is supported only";
-
-  auto indexingMaps = op.indexing_maps().getValue();
-  auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
-  if (!outputMap.isIdentity())
-    return "identity output map is supported only";
-
-  // Match one block including 'yield' only
-  // Referred linalg::RegionMatcher::matchAsScalarBinaryOp
-  auto &region = op.region();
-  if (!llvm::hasSingleElement(region))
-    return "operation with one block is supported only";
-
-  auto &block = region.front();
-  if (!std::all_of(block.args_begin(), block.args_end(),
-      [](auto &arg) { return arg.getType().isSignlessIntOrFloat(); }))
-    return "unsupported block arguments";
-
-  // Start from newst
-  State newst = st;
-
-  vector<z3::expr> output_dimvars;
-  for (unsigned i = 0; i < outputMap.getNumInputs(); ++i)
-    output_dimvars.emplace_back(Index("i" + to_string(i)));
-
-  // Fill in args
-  assert(op.getInputOperands().size() + 1 == indexingMaps.size());
-  for (unsigned arg_i = 0; arg_i < indexingMaps.size() - 1; ++arg_i) {
-    auto inputMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
-
-    vector<z3::expr> affine_exprs;
-    for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
-      auto ae_res = encodeAffineExpr(inputMap.getResult(i), output_dimvars);
-      if (!ae_res)
-        RET_STR_WITH_PREFIX("unsupported affine expr", inputMap.getResult(i));
-
-      affine_exprs.emplace_back(move(*ae_res));
-    }
-
-    Tensor t_input = st.regs.get<Tensor>(op.getInputOperand(arg_i)->get());
-    auto t_elem = t_input.get(affine_exprs);
-    newst.regs.add(block.getArgument(arg_i), Float(t_elem));
-  }
-
-  // Encode the loop body
-  auto &ops = block.getOperations();
-  mlir::Value yieldedValue;
-  for (auto &op: ops) {
-    if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
-      yieldedValue = op2.getOperand(0);
-      break;
-    } else if (auto op2 = mlir::dyn_cast<mlir::AddFOp>(op)) {
-      auto a = newst.regs.get<Float>(op2.getOperand(0));
-      auto b = newst.regs.get<Float>(op2.getOperand(1));
-      newst.regs.add(op2, a.add(b));
-    } else if (auto op2 = mlir::dyn_cast<mlir::MulFOp>(op)) {
-      auto a = newst.regs.get<Float>(op2.getOperand(0));
-      auto b = newst.regs.get<Float>(op2.getOperand(1));
-      newst.regs.add(op2, a.mul(b));
-    }
-  }
-
-  // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
-  // aqjune talked with mlir people and it is confirmed by them
-
-  auto tensor_sz = Tensor::getDims(
-      op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
-  Tensor t_res = Tensor::mkLambda(move(tensor_sz), move(output_dimvars),
-      newst.regs.get<Float>(yieldedValue));
-  st.regs.add(op.getResult(0), move(t_res));
   return {};
 }
 
@@ -261,6 +195,22 @@ optional<string> encodeOp(State &st, mlir::memref::DimOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::AddFOp op) {
+  auto a = st.regs.get<Float>(op.getOperand(0));
+  auto b = st.regs.get<Float>(op.getOperand(1));
+  st.regs.add(op, a.add(b));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::MulFOp op) {
+  auto a = st.regs.get<Float>(op.getOperand(0));
+  auto b = st.regs.get<Float>(op.getOperand(1));
+  st.regs.add(op, a.mul(b));
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::ReturnOp op) {
   st.retValue = st.regs.get<Tensor>(op.getOperand(0));
   return {};
@@ -274,15 +224,79 @@ optional<string> encodeOp(State &st, mlir::ConstantIndexOp op) {
 
 
 
-#define ENCODE(op, ty) { \
-  if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    auto errmsg = encodeOp(st, op2); \
-    if (errmsg) { \
-      RET_STR("Cannot encode " << op << "\n\t" << *errmsg << "\n"); \
-    } \
-    continue; \
-  } \
+template<>
+optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
+  if (!op.hasTensorSemantics())
+    return "operation with tensor semantics is supported only";
+
+  if (op.getNumOutputs() != 1)
+    return "operation with single input and output is supported only";
+
+  auto indexingMaps = op.indexing_maps().getValue();
+  auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
+  if (!outputMap.isIdentity())
+    return "identity output map is supported only";
+
+  // Match one block including 'yield' only
+  // Referred linalg::RegionMatcher::matchAsScalarBinaryOp
+  auto &region = op.region();
+  if (!llvm::hasSingleElement(region))
+    return "operation with one block is supported only";
+
+  auto &block = region.front();
+  if (!std::all_of(block.args_begin(), block.args_end(),
+      [](auto &arg) { return arg.getType().isSignlessIntOrFloat(); }))
+    return "unsupported block arguments";
+
+  // Start from newst
+  State newst = st;
+
+  vector<z3::expr> output_dimvars;
+  for (unsigned i = 0; i < outputMap.getNumInputs(); ++i)
+    output_dimvars.emplace_back(Index("i" + to_string(i)));
+
+  // Fill in args
+  assert(op.getInputOperands().size() + 1 == indexingMaps.size());
+  for (unsigned arg_i = 0; arg_i < indexingMaps.size() - 1; ++arg_i) {
+    auto inputMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
+
+    vector<z3::expr> affine_exprs;
+    for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
+      auto ae_res = encodeAffineExpr(inputMap.getResult(i), output_dimvars);
+      if (!ae_res)
+        RET_STR_WITH_PREFIX("unsupported affine expr", inputMap.getResult(i));
+
+      affine_exprs.emplace_back(move(*ae_res));
+    }
+
+    Tensor t_input = st.regs.get<Tensor>(op.getInputOperand(arg_i)->get());
+    auto t_elem = t_input.get(affine_exprs);
+    newst.regs.add(block.getArgument(arg_i), Float(t_elem));
+  }
+
+  // Encode the loop body
+  auto &ops = block.getOperations();
+  mlir::Value yieldedValue;
+  for (auto &op: ops) {
+    ENCODE(op, mlir::AddFOp);
+    ENCODE(op, mlir::MulFOp);
+    if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
+      yieldedValue = op2.getOperand(0);
+      break;
+    }
+  }
+
+  // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
+  // aqjune talked with mlir people and it is confirmed by them
+
+  auto tensor_sz = Tensor::getDims(
+      op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
+  Tensor t_res = Tensor::mkLambda(move(tensor_sz), move(output_dimvars),
+      newst.regs.get<Float>(yieldedValue));
+  st.regs.add(op.getResult(0), move(t_res));
+  return {};
 }
+
 
 static optional<string> encodeRegion(State &st, mlir::Region &region) {
   if (!llvm::hasSingleElement(region))
@@ -293,6 +307,8 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     llvm::outs() << "  " << op << "\n";
     ENCODE(op, mlir::ConstantIndexOp);
     ENCODE(op, mlir::ReturnOp);
+    ENCODE(op, mlir::AddFOp);
+    ENCODE(op, mlir::MulFOp);
     ENCODE(op, mlir::memref::DimOp);
     ENCODE(op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
     ENCODE(op, mlir::linalg::GenericOp);
@@ -410,6 +426,7 @@ static void verifyFunction(
     fout.close();
   }
 
+  auto time_start = chrono::system_clock::now();
   auto result = solver.check();
   if (result == z3::unsat) {
     llvm::outs() << "== Result: correct ==\n";
@@ -419,6 +436,10 @@ static void verifyFunction(
     llvm::outs() << "== Result: return value mismatch ==\n";
     printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
   }
+
+  auto elapsed_sec = chrono::system_clock::now() - time_start;
+  llvm::outs() << chrono::duration_cast<chrono::seconds>(elapsed_sec).count()
+               << " sec.\n";
 }
 
 void verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
