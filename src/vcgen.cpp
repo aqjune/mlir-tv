@@ -80,7 +80,7 @@ optional<z3::expr> encodeAffineExpr(
 
 
 
-#define ENCODE(op, ty) { \
+#define ENCODE(st, op, ty) { \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
     auto errmsg = encodeOp(st, op2); \
     if (errmsg) { \
@@ -278,8 +278,8 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   auto &ops = block.getOperations();
   mlir::Value yieldedValue;
   for (auto &op: ops) {
-    ENCODE(op, mlir::AddFOp);
-    ENCODE(op, mlir::MulFOp);
+    ENCODE(newst, op, mlir::AddFOp);
+    ENCODE(newst, op, mlir::MulFOp);
     if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
       yieldedValue = op2.getOperand(0);
       break;
@@ -305,17 +305,17 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
   auto &block = region.front();
   for (auto &op: block) {
     llvm::outs() << "  " << op << "\n";
-    ENCODE(op, mlir::ConstantIndexOp);
-    ENCODE(op, mlir::ReturnOp);
-    ENCODE(op, mlir::AddFOp);
-    ENCODE(op, mlir::MulFOp);
-    ENCODE(op, mlir::memref::DimOp);
-    ENCODE(op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
-    ENCODE(op, mlir::linalg::GenericOp);
-    ENCODE(op, mlir::linalg::InitTensorOp);
-    ENCODE(op, mlir::linalg::MatmulOp);
-    ENCODE(op, mlir::linalg::TensorCollapseShapeOp);
-    ENCODE(op, mlir::linalg::TensorExpandShapeOp);
+    ENCODE(st, op, mlir::ConstantIndexOp);
+    ENCODE(st, op, mlir::ReturnOp);
+    ENCODE(st, op, mlir::AddFOp);
+    ENCODE(st, op, mlir::MulFOp);
+    ENCODE(st, op, mlir::memref::DimOp);
+    ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
+    ENCODE(st, op, mlir::linalg::GenericOp);
+    ENCODE(st, op, mlir::linalg::InitTensorOp);
+    ENCODE(st, op, mlir::linalg::MatmulOp);
+    ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp);
+    ENCODE(st, op, mlir::linalg::TensorExpandShapeOp);
 
     RET_STR("Unknown op: " << op);
   }
