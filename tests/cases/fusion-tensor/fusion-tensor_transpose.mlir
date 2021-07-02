@@ -1,3 +1,6 @@
+// iree-opt -linalg-fusion-for-tensor-ops %s
+// RUN: %iree-tv %s %s.tgt
+
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 #map1 = affine_map<(d0, d1) -> (d1, d0)>
 
