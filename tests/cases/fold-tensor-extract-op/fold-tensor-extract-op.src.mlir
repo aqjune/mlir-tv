@@ -1,4 +1,4 @@
-// RUN: iree-opt -iree-codegen-fold-tensor-extract-op %s | IreeFileCheck %s
+// iree-opt -iree-codegen-fold-tensor-extract-op %s
 
 func @fold_tensor_extract(%arg0 : memref<2x3xi32>) -> i32
 {
