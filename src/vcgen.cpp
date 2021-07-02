@@ -467,7 +467,7 @@ int verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
       continue;
     }
     // TODO: check fn signature
-    verification_result = verifyFunction(srcfn, itr->second, dump_smt_to);
+    verification_result = max(verification_result, verifyFunction(srcfn, itr->second, dump_smt_to));
   }
 
   return verification_result;
