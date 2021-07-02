@@ -1,4 +1,4 @@
-// iree-opt -linalg-fusion-for-tensor-ops %s
+// VERIFY
 
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 #map1 = affine_map<(d0, d1) -> (d1, d0)>
@@ -26,3 +26,6 @@ func @transpose_add_mul_fusion(%arg0: tensor<?x?xf32>, %arg1 : tensor<?x?xf32>, 
     } -> tensor<?x?xf32>
   return %4 : tensor<?x?xf32>
 }
+
+// How to reproduce tgt:
+// iree-opt -linalg-fusion-for-tensor-ops <src>
