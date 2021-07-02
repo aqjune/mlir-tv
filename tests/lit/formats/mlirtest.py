@@ -34,15 +34,16 @@ class MLIRTest(TestFormat):
 
     def getTestsInDirectory(self, testSuite, path_in_suite, litConfig, localConfig):
         source_path = testSuite.getSourcePath(path_in_suite)
-        for pass_name in filter(lambda name: (os.path.isdir(name) \
+        for pass_name in filter(lambda name: (os.path.isdir(os.path.join(source_path, name)) \
                     and not _starts_with_dot(name))
                 , os.listdir(source_path)):
             pass_path: str = os.path.join(source_path, pass_name)
-            for case_src_name in filter(lambda name: (os.path.isfile(name) \
+            for case_src_name in filter(lambda name: (os.path.isfile(os.path.join(pass_path, name)) \
                         and self.__regex_src.match(name) \
                         and not _starts_with_dot(name))
                     , os.listdir(pass_path)):
-                with open(case_src_name, 'r') as case_src_file:
+                case_src_file_name: str = os.path.join(pass_path, case_src_name)
+                with open(case_src_file_name, 'r') as case_src_file:
                     has_verify: bool = False
                     for line in case_src_file.readlines():
                         if self.__regex_verify.match(line):

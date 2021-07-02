@@ -3,7 +3,8 @@
 ## How to build IREE-TV
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
 [IREE](https://github.com/google/iree),
-[Z3-solver](https://github.com/Z3Prover/z3)
+[Z3-solver](https://github.com/Z3Prover/z3),
+[Python3.9](https://www.python.org/downloads/) or above
 
 ```bash
 mkdir build
@@ -25,3 +26,14 @@ iree-tv <.mlir before opt> <.mlir after opt>`
 #        examples/conv2d_to_img2col/conv2d_to_img2col.mlir \
 #        examples/conv2d_to_img2col/conv2d_to_img2col_opt.mlir -smt-to=5000
 ```
+
+## How to test IREE-TV
+To be updated
+
+## How to test IR transformation passes
+```bash
+cd build
+# If you want detailed output on the terminal, please add -V
+ctest
+```
+The test will dump a detailed log on `build/Testing/Temporary/LastTest.log`

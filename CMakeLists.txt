@@ -32,3 +32,7 @@ include_directories(${IREE_BUILD_DIR}/third_party/llvm-project/llvm/include ${IR
 
 # Z3 API directories
 include_directories(${Z3_INCLUDE_DIR})
+
+enable_testing()
+add_subdirectory(${PROJECT_SOURCE_DIR}/tests)
+# add_subdirectory(${PROJECT_SOURCE_DIR}/unittests)

@@ -1,4 +1,5 @@
 // iree-opt -linalg-fusion-for-tensor-ops %s
+// VERIFY
 
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 
