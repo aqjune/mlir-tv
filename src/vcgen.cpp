@@ -426,23 +426,26 @@ static int verifyFunction(
     fout.close();
   }
 
+  int verification_result = 0;
   auto time_start = chrono::system_clock::now();
   auto result = solver.check();
   if (result == z3::unsat) {
     llvm::outs() << "== Result: correct ==\n";
-    return 0;
+    verification_result = 0;
   } else if (result == z3::unknown) {
     llvm::outs() << "== Result: timeout ==\n";
-    return 1;
+    verification_result = 1;
   } else if (result == z3::sat) {
     llvm::outs() << "== Result: return value mismatch ==\n";
     printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
-    return 2;
+    verification_result = 2;
   }
 
   auto elapsed_sec = chrono::system_clock::now() - time_start;
   llvm::outs() << chrono::duration_cast<chrono::seconds>(elapsed_sec).count()
                << " sec.\n";
+
+  return verification_result;
 }
 
 int verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
