@@ -60,7 +60,5 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  verify(ir_before, ir_after, arg_dump_smt_to.getValue());
-
-  return 0;
+  return verify(ir_before, ir_after, arg_dump_smt_to.getValue());
 }
