@@ -261,19 +261,37 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   assert(op.getInputOperands().size() + 1 == indexingMaps.size());
   for (unsigned arg_i = 0; arg_i < indexingMaps.size() - 1; ++arg_i) {
     auto inputMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
+    auto op_i = op.getInputOperand(arg_i)->get();
 
-    vector<z3::expr> affine_exprs;
-    for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
-      auto ae_res = encodeAffineExpr(inputMap.getResult(i), output_dimvars);
-      if (!ae_res)
-        RET_STR_WITH_PREFIX("unsupported affine expr", inputMap.getResult(i));
+    if (op_i.getType().isa<mlir::FloatType>()) {
+      // A scalar value.
+      Float f_input = st.regs.get<Float>(op_i);
+      newst.regs.add(block.getArgument(arg_i), f_input);
 
-      affine_exprs.emplace_back(move(*ae_res));
+    } else if (auto tensorty = op_i.getType().dyn_cast<mlir::TensorType>()) {
+      // A tensor value.
+      Tensor t_input = st.regs.get<Tensor>(op_i);
+
+      if (inputMap.getNumResults() == 0) {
+        // A tensor with a single element; e.g. tensor<f32>.
+        newst.regs.add(block.getArgument(arg_i),
+                       Float(t_input.get({Index::zero()})));
+      } else {
+        vector<z3::expr> affine_exprs;
+        for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
+          auto ae_res = encodeAffineExpr(inputMap.getResult(i), output_dimvars);
+          if (!ae_res)
+            RET_STR_WITH_PREFIX("unsupported affine expr", inputMap.getResult(i));
+
+          affine_exprs.emplace_back(move(*ae_res));
+        }
+
+        auto t_elem = t_input.get(affine_exprs);
+        newst.regs.add(block.getArgument(arg_i), Float(t_elem));
+      }
+    } else {
+      return "unsupported block argument type";
     }
-
-    Tensor t_input = st.regs.get<Tensor>(op.getInputOperand(arg_i)->get());
-    auto t_elem = t_input.get(affine_exprs);
-    newst.regs.add(block.getArgument(arg_i), Float(t_elem));
   }
 
   // Encode the loop body

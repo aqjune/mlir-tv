@@ -281,9 +281,15 @@ pair<z3::expr, z3::expr> Tensor::refines(const Tensor &src) const {
 
 vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
   vector<z3::expr> dims;
-  static int dim_var = 0;
+  //static int dim_var = 0;
 
   uint64_t rank = tensorTy.getRank();
+  if (rank == 0) {
+    // A single element tensor.
+    dims.emplace_back(Index(1));
+    return dims;
+  }
+
   for (auto i = 0; i < rank; ++i) {
     uint64_t sz = tensorTy.getDimSize(i);
     if (sz == (uint64_t)-1ull)
@@ -323,11 +329,21 @@ Tensor Tensor::transpose() const {
 Tensor Tensor::mkLambda(
     std::vector<z3::expr> &&newdims, std::vector<z3::expr> &&indexvars,
     z3::expr body) {
-  assert(newdims.size() == indexvars.size());
+  if (indexvars.size() == 0) {
+    int64_t i;
+    // If indexvars is empty, let's assume that the tensor has only one
+    // element.
+    assert(newdims.size() == 1 && newdims[0].is_numeral_i64(i) && i == 1);
+  } else
+    assert(newdims.size() == indexvars.size());
 
   auto idx = Index("idx");
   auto idxexprs = from1DIdx(idx, newdims);
-  body = body.substitute(toExprVector(indexvars), toExprVector(idxexprs));
+
+  if (!indexvars.empty()) {
+    // If indexvars is empty, body represents the unique element.
+    body = body.substitute(toExprVector(indexvars), toExprVector(idxexprs));
+  }
 
   Tensor t2;
   t2.dims = move(newdims);
