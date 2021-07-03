@@ -45,6 +45,8 @@ createInputState(mlir::FuncOp fn) {
                              Tensor::getDims(ty)));
     } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
       s.regs.add(arg, Index("arg" + to_string(arg.getArgNumber())));
+    } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
+      s.regs.add(arg, Float("arg" + to_string(arg.getArgNumber())));
     } else {
       RET_STR("Unsupported type: " << arg.getType());
     }

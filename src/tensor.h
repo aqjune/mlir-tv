@@ -32,6 +32,7 @@ class Float {
 public:
   static const unsigned BITS = 4;
 
+  Float(const std::string &name);
   Float(const z3::expr &e): e(e) {}
 
   operator z3::expr() const { return e; }
