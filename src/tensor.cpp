@@ -3,6 +3,10 @@
 
 using namespace std;
 
+static z3::sort get_array_sort() {
+  return ctx.array_sort(Index::sort(), Float::sort());
+}
+
 static z3::expr to1DIdx(
     const vector<z3::expr> &idxs,
     const vector<z3::expr> &dims) {
@@ -61,15 +65,12 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
 }
 
 static z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
-  auto ity = Index::sort(),
-       fty = Float::sort();
-  auto aty = ctx.array_sort(ity, fty);
   auto i = Index("idx");
 
   z3::sort_vector domain(ctx);
-  domain.push_back(aty);
-  domain.push_back(aty);
-  auto dotfn = ctx.function("smt_dot", domain, fty);
+  domain.push_back(get_array_sort());
+  domain.push_back(get_array_sort());
+  auto dotfn = ctx.function("smt_dot", domain, Float::sort());
 
   z3::expr_vector args(ctx);
   z3::expr zero = ctx.bv_val(0, Float::BITS);
@@ -112,6 +113,18 @@ Index Index::eval(z3::model m) const {
 
 
 Float::Float(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {}
+
+
+static map<double, std::string> const_vars;
+
+Float::Float(double f): e(ctx) {
+  // We don't explicitly encode f
+  auto res = const_vars.try_emplace(f,
+      "#float_const" + to_string(const_vars.size()));
+  e = ctx.bv_const(res.first->second.c_str(), BITS);
+}
+
+Float::Float(const llvm::APFloat &f): Float(f.convertToDouble()) {}
 
 z3::sort Float::sort() {
   return ctx.bv_sort(BITS);
@@ -156,8 +169,14 @@ Float Float::mul(const Float &b) const {
 
 
 Tensor::Tensor(): arr(ctx) {}
+
+Tensor::Tensor(const Float &splat_elem, const vector<z3::expr> &dimvec):
+    arr(ctx), dims(dimvec) {
+  arr = z3::const_array(Index::sort(), (z3::expr)splat_elem);
+}
+
 Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec):
-  arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), Float::sort()))),
+  arr(ctx.constant(name.c_str(), get_array_sort())),
   dims(dimvec) {}
 
 

@@ -224,6 +224,31 @@ optional<string> encodeOp(State &st, mlir::ConstantIndexOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::ConstantFloatOp op) {
+  auto fp = op.getValue();
+  st.regs.add(op, Float(fp));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::ConstantOp op) {
+  auto attr = op.getValue();
+  if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
+    if (!denseAttr.isSplat())
+      return "a fp splat constant tensor is supported only";
+
+    auto splatfval = denseAttr.getSplatValue().dyn_cast<mlir::FloatAttr>();
+    if (!splatfval)
+      return "a fp splat constant tensor is supported only";
+
+    auto dims = Tensor::getDims(op.getType().cast<mlir::TensorType>());
+    st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), move(dims)));
+    return {};
+  }
+  return "unsupported constant";
+}
+
 
 
 template<>
@@ -326,6 +351,8 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
   for (auto &op: block) {
     llvm::outs() << "  " << op << "\n";
     ENCODE(st, op, mlir::ConstantIndexOp);
+    ENCODE(st, op, mlir::ConstantFloatOp);
+    ENCODE(st, op, mlir::ConstantOp);
     ENCODE(st, op, mlir::ReturnOp);
     ENCODE(st, op, mlir::AddFOp);
     ENCODE(st, op, mlir::MulFOp);
@@ -337,7 +364,7 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp);
     ENCODE(st, op, mlir::linalg::TensorExpandShapeOp);
 
-    RET_STR("Unknown op: " << op);
+    RET_STR("Unknown op (" << op.getName() << "): " << op);
   }
   llvm::outs() << "\n";
   return {};

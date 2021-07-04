@@ -1,6 +1,7 @@
 #pragma once
 
 #include "z3++.h"
+#include "llvm/ADT/APFloat.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include <string>
 #include <vector>
@@ -34,6 +35,8 @@ public:
 
   Float(const std::string &name);
   Float(const z3::expr &e): e(e) {}
+  Float(const llvm::APFloat &apf);
+  Float(double f);
 
   operator z3::expr() const { return e; }
 
@@ -53,6 +56,8 @@ class Tensor {
 
 public:
   Tensor();
+  // A splat tensor.
+  Tensor(const Float &splat_elem, const std::vector<z3::expr> &dims);
   Tensor(const std::string &name, const std::vector<z3::expr> &dims);
 
   z3::expr asArray() const { return arr; }
