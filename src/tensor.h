@@ -42,26 +42,47 @@ public:
 
   static z3::sort sort();
 
-  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
-  Float eval(z3::model m) const;
-
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
+
+  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
+  Float eval(z3::model m) const;
+};
+
+class Integer {
+  z3::expr e;
+
+public:
+  Integer(const std::string &name, unsigned bw);
+  Integer(const z3::expr &e): e(e) {}
+
+  operator z3::expr() const { return e; }
+
+  static z3::sort sort(unsigned bw);
+
+  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
+  Integer eval(z3::model m) const;
 };
 
 class Tensor {
-  // dims[0]: the highest dimension
   std::vector<z3::expr> dims;
   z3::expr arr;
 
 public:
   Tensor();
   // A splat tensor.
-  Tensor(const Float &splat_elem, const std::vector<z3::expr> &dims);
-  Tensor(const std::string &name, const std::vector<z3::expr> &dims);
+  Tensor(const z3::expr &splat_elem, const std::vector<z3::expr> &dims);
+  Tensor(const std::string &name, const std::vector<z3::expr> &dims,
+         const z3::sort &elemty);
 
   z3::expr asArray() const { return arr; }
+
+  // Return the element at indices.
+  //   z3::expr v = tensor.get(indices)
+  //   useAsInt(Integer(v)) // valid only if tensor had integer elems
+  //   useAsFloat(Float(v)) // valid only if tensor had float elems
   z3::expr get(const std::vector<z3::expr> &indices) const;
+
   Index getDim(uint64_t idx) const;
 
   // Return a new tensor T2 s.t.
@@ -86,11 +107,16 @@ public:
 
   Tensor matmul(const Tensor &b) const;
 
+  operator z3::expr() const { return arr; }
 
   // Returns (arr[idx] == src.arr[idx], idx var)
   std::pair<z3::expr, z3::expr> refines(const Tensor &src) const;
 
   static std::vector<z3::expr> getDims(mlir::TensorType tensorTy);
+
+  // If tensorTy is unsupported, return nullopt
+  static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
+      getDimsAndElemTy(mlir::TensorType tensorTy);
 
   static Tensor mkLambda(
       std::vector<z3::expr> &&newdims,

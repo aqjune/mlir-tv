@@ -6,7 +6,7 @@
 #include <variant>
 #include <vector>
 
-using ValueTy = std::variant<Tensor, Index, Float>;
+using ValueTy = std::variant<Tensor, Index, Float, Integer>;
 
 
 struct RegFile {
@@ -24,6 +24,7 @@ public:
     assert(false && "Unknown key");
   }
   bool contains(mlir::Value v) const;
+  z3::expr getZ3Expr(mlir::Value v) const;
 
   auto begin() const { return m.begin(); }
   auto end() const { return m.end(); }

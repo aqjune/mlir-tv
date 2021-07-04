@@ -40,13 +40,21 @@ createInputState(mlir::FuncOp fn) {
   for (unsigned i = 0; i < n; ++i) {
     auto arg = fn.getArgument(i);
     auto argty = arg.getType();
+
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
+      auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
+      if (!dimsAndElemTy)
+        RET_STR("Unsupported type: " << arg.getType());
       s.regs.add(arg, Tensor("arg" + to_string(arg.getArgNumber()),
-                             Tensor::getDims(ty)));
+                             dimsAndElemTy->first,
+                             dimsAndElemTy->second));
+
     } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
       s.regs.add(arg, Index("arg" + to_string(arg.getArgNumber())));
+
     } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
       s.regs.add(arg, Float("arg" + to_string(arg.getArgNumber())));
+
     } else {
       RET_STR("Unsupported type: " << arg.getType());
     }
@@ -129,10 +137,14 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   auto ty = res.getType().dyn_cast<mlir::TensorType>();
   assert(ty);
 
+  auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
+  if (!dimsAndElemTy)
+    return "Unsupported tensor type";
+
   // FIXME: can we use res's name?
   static int new_var_idx = 0;
   auto name = string("init_tensor_") + to_string(new_var_idx++);
-  st.regs.add(res, Tensor(name, Tensor::getDims(ty)));
+  st.regs.add(res, Tensor(name, dimsAndElemTy->first, dimsAndElemTy->second));
 
   return {};
 }
@@ -197,6 +209,13 @@ optional<string> encodeOp(State &st, mlir::memref::DimOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::linalg::IndexOp op) {
+  uint64_t i = op.dim();
+  st.regs.add(op, Index(i));
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::AddFOp op) {
   auto a = st.regs.get<Float>(op.getOperand(0));
   auto b = st.regs.get<Float>(op.getOperand(1));
@@ -209,6 +228,32 @@ optional<string> encodeOp(State &st, mlir::MulFOp op) {
   auto a = st.regs.get<Float>(op.getOperand(0));
   auto b = st.regs.get<Float>(op.getOperand(1));
   st.regs.add(op, a.mul(b));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::AddIOp op) {
+  auto a = st.regs.get<Integer>(op.getOperand(0));
+  auto b = st.regs.get<Integer>(op.getOperand(1));
+  st.regs.add(op, Integer((z3::expr)a + (z3::expr)b));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::SubIOp op) {
+  auto a = st.regs.get<Integer>(op.getOperand(0));
+  auto b = st.regs.get<Integer>(op.getOperand(1));
+  st.regs.add(op, Integer((z3::expr)a - (z3::expr)b));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
+  auto idx = st.regs.get<Index>(op.getOperand());
+  auto dstty = op.getType().dyn_cast<mlir::IntegerType>();
+  if (!dstty)
+    return "Unsupported dest type";
+  st.regs.add(op, Integer(((z3::expr)idx).extract(dstty.getWidth() - 1, 0)));
   return {};
 }
 
@@ -295,12 +340,27 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
 
     } else if (auto tensorty = op_i.getType().dyn_cast<mlir::TensorType>()) {
       // A tensor value.
+      auto elemty = tensorty.getElementType();
+
+      if (!elemty.isa<mlir::IntegerType>() &&
+          !elemty.isa<mlir::Float32Type>()) {
+        return "unsupported element type";
+      }
+
+      auto toRegValue = [&elemty](const z3::expr &e) -> ValueTy {
+        if (elemty.isa<mlir::Float32Type>())
+          return Float(e);
+        else if (elemty.isa<mlir::IntegerType>())
+          return Integer(e);
+        llvm_unreachable("unexpected elemty");
+      };
+
       Tensor t_input = st.regs.get<Tensor>(op_i);
 
       if (inputMap.getNumResults() == 0) {
         // A tensor with a single element; e.g. tensor<f32>.
         newst.regs.add(block.getArgument(arg_i),
-                       Float(t_input.get({Index::zero()})));
+                       toRegValue(t_input.get({Index::zero()})));
       } else {
         vector<z3::expr> affine_exprs;
         for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
@@ -312,7 +372,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
         }
 
         auto t_elem = t_input.get(affine_exprs);
-        newst.regs.add(block.getArgument(arg_i), Float(t_elem));
+        newst.regs.add(block.getArgument(arg_i), toRegValue(t_elem));
       }
     } else {
       return "unsupported block argument type";
@@ -325,10 +385,15 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   for (auto &op: ops) {
     ENCODE(newst, op, mlir::AddFOp);
     ENCODE(newst, op, mlir::MulFOp);
+    ENCODE(newst, op, mlir::AddIOp);
+    ENCODE(newst, op, mlir::SubIOp);
+    ENCODE(newst, op, mlir::IndexCastOp);
+    ENCODE(newst, op, mlir::linalg::IndexOp);
     if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
       yieldedValue = op2.getOperand(0);
       break;
     }
+    RET_STR("has an unsupported operation: " << op);
   }
 
   // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
@@ -337,7 +402,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   auto tensor_sz = Tensor::getDims(
       op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
   Tensor t_res = Tensor::mkLambda(move(tensor_sz), move(output_dimvars),
-      newst.regs.get<Float>(yieldedValue));
+      newst.regs.getZ3Expr(yieldedValue));
   st.regs.add(op.getResult(0), move(t_res));
   return {};
 }
@@ -353,10 +418,17 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::ConstantIndexOp);
     ENCODE(st, op, mlir::ConstantFloatOp);
     ENCODE(st, op, mlir::ConstantOp);
-    ENCODE(st, op, mlir::ReturnOp);
+
     ENCODE(st, op, mlir::AddFOp);
+    ENCODE(st, op, mlir::AddIOp);
+    ENCODE(st, op, mlir::IndexCastOp);
     ENCODE(st, op, mlir::MulFOp);
+    ENCODE(st, op, mlir::ReturnOp);
+    ENCODE(st, op, mlir::SubIOp);
+
     ENCODE(st, op, mlir::memref::DimOp);
+
+    ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
     ENCODE(st, op, mlir::linalg::GenericOp);
     ENCODE(st, op, mlir::linalg::InitTensorOp);

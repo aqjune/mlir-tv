@@ -3,10 +3,6 @@
 
 using namespace std;
 
-static z3::sort get_array_sort() {
-  return ctx.array_sort(Index::sort(), Float::sort());
-}
-
 static z3::expr to1DIdx(
     const vector<z3::expr> &idxs,
     const vector<z3::expr> &dims) {
@@ -64,18 +60,26 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
   return ev;
 }
 
-static z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
+static z3::expr mkZeroElemFromArr(const z3::expr &arr) {
+  unsigned bvsz = z3::select(arr, Index::zero()).get_sort().bv_size();
+  return ctx.bv_val(0, bvsz);
+}
+
+static z3::expr
+abstractDot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
+  // TODO: check that a.get_sort() == b.get_sort()
   auto i = Index("idx");
 
   z3::sort_vector domain(ctx);
-  domain.push_back(get_array_sort());
-  domain.push_back(get_array_sort());
+  domain.push_back(a.get_sort());
+  domain.push_back(b.get_sort());
   auto dotfn = ctx.function("smt_dot", domain, Float::sort());
 
   z3::expr_vector args(ctx);
-  z3::expr zero = ctx.bv_val(0, Float::BITS);
-  args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), z3::select(a, i), zero)));
-  args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), z3::select(b, i), zero)));
+  z3::expr ai = z3::select(a, i), bi = z3::select(b, i);
+  z3::expr zero = mkZeroElemFromArr(a);
+  args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)));
+  args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), bi, zero)));
   return dotfn(args);
 }
 
@@ -103,7 +107,7 @@ Index Index::one() { return Index(1); }
 Index Index::zero() { return Index(0); }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
-  os << i;
+  os << (z3::expr)i;
   return os;
 };
 
@@ -131,7 +135,7 @@ z3::sort Float::sort() {
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
-  os << f;
+  os << (z3::expr)f;
   return os;
 };
 
@@ -168,15 +172,33 @@ Float Float::mul(const Float &b) const {
 }
 
 
-Tensor::Tensor(): arr(ctx) {}
+Integer::Integer(const std::string &name, unsigned bw):
+  e(ctx.bv_const(name.c_str(), bw)) {}
 
-Tensor::Tensor(const Float &splat_elem, const vector<z3::expr> &dimvec):
-    arr(ctx), dims(dimvec) {
-  arr = z3::const_array(Index::sort(), (z3::expr)splat_elem);
+z3::sort Integer::sort(unsigned sz) {
+  return ctx.bv_sort(sz);
 }
 
-Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec):
-  arr(ctx.constant(name.c_str(), get_array_sort())),
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
+  os << (z3::expr)i;
+  return os;
+};
+
+Integer Integer::eval(z3::model m) const {
+  return Integer(m.eval(e, true).simplify());
+}
+
+
+Tensor::Tensor(): arr(ctx) {}
+
+Tensor::Tensor(const z3::expr &splat_elem, const vector<z3::expr> &dimvec):
+    arr(ctx), dims(dimvec) {
+  arr = z3::const_array(Index::sort(), splat_elem);
+}
+
+Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec,
+               const z3::sort &elemty):
+  arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), elemty))),
   dims(dimvec) {}
 
 
@@ -211,7 +233,7 @@ Tensor Tensor::affine(
       z3::ite(
         z3::ult(idxvar, get1DSize(newsizes)),
         get(srcidxs),
-        ctx.bv_val(0, Float::BITS)
+        mkZeroElemFromArr(arr)
       ));
   return newm;
 }
@@ -257,7 +279,7 @@ Tensor Tensor::conv(const Tensor &filter) const {
       .to1DArrayWithOfs({l, Index::zero(), Index::zero(), Index::zero()},
         cube_size);
 
-  auto res = dot(input_subarr, filter_arr,
+  auto res = abstractDot(input_subarr, filter_arr,
       cube_size[0] * cube_size[1] * cube_size[2] * cube_size[3]);
 
   return Tensor::mkLambda(move(output_dims), {i, j, k, l}, move(res));
@@ -282,7 +304,8 @@ Tensor Tensor::matmul(const Tensor &b) const {
   auto bt_row = bt.to1DArrayWithOfs(
       {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
-  return mkLambda({dims[0], bt.dims[0]}, {i, j}, dot(a_row, bt_row, dims[1]));
+  return mkLambda({dims[0], bt.dims[0]}, {i, j},
+      abstractDot(a_row, bt_row, dims[1]));
 }
 
 pair<z3::expr, z3::expr> Tensor::refines(const Tensor &src) const {
@@ -322,6 +345,23 @@ vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
   return dims;
 }
 
+optional<pair<vector<z3::expr>, z3::sort>>
+Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
+  auto elemty = tensorTy.getElementType();
+  z3::sort elemty2(ctx);
+
+  if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
+    elemty2 = Integer::sort(ielemty.getWidth());
+  } else if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
+    elemty2 = Float::sort();
+  } else {
+    return {};
+  }
+
+  return {{getDims(tensorTy), elemty2}};
+}
+
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   assert(t.dims.size() > 0);
   os << t.arr << "(dim :" << t.dims[0];
@@ -334,7 +374,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 Tensor Tensor::eval(z3::model m) const {
   Tensor t2;
   for (size_t i = 0; i < dims.size(); ++i)
-    t2.dims[i] = m.eval(dims[i], true).simplify();
+    t2.dims.emplace_back(m.eval(dims[i], true).simplify());
   t2.arr = m.eval(arr, true).simplify();
   return t2;
 }
@@ -386,5 +426,5 @@ z3::expr Tensor::to1DArrayWithOfs(
       z3::ite(
         z3::ult(idxvar, get1DSize(sizes)),
         get(absidxs),
-        ctx.bv_val(0, Float::BITS)));
+        mkZeroElemFromArr(arr)));
 }

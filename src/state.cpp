@@ -1,3 +1,4 @@
+#include "smt.h"
 #include "state.h"
 
 using namespace std;
@@ -13,6 +14,20 @@ bool RegFile::contains(mlir::Value v) const {
       return true;
   }
   return false;
+}
+
+z3::expr RegFile::getZ3Expr(mlir::Value v) const {
+  for (auto &[a, b]: m) {
+    if (a != v) continue;
+    z3::expr e(ctx);
+    visit([&](auto &&itm) {
+      e = (z3::expr)itm;
+    }, b);
+    return e;
+  }
+
+  llvm::errs() << "Cannot find key: " << v << "\n";
+  assert(false && "Unknown key");
 }
 
 
