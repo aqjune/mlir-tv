@@ -9,6 +9,7 @@ ValueTy RegFile::findOrCrash(mlir::Value v) const {
   } else {
     llvm::errs() << "Cannot find key: " << v << "\n";
     assert(false && "Unknown key");
+    llvm_unreachable();
   }
 }
 
