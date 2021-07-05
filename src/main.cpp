@@ -1,5 +1,6 @@
 #include "smt.h"
 #include "vcgen.h"
+#include "results.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -35,10 +36,10 @@ llvm::cl::opt<bool> split_input_file("split-input-file",
   llvm::cl::desc("Split the input file into pieces and process each chunk independently"),
   llvm::cl::init(false));
 
-int splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
     MLIRContext *context);
-int verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+Results verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
     MLIRContext *context);
 
@@ -74,14 +75,18 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  Results verificationResult;
   if (split_input_file) {
-    return splitAndVerifyBuffer(move(src_file), move(tgt_file), &context);
+    verificationResult = splitAndVerifyBuffer(move(src_file), move(tgt_file), &context);
   } else {
-    return verifyBuffer(move(src_file), move(tgt_file), &context);
+    verificationResult = verifyBuffer(move(src_file), move(tgt_file), &context);
   }
+
+  // return 0 if verification succeeded!
+  return !verificationResult.succeeded();
 }
 
-int splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
     MLIRContext *context) {
   const char splitMarker[] = "// -----";
@@ -98,10 +103,10 @@ int splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   tgtSourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
 
   if (sourceBuffers.size() != targetBuffers.size()) {
-      return 1;
+      return fail(1);
   }
 
-  int hadFailure = 0;
+  Results results;
   for (int i = 0; i < sourceBuffers.size(); i ++) {
     auto &sourceSubBuffer = sourceBuffers[i];
     auto souceSplitLoc = llvm::SMLoc::getFromPointer(sourceSubBuffer.data());
@@ -113,15 +118,14 @@ int splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unsigned targetSplitLine = tgtSourceMgr.getLineAndColumn(targetSplitLoc).first;
     auto targetSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(targetSubBuffer);
 
-    if (verifyBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer), context))
-      hadFailure = 1;
+    results &= verifyBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer), context);
   }
 
   // If any fails, then return a failure of the tool.
-  return hadFailure;
+  return results;
 }
 
-int verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+Results verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
     MLIRContext *context) {
   llvm::SourceMgr src_sourceMgr,  tgt_sourceMgr;
@@ -131,13 +135,13 @@ int verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   auto ir_before = parseSourceFile(src_sourceMgr, context);
   if (!ir_before) {
     llvm::errs() << "Cannot read source file\n";
-    return 1;
+    return fail(1);
   }
 
   auto ir_after = parseSourceFile(tgt_sourceMgr, context);
   if (!ir_after) {
     llvm::errs() << "Cannot read target file\n";
-    return 1;
+    return fail(1);
   }
 
   return verify(ir_before, ir_after, arg_dump_smt_to.getValue());

@@ -1,9 +1,10 @@
 #pragma once
 
-#include <string>
+#include "results.h"
 #include "mlir/IR/BuiltinOps.h"
+#include <string>
 
 using namespace std;
 
-int verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
+Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
             const string &dump_smt_to);
