@@ -2,7 +2,6 @@
 #include "smt.h"
 #include "state.h"
 #include "vcgen.h"
-#include "results.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
@@ -15,6 +14,8 @@
 #include <sstream>
 #include <variant>
 #include <vector>
+
+using namespace std;
 
 #define RET_STR(V) { \
   string msg; \

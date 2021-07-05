@@ -1,6 +1,5 @@
 #include "smt.h"
 #include "vcgen.h"
-#include "results.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/PrettyStackTrace.h"
