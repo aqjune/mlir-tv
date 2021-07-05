@@ -35,4 +35,4 @@ include_directories(${Z3_INCLUDE_DIR})
 
 enable_testing()
 add_subdirectory(${PROJECT_SOURCE_DIR}/tests)
-# add_subdirectory(${PROJECT_SOURCE_DIR}/unittests)
+add_subdirectory(${PROJECT_SOURCE_DIR}/unittests)
