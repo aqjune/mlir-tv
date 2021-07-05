@@ -3,33 +3,32 @@
 
 using namespace std;
 
+ValueTy RegFile::findOrCrash(mlir::Value v) const {
+  if (contains(v)) {
+    return m.find(v)->second;
+  } else {
+    llvm::errs() << "Cannot find key: " << v << "\n";
+    assert(false && "Unknown key");
+  }
+}
+
 void RegFile::add(mlir::Value v, ValueTy &&t) {
   assert(!contains(v));
-  m.emplace_back(v, std::move(t));
+  m.emplace(v, std::move(t));
 }
 
 bool RegFile::contains(mlir::Value v) const {
-  for (auto &[a, b]: m) {
-    if (a == v)
-      return true;
-  }
-  return false;
+  return (m.find(v) != m.end());
 }
 
 z3::expr RegFile::getZ3Expr(mlir::Value v) const {
-  for (auto &[a, b]: m) {
-    if (a != v) continue;
-    z3::expr e(ctx);
+  auto var = findOrCrash(v);
+  z3::expr e(ctx);
     visit([&](auto &&itm) {
       e = (z3::expr)itm;
-    }, b);
+    }, var);
     return e;
-  }
-
-  llvm::errs() << "Cannot find key: " << v << "\n";
-  assert(false && "Unknown key");
 }
-
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
   for (auto itm: s.regs) {
