@@ -4,19 +4,13 @@
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "z3++.h"
 #include <variant>
-#include <unordered_map>
+#include "mlir/Support/LLVM.h"
 
 using ValueTy = std::variant<Tensor, Index, Float, Integer>;
 
 struct RegFile {
 private:
-  struct HashV {
-    std::size_t operator()(mlir::Value v) const {
-      return std::hash<void*>()(v.getAsOpaquePointer());
-    }
-  };
-
-  std::unordered_map<mlir::Value, ValueTy, HashV> m;
+  llvm::DenseMap<mlir::Value, ValueTy> m;
   ValueTy findOrCrash(mlir::Value v) const;
 
 public:

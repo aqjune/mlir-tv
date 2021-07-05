@@ -8,18 +8,17 @@ ValueTy RegFile::findOrCrash(mlir::Value v) const {
     return m.find(v)->second;
   } else {
     llvm::errs() << "Cannot find key: " << v << "\n";
-    assert(false && "Unknown key");
-    llvm_unreachable();
+    llvm_unreachable("Unknown key");
   }
 }
 
 void RegFile::add(mlir::Value v, ValueTy &&t) {
   assert(!contains(v));
-  m.emplace(v, std::move(t));
+  m.insert({v, std::move(t)});
 }
 
 bool RegFile::contains(mlir::Value v) const {
-  return (m.find(v) != m.end());
+  return (bool)m.count(v);
 }
 
 z3::expr RegFile::getZ3Expr(mlir::Value v) const {
