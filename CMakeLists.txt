@@ -12,7 +12,8 @@ add_executable(${PROJECT_NAME}
     src/vcgen.cpp
     src/state.cpp
     src/tensor.cpp
-    src/smt.cpp)
+    src/smt.cpp
+    src/utilities.cpp)
 
 #target_link_options(${PROJECT_NAME} PUBLIC -lz3 -ltinfo -lLLVMSupport -lMLIRStandard -lMLIRControlFlowInterfaces -lMLIRSideEffectInterfaces -lMLIRViewLikeInterface -lMLIRInferTypeOpInterface -lMLIRIR -lMLIRDialect -lMLIRDialectUtils -lMLIRLinalg -lMLIRAffine -lMLIRMemRef -lMLIRMemRefUtils -lMLIRTensor -lMLIRParser -lMLIRSupport -lpthread -lm -fPIC)
 target_link_libraries(${PROJECT_NAME}
