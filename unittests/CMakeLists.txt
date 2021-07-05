@@ -20,7 +20,6 @@ link_libraries(
     MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport MLIRInferTypeOpInterface
     LLVMSupport LLVMDemangle z3 pthread m curses)
 
-# enable_testing()
 # Add each test file as executable
 add_executable(
   smt_test
@@ -40,6 +39,7 @@ add_executable(
 )
 
 include(GoogleTest)
+# Add each executable to gtest
 gtest_discover_tests(smt_test)
 gtest_discover_tests(state_test)
 gtest_discover_tests(tensor_test)
