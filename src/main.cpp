@@ -86,6 +86,7 @@ int main(int argc, char* argv[]) {
   return !verificationResult.succeeded();
 }
 
+// These functions are excerpted from ToolUtilities.cpp in mlir
 Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
     MLIRContext *context) {
