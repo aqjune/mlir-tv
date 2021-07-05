@@ -15,9 +15,6 @@
 #include <variant>
 #include <vector>
 
-using namespace std;
-
-
 #define RET_STR(V) { \
   string msg; \
   llvm::raw_string_ostream rso(msg); \
