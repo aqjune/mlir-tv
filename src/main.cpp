@@ -17,7 +17,7 @@ using namespace std;
 using namespace mlir;
 
 using ChunkBufferHandler = llvm::function_ref<int(
-     std::unique_ptr<llvm::MemoryBuffer> srcBuffer, std::unique_ptr<llvm::MemoryBuffer> tgtBuffer)>;
+     unique_ptr<llvm::MemoryBuffer> srcBuffer, unique_ptr<llvm::MemoryBuffer> tgtBuffer)>;
 
 llvm::cl::opt<string> filename_src(llvm::cl::Positional,
   llvm::cl::desc("first-mlir-file"),
@@ -38,8 +38,8 @@ llvm::cl::opt<bool> split_input_file("split-input-file",
   llvm::cl::desc("Split the input file into pieces and process each chunk independently"),
   llvm::cl::init(false));
 
-int splitAndProcessBuffer(std::unique_ptr<llvm::MemoryBuffer> srcBuffer,
-                                             std::unique_ptr<llvm::MemoryBuffer> tgtBuffer,
+int splitAndProcessBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+                                             unique_ptr<llvm::MemoryBuffer> tgtBuffer,
                                              ChunkBufferHandler processChunkBuffer);
 
 int main(int argc, char* argv[]) {
@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
   registry.insert<memref::MemRefDialect>();
   context.appendDialectRegistry(registry);
 
-  std::string errorMessage;
+  string errorMessage;
   auto src_file = openInputFile(filename_src, &errorMessage);
   if (!src_file) {
     llvm::errs() << errorMessage << "\n";
@@ -74,10 +74,10 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  auto processBuffer = [&](std::unique_ptr<llvm::MemoryBuffer> srcBuffer, std::unique_ptr<llvm::MemoryBuffer> tgtBuffer) {
+  auto processBuffer = [&](unique_ptr<llvm::MemoryBuffer> srcBuffer, unique_ptr<llvm::MemoryBuffer> tgtBuffer) {
     llvm::SourceMgr src_sourceMgr,  tgt_sourceMgr;
-    src_sourceMgr.AddNewSourceBuffer(std::move(srcBuffer), llvm::SMLoc());
-    tgt_sourceMgr.AddNewSourceBuffer(std::move(tgtBuffer), llvm::SMLoc());
+    src_sourceMgr.AddNewSourceBuffer(move(srcBuffer), llvm::SMLoc());
+    tgt_sourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
 
     auto ir_before = parseSourceFile(src_sourceMgr, &context);
     if (!ir_before) {
@@ -95,15 +95,15 @@ int main(int argc, char* argv[]) {
   };
 
   if (split_input_file) {
-    return splitAndProcessBuffer(std::move(src_file), std::move(tgt_file), processBuffer);
+    return splitAndProcessBuffer(move(src_file), move(tgt_file), processBuffer);
   } else {
-    return processBuffer(std::move(src_file), std::move(tgt_file));
+    return processBuffer(move(src_file), move(tgt_file));
   }
 }
 
 
-int splitAndProcessBuffer(std::unique_ptr<llvm::MemoryBuffer> srcBuffer,
-                                             std::unique_ptr<llvm::MemoryBuffer> tgtBuffer,
+int splitAndProcessBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+                                             unique_ptr<llvm::MemoryBuffer> tgtBuffer,
                                              ChunkBufferHandler processChunkBuffer) {
   const char splitMarker[] = "// -----";
 
@@ -115,8 +115,8 @@ int splitAndProcessBuffer(std::unique_ptr<llvm::MemoryBuffer> srcBuffer,
 
   // Add the original buffer to the source manager.
   llvm::SourceMgr srcSourceMgr, tgtSourceMgr;
-  srcSourceMgr.AddNewSourceBuffer(std::move(srcBuffer), llvm::SMLoc());
-  tgtSourceMgr.AddNewSourceBuffer(std::move(tgtBuffer), llvm::SMLoc());
+  srcSourceMgr.AddNewSourceBuffer(move(srcBuffer), llvm::SMLoc());
+  tgtSourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
 
   if (sourceBuffers.size() != targetBuffers.size()) {
       return 1;
@@ -134,7 +134,7 @@ int splitAndProcessBuffer(std::unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unsigned targetSplitLine = tgtSourceMgr.getLineAndColumn(targetSplitLoc).first;
     auto targetSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(targetSubBuffer);
 
-    if (processChunkBuffer(std::move(sourceSubMemBuffer), std::move(targetSubMemBuffer)))
+    if (processChunkBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer)))
       hadFailure = 1;
   }
 
