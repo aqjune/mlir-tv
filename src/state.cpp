@@ -4,8 +4,9 @@
 using namespace std;
 
 ValueTy RegFile::findOrCrash(mlir::Value v) const {
-  if (contains(v)) {
-    return m.find(v)->second;
+  auto itr = m.find(v);
+  if (itr != m.end()) {
+    return itr->second;
   } else {
     llvm::errs() << "Cannot find key: " << v << "\n";
     llvm_unreachable("Unknown key");
@@ -24,10 +25,10 @@ bool RegFile::contains(mlir::Value v) const {
 z3::expr RegFile::getZ3Expr(mlir::Value v) const {
   auto var = findOrCrash(v);
   z3::expr e(ctx);
-    visit([&](auto &&itm) {
-      e = (z3::expr)itm;
-    }, var);
-    return e;
+  visit([&](auto &&itm) {
+    e = (z3::expr)itm;
+  }, var);
+  return e;
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
