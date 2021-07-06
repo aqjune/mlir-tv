@@ -3,8 +3,8 @@ module  {
   func @producer_indexed_consumer_fusion(%arg0: tensor<?x?xi32>, %arg1: tensor<?x?xi32>) -> tensor<?x?xi32> {
     %c0 = constant 0 : index
     %c1 = constant 1 : index
-    %0 = memref.dim %arg0, %c0 : tensor<?x?xi32>
-    %1 = memref.dim %arg0, %c1 : tensor<?x?xi32>
+    %0 = tensor.dim %arg0, %c0 : tensor<?x?xi32>
+    %1 = tensor.dim %arg0, %c1 : tensor<?x?xi32>
     %2 = linalg.init_tensor [%0, %1] : tensor<?x?xi32>
     %3 = linalg.generic {indexing_maps = [#map, #map, #map], iterator_types = ["parallel", "parallel"]} ins(%arg0, %arg1 : tensor<?x?xi32>, tensor<?x?xi32>) outs(%2 : tensor<?x?xi32>) {
     ^bb0(%arg2: i32, %arg3: i32, %arg4: i32):  // no predecessors
@@ -20,3 +20,4 @@ module  {
     return %3 : tensor<?x?xi32>
   }
 }
+

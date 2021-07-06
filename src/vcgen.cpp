@@ -4,6 +4,7 @@
 #include "vcgen.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
+#include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/IR/Matchers.h"
 #include "z3++.h"
@@ -192,8 +193,8 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::memref::DimOp op) {
-  auto tensor = op.memrefOrTensor();
+optional<string> encodeOp(State &st, mlir::tensor::DimOp op) {
+  auto tensor = op.source();
   if (!tensor.getType().isa<mlir::TensorType>())
     return "tensor type is supported only";
   auto t = st.regs.get<Tensor>(tensor);
@@ -425,7 +426,7 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::ReturnOp);
     ENCODE(st, op, mlir::SubIOp);
 
-    ENCODE(st, op, mlir::memref::DimOp);
+    ENCODE(st, op, mlir::tensor::DimOp);
 
     ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);

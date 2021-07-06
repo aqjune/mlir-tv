@@ -7,6 +7,7 @@
 #include "llvm/Support/SourceMgr.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/Parser.h"
@@ -101,6 +102,7 @@ int main(int argc, char* argv[]) {
   registry.insert<StandardOpsDialect>();
   registry.insert<AffineDialect>();
   registry.insert<linalg::LinalgDialect>();
+  registry.insert<tensor::TensorDialect>();
   registry.insert<memref::MemRefDialect>();
   context.appendDialectRegistry(registry);
 
