@@ -35,12 +35,67 @@ llvm::cl::opt<bool> split_input_file("split-input-file",
   llvm::cl::desc("Split the input file into pieces and process each chunk independently"),
   llvm::cl::init(false));
 
-Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+static Results verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
-    MLIRContext *context);
-Results verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+    MLIRContext *context) {
+  llvm::SourceMgr src_sourceMgr,  tgt_sourceMgr;
+  src_sourceMgr.AddNewSourceBuffer(move(srcBuffer), llvm::SMLoc());
+  tgt_sourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
+
+  auto ir_before = parseSourceFile(src_sourceMgr, context);
+  if (!ir_before) {
+    llvm::errs() << "Cannot read source file\n";
+    return fail(1);
+  }
+
+  auto ir_after = parseSourceFile(tgt_sourceMgr, context);
+  if (!ir_after) {
+    llvm::errs() << "Cannot read target file\n";
+    return fail(1);
+  }
+
+  return verify(ir_before, ir_after, arg_dump_smt_to.getValue());
+}
+
+// These functions are excerpted from ToolUtilities.cpp in mlir
+static Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
-    MLIRContext *context);
+    MLIRContext *context) {
+  const char splitMarker[] = "// -----";
+
+  SmallVector<llvm::StringRef, 8> sourceBuffers, targetBuffers;
+  auto *srcMemBuffer = srcBuffer.get();
+  auto *tgtMemBuffer = tgtBuffer.get();
+  srcMemBuffer->getBuffer().split(sourceBuffers, splitMarker);
+  tgtMemBuffer->getBuffer().split(targetBuffers, splitMarker);
+
+  // Add the original buffer to the source manager.
+  llvm::SourceMgr srcSourceMgr, tgtSourceMgr;
+  srcSourceMgr.AddNewSourceBuffer(move(srcBuffer), llvm::SMLoc());
+  tgtSourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
+
+  if (sourceBuffers.size() != targetBuffers.size()) {
+      return fail(1);
+  }
+
+  Results results;
+  for (int i = 0; i < sourceBuffers.size(); i ++) {
+    auto &sourceSubBuffer = sourceBuffers[i];
+    auto souceSplitLoc = llvm::SMLoc::getFromPointer(sourceSubBuffer.data());
+    unsigned sourceSplitLine = srcSourceMgr.getLineAndColumn(souceSplitLoc).first;
+    auto sourceSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(sourceSubBuffer);
+
+    auto &targetSubBuffer = targetBuffers[i];
+    auto targetSplitLoc = llvm::SMLoc::getFromPointer(targetSubBuffer.data());
+    unsigned targetSplitLine = tgtSourceMgr.getLineAndColumn(targetSplitLoc).first;
+    auto targetSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(targetSubBuffer);
+
+    results &= verifyBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer), context);
+  }
+
+  // If any fails, then return a failure of the tool.
+  return results;
+}
 
 int main(int argc, char* argv[]) {
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
@@ -83,66 +138,4 @@ int main(int argc, char* argv[]) {
 
   // return 0 if verification succeeded!
   return !verificationResult.succeeded();
-}
-
-// These functions are excerpted from ToolUtilities.cpp in mlir
-Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
-    unique_ptr<llvm::MemoryBuffer> tgtBuffer,
-    MLIRContext *context) {
-  const char splitMarker[] = "// -----";
-
-  SmallVector<llvm::StringRef, 8> sourceBuffers, targetBuffers;
-  auto *srcMemBuffer = srcBuffer.get();
-  auto *tgtMemBuffer = tgtBuffer.get();
-  srcMemBuffer->getBuffer().split(sourceBuffers, splitMarker);
-  tgtMemBuffer->getBuffer().split(targetBuffers, splitMarker);
-
-  // Add the original buffer to the source manager.
-  llvm::SourceMgr srcSourceMgr, tgtSourceMgr;
-  srcSourceMgr.AddNewSourceBuffer(move(srcBuffer), llvm::SMLoc());
-  tgtSourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
-
-  if (sourceBuffers.size() != targetBuffers.size()) {
-      return fail(1);
-  }
-
-  Results results;
-  for (int i = 0; i < sourceBuffers.size(); i ++) {
-    auto &sourceSubBuffer = sourceBuffers[i];
-    auto souceSplitLoc = llvm::SMLoc::getFromPointer(sourceSubBuffer.data());
-    unsigned sourceSplitLine = srcSourceMgr.getLineAndColumn(souceSplitLoc).first;
-    auto sourceSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(sourceSubBuffer);
-
-    auto &targetSubBuffer = targetBuffers[i];
-    auto targetSplitLoc = llvm::SMLoc::getFromPointer(targetSubBuffer.data());
-    unsigned targetSplitLine = tgtSourceMgr.getLineAndColumn(targetSplitLoc).first;
-    auto targetSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(targetSubBuffer);
-
-    results &= verifyBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer), context);
-  }
-
-  // If any fails, then return a failure of the tool.
-  return results;
-}
-
-Results verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
-    unique_ptr<llvm::MemoryBuffer> tgtBuffer,
-    MLIRContext *context) {
-  llvm::SourceMgr src_sourceMgr,  tgt_sourceMgr;
-  src_sourceMgr.AddNewSourceBuffer(move(srcBuffer), llvm::SMLoc());
-  tgt_sourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
-
-  auto ir_before = parseSourceFile(src_sourceMgr, context);
-  if (!ir_before) {
-    llvm::errs() << "Cannot read source file\n";
-    return fail(1);
-  }
-
-  auto ir_after = parseSourceFile(tgt_sourceMgr, context);
-  if (!ir_after) {
-    llvm::errs() << "Cannot read target file\n";
-    return fail(1);
-  }
-
-  return verify(ir_before, ir_after, arg_dump_smt_to.getValue());
 }
