@@ -4,11 +4,13 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/SourceMgr.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/Parser.h"
+#include "mlir/Support/FileUtilities.h"
 #include <string>
 
 using namespace std;
@@ -29,6 +31,60 @@ llvm::cl::opt<unsigned> arg_smt_to("smt-to",
 llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
   llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"));
 
+llvm::cl::opt<bool> split_input_file("split-input-file",
+  llvm::cl::desc("Split the input file into pieces and process each chunk independently"),
+  llvm::cl::init(false));
+
+// These functions are excerpted from ToolUtilities.cpp in mlir
+static Results verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+    unique_ptr<llvm::MemoryBuffer> tgtBuffer,
+    MLIRContext *context) {
+  llvm::SourceMgr src_sourceMgr,  tgt_sourceMgr;
+  src_sourceMgr.AddNewSourceBuffer(move(srcBuffer), llvm::SMLoc());
+  tgt_sourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
+
+  auto ir_before = parseSourceFile(src_sourceMgr, context);
+  if (!ir_before) {
+    llvm::errs() << "Cannot read source file\n";
+    return Results::failure(1);
+  }
+
+  auto ir_after = parseSourceFile(tgt_sourceMgr, context);
+  if (!ir_after) {
+    llvm::errs() << "Cannot read target file\n";
+    return Results::failure(1);
+  }
+
+  return verify(ir_before, ir_after, arg_dump_smt_to.getValue());
+}
+
+static Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+    unique_ptr<llvm::MemoryBuffer> tgtBuffer,
+    MLIRContext *context) {
+  const char splitMarker[] = "// -----";
+
+  SmallVector<llvm::StringRef, 8> sourceBuffers, targetBuffers;
+  auto *srcMemBuffer = srcBuffer.get();
+  auto *tgtMemBuffer = tgtBuffer.get();
+  srcMemBuffer->getBuffer().split(sourceBuffers, splitMarker);
+  tgtMemBuffer->getBuffer().split(targetBuffers, splitMarker);
+
+  if (sourceBuffers.size() != targetBuffers.size()) {
+    return Results::failure(64);
+  }
+
+  Results results;
+  for (int i = 0; i < sourceBuffers.size(); i ++) {
+    auto sourceSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(sourceBuffers[i]);
+    auto targetSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(targetBuffers[i]);
+
+    results.merge(verifyBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer), context));
+  }
+
+  // If any fails, then return a failure of the tool.
+  return results;
+}
+
 int main(int argc, char* argv[]) {
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
   llvm::PrettyStackTraceProgram X(argc, argv);
@@ -48,17 +104,25 @@ int main(int argc, char* argv[]) {
   registry.insert<memref::MemRefDialect>();
   context.appendDialectRegistry(registry);
 
-  auto ir_before = parseSourceFile(filename_src, &context);
-  if (!ir_before) {
-    llvm::errs() << "Cannot read " << filename_src << "\n";
+  string errorMessage;
+  auto src_file = openInputFile(filename_src, &errorMessage);
+  if (!src_file) {
+    llvm::errs() << errorMessage << "\n";
     return 1;
   }
 
-  auto ir_after = parseSourceFile(filename_tgt, &context);
-  if (!ir_after) {
-    llvm::errs() << "Cannot read " << filename_tgt << "\n";
+  auto tgt_file = openInputFile(filename_tgt, &errorMessage);
+  if (!tgt_file) {
+    llvm::errs() << errorMessage << "\n";
     return 1;
   }
 
-  return verify(ir_before, ir_after, arg_dump_smt_to.getValue());
+  Results verificationResult;
+  if (split_input_file) {
+    verificationResult = splitAndVerifyBuffer(move(src_file), move(tgt_file), &context);
+  } else {
+    verificationResult = verifyBuffer(move(src_file), move(tgt_file), &context);
+  }
+
+  return verificationResult.getCode();
 }

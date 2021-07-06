@@ -17,7 +17,6 @@
 
 using namespace std;
 
-
 #define RET_STR(V) { \
   string msg; \
   llvm::raw_string_ostream rso(msg); \
@@ -502,7 +501,7 @@ static void printCounterEx(
 }
 
 
-static int verifyFunction(
+static Results verifyFunction(
     mlir::FuncOp src, mlir::FuncOp tgt, const string &dump_smt_to) {
   llvm::outs() << "Function " << src.getName() << "\n\n";
   assert(src.getNumArguments() == tgt.getNumArguments());
@@ -545,29 +544,29 @@ static int verifyFunction(
     fout.close();
   }
 
-  int return_value = 0;
+  Results verificationResult;
   auto time_start = chrono::system_clock::now();
   auto result = solver.check();
   if (result == z3::unsat) {
     llvm::outs() << "== Result: correct ==\n";
-    return_value = 0;
+    verificationResult = Results::success();
   } else if (result == z3::unknown) {
     llvm::outs() << "== Result: timeout ==\n";
-    return_value = 1;
+    verificationResult = Results::failure(1);
   } else if (result == z3::sat) {
     llvm::outs() << "== Result: return value mismatch ==\n";
     printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
-    return_value = 2;
+    verificationResult = Results::failure(2);
   }
 
   auto elapsed_sec = chrono::system_clock::now() - time_start;
   llvm::outs() << chrono::duration_cast<chrono::seconds>(elapsed_sec).count()
                << " sec.\n";
 
-  return return_value;
+  return verificationResult;
 }
 
-int verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
+Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
             const string &dump_smt_to) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
@@ -577,7 +576,7 @@ int verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
   llvm::for_each(*src, [&](auto &op) { fillFns(srcfns, op); });
   llvm::for_each(*tgt, [&](auto &op) { fillFns(tgtfns, op); });
 
-  int verification_result = 0;
+  Results verificationResult = Results::success();
   for (auto [name, srcfn]: srcfns) {
     auto itr = tgtfns.find(name);
     if (itr == tgtfns.end()) {
@@ -586,8 +585,8 @@ int verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
       continue;
     }
     // TODO: check fn signature
-    verification_result = max(verification_result, verifyFunction(srcfn, itr->second, dump_smt_to));
+    verificationResult.merge(verifyFunction(srcfn, itr->second, dump_smt_to));
   }
 
-  return verification_result;
+  return verificationResult;
 }
