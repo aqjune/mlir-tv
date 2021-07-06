@@ -69,13 +69,8 @@ static Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   srcMemBuffer->getBuffer().split(sourceBuffers, splitMarker);
   tgtMemBuffer->getBuffer().split(targetBuffers, splitMarker);
 
-  // Add the original buffer to the source manager.
-  llvm::SourceMgr srcSourceMgr, tgtSourceMgr;
-  srcSourceMgr.AddNewSourceBuffer(move(srcBuffer), llvm::SMLoc());
-  tgtSourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
-
   if (sourceBuffers.size() != targetBuffers.size()) {
-    return Results::failure(1);
+    return Results::failure(64);
   }
 
   Results results;
