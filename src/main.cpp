@@ -136,6 +136,5 @@ int main(int argc, char* argv[]) {
     verificationResult = verifyBuffer(move(src_file), move(tgt_file), &context);
   }
 
-  // return 0 if verification succeeded!
-  return !verificationResult.succeeded();
+  return verificationResult.getCode();
 }

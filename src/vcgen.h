@@ -9,26 +9,28 @@ public:
     static Results success() {
         return Results(0);
     }
-    static Results failure(int value = 1) {
-        return Results(value);
+    static Results failure(int code = 1) {
+        return Results(code);
     }
 
     // Returns true if the value equals zero.
-    bool succeeded() const { return value == 0; }
+    bool succeeded() const { return code == 0; }
     // Returns true if the value is other than zero.
     bool failed() const { return !succeeded(); }
+    // Returns status code
+    int getCode() const { return code; }
 
     // set default value to zero
-    Results() : value(0) {}
+    Results() : code(0) {}
 
     Results merge (const Results &RHS) {
-        value = std::max(value, RHS.value);
+        code = std::max(code, RHS.code);
         return *this;
     }
 
 private:
-    Results(int value) : value(value) {}
-    int value;
+    Results(int code) : code(code) {}
+    int code;
 };
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
