@@ -32,12 +32,6 @@ iree-tv <.mlir before opt> <.mlir after opt>`
 cd build
 # If you want detailed output on the terminal, please add -V
 ctest -R Unit
+# A detailed log is written to build/Testing/Temporary/LastTest.log
+ctest -R passes # Test IR transformation passes
 ```
-
-## How to test IR transformation passes
-```bash
-cd build
-# If you want detailed output on the terminal, please add -V
-ctest -R passes
-```
-Both tests will dump a detailed log on `build/Testing/Temporary/LastTest.log`
