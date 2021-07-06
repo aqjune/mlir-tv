@@ -28,12 +28,16 @@ iree-tv <.mlir before opt> <.mlir after opt>`
 ```
 
 ## How to test IREE-TV
-To be updated
+```bash
+cd build
+# If you want detailed output on the terminal, please add -V
+ctest -R Unit
+```
 
 ## How to test IR transformation passes
 ```bash
 cd build
 # If you want detailed output on the terminal, please add -V
-ctest
+ctest -R passes
 ```
-The test will dump a detailed log on `build/Testing/Temporary/LastTest.log`
+Both tests will dump a detailed log on `build/Testing/Temporary/LastTest.log`

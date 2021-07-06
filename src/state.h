@@ -4,24 +4,19 @@
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "z3++.h"
 #include <variant>
-#include <vector>
+#include "mlir/Support/LLVM.h"
 
 using ValueTy = std::variant<Tensor, Index, Float, Integer>;
 
-
 struct RegFile {
 private:
-  std::vector<std::pair<mlir::Value, ValueTy>> m;
+  llvm::DenseMap<mlir::Value, ValueTy> m;
+  ValueTy findOrCrash(mlir::Value v) const;
 
 public:
   void add(mlir::Value v, ValueTy &&t);
   template<class T> T get(mlir::Value v) const {
-    for (auto &[a, b]: m)
-      if (a == v)
-        return std::get<T>(b);
-
-    llvm::errs() << "Cannot find key: " << v << "\n";
-    assert(false && "Unknown key");
+    return std::get<T>(findOrCrash(v));
   }
   bool contains(mlir::Value v) const;
   z3::expr getZ3Expr(mlir::Value v) const;
