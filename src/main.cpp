@@ -45,13 +45,13 @@ static Results verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   auto ir_before = parseSourceFile(src_sourceMgr, context);
   if (!ir_before) {
     llvm::errs() << "Cannot read source file\n";
-    return fail(1);
+    return Results::failure(1);
   }
 
   auto ir_after = parseSourceFile(tgt_sourceMgr, context);
   if (!ir_after) {
     llvm::errs() << "Cannot read target file\n";
-    return fail(1);
+    return Results::failure(1);
   }
 
   return verify(ir_before, ir_after, arg_dump_smt_to.getValue());
@@ -75,7 +75,7 @@ static Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   tgtSourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
 
   if (sourceBuffers.size() != targetBuffers.size()) {
-      return fail(1);
+      return Results::failure(1);
   }
 
   Results results;
@@ -90,7 +90,7 @@ static Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unsigned targetSplitLine = tgtSourceMgr.getLineAndColumn(targetSplitLoc).first;
     auto targetSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(targetSubBuffer);
 
-    results &= verifyBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer), context);
+    results.merge(verifyBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer), context));
   }
 
   // If any fails, then return a failure of the tool.

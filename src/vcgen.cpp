@@ -549,14 +549,14 @@ static Results verifyFunction(
   auto result = solver.check();
   if (result == z3::unsat) {
     llvm::outs() << "== Result: correct ==\n";
-    verificationResult = succ();
+    verificationResult = Results::success();
   } else if (result == z3::unknown) {
     llvm::outs() << "== Result: timeout ==\n";
-    verificationResult = fail(1);
+    verificationResult = Results::failure(1);
   } else if (result == z3::sat) {
     llvm::outs() << "== Result: return value mismatch ==\n";
     printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
-    verificationResult = fail(2);
+    verificationResult = Results::failure(2);
   }
 
   auto elapsed_sec = chrono::system_clock::now() - time_start;
@@ -576,7 +576,7 @@ Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
   llvm::for_each(*src, [&](auto &op) { fillFns(srcfns, op); });
   llvm::for_each(*tgt, [&](auto &op) { fillFns(tgtfns, op); });
 
-  Results verificationResult = succ();
+  Results verificationResult = Results::success();
   for (auto [name, srcfn]: srcfns) {
     auto itr = tgtfns.find(name);
     if (itr == tgtfns.end()) {
@@ -585,7 +585,7 @@ Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
       continue;
     }
     // TODO: check fn signature
-    verificationResult &= verifyFunction(srcfn, itr->second, dump_smt_to);
+    verificationResult.merge(verifyFunction(srcfn, itr->second, dump_smt_to));
   }
 
   return verificationResult;

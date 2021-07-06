@@ -21,13 +21,8 @@ public:
     // set default value to zero
     Results() : value(0) {}
 
-    Results &operator &= (const Results &RHS) {
+    Results merge (const Results &RHS) {
         value = std::max(value, RHS.value);
-        return *this;
-    }
-
-    Results &operator |= (const Results &RHS) {
-        value = std::min(value, RHS.value);
         return *this;
     }
 
@@ -35,15 +30,6 @@ private:
     Results(int value) : value(value) {}
     int value;
 };
-
-// Note: to avoid conflict with LogicalResults inlining function, here I use abbreviations
-inline Results succ() {
-  return Results::success();
-}
-
-inline Results fail(int value) {
-    return Results::failure(value);
-}
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
             const std::string &dump_smt_to);
