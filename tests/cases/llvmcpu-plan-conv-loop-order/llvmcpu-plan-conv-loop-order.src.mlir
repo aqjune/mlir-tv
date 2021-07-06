@@ -8,4 +8,4 @@ func @conv(%filter: memref<3x3x3x32xf32>, %input: memref<1x225x225x3xf32>,
 }
 
 // How to reproduce tgt:
-// iree-opt -iree-codegen-linalg-to-llvm-plan-conv-loop-order <src>
+// iree-opt -iree-llvmcpu-plan-conv-loop-order <src>

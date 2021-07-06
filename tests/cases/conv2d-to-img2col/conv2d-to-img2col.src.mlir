@@ -9,4 +9,4 @@ func @conv_16433136(%arg0: tensor<1x16x16x4xf32>, %arg1: tensor<3x3x4x16xf32>, %
 }
 
 // How to reproduce tgt:
-// iree-opt -split-input-file -iree-codegen-convert-conv-to-img2col <src>
+// iree-opt -iree-flow-convert-conv2d-to-img2col <src>

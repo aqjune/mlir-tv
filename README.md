@@ -23,8 +23,8 @@ Run the built `iree-tv` executable as following:
 ```bash
 iree-tv <.mlir before opt> <.mlir after opt>`
 # ex: ./build/iree-tv \
-#        examples/conv2d_to_img2col/conv2d_to_img2col.mlir \
-#        examples/conv2d_to_img2col/conv2d_to_img2col_opt.mlir -smt-to=5000
+#        tests/cases/conv2d_to_img2col/conv2d_to_img2col.src.mlir \
+#        tests/cases/conv2d_to_img2col/conv2d_to_img2col.tgt.mlir -smt-to=5000
 ```
 
 ## How to test IREE-TV
@@ -33,5 +33,5 @@ cd build
 # If you want detailed output on the terminal, please add -V
 ctest -R Unit
 # A detailed log is written to build/Testing/Temporary/LastTest.log
-ctest -R passes # Test IR transformation passes
+ctest -R Passes # Test IR transformation passes
 ```
