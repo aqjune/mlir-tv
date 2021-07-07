@@ -16,7 +16,8 @@ Use suffix `~` for `// VERIFY-INCORRECT` test cases
 `// VERIFY-INCORRECT` : check if the transformation is indeed wrong
 
 ## And some more
-Each `.src.mlir` file must include the command used to create the pair `.tgt.mlir` file. For now they are written in the first-line comment. The `iree-opt` flag sometimes isn't identical to the pass name, so reproducing the src-tgt pair becomes troublesome. Including the flag(command) will be very much appreciated for this reason ;)
+Each `.src.mlir` file must include the command used to create the pair `.tgt.mlir` file. For now they are written in the first-line comment. The `iree-opt` flag sometimes isn't identical to the pass name, so reproducing the src-tgt pair becomes troublesome. Including the flag(command) will be very much appreciated for this reason ;)  
+When implementing a negative test case by modifying valid `tgt.mlir`, the diff must be annotated with comments.
 
 ## Reference
 https://github.com/aqjune/iree-tv/issues/13
