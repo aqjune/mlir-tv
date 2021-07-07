@@ -12,8 +12,8 @@ FetchContent_MakeAvailable(googletest)
 link_libraries(gtest_main)
 include_directories(${PROJECT_SOURCE_DIR})
 
-link_directories(${IREE_BUILD_DIR}/third_party/llvm-project/llvm/lib)
-link_directories(${Z3_BUILD_DIR})
+link_directories(${IREE_INST_DIR}/third_party/llvm-project/llvm/lib)
+link_directories(${Z3_INST_DIR})
 link_libraries(
     MLIRStandard MLIRControlFlowInterfaces
     MLIRSideEffectInterfaces MLIRViewLikeInterface MLIRInferTypeOpInterface

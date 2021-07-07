@@ -10,10 +10,10 @@ Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
 mkdir build
 cd build
 # If you want to build a release version, please add -DCMAKE_BUILD_TYPE=RELEASE
-cmake -DIREE_DIR=<dir/to/iree> \
-      -DIREE_BUILD_DIR=<dir/to/iree-build> \
-      -DZ3_DIR=<dir/to/z3> \
-      -DZ3_BUILD_DIR=<dir/to/z3-build/> \
+cmake -DIREE_SRC_DIR=<dir/to/iree-src> \
+      -DIREE_INST_DIR=<dir/to/iree-installation> \
+      -DZ3_SRC_DIR=<dir/to/z3-src> \
+      -DZ3_INST_DIR=<dir/to/z3-installation> \
       ..
 cmake --build .
 ```
@@ -30,8 +30,8 @@ iree-tv <.mlir before opt> <.mlir after opt>`
 ## How to test IREE-TV
 ```bash
 cd build
+# A detailed log is written to build/Testing/Temporary/LastTest.log
 # If you want detailed output on the terminal, please add -V
 ctest -R Unit
-# A detailed log is written to build/Testing/Temporary/LastTest.log
 ctest -R Passes # Test IR transformation passes
 ```
