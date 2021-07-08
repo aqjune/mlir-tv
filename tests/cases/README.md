@@ -6,10 +6,10 @@ ex) `fold-tensor-extract-op`
 Just strip the <case_name> and extensions away, and you get the directory name.
 
 ## Naming convention
-### `<case_name>[~].(src|tgt).mlir`
-ex) `nhwc_filter.src.mlir`, `const_tensor.tgt.mlir`, `i32~.src.mlir`.  
+### `<case_name>[-bad].(src|tgt).mlir`
+ex) `nhwc_filter.src.mlir`, `const_tensor.tgt.mlir`, `i32-bad.src.mlir`.  
 Also, each test case should form a pair of `.src.mlir` and `.tgt.mlir`.  
-Use suffix `~` for `// VERIFY-INCORRECT` test cases
+Use suffix `-bad` for `// VERIFY-INCORRECT` test cases
 
 ## Test keywords
 `// VERIFY` : check if the transformation is correct  
