@@ -1,5 +1,5 @@
 #map0 = affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d3, d4, d5, d6)>
-#map1 = affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d2 * 2 + d4, d1 * 2 + d3, d5)> // different mapping
+#map1 = affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d2 * 2 + d4, d1 * 2 + d3, d5)> // wrong mapping
 #map2 = affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d2, d6)>
 module  {
   func @conv(%arg0: memref<3x3x3x32xf32>, %arg1: memref<1x225x225x3xf32>,

@@ -1,5 +1,5 @@
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
-#map1 = affine_map<(d0, d1) -> (d0, d1)> // different mapping
+#map1 = affine_map<(d0, d1) -> (d0, d1)> // wrong mapping
 module  {
   func @transpose_add_mul_fusion(%arg0: tensor<?x?xf32>, %arg1: tensor<?x?xf32>, %arg2: tensor<?x?xf32>) -> tensor<?x?xf32> {
     %c0 = constant 0 : index

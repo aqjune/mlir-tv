@@ -12,7 +12,7 @@ module  {
     ^bb0(%arg3: f32, %arg4: f32, %arg5: f32, %arg6: f32):  // no predecessors
       %4 = addf %arg3, %arg4 : f32
       %5 = addf %4, %cf1 : f32
-      %6 = mulf %5, %arg5 : f32 // different constant
+      %6 = mulf %5, %arg5 : f32 // wrong constant
       linalg.yield %5 : f32
     } -> tensor<?x?xf32>
     return %3 : tensor<?x?xf32>

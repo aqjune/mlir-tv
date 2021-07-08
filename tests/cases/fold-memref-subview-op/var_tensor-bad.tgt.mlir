@@ -4,7 +4,7 @@ module  {
     %0 = memref.buffer_cast %arg0 : memref<?x?xf32>
     %1 = affine.apply #map(%arg5)[%arg1]
     %2 = affine.apply #map(%arg6)[%arg2]
-    %3 = memref.load %0[%2, %1] : memref<?x?xf32> // different mapping
+    %3 = memref.load %0[%2, %1] : memref<?x?xf32> // wrong mapping
     return %3 : f32
   }
 }

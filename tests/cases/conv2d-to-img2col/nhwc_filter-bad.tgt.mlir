@@ -1,4 +1,4 @@
-#map0 = affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d2 + d4, d1 + d3, d5)> // different mapping
+#map0 = affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d2 + d4, d1 + d3, d5)> // wrong mapping
 #map1 = affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d1, d2, d3, d4, d5)>
 module  {
   func @conv_16433136(%arg0: tensor<1x16x16x4xf32>, %arg1: tensor<3x3x4x16xf32>, %arg2: tensor<1x14x14x16xf32>) -> tensor<1x14x14x16xf32> {

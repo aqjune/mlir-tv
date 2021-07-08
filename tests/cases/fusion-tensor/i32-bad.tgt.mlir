@@ -10,7 +10,7 @@ module  {
     ^bb0(%arg2: i32, %arg3: i32, %arg4: i32):  // no predecessors
       %4 = addi %arg2, %arg3 : i32
       %5 = linalg.index 0 : index
-      %6 = linalg.index 0 : index // different constant
+      %6 = linalg.index 0 : index // wrong constant
       %7 = index_cast %5 : index to i32
       %8 = index_cast %6 : index to i32
       %9 = addi %4, %7 : i32
