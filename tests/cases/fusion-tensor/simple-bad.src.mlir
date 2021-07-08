@@ -1,4 +1,4 @@
-// VERIFY
+// VERIFY-INCORRECT
 
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 
