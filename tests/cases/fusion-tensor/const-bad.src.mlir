@@ -22,6 +22,3 @@ func @generic_op_constant_fusion(%arg0 : tensor<5x?x?xf32>) -> tensor<5x?x?xf32>
     } -> tensor<5x?x?xf32>
   return %3 : tensor<5x?x?xf32>
 }
-
-// How to reproduce tgt:
-// iree-opt -linalg-fusion-for-tensor-ops <src>

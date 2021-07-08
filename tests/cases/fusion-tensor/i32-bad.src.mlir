@@ -33,6 +33,3 @@ func @producer_indexed_consumer_fusion(%arg0: tensor<?x?xi32>,
     } -> tensor<?x?xi32>
   return %4 : tensor<?x?xi32>
 }
-
-// How to reproduce tgt:
-// iree-opt -linalg-fusion-for-tensor-ops <src>

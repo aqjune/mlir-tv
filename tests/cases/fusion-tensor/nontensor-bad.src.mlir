@@ -26,6 +26,3 @@ func @scalar_add_mul_fusion(%arg0: tensor<?x?xf32>, %arg1 : f32, %arg2 : f32) ->
     } -> tensor<?x?xf32>
   return %4 : tensor<?x?xf32>
 }
-
-// How to reproduce tgt:
-// iree-opt -linalg-fusion-for-tensor-ops <src>

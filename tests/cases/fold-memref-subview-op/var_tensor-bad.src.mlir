@@ -8,6 +8,3 @@ func @fold_subview(%arg0: tensor<?x?xf32>, %off_y: index, %off_x: index, %dim_y:
     %2 = memref.load %1[%idx_y, %idx_x]: memref<?x?xf32, #map>
     return %2 : f32
 }
-
-// How to reproduce tgt:
-// iree-opt --fold-memref-subview-ops <src>
