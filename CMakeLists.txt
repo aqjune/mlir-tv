@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15.0)
 project(iree-tv VERSION 0.1.0)
 set (CMAKE_CXX_STANDARD 17)
 
-set(IREE_SRC_DIR "" CACHE STRING "IREE source top-level directory")
+set(IREE_DIR "" CACHE STRING "IREE source top-level directory")
 set(IREE_BUILD_DIR "" CACHE STRING "IREE build top-level directory")
 set(Z3_DIR "" CACHE STRING "Z3 installation top-level directory")
 
@@ -28,7 +28,7 @@ target_link_directories(${PROJECT_NAME} PUBLIC ${IREE_BUILD_DIR}/third_party/llv
 target_link_directories(${PROJECT_NAME} PUBLIC ${Z3_LIB_DIR})
 
 # IREE include directories
-include_directories(${IREE_SRC_DIR}/third_party/llvm-project/llvm/include ${IREE_SRC_DIR}/third_party/llvm-project/mlir/include)
+include_directories(${IREE_DIR}/third_party/llvm-project/llvm/include ${IREE_DIR}/third_party/llvm-project/mlir/include)
 include_directories(${IREE_BUILD_DIR}/third_party/llvm-project/llvm/include ${IREE_BUILD_DIR}/third_party/llvm-project/llvm/tools/mlir/include)
 
 # Z3 include directories
