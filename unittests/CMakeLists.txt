@@ -13,7 +13,7 @@ link_libraries(gtest_main)
 include_directories(${PROJECT_SOURCE_DIR})
 
 link_directories(${IREE_BUILD_DIR}/third_party/llvm-project/llvm/lib)
-link_directories(${Z3_LIBRARY_DIR})
+link_directories(${Z3_LIB_DIR})
 link_libraries(
     MLIRStandard MLIRControlFlowInterfaces
     MLIRSideEffectInterfaces MLIRViewLikeInterface MLIRInferTypeOpInterface

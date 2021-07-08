@@ -12,8 +12,7 @@ cd build
 # If you want to build a release version, please add -DCMAKE_BUILD_TYPE=RELEASE
 cmake -DIREE_DIR=<dir/to/iree> \
       -DIREE_BUILD_DIR=<dir/to/iree-build> \
-      -DZ3_INCLUDE_DIR=<dir/to/z3-install/include> \
-      -DZ3_LIBRARY_DIR=<dir/to/z3-install/lib> \
+      -DZ3_DIR=<dir/to/z3-install> \
       ..
 cmake --build .
 ```
@@ -30,8 +29,8 @@ iree-tv <.mlir before opt> <.mlir after opt>`
 ## How to test IREE-TV
 ```bash
 cd build
+# A detailed log is written to build/Testing/Temporary/LastTest.log
 # If you want detailed output on the terminal, please add -V
 ctest -R Unit
-# A detailed log is written to build/Testing/Temporary/LastTest.log
 ctest -R Passes # Test IR transformation passes
 ```
