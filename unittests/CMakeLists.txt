@@ -29,6 +29,9 @@ add_executable(
 add_executable(
   state_test
   state_test.cpp
+  ../src/state.cpp
+  ../src/smt.cpp
+  ../src/tensor.cpp
 )
 add_executable(
   tensor_test
