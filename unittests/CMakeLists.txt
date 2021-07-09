@@ -36,6 +36,8 @@ add_executable(
 add_executable(
   tensor_test
   tensor_test.cpp
+  ../src/tensor.cpp
+  ../src/smt.cpp
 )
 add_executable(
   vcgen_test

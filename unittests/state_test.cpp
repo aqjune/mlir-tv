@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "src/state.h"
+#include "z3_expects.h"
 
 #include "mlir/Parser.h"
 
@@ -76,15 +77,15 @@ TEST_F(UnitRegFileTest, IsEmptyInitially) {
 }
 
 TEST_F(UnitRegFileTest, Contains) {
-  EXPECT_EQ(r2.contains(indexOp0), true);
-  EXPECT_EQ(r2.contains(indexOp1), false);
-  EXPECT_EQ(r2.contains(floatOp0), true);
-  EXPECT_EQ(r2.contains(floatOp1), false);
+  EXPECT_TRUE(r2.contains(indexOp0));
+  EXPECT_FALSE(r2.contains(indexOp1));
+  EXPECT_TRUE(r2.contains(floatOp0));
+  EXPECT_FALSE(r2.contains(floatOp1));
 
-  EXPECT_EQ(r3.contains(indexOp0), true);
-  EXPECT_EQ(r3.contains(floatOp0), true);
-  EXPECT_EQ(r3.contains(floatOp1), true);
-  EXPECT_EQ(r3.contains(indexOp1), true);
+  EXPECT_TRUE(r3.contains(indexOp0));
+  EXPECT_TRUE(r3.contains(floatOp0));
+  EXPECT_TRUE(r3.contains(floatOp1));
+  EXPECT_TRUE(r3.contains(indexOp1));
 }
 
 TEST_F(UnitRegFileTest, Get) {
@@ -127,12 +128,12 @@ TEST_F(UnitRegFileTest, Iterator) {
 }
 
 TEST_F(UnitRegFileTest, GetZ3Expr) {
-  EXPECT_EQ(r2.getZ3Expr(indexOp0), (z3::expr)Index(indexOp0.getValue()));
+  EXPECT_Z3_EQ(r2.getZ3Expr(indexOp0), (z3::expr)Index(indexOp0.getValue()));
   EXPECT_DEATH(r2.getZ3Expr(indexOp1), "Cannot find key"); // llvm_unreachable
-  EXPECT_EQ(r2.getZ3Expr(floatOp0), (z3::expr)Float(floatOp0.getValue()));
+  EXPECT_Z3_EQ(r2.getZ3Expr(floatOp0), (z3::expr)Float(floatOp0.getValue()));
 
-  EXPECT_EQ(r3.getZ3Expr(indexOp0), (z3::expr)Index(indexOp0.getValue()));
-  EXPECT_EQ(r3.getZ3Expr(indexOp1), (z3::expr)Index(indexOp1.getValue()));
-  EXPECT_EQ(r3.getZ3Expr(floatOp0), (z3::expr)Float(floatOp0.getValue()));
-  EXPECT_EQ(r3.getZ3Expr(floatOp1), (z3::expr)Float(floatOp1.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp0), (z3::expr)Index(indexOp0.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp1), (z3::expr)Index(indexOp1.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp0), (z3::expr)Float(floatOp0.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp1), (z3::expr)Float(floatOp1.getValue()));
 }
