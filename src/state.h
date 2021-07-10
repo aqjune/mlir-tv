@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tensor.h"
+#include "value.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "z3++.h"
 #include <stack>

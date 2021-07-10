@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "src/tensor.h"
+#include "src/value.h"
 
 TEST(UnitTensorTest, SampleTest)
 {
