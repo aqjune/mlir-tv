@@ -7,7 +7,7 @@
 class Results {
 public:
   enum Code {
-    SUCCESS = 0, TIMEOUT, RETVALUE
+    SUCCESS = 0, TIMEOUT, RETVALUE, UB
   };
 
   // Returns true if the value equals zero.

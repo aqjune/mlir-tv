@@ -33,9 +33,21 @@ using namespace std;
   return msg; \
 }
 
+namespace {
+class Defer {
+private:
+  function<void()> fn;
+public:
+  Defer(function<void()> &&fn): fn(fn) {}
+  ~Defer() { fn(); }
+};
+};
+
 static variant<string, State>
 createInputState(mlir::FuncOp fn) {
   State s;
+  s.isWellDefined = ctx.bool_val(true);
+
   unsigned n = fn.getNumArguments();
   for (unsigned i = 0; i < n; ++i) {
     auto arg = fn.getArgument(i);
@@ -381,7 +393,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     }
   }
 
-  st.linalgGenericScopes.push(move(output_dimvars));
+  newst.linalgGenericScopes.push(move(output_dimvars));
 
   // Encode the loop body
   auto &ops = block.getOperations();
@@ -403,8 +415,8 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
   // aqjune talked with mlir people and it is confirmed by them
 
-  output_dimvars = move(st.linalgGenericScopes.top());
-  st.linalgGenericScopes.pop();
+  output_dimvars = move(newst.linalgGenericScopes.top());
+  newst.linalgGenericScopes.pop();
 
   auto tensor_sz = Tensor::getDims(
       op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
@@ -478,7 +490,7 @@ static void printCounterEx(
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
     llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
-                 << or_omit(st_src_in.regs.get<Tensor>(argsrc)) << "\n";
+                 << or_omit(st_src_in.regs.findOrCrash(argsrc)) << "\n";
   }
 
   llvm::outs() << "\n<Source's variables>\n";
@@ -508,6 +520,27 @@ static void printCounterEx(
 #endif
 }
 
+
+static pair<z3::check_result, int64_t> solve(
+    z3::solver &solver, const z3::expr &refinement_negated,
+    const string &dump_smt_to, const string &dump_string_to_suffix) {
+  solver.reset();
+  solver.add(refinement_negated);
+
+  if (!dump_smt_to.empty()) {
+    ofstream fout(dump_smt_to + "." + dump_string_to_suffix);
+    fout << refinement_negated;
+    fout.close();
+  }
+
+  auto startTime = chrono::system_clock::now();
+  z3::check_result result = solver.check();
+  auto elapsedMillisec =
+      chrono::duration_cast<chrono::milliseconds>(
+        chrono::system_clock::now() - startTime).count();
+
+  return {result, elapsedMillisec};
+}
 
 static Results verifyFunction(
     mlir::FuncOp src, mlir::FuncOp tgt, const string &dump_smt_to) {
@@ -539,39 +572,53 @@ static Results verifyFunction(
   if (auto msg = encode(st_tgt, tgt))
     raiseUnsupported(*msg);
 
-  // Invoke Z3
-  auto solver = z3::solver(ctx, "QF_UFBV");
-  auto [refines, params] = st_tgt.refines(st_src);
-  refines = refines.simplify();
 
-  solver.add(!refines);
+  auto fnname = src.getName().str();
+  int64_t elapsedMillisec = 0;
 
-  if (!dump_smt_to.empty()) {
-    ofstream fout(dump_smt_to + "." + src.getName().str());
-    fout << refines;
-    fout.close();
+  Defer timePrinter([&]() {
+    llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
+  });
+  auto printErrorMsg = [&](z3::solver &s, z3::check_result res, const char *msg,
+                           vector<z3::expr> &&params){
+    if (res == z3::unknown) {
+      llvm::outs() << "== Result: timeout ==\n";
+    } else if (res == z3::sat) {
+      llvm::outs() << "== Result: " << msg << "\n";
+      printCounterEx(s, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
+    } else {
+      llvm_unreachable("unexpected result");
+    }
+  };
+
+  { // 1. Check UB
+    auto s = z3::solver(ctx, "QF_UFBV");
+    auto not_refines =
+        (st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
+    auto res = solve(s, not_refines, dump_smt_to, fnname + ".ub");
+    elapsedMillisec += res.second;
+    if (res.first != z3::unsat) {
+      // Well... let's use Alive2's wording.
+      printErrorMsg(s, res.first, "Source is more defined than target", {});
+      return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
+    }
   }
 
-  Results verificationResult;
-  auto time_start = chrono::system_clock::now();
-  auto result = solver.check();
-  if (result == z3::unsat) {
-    llvm::outs() << "== Result: correct ==\n";
-    verificationResult = Results::SUCCESS;
-  } else if (result == z3::unknown) {
-    llvm::outs() << "== Result: timeout ==\n";
-    verificationResult = Results::TIMEOUT;
-  } else if (result == z3::sat) {
-    llvm::outs() << "== Result: return value mismatch ==\n";
-    printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
-    verificationResult = Results::RETVALUE;
+  { // 2. Check the return values
+    auto s = z3::solver(ctx, "QF_UFBV");
+    auto [refines, params] = st_tgt.retValue.refines(st_src.retValue);
+    auto not_refines =
+        (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
+    auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
+    elapsedMillisec += res.second;
+    if (res.first != z3::unsat) {
+      printErrorMsg(s, res.first, "Return value mismatch", {params});
+      return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
+    }
   }
 
-  auto elapsed_sec = chrono::system_clock::now() - time_start;
-  llvm::outs() << chrono::duration_cast<chrono::seconds>(elapsed_sec).count()
-               << " sec.\n";
-
-  return verificationResult;
+  llvm::outs() << "== Result: correct ==\n";
+  return Results::SUCCESS;
 }
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,

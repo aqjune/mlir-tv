@@ -43,8 +43,4 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
   return os;
 }
 
-pair<z3::expr, vector<z3::expr>> State::refines(const State &src) {
-  // TODO: encode the final memory
-  auto [refines, idx] = retValue.refines(src.retValue);
-  return {move(refines), {idx}};
-}
+State::State(): isWellDefined(ctx) {}
