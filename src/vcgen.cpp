@@ -639,6 +639,8 @@ Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
+    if (fnop.isDeclaration())
+      return;
     m[fnop.getName()] = fnop;
   };
   llvm::for_each(*src, [&](auto &op) { fillFns(srcfns, op); });

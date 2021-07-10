@@ -354,6 +354,9 @@ Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
     elemty2 = Integer::sort(ielemty.getWidth());
   } else if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
     elemty2 = Float::sort();
+  } else if (auto felemty = elemty.dyn_cast<mlir::Float64Type>()) {
+    // In the abstract world, f32 and f64 are all unknown values
+    elemty2 = Float::sort();
   } else {
     return {};
   }
