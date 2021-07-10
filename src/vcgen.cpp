@@ -3,9 +3,10 @@
 #include "state.h"
 #include "vcgen.h"
 
-#include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
-#include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
+#include "mlir/Dialect/Shape/IR/Shape.h"
+#include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
 #include "mlir/IR/Matchers.h"
 #include "z3++.h"
 #include <chrono>
@@ -322,6 +323,34 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
 }
 
 
+template<>
+optional<string> encodeOp(State &st, mlir::shape::ShapeOfOp op) {
+  if (!op.getType().isa<mlir::TensorType>())
+    return "unsupported type";
+
+  auto tensor = op.getOperand();
+  if (!tensor.getType().isa<mlir::TensorType>())
+    return "unsupported type";
+
+  auto tt = st.regs.get<Tensor>(tensor);
+  st.regs.add(op, Tensor(tt.getDims()));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::shape::ToExtentTensorOp op) {
+  // TODO: MLIR doc says
+  //   If the shape represents an error, this op’s behavior is undefined.
+  // Should figure out whether this applies to a Tensor operand as well.
+  if (!op.getOperand().getType().isa<mlir::TensorType>())
+    return "unsupported type";
+
+  auto tt = st.regs.get<Tensor>(op.getOperand());
+  assert(tt.getDims().size() ==
+         op.getType().cast<mlir::TensorType>().getRank());
+  st.regs.add(op, tt);
+  return {};
+}
 
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
@@ -467,6 +496,9 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::linalg::MatmulOp);
     ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp);
     ENCODE(st, op, mlir::linalg::TensorExpandShapeOp);
+    
+    ENCODE(st, op, mlir::shape::ShapeOfOp);
+    ENCODE(st, op, mlir::shape::ToExtentTensorOp);
 
     RET_STR("Unknown op (" << op.getName() << "): " << op);
   }

@@ -196,6 +196,13 @@ Tensor::Tensor(const z3::expr &splat_elem, const vector<z3::expr> &dimvec):
   arr = z3::const_array(Index::sort(), splat_elem);
 }
 
+Tensor::Tensor(const vector<z3::expr> &elems1d):
+    arr(z3::const_array(Index::sort(), elems1d[0])),
+    dims({ (z3::expr)Index(elems1d.size()) }) {
+  for (unsigned i = 1; i < elems1d.size(); ++i)
+    arr = z3::store(arr, i, elems1d[i]);
+}
+
 Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec,
                const z3::sort &elemty):
   arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), elemty))),

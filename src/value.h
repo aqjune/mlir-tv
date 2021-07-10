@@ -72,6 +72,7 @@ public:
   Tensor();
   // A splat tensor.
   Tensor(const z3::expr &splat_elem, const std::vector<z3::expr> &dims);
+  Tensor(const std::vector<z3::expr> &elems1d);
   Tensor(const std::string &name, const std::vector<z3::expr> &dims,
          const z3::sort &elemty);
 
@@ -84,6 +85,7 @@ public:
   z3::expr get(const std::vector<z3::expr> &indices) const;
 
   Index getDim(uint64_t idx) const;
+  std::vector<z3::expr> getDims() const { return dims; }
 
   // Return a new tensor T2 s.t.
   //   T2[newidxvars] = this[srcidxs]
