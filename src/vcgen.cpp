@@ -211,7 +211,9 @@ optional<string> encodeOp(State &st, mlir::tensor::DimOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::IndexOp op) {
   uint64_t i = op.dim();
-  st.regs.add(op, Index(i));
+  assert(i < st.linalgGenericScopes.top().size());
+  z3::expr idxvar = st.linalgGenericScopes.top()[i];
+  st.regs.add(op, Index(idxvar));
   return {};
 }
 
@@ -379,6 +381,8 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     }
   }
 
+  st.linalgGenericScopes.push(move(output_dimvars));
+
   // Encode the loop body
   auto &ops = block.getOperations();
   mlir::Value yieldedValue;
@@ -398,6 +402,9 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
 
   // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
   // aqjune talked with mlir people and it is confirmed by them
+
+  output_dimvars = move(st.linalgGenericScopes.top());
+  st.linalgGenericScopes.pop();
 
   auto tensor_sz = Tensor::getDims(
       op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());

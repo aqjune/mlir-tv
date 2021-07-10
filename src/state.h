@@ -3,6 +3,7 @@
 #include "tensor.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "z3++.h"
+#include <stack>
 #include <variant>
 #include "mlir/Support/LLVM.h"
 
@@ -27,6 +28,7 @@ public:
 
 struct State {
   RegFile regs;
+  std::stack<std::vector<z3::expr>> linalgGenericScopes;
   Tensor retValue;
   // TODO: add memory
 
