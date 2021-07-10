@@ -1,11 +1,12 @@
-#include "tensor.h"
+#include "value.h"
 #include "smt.h"
 #include "state.h"
 #include "vcgen.h"
 
-#include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
-#include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
+#include "mlir/Dialect/Shape/IR/Shape.h"
+#include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
 #include "mlir/IR/Matchers.h"
 #include "z3++.h"
 #include <chrono>
@@ -33,9 +34,21 @@ using namespace std;
   return msg; \
 }
 
+namespace {
+class Defer {
+private:
+  function<void()> fn;
+public:
+  Defer(function<void()> &&fn): fn(fn) {}
+  ~Defer() { fn(); }
+};
+};
+
 static variant<string, State>
 createInputState(mlir::FuncOp fn) {
   State s;
+  s.isWellDefined = ctx.bool_val(true);
+
   unsigned n = fn.getNumArguments();
   for (unsigned i = 0; i < n; ++i) {
     auto arg = fn.getArgument(i);
@@ -209,9 +222,37 @@ optional<string> encodeOp(State &st, mlir::tensor::DimOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
+  // TODO: The MLIR doc isn't explicit about what happens if indices are
+  // out-of-bounds. It is currently encoded as UB.
+
+  auto t = st.regs.get<Tensor>(op.getOperand(0));
+  vector<z3::expr> indices;
+  for (auto idx0: op.indices())
+    indices.emplace_back(st.regs.get<Index>(idx0));
+
+  if (op.getType().isa<mlir::IndexType>())
+    st.regs.add(op, Index(t.get(indices)));
+  else
+    // TODO: how to do this well?
+    return "unsupported type";
+
+  z3::expr wb = ctx.bool_val(true);
+  for (unsigned i = 0; i < indices.size(); ++i)
+    // TODO: revisit this; may not be axis-wise
+    wb = wb && z3::ult(indices[i], t.getDim(i));
+
+  st.isWellDefined = st.isWellDefined && wb;
+
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::linalg::IndexOp op) {
   uint64_t i = op.dim();
-  st.regs.add(op, Index(i));
+  assert(i < st.linalgGenericScopes.top().size());
+  z3::expr idxvar = st.linalgGenericScopes.top()[i];
+  st.regs.add(op, Index(idxvar));
   return {};
 }
 
@@ -249,11 +290,24 @@ optional<string> encodeOp(State &st, mlir::SubIOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
-  auto idx = st.regs.get<Index>(op.getOperand());
-  auto dstty = op.getType().dyn_cast<mlir::IntegerType>();
-  if (!dstty)
-    return "Unsupported dest type";
-  st.regs.add(op, Integer(((z3::expr)idx).extract(dstty.getWidth() - 1, 0)));
+  auto src = st.regs.getZ3Expr(op.getOperand());
+  assert(src.is_bv());
+  unsigned srcWidth = src.get_sort().bv_size();
+
+  unsigned destWidth = 0;
+  if (auto dstty = op.getType().dyn_cast<mlir::IntegerType>())
+    destWidth = dstty.getWidth();
+  else {
+    assert(op.getType().isa<mlir::IndexType>());
+    destWidth = Index::BITS;
+  }
+
+  z3::expr casted = src;
+  if (srcWidth > destWidth)
+    casted = src.extract(destWidth - 1, 0);
+  else if (srcWidth < destWidth)
+    casted = z3::concat(ctx.bv_val(0, destWidth - srcWidth), casted);
+  st.regs.add(op, Integer(casted));
   return {};
 }
 
@@ -295,6 +349,34 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
 }
 
 
+template<>
+optional<string> encodeOp(State &st, mlir::shape::ShapeOfOp op) {
+  if (!op.getType().isa<mlir::TensorType>())
+    return "unsupported type";
+
+  auto tensor = op.getOperand();
+  if (!tensor.getType().isa<mlir::TensorType>())
+    return "unsupported type";
+
+  auto tt = st.regs.get<Tensor>(tensor);
+  st.regs.add(op, Tensor(tt.getDims()));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::shape::ToExtentTensorOp op) {
+  // TODO: MLIR doc says
+  //   If the shape represents an error, this op’s behavior is undefined.
+  // Should figure out whether this applies to a Tensor operand as well.
+  if (!op.getOperand().getType().isa<mlir::TensorType>())
+    return "unsupported type";
+
+  auto tt = st.regs.get<Tensor>(op.getOperand());
+  assert(tt.getDims().size() ==
+         op.getType().cast<mlir::TensorType>().getRank());
+  st.regs.add(op, tt);
+  return {};
+}
 
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
@@ -306,8 +388,8 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
 
   auto indexingMaps = op.indexing_maps().getValue();
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
-  if (!outputMap.isIdentity())
-    return "identity output map is supported only";
+  if (!outputMap.isPermutation())
+    return "permutation output map is supported only";
 
   // Match one block including 'yield' only
   // Referred linalg::RegionMatcher::matchAsScalarBinaryOp
@@ -379,6 +461,8 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     }
   }
 
+  newst.linalgGenericScopes.push(move(output_dimvars));
+
   // Encode the loop body
   auto &ops = block.getOperations();
   mlir::Value yieldedValue;
@@ -398,6 +482,18 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
 
   // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
   // aqjune talked with mlir people and it is confirmed by them
+
+  output_dimvars = move(newst.linalgGenericScopes.top());
+  newst.linalgGenericScopes.pop();
+
+  if (!outputMap.isIdentity()) {
+    vector<z3::expr> newvars;
+    for (unsigned i = 0; i < outputMap.getNumResults(); ++i) {
+      auto ade = outputMap.getResult(i).dyn_cast<mlir::AffineDimExpr>();
+      newvars.emplace_back(output_dimvars[ade.getPosition()]);
+    }
+    output_dimvars = move(newvars);
+  }
 
   auto tensor_sz = Tensor::getDims(
       op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
@@ -427,6 +523,7 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::SubIOp);
 
     ENCODE(st, op, mlir::tensor::DimOp);
+    ENCODE(st, op, mlir::tensor::ExtractOp);
 
     ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
@@ -435,6 +532,9 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::linalg::MatmulOp);
     ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp);
     ENCODE(st, op, mlir::linalg::TensorExpandShapeOp);
+    
+    ENCODE(st, op, mlir::shape::ShapeOfOp);
+    ENCODE(st, op, mlir::shape::ToExtentTensorOp);
 
     RET_STR("Unknown op (" << op.getName() << "): " << op);
   }
@@ -471,7 +571,7 @@ static void printCounterEx(
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
     llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
-                 << or_omit(st_src_in.regs.get<Tensor>(argsrc)) << "\n";
+                 << or_omit(st_src_in.regs.findOrCrash(argsrc)) << "\n";
   }
 
   llvm::outs() << "\n<Source's variables>\n";
@@ -501,6 +601,27 @@ static void printCounterEx(
 #endif
 }
 
+
+static pair<z3::check_result, int64_t> solve(
+    z3::solver &solver, const z3::expr &refinement_negated,
+    const string &dump_smt_to, const string &dump_string_to_suffix) {
+  solver.reset();
+  solver.add(refinement_negated);
+
+  if (!dump_smt_to.empty()) {
+    ofstream fout(dump_smt_to + "." + dump_string_to_suffix);
+    fout << refinement_negated;
+    fout.close();
+  }
+
+  auto startTime = chrono::system_clock::now();
+  z3::check_result result = solver.check();
+  auto elapsedMillisec =
+      chrono::duration_cast<chrono::milliseconds>(
+        chrono::system_clock::now() - startTime).count();
+
+  return {result, elapsedMillisec};
+}
 
 static Results verifyFunction(
     mlir::FuncOp src, mlir::FuncOp tgt, const string &dump_smt_to) {
@@ -532,39 +653,53 @@ static Results verifyFunction(
   if (auto msg = encode(st_tgt, tgt))
     raiseUnsupported(*msg);
 
-  // Invoke Z3
-  auto solver = z3::solver(ctx, "QF_UFBV");
-  auto [refines, params] = st_tgt.refines(st_src);
-  refines = refines.simplify();
 
-  solver.add(!refines);
+  auto fnname = src.getName().str();
+  int64_t elapsedMillisec = 0;
 
-  if (!dump_smt_to.empty()) {
-    ofstream fout(dump_smt_to + "." + src.getName().str());
-    fout << refines;
-    fout.close();
+  Defer timePrinter([&]() {
+    llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
+  });
+  auto printErrorMsg = [&](z3::solver &s, z3::check_result res, const char *msg,
+                           vector<z3::expr> &&params){
+    if (res == z3::unknown) {
+      llvm::outs() << "== Result: timeout ==\n";
+    } else if (res == z3::sat) {
+      llvm::outs() << "== Result: " << msg << "\n";
+      printCounterEx(s, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
+    } else {
+      llvm_unreachable("unexpected result");
+    }
+  };
+
+  { // 1. Check UB
+    auto s = z3::solver(ctx, "QF_UFBV");
+    auto not_refines =
+        (st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
+    auto res = solve(s, not_refines, dump_smt_to, fnname + ".ub");
+    elapsedMillisec += res.second;
+    if (res.first != z3::unsat) {
+      // Well... let's use Alive2's wording.
+      printErrorMsg(s, res.first, "Source is more defined than target", {});
+      return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
+    }
   }
 
-  Results verificationResult;
-  auto time_start = chrono::system_clock::now();
-  auto result = solver.check();
-  if (result == z3::unsat) {
-    llvm::outs() << "== Result: correct ==\n";
-    verificationResult = Results::success();
-  } else if (result == z3::unknown) {
-    llvm::outs() << "== Result: timeout ==\n";
-    verificationResult = Results::failure(1);
-  } else if (result == z3::sat) {
-    llvm::outs() << "== Result: return value mismatch ==\n";
-    printCounterEx(solver, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
-    verificationResult = Results::failure(2);
+  { // 2. Check the return values
+    auto s = z3::solver(ctx, "QF_UFBV");
+    auto [refines, param] = st_tgt.retValue.refines(st_src.retValue);
+    auto not_refines =
+        (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
+    auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
+    elapsedMillisec += res.second;
+    if (res.first != z3::unsat) {
+      printErrorMsg(s, res.first, "Return value mismatch", {param});
+      return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
+    }
   }
 
-  auto elapsed_sec = chrono::system_clock::now() - time_start;
-  llvm::outs() << chrono::duration_cast<chrono::seconds>(elapsed_sec).count()
-               << " sec.\n";
-
-  return verificationResult;
+  llvm::outs() << "== Result: correct ==\n";
+  return Results::SUCCESS;
 }
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
@@ -572,12 +707,14 @@ Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
+    if (fnop.isDeclaration())
+      return;
     m[fnop.getName()] = fnop;
   };
   llvm::for_each(*src, [&](auto &op) { fillFns(srcfns, op); });
   llvm::for_each(*tgt, [&](auto &op) { fillFns(tgtfns, op); });
 
-  Results verificationResult = Results::success();
+  Results verificationResult = Results::SUCCESS;
   for (auto [name, srcfn]: srcfns) {
     auto itr = tgtfns.find(name);
     if (itr == tgtfns.end()) {

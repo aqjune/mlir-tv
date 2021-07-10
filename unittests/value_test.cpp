@@ -1,6 +1,6 @@
 #include "gtest/gtest.h"
-#include "src/tensor.h"
-#include "z3_expects.h"
+#include "src/value.h"
+#include "tv_test_shared.h"
 
 TEST(UnitIndexTest, Default) {
   EXPECT_THROW(((z3::expr)Index()).get_sort(), z3::exception);

@@ -1,20 +1,21 @@
 #pragma once
 
-#include "tensor.h"
+#include "value.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "z3++.h"
+#include <stack>
 #include <variant>
 #include "mlir/Support/LLVM.h"
 
 using ValueTy = std::variant<Tensor, Index, Float, Integer>;
 
-struct RegFile {
+class RegFile {
 private:
   llvm::DenseMap<mlir::Value, ValueTy> m;
-  ValueTy findOrCrash(mlir::Value v) const;
 
 public:
   void add(mlir::Value v, ValueTy &&t);
+  ValueTy findOrCrash(mlir::Value v) const;
   template<class T> T get(mlir::Value v) const {
     return std::get<T>(findOrCrash(v));
   }
@@ -25,14 +26,22 @@ public:
   auto end() const { return m.end(); }
 };
 
-struct State {
+class State {
+public:
   RegFile regs;
+  std::stack<std::vector<z3::expr>> linalgGenericScopes;
   Tensor retValue;
+
+  // The negated form of UB is tracked because the neg. of value refinement is:
+  // 'src.no-ub /\ tgt.no-ub /\ src.retvalue != tgt.retvalue'.
+  // We'll need to implement our own version of peephole optimizations on Z3
+  // expr some day (or simply use Alive2's one), and this form will be helpful
+  // then.
+  z3::expr isWellDefined;
+
   // TODO: add memory
 
-  // Returns (this(tgt) state refines src,
-  //          variables used for encoding refinement)
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const State &src);
+  State();
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };

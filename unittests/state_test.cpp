@@ -1,6 +1,6 @@
 #include "gtest/gtest.h"
 #include "src/state.h"
-#include "z3_expects.h"
+#include "tv_test_shared.h"
 
 #include "mlir/Parser.h"
 

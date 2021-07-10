@@ -4,33 +4,30 @@
 #include <string>
 #include <algorithm>
 
-struct Results {
+class Results {
 public:
-  static Results success() {
-    return Results(0);
-  }
-  static Results failure(int code = 1) {
-    return Results(code);
-  }
+  enum Code {
+    SUCCESS = 0, TIMEOUT, RETVALUE, UB
+  };
 
   // Returns true if the value equals zero.
-  bool succeeded() const { return code == 0; }
+  bool succeeded() const { return code == SUCCESS; }
   // Returns true if the value is other than zero.
   bool failed() const { return !succeeded(); }
   // Returns status code
-  int getCode() const { return code; }
+  Code getCode() const { return code; }
 
-  // set default value to zero
-  Results() : code(0) {}
+  // set default value to success
+  Results(Code code = SUCCESS) : code(code) {}
 
+  // get the worse result
   Results merge (const Results &RHS) {
     code = std::max(code, RHS.code);
     return *this;
   }
 
-private:
-  Results(int code) : code(code) {}
-  int code;
+public:
+  Code code;
 };
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,

@@ -1,4 +1,5 @@
-#include "tensor.h"
+#include "abstractops.h"
+#include "value.h"
 #include "smt.h"
 
 using namespace std;
@@ -58,29 +59,6 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
   for (auto &e: vec)
     ev.push_back(e);
   return ev;
-}
-
-static z3::expr mkZeroElemFromArr(const z3::expr &arr) {
-  unsigned bvsz = z3::select(arr, Index::zero()).get_sort().bv_size();
-  return ctx.bv_val(0, bvsz);
-}
-
-static z3::expr
-abstractDot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
-  // TODO: check that a.get_sort() == b.get_sort()
-  auto i = Index("idx");
-
-  z3::sort_vector domain(ctx);
-  domain.push_back(a.get_sort());
-  domain.push_back(b.get_sort());
-  auto dotfn = ctx.function("smt_dot", domain, Float::sort());
-
-  z3::expr_vector args(ctx);
-  z3::expr ai = z3::select(a, i), bi = z3::select(b, i);
-  z3::expr zero = mkZeroElemFromArr(a);
-  args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)));
-  args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), bi, zero)));
-  return dotfn(args);
 }
 
 static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
@@ -196,6 +174,13 @@ Tensor::Tensor(const z3::expr &splat_elem, const vector<z3::expr> &dimvec):
   arr = z3::const_array(Index::sort(), splat_elem);
 }
 
+Tensor::Tensor(const vector<z3::expr> &elems1d):
+    arr(z3::const_array(Index::sort(), elems1d[0])),
+    dims({ (z3::expr)Index(elems1d.size()) }) {
+  for (unsigned i = 1; i < elems1d.size(); ++i)
+    arr = z3::store(arr, i, elems1d[i]);
+}
+
 Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec,
                const z3::sort &elemty):
   arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), elemty))),
@@ -233,7 +218,7 @@ Tensor Tensor::affine(
       z3::ite(
         z3::ult(idxvar, get1DSize(newsizes)),
         get(srcidxs),
-        mkZeroElemFromArr(arr)
+        aop::mkZeroElemFromArr(arr)
       ));
   return newm;
 }
@@ -279,7 +264,8 @@ Tensor Tensor::conv(const Tensor &filter) const {
       .to1DArrayWithOfs({l, Index::zero(), Index::zero(), Index::zero()},
         cube_size);
 
-  auto res = abstractDot(input_subarr, filter_arr,
+  // TODO: switch dot <-> dot2 after determining the abstraction level
+  auto res = aop::dot(input_subarr, filter_arr,
       cube_size[0] * cube_size[1] * cube_size[2] * cube_size[3]);
 
   return Tensor::mkLambda(move(output_dims), {i, j, k, l}, move(res));
@@ -305,7 +291,7 @@ Tensor Tensor::matmul(const Tensor &b) const {
       {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
   return mkLambda({dims[0], bt.dims[0]}, {i, j},
-      abstractDot(a_row, bt_row, dims[1]));
+      aop::dot(a_row, bt_row, dims[1]));
 }
 
 pair<z3::expr, z3::expr> Tensor::refines(const Tensor &src) const {
@@ -353,6 +339,9 @@ Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
   if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
     elemty2 = Integer::sort(ielemty.getWidth());
   } else if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
+    elemty2 = Float::sort();
+  } else if (auto felemty = elemty.dyn_cast<mlir::Float64Type>()) {
+    // In the abstract world, f32 and f64 are all unknown values
     elemty2 = Float::sort();
   } else {
     return {};
@@ -426,5 +415,5 @@ z3::expr Tensor::to1DArrayWithOfs(
       z3::ite(
         z3::ult(idxvar, get1DSize(sizes)),
         get(absidxs),
-        mkZeroElemFromArr(arr)));
+        aop::mkZeroElemFromArr(arr)));
 }

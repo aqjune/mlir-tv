@@ -31,13 +31,15 @@ add_executable(
   state_test.cpp
   ../src/state.cpp
   ../src/smt.cpp
-  ../src/tensor.cpp
+  ../src/value.cpp
+  ../src/abstractops.cpp
 )
 add_executable(
-  tensor_test
-  tensor_test.cpp
-  ../src/tensor.cpp
+  value_test
+  value_test.cpp
+  ../src/value.cpp
   ../src/smt.cpp
+  ../src/abstractops.cpp
 )
 add_executable(
   vcgen_test
@@ -48,5 +50,5 @@ include(GoogleTest)
 # Add each executable to gtest
 gtest_discover_tests(smt_test)
 gtest_discover_tests(state_test)
-gtest_discover_tests(tensor_test)
+gtest_discover_tests(value_test)
 gtest_discover_tests(vcgen_test)
