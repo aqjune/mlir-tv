@@ -17,10 +17,9 @@ add_executable(${PROJECT_NAME}
     src/smt.cpp)
 
 target_link_libraries(${PROJECT_NAME}
-    MLIRStandard MLIRControlFlowInterfaces
-    MLIRSideEffectInterfaces MLIRViewLikeInterface MLIRInferTypeOpInterface
-    MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRAffine MLIRMemRef
-    MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport MLIRInferTypeOpInterface
+    MLIRViewLikeInterface MLIRInferTypeOpInterface
+    MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRViewLikeInterface MLIRAffine MLIRMemRef
+    MLIRControlFlowInterfaces MLIRStandard MLIRSideEffectInterfaces MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport MLIRInferTypeOpInterface
     LLVMSupport LLVMDemangle z3 pthread m curses)
 target_link_options(${PROJECT_NAME} PUBLIC -fPIC)
 target_compile_options(${PROJECT_NAME} PUBLIC -fno-rtti)

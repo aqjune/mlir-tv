@@ -37,7 +37,7 @@ llvm::cl::opt<bool> split_input_file("split-input-file",
   llvm::cl::init(false));
 
 // These functions are excerpted from ToolUtilities.cpp in mlir
-static Results verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+static unsigned verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
     MLIRContext *context) {
   llvm::SourceMgr src_sourceMgr,  tgt_sourceMgr;
@@ -47,19 +47,19 @@ static Results verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   auto ir_before = parseSourceFile(src_sourceMgr, context);
   if (!ir_before) {
     llvm::errs() << "Cannot read source file\n";
-    return Results::failure(1);
+    return 65;
   }
 
   auto ir_after = parseSourceFile(tgt_sourceMgr, context);
   if (!ir_after) {
     llvm::errs() << "Cannot read target file\n";
-    return Results::failure(1);
+    return 66;
   }
 
-  return verify(ir_before, ir_after, arg_dump_smt_to.getValue());
+  return verify(ir_before, ir_after, arg_dump_smt_to.getValue()).code;
 }
 
-static Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+static unsigned splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
     MLIRContext *context) {
   const char splitMarker[] = "// -----";
@@ -71,19 +71,21 @@ static Results splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   tgtMemBuffer->getBuffer().split(targetBuffers, splitMarker);
 
   if (sourceBuffers.size() != targetBuffers.size()) {
-    return Results::failure(64);
+    return 64;
   }
 
-  Results results;
+  unsigned retcode = 0;
   for (int i = 0; i < sourceBuffers.size(); i ++) {
     auto sourceSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(sourceBuffers[i]);
     auto targetSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(targetBuffers[i]);
 
-    results.merge(verifyBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer), context));
+    retcode = max(retcode,
+        verifyBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer),
+                     context));
   }
 
   // If any fails, then return a failure of the tool.
-  return results;
+  return retcode;
 }
 
 int main(int argc, char* argv[]) {
@@ -110,21 +112,21 @@ int main(int argc, char* argv[]) {
   auto src_file = openInputFile(filename_src, &errorMessage);
   if (!src_file) {
     llvm::errs() << errorMessage << "\n";
-    return 1;
+    return 67;
   }
 
   auto tgt_file = openInputFile(filename_tgt, &errorMessage);
   if (!tgt_file) {
     llvm::errs() << errorMessage << "\n";
-    return 1;
+    return 68;
   }
 
-  Results verificationResult;
+  unsigned verificationResult;
   if (split_input_file) {
     verificationResult = splitAndVerifyBuffer(move(src_file), move(tgt_file), &context);
   } else {
     verificationResult = verifyBuffer(move(src_file), move(tgt_file), &context);
   }
 
-  return verificationResult.getCode();
+  return verificationResult;
 }
