@@ -222,6 +222,32 @@ optional<string> encodeOp(State &st, mlir::tensor::DimOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
+  // TODO: The MLIR doc isn't explicit about what happens if indices are
+  // out-of-bounds. It is currently encoded as UB.
+
+  auto t = st.regs.get<Tensor>(op.getOperand(0));
+  vector<z3::expr> indices;
+  for (auto idx0: op.indices())
+    indices.emplace_back(st.regs.get<Index>(idx0));
+
+  if (op.getType().isa<mlir::IndexType>())
+    st.regs.add(op, Index(t.get(indices)));
+  else
+    // TODO: how to do this well?
+    return "unsupported type";
+
+  z3::expr wb = ctx.bool_val(true);
+  for (unsigned i = 0; i < indices.size(); ++i)
+    // TODO: revisit this; may not be axis-wise
+    wb = wb && z3::ult(indices[i], t.getDim(i));
+
+  st.isWellDefined = st.isWellDefined && wb;
+
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::linalg::IndexOp op) {
   uint64_t i = op.dim();
   assert(i < st.linalgGenericScopes.top().size());
@@ -488,6 +514,7 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::SubIOp);
 
     ENCODE(st, op, mlir::tensor::DimOp);
+    ENCODE(st, op, mlir::tensor::ExtractOp);
 
     ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
