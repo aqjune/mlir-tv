@@ -263,11 +263,24 @@ optional<string> encodeOp(State &st, mlir::SubIOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
-  auto idx = st.regs.get<Index>(op.getOperand());
-  auto dstty = op.getType().dyn_cast<mlir::IntegerType>();
-  if (!dstty)
-    return "Unsupported dest type";
-  st.regs.add(op, Integer(((z3::expr)idx).extract(dstty.getWidth() - 1, 0)));
+  auto src = st.regs.getZ3Expr(op.getOperand());
+  assert(src.is_bv());
+  unsigned srcWidth = src.get_sort().bv_size();
+
+  unsigned destWidth = 0;
+  if (auto dstty = op.getType().dyn_cast<mlir::IntegerType>())
+    destWidth = dstty.getWidth();
+  else {
+    assert(op.getType().isa<mlir::IndexType>());
+    destWidth = Index::BITS;
+  }
+
+  z3::expr casted = src;
+  if (srcWidth > destWidth)
+    casted = src.extract(destWidth - 1, 0);
+  else if (srcWidth < destWidth)
+    casted = z3::concat(ctx.bv_val(0, destWidth - srcWidth), casted);
+  st.regs.add(op, Integer(casted));
   return {};
 }
 
