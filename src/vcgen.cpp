@@ -388,8 +388,8 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
 
   auto indexingMaps = op.indexing_maps().getValue();
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
-  if (!outputMap.isIdentity())
-    return "identity output map is supported only";
+  if (!outputMap.isPermutation())
+    return "permutation output map is supported only";
 
   // Match one block including 'yield' only
   // Referred linalg::RegionMatcher::matchAsScalarBinaryOp
@@ -485,6 +485,15 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
 
   output_dimvars = move(newst.linalgGenericScopes.top());
   newst.linalgGenericScopes.pop();
+
+  if (!outputMap.isIdentity()) {
+    vector<z3::expr> newvars;
+    for (unsigned i = 0; i < outputMap.getNumResults(); ++i) {
+      auto ade = outputMap.getResult(i).dyn_cast<mlir::AffineDimExpr>();
+      newvars.emplace_back(output_dimvars[ade.getPosition()]);
+    }
+    output_dimvars = move(newvars);
+  }
 
   auto tensor_sz = Tensor::getDims(
       op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
