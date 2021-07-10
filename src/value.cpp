@@ -1,3 +1,4 @@
+#include "abstractops.h"
 #include "value.h"
 #include "smt.h"
 
@@ -58,29 +59,6 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
   for (auto &e: vec)
     ev.push_back(e);
   return ev;
-}
-
-static z3::expr mkZeroElemFromArr(const z3::expr &arr) {
-  unsigned bvsz = z3::select(arr, Index::zero()).get_sort().bv_size();
-  return ctx.bv_val(0, bvsz);
-}
-
-static z3::expr
-abstractDot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
-  // TODO: check that a.get_sort() == b.get_sort()
-  auto i = Index("idx");
-
-  z3::sort_vector domain(ctx);
-  domain.push_back(a.get_sort());
-  domain.push_back(b.get_sort());
-  auto dotfn = ctx.function("smt_dot", domain, Float::sort());
-
-  z3::expr_vector args(ctx);
-  z3::expr ai = z3::select(a, i), bi = z3::select(b, i);
-  z3::expr zero = mkZeroElemFromArr(a);
-  args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)));
-  args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), bi, zero)));
-  return dotfn(args);
 }
 
 static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
@@ -240,7 +218,7 @@ Tensor Tensor::affine(
       z3::ite(
         z3::ult(idxvar, get1DSize(newsizes)),
         get(srcidxs),
-        mkZeroElemFromArr(arr)
+        aop::mkZeroElemFromArr(arr)
       ));
   return newm;
 }
@@ -286,7 +264,8 @@ Tensor Tensor::conv(const Tensor &filter) const {
       .to1DArrayWithOfs({l, Index::zero(), Index::zero(), Index::zero()},
         cube_size);
 
-  auto res = abstractDot(input_subarr, filter_arr,
+  // TODO: switch dot <-> dot2 after determining the abstraction level
+  auto res = aop::dot(input_subarr, filter_arr,
       cube_size[0] * cube_size[1] * cube_size[2] * cube_size[3]);
 
   return Tensor::mkLambda(move(output_dims), {i, j, k, l}, move(res));
@@ -312,7 +291,7 @@ Tensor Tensor::matmul(const Tensor &b) const {
       {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
   return mkLambda({dims[0], bt.dims[0]}, {i, j},
-      abstractDot(a_row, bt_row, dims[1]));
+      aop::dot(a_row, bt_row, dims[1]));
 }
 
 pair<z3::expr, z3::expr> Tensor::refines(const Tensor &src) const {
@@ -436,5 +415,5 @@ z3::expr Tensor::to1DArrayWithOfs(
       z3::ite(
         z3::ult(idxvar, get1DSize(sizes)),
         get(absidxs),
-        mkZeroElemFromArr(arr)));
+        aop::mkZeroElemFromArr(arr)));
 }

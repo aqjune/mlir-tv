@@ -678,13 +678,13 @@ static Results verifyFunction(
 
   { // 2. Check the return values
     auto s = z3::solver(ctx, "QF_UFBV");
-    auto [refines, params] = st_tgt.retValue.refines(st_src.retValue);
+    auto [refines, param] = st_tgt.retValue.refines(st_src.retValue);
     auto not_refines =
         (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
     auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
-      printErrorMsg(s, res.first, "Return value mismatch", {params});
+      printErrorMsg(s, res.first, "Return value mismatch", {param});
       return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
     }
   }

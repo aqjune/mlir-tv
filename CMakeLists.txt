@@ -11,6 +11,7 @@ set(Z3_LIB_DIR "${Z3_DIR}/lib")
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
+    src/abstractops.cpp
     src/vcgen.cpp
     src/state.cpp
     src/value.cpp
