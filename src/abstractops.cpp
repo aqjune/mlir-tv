@@ -9,12 +9,22 @@ z3::expr mkZeroElemFromArr(const z3::expr &arr) {
   return ctx.bv_val(0, bvsz);
 }
 
-z3::expr mul(const z3::expr &a, const z3::expr &b) {
+z3::expr fp_add(const z3::expr &f1, const z3::expr &f2) {
+  auto fty = f1.get_sort();
+
+  z3::sort_vector domain(ctx);
+  domain.push_back(fty);
+  domain.push_back(fty);
+  auto addfn = ctx.function("fp_add", domain, fty);
+  return addfn(f1, f2);
+}
+
+z3::expr fp_mul(const z3::expr &a, const z3::expr &b) {
   // TODO: check that a.get_sort() == b.get_sort()
   z3::sort_vector domain(ctx);
   domain.push_back(a.get_sort());
   domain.push_back(b.get_sort());
-  auto mulfn = ctx.function("mul", domain, Float::sort());
+  auto mulfn = ctx.function("fp_mul", domain, Float::sort());
   return mulfn(a, b);
 }
 
@@ -29,7 +39,7 @@ z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
   z3::expr_vector args(ctx);
   z3::expr ai = z3::select(a, i), bi = z3::select(b, i);
   z3::expr zero = mkZeroElemFromArr(a);
-  return raddfn(z3::lambda(i, z3::ite(z3::ult(i, n), mul(ai, bi), zero)));
+  return raddfn(z3::lambda(i, z3::ite(z3::ult(i, n), fp_mul(ai, bi), zero)));
 }
 
 // dot2 is even more abstract than dot

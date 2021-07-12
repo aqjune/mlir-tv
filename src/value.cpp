@@ -122,31 +122,11 @@ Float Float::eval(z3::model m) const {
 }
 
 Float Float::add(const Float &b) const {
-  auto fty = Float::sort();
-
-  z3::sort_vector domain(ctx);
-  domain.push_back(fty);
-  domain.push_back(fty);
-  auto addfn = ctx.function("smt_add", domain, fty);
-
-  z3::expr_vector args(ctx);
-  args.push_back(e);
-  args.push_back(b.e);
-  return addfn(args);
+  return Float(aop::fp_add(e, b.e));
 }
 
 Float Float::mul(const Float &b) const {
-  auto fty = Float::sort();
-
-  z3::sort_vector domain(ctx);
-  domain.push_back(fty);
-  domain.push_back(fty);
-  auto mulfn = ctx.function("smt_mul", domain, fty);
-
-  z3::expr_vector args(ctx);
-  args.push_back(e);
-  args.push_back(b.e);
-  return mulfn(args);
+  return Float(aop::fp_mul(e, b.e));
 }
 
 
