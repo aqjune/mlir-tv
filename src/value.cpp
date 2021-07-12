@@ -63,8 +63,9 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
 
 static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
   vector<z3::expr> v;
+  v.reserve(exprs.size());
   for (auto &e: exprs)
-    v.emplace_back(e.simplify());
+    v.push_back(std::move(e.simplify()));
   return v;
 }
 
@@ -205,19 +206,20 @@ Tensor Tensor::affine(
 
 Tensor Tensor::rotateDimensions() const {
   vector<z3::expr> newdims;
-  newdims.emplace_back(dims.back());
-  for (size_t i = 0; i < dims.size() - 1; ++i)
-    newdims.emplace_back(dims[i]);
+  newdims.reserve(dims.size());
+  newdims.push_back(dims.back());
+  std::copy(dims.cbegin(), --dims.cend(), std::back_inserter(newdims));
 
   vector<z3::expr> vars, tgtvars;
+  vars.reserve(dims.size());
+  tgtvars.reserve(dims.size());
   for (size_t i = 0; i < dims.size(); ++i) {
     auto v = Index(string("i" + to_string(i)));
-    vars.emplace_back(v);
-    if (i != 0)
-      tgtvars.emplace_back(v);
+    vars.push_back(std::move(v));
   }
-  tgtvars.emplace_back(vars[0]);
-
+  std::copy(++vars.cbegin(), vars.cend(), std::back_inserter(tgtvars));
+  tgtvars.push_back(vars.front());
+  
   return affine(vars, tgtvars, newdims);
 }
 
@@ -294,18 +296,18 @@ vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
   uint64_t rank = tensorTy.getRank();
   if (rank == 0) {
     // A single element tensor.
-    dims.emplace_back(Index(1));
-    return dims;
+    return vector<z3::expr>{Index(1)};
   }
 
+  dims.reserve(rank);
   for (auto i = 0; i < rank; ++i) {
     uint64_t sz = tensorTy.getDimSize(i);
     if (sz == (uint64_t)-1ull)
       // TODO: this requires encoding of well-formedness of input tensors.
       // dims.emplace_back(Index("dim" + to_string(dim_var++)));
-      dims.emplace_back(Index(100));
+      dims.push_back(std::move(Index(100)));
     else
-      dims.emplace_back(Index(sz));
+      dims.push_back(std::move(Index(sz)));
   }
 
   return dims;
@@ -342,8 +344,11 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 
 Tensor Tensor::eval(z3::model m) const {
   Tensor t2;
-  for (size_t i = 0; i < dims.size(); ++i)
-    t2.dims.emplace_back(m.eval(dims[i], true).simplify());
+  t2.dims.reserve(dims.size());
+  for (size_t i = 0; i < dims.size(); ++i) {
+    auto v = m.eval(dims[i], true).simplify();
+    t2.dims.push_back(std::move(v));
+  }
   t2.arr = m.eval(arr, true).simplify();
   return t2;
 }
@@ -387,8 +392,11 @@ z3::expr Tensor::to1DArrayWithOfs(
   auto idxvar = Index("idx");
   auto relidxs = from1DIdx(idxvar, sizes);
   vector<z3::expr> absidxs;
-  for (size_t i = 0; i < relidxs.size(); ++i)
-    absidxs.emplace_back(relidxs[i] + offbegins[i]);
+  absidxs.reserve(relidxs.size());
+  for (size_t i = 0; i < relidxs.size(); ++i) {
+    auto absidx = relidxs[i] + offbegins[i];
+    absidxs.push_back(std::move(absidx));
+  }
 
   return z3::lambda(
       idxvar,
