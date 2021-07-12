@@ -1,5 +1,6 @@
 #pragma once
 
+#include "memory.h"
 #include "value.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "z3++.h"
@@ -38,8 +39,7 @@ public:
   // expr some day (or simply use Alive2's one), and this form will be helpful
   // then.
   z3::expr isWellDefined;
-
-  // TODO: add memory
+  Memory m;
 
   State();
 

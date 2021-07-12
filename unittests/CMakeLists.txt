@@ -32,6 +32,7 @@ add_executable(
   ../src/smt.cpp
   ../src/value.cpp
   ../src/abstractops.cpp
+  ../src/memory.cpp
 )
 add_executable(
   value_test

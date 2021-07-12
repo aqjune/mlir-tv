@@ -12,10 +12,11 @@ set(Z3_LIB_DIR "${Z3_DIR}/lib")
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/abstractops.cpp
-    src/vcgen.cpp
+    src/memory.cpp
+    src/smt.cpp
     src/state.cpp
     src/value.cpp
-    src/smt.cpp)
+    src/vcgen.cpp)
 
 target_link_libraries(${PROJECT_NAME}
     MLIRViewLikeInterface MLIRInferTypeOpInterface

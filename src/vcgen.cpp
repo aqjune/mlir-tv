@@ -480,6 +480,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     return "permutation output map is supported only";
 
   // Encode the loop body
+  // TODO: deal with merging UBs and memorys
   auto &ops = block.getOperations();
   mlir::Value yieldedValue;
   for (auto &op: ops) {
