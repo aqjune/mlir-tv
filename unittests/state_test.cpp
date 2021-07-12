@@ -128,12 +128,12 @@ TEST_F(UnitRegFileTest, Iterator) {
 }
 
 TEST_F(UnitRegFileTest, GetZ3Expr) {
-  EXPECT_Z3_EQ(r2.getZ3Expr(indexOp0), (z3::expr)Index(indexOp0.getValue()));
+  EXPECT_Z3_EQ(r2.getZ3Expr(indexOp0), Z3_INDEX(indexOp0.getValue()));
   EXPECT_DEATH(r2.getZ3Expr(indexOp1), "Cannot find key"); // llvm_unreachable
-  EXPECT_Z3_EQ(r2.getZ3Expr(floatOp0), (z3::expr)Float(floatOp0.getValue()));
+  EXPECT_Z3_EQ(r2.getZ3Expr(floatOp0), Z3_FLOAT(floatOp0.getValue()));
 
-  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp0), (z3::expr)Index(indexOp0.getValue()));
-  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp1), (z3::expr)Index(indexOp1.getValue()));
-  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp0), (z3::expr)Float(floatOp0.getValue()));
-  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp1), (z3::expr)Float(floatOp1.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp0), Z3_INDEX(indexOp0.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp1), Z3_INDEX(indexOp1.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp0), Z3_FLOAT(floatOp0.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp1), Z3_FLOAT(floatOp1.getValue()));
 }
