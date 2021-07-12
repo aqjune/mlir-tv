@@ -7,6 +7,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
+#include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Matchers.h"
 #include "z3++.h"
 #include <chrono>
@@ -77,8 +78,9 @@ createInputState(mlir::FuncOp fn) {
 }
 
 
+template<class T>
 optional<z3::expr> encodeAffineExpr(
-    mlir::AffineExpr ae, const vector<z3::expr> &dimvars
+    mlir::AffineExpr ae, const vector<T> &dimvars
 ) {
   switch (ae.getKind()) {
   case mlir::AffineExprKind::Add: {
@@ -317,6 +319,8 @@ optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::ReturnOp op) {
+  if (op.getNumOperands() == 0)
+    return {};
   st.retValue = st.regs.get<Tensor>(op.getOperand(0));
   return {};
 }
@@ -382,6 +386,68 @@ optional<string> encodeOp(State &st, mlir::shape::ToExtentTensorOp op) {
   return {};
 }
 
+
+static optional<string>
+encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op) {
+  // In high-level:
+  // (1) The size of the loop is calculated (analogous to what
+  //     LinalgOp::createLoopRanges does).
+  // (2) UB is encoded so that the elements of the tensors are accessed
+  //     in-bounds.
+
+  // Note that the process of getting the size of the loop is unclear;
+  // LinalgOp::createLoopRanges relies on the "first" dimension that is
+  // matched, and it isn't clear what happens if there are multiple matching
+  // dimensions. For example,
+  //   linalg.generic {
+  //      indexing_maps = [affine_map<(n) -> (n)>,
+  //                       affine_map<(n) -> (n)>,
+  //                       affine_map<(n) -> (n)>] }
+  //      ins(%A, %B: <?xf32>, <?xf32>) outs(%C: <?xf32>) { .. }
+  // The size of the loop is either %A, %B, or %C's dimension, but the current
+  // algorithm mandates the result to be %A's dimension.
+
+  vector<Index> viewSizes;
+  for (auto *opOperand : op.getInputAndOutputOperands()) {
+    unsigned r = op.getRank(opOperand);
+    if (!r)
+      continue;
+
+    auto t = st.regs.get<Tensor>(opOperand->get());
+    for (int64_t i = 0, e = r; i < e; ++i) {
+      viewSizes.push_back(t.getDim(i));
+    }
+  }
+
+  mlir::AffineMap map = op.getLoopsToShapesMap();
+  unsigned numDims = map.getNumDims(), numRes = map.getNumResults();
+
+  vector<Index> res(numDims);
+  vector<bool> resFilled(numDims);
+  for (unsigned idx = 0; idx < numRes; ++idx) {
+    auto result = map.getResult(idx);
+    auto d = result.dyn_cast<mlir::AffineDimExpr>();
+    if (!d)
+      continue;
+
+    unsigned pos = d.getPosition();
+    if (resFilled[pos])
+      continue;
+    res[pos] = viewSizes[idx];
+    resFilled[pos] = true;
+  }
+
+  for (unsigned idx = 0; idx < numRes; ++idx) {
+    auto ae = encodeAffineExpr(map.getResult(idx), res);
+    if (!ae)
+      return "unsupported affine expr";
+
+    z3::expr inbounds = z3::ule(*ae, (z3::expr)viewSizes[idx]);
+    st.isWellDefined = st.isWellDefined && inbounds;
+  }
+
+  return {};
+}
 
 static optional<string> initInputStateForLoopBody(
     State &st, mlir::linalg::GenericOp op) {
@@ -468,6 +534,8 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   if (!std::all_of(block.args_begin(), block.args_end(),
       [](auto &arg) { return arg.getType().isSignlessIntOrFloat(); }))
     return "unsupported block arguments";
+
+  encodeUBForTensorShapeMatch(st, op);
 
   // Start from newst
   State newst = st;
@@ -605,13 +673,15 @@ static void printCounterEx(
     llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
   }
 
-  llvm::outs()
-      << "\n<Return values>\n"
-      << "\tIndex: " << solver.get_model().eval(params[0]) << "\n"
-      << "\tSrc: " << or_omit(st_src.retValue)
-      << "\n"
-      << "\tTgt: " << or_omit(st_tgt.retValue)
-      << "\n";
+  if (st_src.retValue) {
+    llvm::outs()
+        << "\n<Return values>\n"
+        << "\tIndex: " << solver.get_model().eval(params[0]) << "\n"
+        << "\tSrc: " << or_omit(*st_src.retValue)
+        << "\n"
+        << "\tTgt: " << or_omit(*st_tgt.retValue)
+        << "\n";
+  }
 
 #if FALSE
   llvm::outs() << solver.get_model().to_string() << "\n";
@@ -702,9 +772,9 @@ static Results verifyFunction(
     }
   }
 
-  { // 2. Check the return values
+  if (st_src.retValue) { // 2. Check the return values
     auto s = z3::solver(ctx, "QF_UFBV");
-    auto [refines, param] = st_tgt.retValue.refines(st_src.retValue);
+    auto [refines, param] = st_tgt.retValue->refines(*st_src.retValue);
     auto not_refines =
         (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
     auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
