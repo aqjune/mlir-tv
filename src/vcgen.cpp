@@ -95,6 +95,10 @@ optional<z3::expr> encodeAffineExpr(
     assert(id < dimvars.size());
     return dimvars[id];
   }
+  case mlir::AffineExprKind::Constant: {
+    auto ac = ae.dyn_cast<mlir::AffineConstantExpr>();
+    return Index(ac.getValue());
+  }
   default:
     // Unsupported
     return {};
@@ -378,47 +382,29 @@ optional<string> encodeOp(State &st, mlir::shape::ToExtentTensorOp op) {
   return {};
 }
 
-template<>
-optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
-  if (!op.hasTensorSemantics())
-    return "operation with tensor semantics is supported only";
 
-  if (op.getNumOutputs() != 1)
-    return "operation with single input and output is supported only";
-
+static optional<string> initInputStateForLoopBody(
+    State &st, mlir::linalg::GenericOp op) {
   auto indexingMaps = op.indexing_maps().getValue();
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
-  if (!outputMap.isPermutation())
-    return "permutation output map is supported only";
-
-  // Match one block including 'yield' only
-  // Referred linalg::RegionMatcher::matchAsScalarBinaryOp
-  auto &region = op.region();
-  if (!llvm::hasSingleElement(region))
-    return "operation with one block is supported only";
-
-  auto &block = region.front();
-  if (!std::all_of(block.args_begin(), block.args_end(),
-      [](auto &arg) { return arg.getType().isSignlessIntOrFloat(); }))
-    return "unsupported block arguments";
-
-  // Start from newst
-  State newst = st;
+  auto &block = *op.region().begin();
 
   vector<z3::expr> output_dimvars;
   for (unsigned i = 0; i < outputMap.getNumInputs(); ++i)
     output_dimvars.emplace_back(Index("i" + to_string(i)));
 
   // Fill in args
-  assert(op.getInputOperands().size() + 1 == indexingMaps.size());
-  for (unsigned arg_i = 0; arg_i < indexingMaps.size() - 1; ++arg_i) {
+  assert(op.getInputOperands().size() + op.getNumOutputs() ==
+         indexingMaps.size());
+  for (unsigned arg_i = 0; arg_i + op.getNumOutputs() < indexingMaps.size();
+       ++arg_i) {
     auto inputMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
     auto op_i = op.getInputOperand(arg_i)->get();
 
     if (op_i.getType().isa<mlir::FloatType>()) {
       // A scalar value.
       Float f_input = st.regs.get<Float>(op_i);
-      newst.regs.add(block.getArgument(arg_i), f_input);
+      st.regs.add(block.getArgument(arg_i), f_input);
 
     } else if (auto tensorty = op_i.getType().dyn_cast<mlir::TensorType>()) {
       // A tensor value.
@@ -441,27 +427,57 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
 
       if (inputMap.getNumResults() == 0) {
         // A tensor with a single element; e.g. tensor<f32>.
-        newst.regs.add(block.getArgument(arg_i),
+        st.regs.add(block.getArgument(arg_i),
                        toRegValue(t_input.get({Index::zero()})));
       } else {
         vector<z3::expr> affine_exprs;
         for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
           auto ae_res = encodeAffineExpr(inputMap.getResult(i), output_dimvars);
           if (!ae_res)
-            RET_STR_WITH_PREFIX("unsupported affine expr", inputMap.getResult(i));
+            RET_STR_WITH_PREFIX("unsupported affine expr ",
+                                inputMap.getResult(i));
 
           affine_exprs.emplace_back(move(*ae_res));
         }
 
         auto t_elem = t_input.get(affine_exprs);
-        newst.regs.add(block.getArgument(arg_i), toRegValue(t_elem));
+        st.regs.add(block.getArgument(arg_i), toRegValue(t_elem));
       }
     } else {
       return "unsupported block argument type";
     }
   }
 
-  newst.linalgGenericScopes.push(move(output_dimvars));
+  st.linalgGenericScopes.push(move(output_dimvars));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
+  if (!op.hasTensorSemantics())
+    return "operation with tensor semantics is supported only";
+
+  if (op.getNumOutputs() != 1)
+    return "operation with single output is supported only";
+
+  auto &region = op.region();
+  if (!llvm::hasSingleElement(region))
+    return "operation with one block is supported only";
+
+  auto &block = region.front();
+  if (!std::all_of(block.args_begin(), block.args_end(),
+      [](auto &arg) { return arg.getType().isSignlessIntOrFloat(); }))
+    return "unsupported block arguments";
+
+  // Start from newst
+  State newst = st;
+  if (auto msg = initInputStateForLoopBody(newst, op))
+    return msg;
+
+  auto indexingMaps = op.indexing_maps().getValue();
+  auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
+  if (!outputMap.isPermutation())
+    return "permutation output map is supported only";
 
   // Encode the loop body
   auto &ops = block.getOperations();
@@ -483,7 +499,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
   // aqjune talked with mlir people and it is confirmed by them
 
-  output_dimvars = move(newst.linalgGenericScopes.top());
+  auto output_dimvars = move(newst.linalgGenericScopes.top());
   newst.linalgGenericScopes.pop();
 
   if (!outputMap.isIdentity()) {
