@@ -305,9 +305,9 @@ vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
     if (sz == (uint64_t)-1ull)
       // TODO: this requires encoding of well-formedness of input tensors.
       // dims.emplace_back(Index("dim" + to_string(dim_var++)));
-      dims.push_back(std::move(Index(100)));
+      dims.push_back(Index(100));
     else
-      dims.push_back(std::move(Index(sz)));
+      dims.push_back(Index(sz));
   }
 
   return dims;
