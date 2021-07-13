@@ -247,6 +247,8 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
 
   if (op.getType().isa<mlir::IndexType>())
     st.regs.add(op, Index(t.get(indices)));
+  else if (op.getType().isa<mlir::Float32Type>())
+    st.regs.add(op, Float(t.get(indices)));
   else
     // TODO: how to do this well?
     return "unsupported type";
@@ -356,7 +358,7 @@ template<>
 optional<string> encodeOp(State &st, mlir::ReturnOp op) {
   if (op.getNumOperands() == 0)
     return {};
-  st.retValue = st.regs.get<Tensor>(op.getOperand(0));
+  st.retValue = st.regs.findOrCrash(op.getOperand(0));
   return {};
 }
 
@@ -811,14 +813,32 @@ static Results verifyFunction(
 
   if (st_src.retValue) { // 2. Check the return values
     auto s = z3::solver(ctx, "QF_UFBV");
-    auto [refines, param] = st_tgt.retValue->refines(*st_src.retValue);
-    auto not_refines =
-        (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
-    auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
-    elapsedMillisec += res.second;
-    if (res.first != z3::unsat) {
-      printErrorMsg(s, res.first, "Return value mismatch", {param});
-      return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
+
+    if (holds_alternative<Tensor>(*st_src.retValue) && holds_alternative<Tensor>(*st_tgt.retValue)) {
+      auto srcRetValue = std::get<Tensor>(*st_src.retValue);
+      auto tgtRetValue = std::get<Tensor>(*st_tgt.retValue);
+      auto [refines, param] = tgtRetValue.refines(srcRetValue);
+      auto not_refines =
+          (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
+      auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
+      elapsedMillisec += res.second;
+      if (res.first != z3::unsat) {
+        printErrorMsg(s, res.first, "Return value mismatch", {param});
+        return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
+      }
+    } else {
+      z3::expr srcRetValue(ctx), tgtRetValue(ctx);
+      visit([&](auto &&v) { srcRetValue = (z3::expr)v; }, *st_src.retValue);
+      visit([&](auto &&v) { tgtRetValue = (z3::expr)v; }, *st_tgt.retValue);
+      auto refines = (srcRetValue == tgtRetValue);
+      auto not_refines =
+          (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
+      auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
+      elapsedMillisec += res.second;
+      if (res.first != z3::unsat) {
+        printErrorMsg(s, res.first, "Return value mismatch", {});
+        return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
+      }
     }
   }
 
