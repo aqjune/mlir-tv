@@ -132,3 +132,36 @@ private:
       const std::vector<z3::expr> &offbegins,
       const std::vector<z3::expr> &sizes) const;
 };
+
+class MemRef {
+  z3::expr bid; // blockID
+  z3::expr offset; // offset
+  std::vector<z3::expr> dims;
+
+public:
+  static const unsigned BID_BITS = 1;
+  static const unsigned OFFSET_BITS = 32;
+
+  MemRef();
+  MemRef(const z3::expr &bid, const z3::expr &offset);
+  MemRef(const std::string &name, const std::vector<z3::expr> &dims,
+         const z3::sort &elemty);
+
+  operator z3::expr() const { return bid && offset; }
+
+  // If memRefTy is unsupported, return nullopt
+  static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
+      getDimsAndElemTy(mlir::MemRefType memRefTy);
+
+  std::vector<z3::expr> getDims() const { return dims; }
+
+  static std::vector<z3::expr> getDims(mlir::MemRefType memRefTy);
+
+  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
+  MemRef eval(z3::model m) const;
+
+  private:
+    z3::expr to1DArrayWithOfs(
+      const std::vector<z3::expr> &offbegins,
+      const std::vector<z3::expr> &sizes) const;
+};

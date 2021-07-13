@@ -8,7 +8,7 @@
 #include <variant>
 #include "mlir/Support/LLVM.h"
 
-using ValueTy = std::variant<Tensor, Index, Float, Integer>;
+using ValueTy = std::variant<Tensor, MemRef, Index, Float, Integer>;
 
 class RegFile {
 private:

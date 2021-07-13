@@ -405,3 +405,75 @@ z3::expr Tensor::to1DArrayWithOfs(
         get(absidxs),
         aop::mkZeroElemFromArr(arr)));
 }
+
+MemRef::MemRef(): bid(ctx), offset(ctx) {}
+
+MemRef::MemRef(const z3::expr &bid, const z3::expr &offset):
+  bid(bid), offset(offset) {}
+
+MemRef::MemRef(const std::string &name, const std::vector<z3::expr> &dims,
+         const z3::sort &elemty):
+    bid(ctx.bv_const((name + "_bid").c_str(), BID_BITS)),
+    offset(ctx.bv_const((name + "_offset").c_str(), OFFSET_BITS)),
+    dims(dims) {}
+
+vector<z3::expr> MemRef::getDims(mlir::MemRefType memRefTy) {
+  vector<z3::expr> dims;
+  //static int dim_var = 0;
+
+  uint64_t rank = memRefTy.getRank();
+  if (rank == 0) {
+    // A single element tensor.
+    return vector<z3::expr>{Index(1)};
+  }
+
+  dims.reserve(rank);
+  for (auto i = 0; i < rank; ++i) {
+    uint64_t sz = memRefTy.getDimSize(i);
+    if (sz == (uint64_t)-1ull)
+      // TODO: this requires encoding of well-formedness of input tensors.
+      // dims.emplace_back(Index("dim" + to_string(dim_var++)));
+      dims.push_back(Index(100));
+    else
+      dims.push_back(Index(sz));
+  }
+
+  return dims;
+}
+
+optional<pair<vector<z3::expr>, z3::sort>>
+MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
+  auto elemty = memRefTy.getElementType();
+  z3::sort elemty2(ctx);
+
+  if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
+    elemty2 = Float::sort();
+  } else {
+    // Currently we only support f32 element type.
+    return {};
+  }
+
+  return {{getDims(memRefTy), elemty2}};
+}
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
+  assert(m.dims.size() > 0);
+  os << "bid: " << m.bid << ", offset: " << m.offset << "\n";
+  os << "(dim :" << m.dims[0];
+  for (size_t i = 1; i < m.dims.size(); ++i)
+    os << ", " << m.dims[i];
+  os << ")";
+  return os;
+};
+
+MemRef MemRef::eval(z3::model m) const {
+  MemRef m2;
+  m2.dims.reserve(dims.size());
+  for (size_t i = 0; i < dims.size(); ++i) {
+    auto v = m.eval(dims[i], true).simplify();
+    m2.dims.push_back(std::move(v));
+  }
+  m2.bid = m.eval(bid, true).simplify();
+  m2.offset = m.eval(offset, true).simplify();
+  return m2;
+}

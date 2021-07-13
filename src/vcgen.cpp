@@ -58,8 +58,16 @@ createInputState(mlir::FuncOp fn) {
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
       auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
       if (!dimsAndElemTy)
-        RET_STR("Unsupported type: " << arg.getType());
+        RET_STR("Unsupported Tensor element type: " << arg.getType());
       s.regs.add(arg, Tensor("arg" + to_string(arg.getArgNumber()),
+                             dimsAndElemTy->first,
+                             dimsAndElemTy->second));
+
+    } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
+      auto dimsAndElemTy = MemRef::getDimsAndElemTy(ty);
+      if (!dimsAndElemTy)
+        RET_STR("Unsupported MemRef element type: " << arg.getType());
+      s.regs.add(arg, MemRef("arg" + to_string(arg.getArgNumber()),
                              dimsAndElemTy->first,
                              dimsAndElemTy->second));
 

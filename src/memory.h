@@ -21,8 +21,9 @@ public:
 
 class Memory {
 public:
-  // Has one memory block only.
   MemBlock mb0;
-
   Memory(): mb0(0) {}
+
+  // Currently we support only one memblock. We relax this constraints afterward.
+  MemBlock getMemBlock(unsigned bid) const { return mb0; }
 };
