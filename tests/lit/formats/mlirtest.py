@@ -1,4 +1,3 @@
-from abc import abstractmethod
 from enum import Enum, auto
 from lit.formats.base import TestFormat
 import lit
@@ -53,14 +52,15 @@ class MLIRTest(TestFormat):
     __verify_regex = re.compile(r"^// ?VERIFY$")
     __verify_incorrect_regex = re.compile(r"^// ?VERIFY-INCORRECT$")
 
-    @abstractmethod
-    def __init__(self, dir_tv: str) -> None:
+    def __init__(self, dir_tv: str, pass_name: str) -> None:
         self.__dir_tv: str = dir_tv
+        self.__pass_name: str = pass_name
 
     def getTestsInDirectory(self, testSuite, path_in_suite, litConfig, localConfig):
         source_path = testSuite.getSourcePath(path_in_suite)
         for pass_name in filter(lambda name: (os.path.isdir(os.path.join(source_path, name)) \
-                    and not _starts_with_dot(name))
+                    and not _starts_with_dot(name)
+                    and self.__pass_name in name)
                 , os.listdir(source_path)):
             pass_path: str = os.path.join(source_path, pass_name)
             for case_src_name in filter(lambda name: (os.path.isfile(os.path.join(pass_path, name)) \
