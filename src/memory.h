@@ -8,8 +8,8 @@ class MemBlock {
 public:
   const unsigned bid;
   z3::expr array;    // Index::sort() -> Float::sort()
-  z3::expr writable; // bool
   z3::expr numelem;  // Index::sort()
+  z3::expr isConstant; // bool
 
   MemBlock(unsigned bid);
 
