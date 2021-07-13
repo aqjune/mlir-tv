@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+class Memory;
+
 class Index {
   z3::expr e;
 
@@ -153,8 +155,10 @@ public:
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
       getDimsAndElemTy(mlir::MemRefType memRefTy);
 
+  z3::expr get(const Memory &m, const std::vector<z3::expr> &indices) const;
+  z3::expr getBID() const { return bid; }
+  z3::expr getOffset() const { return offset; }
   std::vector<z3::expr> getDims() const { return dims; }
-
   static std::vector<z3::expr> getDims(mlir::MemRefType memRefTy);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);

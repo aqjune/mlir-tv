@@ -1,6 +1,7 @@
 #include "abstractops.h"
 #include "value.h"
 #include "smt.h"
+#include "memory.h"
 
 using namespace std;
 
@@ -417,6 +418,28 @@ MemRef::MemRef(const std::string &name, const std::vector<z3::expr> &dims,
     offset(ctx.bv_const((name + "_offset").c_str(), OFFSET_BITS)),
     dims(dims) {}
 
+optional<pair<vector<z3::expr>, z3::sort>>
+MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
+  auto elemty = memRefTy.getElementType();
+  z3::sort elemty2(ctx);
+
+  if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
+    elemty2 = Float::sort();
+  } else {
+    // Currently we only support f32 element type.
+    return {};
+  }
+
+  return {{getDims(memRefTy), elemty2}};
+}
+
+z3::expr MemRef::get(const Memory &m, const std::vector<z3::expr> &indices) const {
+  z3::expr idx = to1DIdx(indices, dims);
+  // TODO (seongwon) : how to handle load successful condition?
+  auto result = m.getMemBlock(bid).load(offset + idx).first;
+  return result;
+}
+
 vector<z3::expr> MemRef::getDims(mlir::MemRefType memRefTy) {
   vector<z3::expr> dims;
   //static int dim_var = 0;
@@ -439,21 +462,6 @@ vector<z3::expr> MemRef::getDims(mlir::MemRefType memRefTy) {
   }
 
   return dims;
-}
-
-optional<pair<vector<z3::expr>, z3::sort>>
-MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
-  auto elemty = memRefTy.getElementType();
-  z3::sort elemty2(ctx);
-
-  if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
-    elemty2 = Float::sort();
-  } else {
-    // Currently we only support f32 element type.
-    return {};
-  }
-
-  return {{getDims(memRefTy), elemty2}};
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {

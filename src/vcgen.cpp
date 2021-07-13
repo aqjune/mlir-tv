@@ -262,6 +262,33 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
+  auto m = st.regs.get<MemRef>(op.getOperand());
+  // m is target memref
+  // here we just convert memref to tensor type and make memref as constant pointer
+
+  // step1. index bound check 이후 welldefined 추가
+  // 이건 우선 스킵..
+
+  // step2. source memref 를 constant 로 만들고.
+  st.m.getMemBlock(m.getBID()).isConstant = ctx.bool_val(true);
+
+  // step3. memref 의 memory 값을 따르는 tensor mklambda? 로 생성
+  // llvm::outs() << "\nDEBUG!!! \n";
+  auto dims = m.getDims();
+  vector<z3::expr> idxs;
+  for (int i = 0; i < dims.size(); i ++) {
+    idxs.push_back(Index("Index_" + std::to_string(i)));
+  }
+  z3::expr memrefExpr = m.get(st.m, idxs);
+  // TODO(seongwon) : check move
+  Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), memrefExpr);
+// step4. add result tensor to register
+  st.regs.add(op.getResult(), t_res);
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::linalg::IndexOp op) {
   uint64_t i = op.dim();
   assert(i < st.linalgGenericScopes.top().size());
@@ -617,6 +644,8 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
 
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
+
+    ENCODE(st, op, mlir::memref::TensorLoadOp);
 
     ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);

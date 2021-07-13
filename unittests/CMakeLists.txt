@@ -40,6 +40,7 @@ add_executable(
   ../src/value.cpp
   ../src/smt.cpp
   ../src/abstractops.cpp
+  ../src/memory.cpp
 )
 add_executable(
   vcgen_test

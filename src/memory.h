@@ -21,8 +21,9 @@ public:
 };
 
 class Memory {
-public:
   MemBlock mb0, mb1;
+
+public:
   Memory(): mb0(0), mb1(1) {}
 
   MemBlock getMemBlock(const z3::expr &bid) const;
