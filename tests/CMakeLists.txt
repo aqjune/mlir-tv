@@ -21,4 +21,4 @@ foreach(PASS_NAME ${PASSES})
 endforeach()
 
 add_test(NAME Litmus
-    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=generic-loopbound --param root=litmus)
+    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=linalg-litmus --param root=litmus)
