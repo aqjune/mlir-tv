@@ -2,13 +2,23 @@ cmake_minimum_required(VERSION 3.15.0)
 
 configure_file(lit.site.cfg.py.in lit.site.cfg.py @ONLY)
 
-add_test(NAME Passes-conv2d-to-img2col
-    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=conv2d-to-img2col)
-add_test(NAME Passes-fold-memref-subview-op
-    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=fold-memref-subview-op)
-add_test(NAME Passes-fold-tensor-extract-op
-    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=fold-tensor-extract-op)
-add_test(NAME Passes-fusion-tensor
-    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=fusion-tensor)
-add_test(NAME Passes-llvmcpu-plan-conv-loop-order
-    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=llvmcpu-plan-conv-loop-order)
+# https://stackoverflow.com/questions/7787823/cmake-how-to-get-the-name-of-all-subdirectories-of-a-directory
+MACRO(SUBDIRLIST result curdir)
+  FILE(GLOB children RELATIVE ${curdir} ${curdir}/*)
+  SET(dirlist "")
+  FOREACH(child ${children})
+    IF(IS_DIRECTORY ${curdir}/${child})
+      LIST(APPEND dirlist ${child})
+    ENDIF()
+  ENDFOREACH()
+  SET(${result} ${dirlist})
+ENDMACRO()
+
+SUBDIRLIST(PASSES "${PROJECT_SOURCE_DIR}/tests/opts")
+foreach(PASS_NAME ${PASSES})
+  add_test(NAME Opts-${PASS_NAME}
+    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=${PASS_NAME} --param root=opts)
+endforeach()
+
+add_test(NAME Litmus
+    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=generic-loopbound --param root=litmus)

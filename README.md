@@ -4,7 +4,7 @@
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
 [IREE](https://github.com/google/iree),
 [Z3-solver](https://github.com/Z3Prover/z3),
-[Python3.9](https://www.python.org/downloads/) or above
+[Python3](https://www.python.org/downloads/)(>=3.9)
 
 ```bash
 mkdir build
@@ -22,8 +22,8 @@ Run the built `iree-tv` executable as following:
 ```bash
 iree-tv <.mlir before opt> <.mlir after opt>`
 # ex: ./build/iree-tv \
-#        tests/cases/conv2d_to_img2col/conv2d_to_img2col.src.mlir \
-#        tests/cases/conv2d_to_img2col/conv2d_to_img2col.tgt.mlir -smt-to=5000
+#        tests/opts/conv2d_to_img2col/nhwc_filter.src.mlir \
+#        tests/opts/conv2d_to_img2col/nhwc_filter.tgt.mlir -smt-to=5000
 ```
 
 ## How to test IREE-TV
@@ -32,5 +32,6 @@ cd build
 # A detailed log is written to build/Testing/Temporary/LastTest.log
 # If you want detailed output on the terminal, please add -V
 ctest -R Unit
-ctest -R Passes # Test IR transformation passes
+ctest -R Opts # Test IR transformation passes
+ctest -R Litmus # Test litmus only
 ```
