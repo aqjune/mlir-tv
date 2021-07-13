@@ -1,6 +1,7 @@
 #pragma once
 
 #include "z3++.h"
+
 #include <algorithm>
 
 // A memory block containing f32 elements.
@@ -21,9 +22,8 @@ public:
 
 class Memory {
 public:
-  MemBlock mb0;
-  Memory(): mb0(0) {}
+  MemBlock mb0, mb1;
+  Memory(): mb0(0), mb1(1) {}
 
-  // Currently we support only one memblock. We relax this constraints afterward.
-  MemBlock getMemBlock(unsigned bid) const { return mb0; }
+  MemBlock getMemBlock(const z3::expr &bid) const;
 };
