@@ -10,8 +10,8 @@ MemBlock::MemBlock(unsigned bid):
     array(ctx.constant(
         ("blk" + to_string(bid)).c_str(),
         ctx.array_sort(Index::sort(), Float::sort()))),
-    numelem(ctx.constant(("numelem" + to_string(bid)).c_str(), Index::sort())),
-    writable(ctx.bool_const(("writable" + to_string(bid)).c_str())) {
+    writable(ctx.bool_const(("writable" + to_string(bid)).c_str())),
+    numelem(ctx.constant(("numelem" + to_string(bid)).c_str(), Index::sort())) {
 }
 
 z3::expr MemBlock::store(const z3::expr &f32val, const z3::expr &idx) {
