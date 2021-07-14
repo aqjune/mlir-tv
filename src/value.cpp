@@ -431,6 +431,7 @@ MemRef::MemRef(const std::string &name, const std::vector<z3::expr> &dims,
 
 optional<pair<vector<z3::expr>, z3::sort>>
 MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
+  // Step1. check element type
   auto elemty = memRefTy.getElementType();
   z3::sort elemty2(ctx);
 
@@ -441,7 +442,18 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
     return {};
   }
 
-  return {{getDims(memRefTy), elemty2}};
+  // Step2. check affine map
+  auto all_maps_are_identity = [](llvm::ArrayRef<mlir::AffineMap> maps) {
+    return llvm::all_of(maps,
+                        [](mlir::AffineMap map) { return map.isIdentity(); });
+  };
+  auto affine = memRefTy.getAffineMaps();
+  if (all_maps_are_identity(affine)) {
+    return {{getDims(memRefTy), elemty2}};
+  } else {
+    // Currently we only support identity affine map memref.
+    return {};
+  }
 }
 
 z3::expr MemRef::get(const Memory &m, const std::vector<z3::expr> &indices) const {
