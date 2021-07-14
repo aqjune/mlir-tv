@@ -8,7 +8,7 @@
 #include <variant>
 #include "mlir/Support/LLVM.h"
 
-using ValueTy = std::variant<Tensor, Index, Float, Integer>;
+using ValueTy = std::variant<Tensor, MemRef, Index, Float, Integer>;
 
 class RegFile {
 private:
@@ -32,7 +32,7 @@ public:
   RegFile regs;
   std::stack<std::vector<z3::expr>> linalgGenericScopes;
   // If returns void, it is nullopt
-  std::optional<Tensor> retValue;
+  std::optional<ValueTy> retValue;
 
   // The negated form of UB is tracked because the neg. of value refinement is:
   // 'src.no-ub /\ tgt.no-ub /\ src.retvalue != tgt.retvalue'.

@@ -58,10 +58,17 @@ createInputState(mlir::FuncOp fn) {
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
       auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
       if (!dimsAndElemTy)
-        RET_STR("Unsupported type: " << arg.getType());
+        RET_STR("Unsupported Tensor element type: " << arg.getType());
       s.regs.add(arg, Tensor("arg" + to_string(arg.getArgNumber()),
                              dimsAndElemTy->first,
                              dimsAndElemTy->second));
+
+    } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
+      auto dimsAndElemTy = MemRef::getDimsAndElemTy(ty);
+      if (!dimsAndElemTy)
+        RET_STR("Unsupported MemRef element type: " << arg.getType());
+      // TODO : out of bounds pointer is allowed?
+      s.regs.add(arg, MemRef("arg0", dimsAndElemTy->first, dimsAndElemTy->second));
 
     } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
       s.regs.add(arg, Index("arg" + to_string(arg.getArgNumber())));
@@ -176,7 +183,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
   // of elements.
 
   Tensor t = st.regs.get<Tensor>(op.getOperand());
-  st.regs.add(op.getResult(), t.reshape(Tensor::getDims(op.getResultType())));
+  st.regs.add(op.getResult(), t.reshape(getDims(op.getResultType())));
   return {};
 }
 
@@ -188,7 +195,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
   // of elements.
 
   Tensor t = st.regs.get<Tensor>(op.getOperand());
-  st.regs.add(op.getResult(), t.reshape(Tensor::getDims(op.getResultType())));
+  st.regs.add(op.getResult(), t.reshape(getDims(op.getResultType())));
   return {};
 }
 
@@ -239,6 +246,8 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
 
   if (op.getType().isa<mlir::IndexType>())
     st.regs.add(op, Index(t.get(indices)));
+  else if (op.getType().isa<mlir::Float32Type>())
+    st.regs.add(op, Float(t.get(indices)));
   else
     // TODO: how to do this well?
     return "unsupported type";
@@ -249,6 +258,58 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
     wb = wb && z3::ult(indices[i], t.getDim(i));
 
   st.isWellDefined = st.isWellDefined && wb;
+
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
+  // TODO: The MLIR doc isn't explicit about what happens if indices are
+  // out-of-bounds. It is currently encoded as UB.
+
+  const Memory &memory = st.m;
+  auto m = st.regs.get<MemRef>(op.getOperand(0));
+  vector<z3::expr> indices;
+  for (auto idx0: op.indices())
+    indices.emplace_back(st.regs.get<Index>(idx0));
+
+  if (op.getType().isa<mlir::Float32Type>()) {
+    auto [expr, success] = m.get(memory, indices);
+    st.regs.add(op, Float(expr));
+    st.isWellDefined = st.isWellDefined && success;
+  }
+  else
+    // TODO: how to do this well?
+    return "unsupported type";
+
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
+  auto m = st.regs.get<MemRef>(op.getOperand());
+
+  // step1. MemBlock which contains source memref marks as not writable.
+  auto memBlock = st.m.getMemBlock(m.getBID());
+  memBlock.writable = ctx.bool_val(false);
+
+  st.m.getMemBlock(m.getBID()).writable = ctx.bool_val(false);
+
+  // step2. create new Tensor that alias origin memref using Tensor::mkLambda
+  auto dims = m.getDims();
+  auto memrefSize = get1DSize(dims);
+  vector<z3::expr> idxs;
+  for (int i = 0; i < dims.size(); i ++) {
+    idxs.push_back(Index("Index_" + std::to_string(i)));
+  }
+  auto [expr, success] = m.get(st.m, idxs);
+  Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
+
+  // step3. add result tensor to register
+  st.regs.add(op.getResult(), t_res);
+  st.isWellDefined = st.isWellDefined &&
+    z3::uge(memBlock.numelem, memrefSize) &&
+    z3::ult(m.getOffset(), memBlock.numelem - memrefSize);
 
   return {};
 }
@@ -321,7 +382,7 @@ template<>
 optional<string> encodeOp(State &st, mlir::ReturnOp op) {
   if (op.getNumOperands() == 0)
     return {};
-  st.retValue = st.regs.get<Tensor>(op.getOperand(0));
+  st.retValue = st.regs.findOrCrash(op.getOperand(0));
   return {};
 }
 
@@ -349,7 +410,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
     if (!splatfval)
       return "a fp splat constant tensor is supported only";
 
-    auto dims = Tensor::getDims(op.getType().cast<mlir::TensorType>());
+    auto dims = getDims(op.getType().cast<mlir::TensorType>());
     st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), move(dims)));
     return {};
   }
@@ -580,7 +641,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     output_dimvars = move(newvars);
   }
 
-  auto tensor_sz = Tensor::getDims(
+  auto tensor_sz = getDims(
       op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
   Tensor t_res = Tensor::mkLambda(move(tensor_sz), move(output_dimvars),
       newst.regs.getZ3Expr(yieldedValue));
@@ -609,6 +670,9 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
 
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
+
+    ENCODE(st, op, mlir::memref::LoadOp);
+    ENCODE(st, op, mlir::memref::TensorLoadOp);
 
     ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
@@ -674,10 +738,10 @@ static void printCounterEx(
   }
 
   if (st_src.retValue) {
-    llvm::outs()
-        << "\n<Return values>\n"
-        << "\tIndex: " << solver.get_model().eval(params[0]) << "\n"
-        << "\tSrc: " << or_omit(*st_src.retValue)
+    llvm::outs() << "\n<Return values>\n";
+    for (auto &param: params)
+      llvm::outs() << "\tIndex: " << solver.get_model().eval(param) << "\n";
+    llvm::outs() << "\tSrc: " << or_omit(*st_src.retValue)
         << "\n"
         << "\tTgt: " << or_omit(*st_tgt.retValue)
         << "\n";
@@ -774,13 +838,20 @@ static Results verifyFunction(
 
   if (st_src.retValue) { // 2. Check the return values
     auto s = z3::solver(ctx, "QF_UFBV");
-    auto [refines, param] = st_tgt.retValue->refines(*st_src.retValue);
+
+    z3::expr refines(ctx);
+    vector<z3::expr> params;
+    visit([&](auto &&src, auto &&tgt) {
+      auto typedTarget = (decltype(src)) tgt;
+      tie(refines, params) = src.refines(typedTarget);
+    }, *st_src.retValue, *st_tgt.retValue);
+
     auto not_refines =
-        (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
+      (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
     auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
-      printErrorMsg(s, res.first, "Return value mismatch", {param});
+      printErrorMsg(s, res.first, "Return value mismatch", move(params));
       return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
     }
   }

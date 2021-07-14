@@ -1,6 +1,7 @@
 #include "abstractops.h"
 #include "value.h"
 #include "smt.h"
+#include "memory.h"
 
 using namespace std;
 
@@ -35,7 +36,7 @@ static vector<z3::expr> from1DIdx(
   return idxs;
 }
 
-static z3::expr get1DSize(const vector<z3::expr> &dims) {
+z3::expr get1DSize(const vector<z3::expr> &dims) {
   z3::expr szaccml = Index::one();
   for (auto &d: dims)
     szaccml = szaccml * d;
@@ -69,6 +70,29 @@ static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
   return v;
 }
 
+vector<z3::expr> getDims(const mlir::ShapedType &shapedTy) {
+  vector<z3::expr> dims;
+  //static int dim_var = 0;
+
+  uint64_t rank = shapedTy.getRank();
+  if (rank == 0) {
+    // A single element tensor.
+    return vector<z3::expr>{Index(1)};
+  }
+
+  dims.reserve(rank);
+  for (auto i = 0; i < rank; ++i) {
+    uint64_t sz = shapedTy.getDimSize(i);
+    if (sz == (uint64_t)-1ull)
+      // TODO: this requires encoding of well-formedness of input tensors.
+      // dims.emplace_back(Index("dim" + to_string(dim_var++)));
+      dims.push_back(Index(100));
+    else
+      dims.push_back(Index(sz));
+  }
+
+  return dims;
+}
 
 Index::Index(): e(ctx) {}
 
@@ -90,13 +114,15 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
   return os;
 };
 
+std::pair<z3::expr, vector<z3::expr>> Index::refines(const Index &src) const {
+  return {(z3::expr) src == (z3::expr) *this, {}};
+}
+
 Index Index::eval(z3::model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
-
 Float::Float(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {}
-
 
 static map<double, std::string> const_vars;
 
@@ -117,6 +143,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
   os << (z3::expr)f;
   return os;
 };
+
+std::pair<z3::expr, vector<z3::expr>> Float::refines(const Float &src) const {
+  return {(z3::expr) src == (z3::expr) *this, {}};
+}
 
 Float Float::eval(z3::model m) const {
   return Float(m.eval(e, true).simplify());
@@ -142,6 +172,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
   os << (z3::expr)i;
   return os;
 };
+
+std::pair<z3::expr, vector<z3::expr>> Integer::refines(const Integer &src) const {
+  return {(z3::expr) src == (z3::expr) *this, {}};
+}
 
 Integer Integer::eval(z3::model m) const {
   return Integer(m.eval(e, true).simplify());
@@ -276,41 +310,17 @@ Tensor Tensor::matmul(const Tensor &b) const {
       aop::dot(a_row, bt_row, dims[1]));
 }
 
-pair<z3::expr, z3::expr> Tensor::refines(const Tensor &src) const {
+pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
   assert(arr.get_sort().is_array());
   assert(src.arr.get_sort().is_array());
 
   // Assume that src and tgt's shape equality is already checked
-  auto i = Index("i");
+  z3::expr i = Index("i");
+  vector<z3::expr> params = {i};
   return {z3::implies(
       z3::ult(i, get1DSize(dims)),
       z3::select(arr, i) == z3::select(src.arr, i)),
-    i};
-}
-
-
-vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
-  vector<z3::expr> dims;
-  //static int dim_var = 0;
-
-  uint64_t rank = tensorTy.getRank();
-  if (rank == 0) {
-    // A single element tensor.
-    return vector<z3::expr>{Index(1)};
-  }
-
-  dims.reserve(rank);
-  for (auto i = 0; i < rank; ++i) {
-    uint64_t sz = tensorTy.getDimSize(i);
-    if (sz == (uint64_t)-1ull)
-      // TODO: this requires encoding of well-formedness of input tensors.
-      // dims.emplace_back(Index("dim" + to_string(dim_var++)));
-      dims.push_back(Index(100));
-    else
-      dims.push_back(Index(sz));
-  }
-
-  return dims;
+    params};
 }
 
 optional<pair<vector<z3::expr>, z3::sort>>
@@ -329,7 +339,7 @@ Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
     return {};
   }
 
-  return {{getDims(tensorTy), elemty2}};
+  return {{::getDims(tensorTy), elemty2}};
 }
 
 
@@ -404,4 +414,74 @@ z3::expr Tensor::to1DArrayWithOfs(
         z3::ult(idxvar, get1DSize(sizes)),
         get(absidxs),
         aop::mkZeroElemFromArr(arr)));
+}
+
+MemRef::MemRef(): bid(ctx), offset(ctx) {}
+
+MemRef::MemRef(const std::string &name, const std::vector<z3::expr> &dims,
+         const z3::sort &elemty):
+    bid(ctx.bv_const((name + "_bid").c_str(), BID_BITS)),
+    offset(Index((name + "_offset").c_str())),
+    dims(dims) {}
+
+optional<pair<vector<z3::expr>, z3::sort>>
+MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
+  // Step1. check element type
+  auto elemty = memRefTy.getElementType();
+  z3::sort elemty2(ctx);
+
+  if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
+    elemty2 = Float::sort();
+  } else {
+    // Currently we only support f32 element type.
+    return {};
+  }
+
+  // Step2. check affine map
+  auto all_maps_are_identity = [](llvm::ArrayRef<mlir::AffineMap> maps) {
+    return llvm::all_of(maps,
+                        [](mlir::AffineMap map) { return map.isIdentity(); });
+  };
+  auto affine = memRefTy.getAffineMaps();
+  if (all_maps_are_identity(affine)) {
+    return {{::getDims(memRefTy), elemty2}};
+  } else {
+    // Currently we only support identity affine map memref.
+    return {};
+  }
+}
+
+pair<z3::expr, z3::expr> MemRef::get(const Memory &m, const vector<z3::expr> &indices) const {
+  z3::expr idx = to1DIdx(indices, dims);
+  return m.getMemBlock(bid).load(offset + idx);
+}
+
+Index MemRef::getDim(uint64_t idx) const {
+  return Index(dims[idx]);
+}
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
+  assert(m.dims.size() > 0);
+  os << "bid: " << m.bid << ", offset: " << m.offset << "\n";
+  os << "(dim :" << m.dims[0];
+  for (size_t i = 1; i < m.dims.size(); ++i)
+    os << ", " << m.dims[i];
+  os << ")";
+  return os;
+};
+
+std::pair<z3::expr, vector<z3::expr>> MemRef::refines(const MemRef &src) const {
+  return {(z3::expr) src == (z3::expr) *this, {}};
+}
+
+MemRef MemRef::eval(z3::model m) const {
+  MemRef m2;
+  m2.dims.reserve(dims.size());
+  for (size_t i = 0; i < dims.size(); ++i) {
+    auto v = m.eval(dims[i], true).simplify();
+    m2.dims.push_back(std::move(v));
+  }
+  m2.bid = m.eval(bid, true).simplify();
+  m2.offset = m.eval(offset, true).simplify();
+  return m2;
 }

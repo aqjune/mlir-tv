@@ -1,6 +1,7 @@
 #pragma once
 
 #include "z3++.h"
+
 #include <algorithm>
 
 // A memory block containing f32 elements.
@@ -20,9 +21,10 @@ public:
 };
 
 class Memory {
-public:
-  // Has one memory block only.
   MemBlock mb0;
 
+public:
   Memory(): mb0(0) {}
+
+  MemBlock getMemBlock(const z3::expr &bid) const;
 };
