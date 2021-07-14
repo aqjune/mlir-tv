@@ -146,7 +146,6 @@ public:
   static const unsigned BID_BITS = 1;
 
   MemRef();
-  MemRef(const z3::expr &bid, const Index &offset);
   MemRef(const std::string &name, const std::vector<z3::expr> &dims,
          const z3::sort &elemty);
 
