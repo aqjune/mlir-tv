@@ -26,6 +26,7 @@ public:
   static Index zero();
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const Index &src) const;
   Index eval(z3::model m) const;
 };
 
@@ -48,6 +49,7 @@ public:
   Float mul(const Float &b) const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const Float &src) const;
   Float eval(z3::model m) const;
 };
 
@@ -63,6 +65,7 @@ public:
   static z3::sort sort(unsigned bw);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const Integer &src) const;
   Integer eval(z3::model m) const;
 };
 
@@ -113,9 +116,6 @@ public:
 
   operator z3::expr() const { return arr; }
 
-  // Returns (arr[idx] == src.arr[idx], idx var)
-  std::pair<z3::expr, z3::expr> refines(const Tensor &src) const;
-
   static std::vector<z3::expr> getDims(mlir::TensorType tensorTy);
 
   // If tensorTy is unsupported, return nullopt
@@ -127,6 +127,8 @@ public:
       std::vector<z3::expr> &&indexvars, z3::expr body);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
+  // Returns (arr[idx] == src.arr[idx], idx var)
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const Tensor &src) const;
   Tensor eval(z3::model m) const;
 
 private:
@@ -163,6 +165,7 @@ public:
   static std::vector<z3::expr> getDims(mlir::MemRefType memRefTy);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const MemRef &src) const;
   MemRef eval(z3::model m) const;
 
   private:

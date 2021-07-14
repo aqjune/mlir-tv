@@ -843,31 +843,20 @@ static Results verifyFunction(
   if (st_src.retValue) { // 2. Check the return values
     auto s = z3::solver(ctx, "QF_UFBV");
 
-    if (holds_alternative<Tensor>(*st_src.retValue) && holds_alternative<Tensor>(*st_tgt.retValue)) {
-      auto srcRetValue = std::get<Tensor>(*st_src.retValue);
-      auto tgtRetValue = std::get<Tensor>(*st_tgt.retValue);
-      auto [refines, param] = tgtRetValue.refines(srcRetValue);
-      auto not_refines =
-          (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
-      auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
-      elapsedMillisec += res.second;
-      if (res.first != z3::unsat) {
-        printErrorMsg(s, res.first, "Return value mismatch", {param});
-        return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
-      }
-    } else {
-      z3::expr srcRetValue(ctx), tgtRetValue(ctx);
-      visit([&](auto &&v) { srcRetValue = (z3::expr)v; }, *st_src.retValue);
-      visit([&](auto &&v) { tgtRetValue = (z3::expr)v; }, *st_tgt.retValue);
-      auto refines = (srcRetValue == tgtRetValue);
-      auto not_refines =
-          (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
-      auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
-      elapsedMillisec += res.second;
-      if (res.first != z3::unsat) {
-        printErrorMsg(s, res.first, "Return value mismatch", {});
-        return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
-      }
+    z3::expr refines(ctx);
+    vector<z3::expr> params;
+    visit([&](auto &&src, auto &&tgt) {
+      auto typedTarget = (decltype(src)) tgt;
+      tie(refines, params) = src.refines(typedTarget);
+    }, *st_src.retValue, *st_tgt.retValue);
+
+    auto not_refines =
+      (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
+    auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
+    elapsedMillisec += res.second;
+    if (res.first != z3::unsat) {
+      printErrorMsg(s, res.first, "Return value mismatch", move(params));
+      return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
     }
   }
 

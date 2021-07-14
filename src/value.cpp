@@ -91,6 +91,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
   return os;
 };
 
+std::pair<z3::expr, vector<z3::expr>> Index::refines(const Index &src) const {
+  return {(z3::expr) src == (z3::expr) *this, {}};
+}
+
 Index Index::eval(z3::model m) const {
   return Index(m.eval(e, true).simplify());
 }
@@ -117,6 +121,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
   return os;
 };
 
+std::pair<z3::expr, vector<z3::expr>> Float::refines(const Float &src) const {
+  return {(z3::expr) src == (z3::expr) *this, {}};
+}
+
 Float Float::eval(z3::model m) const {
   return Float(m.eval(e, true).simplify());
 }
@@ -141,6 +149,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
   os << (z3::expr)i;
   return os;
 };
+
+std::pair<z3::expr, vector<z3::expr>> Integer::refines(const Integer &src) const {
+  return {(z3::expr) src == (z3::expr) *this, {}};
+}
 
 Integer Integer::eval(z3::model m) const {
   return Integer(m.eval(e, true).simplify());
@@ -275,16 +287,17 @@ Tensor Tensor::matmul(const Tensor &b) const {
       aop::dot(a_row, bt_row, dims[1]));
 }
 
-pair<z3::expr, z3::expr> Tensor::refines(const Tensor &src) const {
+pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
   assert(arr.get_sort().is_array());
   assert(src.arr.get_sort().is_array());
 
   // Assume that src and tgt's shape equality is already checked
-  auto i = Index("i");
+  z3::expr i = Index("i");
+  vector<z3::expr> params = {i};
   return {z3::implies(
       z3::ult(i, get1DSize(dims)),
       z3::select(arr, i) == z3::select(src.arr, i)),
-    i};
+    params};
 }
 
 
@@ -475,6 +488,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   os << ")";
   return os;
 };
+
+std::pair<z3::expr, vector<z3::expr>> MemRef::refines(const MemRef &src) const {
+  return {(z3::expr) src == (z3::expr) *this, {}};
+}
 
 MemRef MemRef::eval(z3::model m) const {
   MemRef m2;
