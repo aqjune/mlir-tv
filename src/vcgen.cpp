@@ -275,7 +275,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
-    // TODO: The MLIR doc isn't explicit about what happens if indices are
+  // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
 
   const Memory &memory = st.m;
