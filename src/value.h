@@ -152,6 +152,7 @@ public:
   operator z3::expr() const { return bid && offset; }
 
   // If memRefTy is unsupported, return nullopt
+  // TODO: if affine map is not identity, then return null
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
       getDimsAndElemTy(mlir::MemRefType memRefTy);
 

@@ -302,7 +302,7 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   // 이건 우선 스킵..
 
   // step2. source memref 를 constant 로 만들고.
-  st.m.getMemBlock(m.getBID()).isConstant = ctx.bool_val(true);
+  st.m.getMemBlock(m.getBID()).writable = ctx.bool_val(false);
 
   // step3. create new Tensor that alias origin memref using Tensor::mkLambda
   auto dims = m.getDims();

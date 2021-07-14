@@ -10,7 +10,7 @@ public:
   const unsigned bid;
   z3::expr array;    // Index::sort() -> Float::sort()
   z3::expr numelem;  // Index::sort()
-  z3::expr isConstant; // bool
+  z3::expr writable; // bool
 
   MemBlock(unsigned bid);
 
@@ -21,10 +21,10 @@ public:
 };
 
 class Memory {
-  MemBlock mb0, mb1;
+  MemBlock mb0;
 
 public:
-  Memory(): mb0(0), mb1(1) {}
+  Memory(): mb0(0) {}
 
   MemBlock getMemBlock(const z3::expr &bid) const;
 };

@@ -11,12 +11,12 @@ MemBlock::MemBlock(unsigned bid):
         ("blk" + to_string(bid)).c_str(),
         ctx.array_sort(Index::sort(), Float::sort()))),
     numelem(ctx.constant(("numelem" + to_string(bid)).c_str(), Index::sort())),
-    isConstant(ctx.bool_const(("isConstant" + to_string(bid)).c_str())) {
+    writable(ctx.bool_const(("writable" + to_string(bid)).c_str())) {
 }
 
 z3::expr MemBlock::store(const z3::expr &f32val, const z3::expr &idx) {
   array = z3::store(array, idx, f32val);
-  return z3::ult(idx, numelem) && !isConstant;
+  return z3::ult(idx, numelem) && writable;
 }
 
 pair<z3::expr, z3::expr> MemBlock::load(const z3::expr &idx) const {
@@ -24,10 +24,6 @@ pair<z3::expr, z3::expr> MemBlock::load(const z3::expr &idx) const {
 }
 
 MemBlock Memory::getMemBlock(const z3::expr &bid) const {
-  // Currently we only support 2 memblocks. This constarints will be relaxed later.
-  if (bid == 0) {
-    return mb0;
-  } else {
-    return mb1;
-  }
+  // Currently we only support 1 memblocks. This constarints will be relaxed later.
+  return mb0;
 }
