@@ -95,9 +95,7 @@ Index Index::eval(z3::model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
-
 Float::Float(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {}
-
 
 static map<double, std::string> const_vars;
 
@@ -409,13 +407,13 @@ z3::expr Tensor::to1DArrayWithOfs(
 
 MemRef::MemRef(): bid(ctx), offset(ctx) {}
 
-MemRef::MemRef(const z3::expr &bid, const z3::expr &offset):
+MemRef::MemRef(const z3::expr &bid, const Index &offset):
   bid(bid), offset(offset) {}
 
 MemRef::MemRef(const std::string &name, const std::vector<z3::expr> &dims,
          const z3::sort &elemty):
     bid(ctx.bv_const((name + "_bid").c_str(), BID_BITS)),
-    offset(ctx.bv_const((name + "_offset").c_str(), OFFSET_BITS)),
+    offset(Index((name + "_offset").c_str())),
     dims(dims) {}
 
 optional<pair<vector<z3::expr>, z3::sort>>
