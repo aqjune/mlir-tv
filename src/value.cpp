@@ -456,11 +456,9 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
   }
 }
 
-z3::expr MemRef::get(const Memory &m, const std::vector<z3::expr> &indices) const {
+std::pair<z3::expr, z3::expr> MemRef::get(const Memory &m, const std::vector<z3::expr> &indices) const {
   z3::expr idx = to1DIdx(indices, dims);
-  // TODO (seongwon) : how to handle load successful condition?
-  auto result = m.getMemBlock(bid).load(offset + idx).first;
-  return result;
+  return m.getMemBlock(bid).load(offset + idx);
 }
 
 Index MemRef::getDim(uint64_t idx) const {

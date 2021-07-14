@@ -67,10 +67,20 @@ createInputState(mlir::FuncOp fn) {
       auto dimsAndElemTy = MemRef::getDimsAndElemTy(ty);
       if (!dimsAndElemTy)
         RET_STR("Unsupported MemRef element type: " << arg.getType());
-      s.regs.add(arg, MemRef("arg" + to_string(arg.getArgNumber()),
+      const Memory &memory = s.m;
+      auto memref = MemRef("arg" + to_string(arg.getArgNumber()),
                              dimsAndElemTy->first,
-                             dimsAndElemTy->second));
+                             dimsAndElemTy->second);
 
+      // Note: getNumElements() has int64_t but here we encode to 32bit integer variable
+      int memrefSize = ty.getNumElements();
+
+      // Encoding whether memory pointed by memref is well defined .
+      // memBlock containing MemRef should be bigger than memref size and offset + idx should not overflow memBlock
+      s.regs.add(arg, memref);
+      s.isWellDefined = s.isWellDefined &&
+        z3::uge(memory.getMemBlock(memref.getBID()).numelem, memrefSize) &&
+        z3::ule(memref.getOffset(), memory.getMemBlock(memref.getBID()).numelem - memrefSize);
     } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
       s.regs.add(arg, Index("arg" + to_string(arg.getArgNumber())));
 
@@ -270,25 +280,29 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
 
   const Memory &memory = st.m;
   auto m = st.regs.get<MemRef>(op.getOperand(0));
+  z3::expr wb = ctx.bool_val(true);
   vector<z3::expr> indices;
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
-  if (op.getType().isa<mlir::IndexType>())
-    st.regs.add(op, Index(m.get(memory, indices)));
-  else if (op.getType().isa<mlir::Float32Type>())
-    st.regs.add(op, Float(m.get(memory, indices)));
+  if (op.getType().isa<mlir::IndexType>()) {
+    auto [expr, success] = m.get(memory, indices);
+    st.regs.add(op, Index(expr));
+    wb = wb && success;
+  } else if (op.getType().isa<mlir::Float32Type>()) {
+    auto [expr, success] = m.get(memory, indices);
+    st.regs.add(op, Float(expr));
+    wb = wb && success;
+  }
   else
     // TODO: how to do this well?
     return "unsupported type";
 
-  z3::expr wb = ctx.bool_val(true);
   for (unsigned i = 0; i < indices.size(); ++i)
     // TODO: revisit this; may not be axis-wise
     wb = wb && z3::ult(indices[i], m.getDim(i));
 
   st.isWellDefined = st.isWellDefined && wb;
-
   return {};
 }
 
@@ -310,11 +324,12 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   for (int i = 0; i < dims.size(); i ++) {
     idxs.push_back(Index("Index_" + std::to_string(i)));
   }
-  z3::expr memrefExpr = m.get(st.m, idxs);
-  Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), memrefExpr);
+  auto [expr, success] = m.get(st.m, idxs);
+  Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
 // step4. add result tensor to register
   st.regs.add(op.getResult(), t_res);
+  st.isWellDefined = st.isWellDefined && success;
   return {};
 }
 
