@@ -70,7 +70,7 @@ static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
   return v;
 }
 
-static vector<z3::expr> getDimsFromShape(mlir::ShapedType &shapedTy) {
+vector<z3::expr> getDims(const mlir::ShapedType &shapedTy) {
   vector<z3::expr> dims;
   //static int dim_var = 0;
 
@@ -323,11 +323,6 @@ pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
     params};
 }
 
-
-vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
-  return getDimsFromShape(tensorTy);
-}
-
 optional<pair<vector<z3::expr>, z3::sort>>
 Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
   auto elemty = tensorTy.getElementType();
@@ -344,7 +339,7 @@ Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
     return {};
   }
 
-  return {{getDimsFromShape(tensorTy), elemty2}};
+  return {{::getDims(tensorTy), elemty2}};
 }
 
 
@@ -449,7 +444,7 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
   };
   auto affine = memRefTy.getAffineMaps();
   if (all_maps_are_identity(affine)) {
-    return {{getDimsFromShape(memRefTy), elemty2}};
+    return {{::getDims(memRefTy), elemty2}};
   } else {
     // Currently we only support identity affine map memref.
     return {};

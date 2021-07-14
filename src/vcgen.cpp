@@ -192,7 +192,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
   // of elements.
 
   Tensor t = st.regs.get<Tensor>(op.getOperand());
-  st.regs.add(op.getResult(), t.reshape(Tensor::getDims(op.getResultType())));
+  st.regs.add(op.getResult(), t.reshape(getDims(op.getResultType())));
   return {};
 }
 
@@ -204,7 +204,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
   // of elements.
 
   Tensor t = st.regs.get<Tensor>(op.getOperand());
-  st.regs.add(op.getResult(), t.reshape(Tensor::getDims(op.getResultType())));
+  st.regs.add(op.getResult(), t.reshape(getDims(op.getResultType())));
   return {};
 }
 
@@ -423,7 +423,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
     if (!splatfval)
       return "a fp splat constant tensor is supported only";
 
-    auto dims = Tensor::getDims(op.getType().cast<mlir::TensorType>());
+    auto dims = getDims(op.getType().cast<mlir::TensorType>());
     st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), move(dims)));
     return {};
   }
@@ -654,7 +654,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     output_dimvars = move(newvars);
   }
 
-  auto tensor_sz = Tensor::getDims(
+  auto tensor_sz = getDims(
       op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
   Tensor t_res = Tensor::mkLambda(move(tensor_sz), move(output_dimvars),
       newst.regs.getZ3Expr(yieldedValue));

@@ -8,6 +8,8 @@
 
 class Memory;
 
+std::vector<z3::expr> getDims(const mlir::ShapedType &shapedTy);
+
 class Index {
   z3::expr e;
 
@@ -115,8 +117,6 @@ public:
   Tensor matmul(const Tensor &b) const;
 
   operator z3::expr() const { return arr; }
-
-  static std::vector<z3::expr> getDims(mlir::TensorType tensorTy);
 
   // If tensorTy is unsupported, return nullopt
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
