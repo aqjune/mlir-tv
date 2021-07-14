@@ -1,3 +1,4 @@
+#include "abstractops.h"
 #include "value.h"
 #include "smt.h"
 #include "state.h"
@@ -785,6 +786,9 @@ static Results verifyFunction(
     llvm::errs() << msg << "\n";
     exit(1);
   };
+
+  // TODO: do this after static analysis
+  aop::setAbstractionLevel(aop::FULLY_ABS);
 
   auto st_src_or_err = createInputState(src);
   if (holds_alternative<string>(st_src_or_err))
