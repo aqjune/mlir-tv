@@ -68,9 +68,7 @@ createInputState(mlir::FuncOp fn) {
       if (!dimsAndElemTy)
         RET_STR("Unsupported MemRef element type: " << arg.getType());
       const Memory &memory = s.m;
-      auto memref = MemRef("arg" + to_string(arg.getArgNumber()),
-                             dimsAndElemTy->first,
-                             dimsAndElemTy->second);
+      auto memref = MemRef("arg0", dimsAndElemTy->first, dimsAndElemTy->second);
 
       // Note: getNumElements() has int64_t but here we encode to 32bit integer variable
       int memrefSize = ty.getNumElements();
