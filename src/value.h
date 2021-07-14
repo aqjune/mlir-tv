@@ -160,7 +160,6 @@ public:
   Index getOffset() const { return offset; }
   Index getDim(uint64_t idx) const;
   std::vector<z3::expr> getDims() const { return dims; }
-  static std::vector<z3::expr> getDims(mlir::MemRefType memRefTy);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
   std::pair<z3::expr, std::vector<z3::expr>> refines(const MemRef &src) const;

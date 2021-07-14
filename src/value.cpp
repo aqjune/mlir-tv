@@ -70,6 +70,29 @@ static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
   return v;
 }
 
+static vector<z3::expr> getDimsFromShape(mlir::ShapedType &shapedTy) {
+  vector<z3::expr> dims;
+  //static int dim_var = 0;
+
+  uint64_t rank = shapedTy.getRank();
+  if (rank == 0) {
+    // A single element tensor.
+    return vector<z3::expr>{Index(1)};
+  }
+
+  dims.reserve(rank);
+  for (auto i = 0; i < rank; ++i) {
+    uint64_t sz = shapedTy.getDimSize(i);
+    if (sz == (uint64_t)-1ull)
+      // TODO: this requires encoding of well-formedness of input tensors.
+      // dims.emplace_back(Index("dim" + to_string(dim_var++)));
+      dims.push_back(Index(100));
+    else
+      dims.push_back(Index(sz));
+  }
+
+  return dims;
+}
 
 Index::Index(): e(ctx) {}
 
@@ -302,27 +325,7 @@ pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
 
 
 vector<z3::expr> Tensor::getDims(mlir::TensorType tensorTy) {
-  vector<z3::expr> dims;
-  //static int dim_var = 0;
-
-  uint64_t rank = tensorTy.getRank();
-  if (rank == 0) {
-    // A single element tensor.
-    return vector<z3::expr>{Index(1)};
-  }
-
-  dims.reserve(rank);
-  for (auto i = 0; i < rank; ++i) {
-    uint64_t sz = tensorTy.getDimSize(i);
-    if (sz == (uint64_t)-1ull)
-      // TODO: this requires encoding of well-formedness of input tensors.
-      // dims.emplace_back(Index("dim" + to_string(dim_var++)));
-      dims.push_back(Index(100));
-    else
-      dims.push_back(Index(sz));
-  }
-
-  return dims;
+  return getDimsFromShape(tensorTy);
 }
 
 optional<pair<vector<z3::expr>, z3::sort>>
@@ -341,7 +344,7 @@ Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
     return {};
   }
 
-  return {{getDims(tensorTy), elemty2}};
+  return {{getDimsFromShape(tensorTy), elemty2}};
 }
 
 
@@ -446,7 +449,7 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
   };
   auto affine = memRefTy.getAffineMaps();
   if (all_maps_are_identity(affine)) {
-    return {{getDims(memRefTy), elemty2}};
+    return {{getDimsFromShape(memRefTy), elemty2}};
   } else {
     // Currently we only support identity affine map memref.
     return {};
@@ -460,30 +463,6 @@ pair<z3::expr, z3::expr> MemRef::get(const Memory &m, const vector<z3::expr> &in
 
 Index MemRef::getDim(uint64_t idx) const {
   return Index(dims[idx]);
-}
-
-vector<z3::expr> MemRef::getDims(mlir::MemRefType memRefTy) {
-  vector<z3::expr> dims;
-  //static int dim_var = 0;
-
-  uint64_t rank = memRefTy.getRank();
-  if (rank == 0) {
-    // A single element tensor.
-    return vector<z3::expr>{Index(1)};
-  }
-
-  dims.reserve(rank);
-  for (auto i = 0; i < rank; ++i) {
-    uint64_t sz = memRefTy.getDimSize(i);
-    if (sz == (uint64_t)-1ull)
-      // TODO: this requires encoding of well-formedness of input tensors.
-      // dims.emplace_back(Index("dim" + to_string(dim_var++)));
-      dims.push_back(Index(100));
-    else
-      dims.push_back(Index(sz));
-  }
-
-  return dims;
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
