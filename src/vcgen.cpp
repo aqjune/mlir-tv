@@ -304,16 +304,15 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   // step2. source memref 를 constant 로 만들고.
   st.m.getMemBlock(m.getBID()).isConstant = ctx.bool_val(true);
 
-  // step3. memref 의 memory 값을 따르는 tensor mklambda? 로 생성
-  // llvm::outs() << "\nDEBUG!!! \n";
+  // step3. create new Tensor that alias origin memref using Tensor::mkLambda
   auto dims = m.getDims();
   vector<z3::expr> idxs;
   for (int i = 0; i < dims.size(); i ++) {
     idxs.push_back(Index("Index_" + std::to_string(i)));
   }
   z3::expr memrefExpr = m.get(st.m, idxs);
-  // TODO(seongwon) : check move
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), memrefExpr);
+
 // step4. add result tensor to register
   st.regs.add(op.getResult(), t_res);
   return {};
@@ -743,10 +742,10 @@ static void printCounterEx(
   }
 
   if (st_src.retValue) {
-    llvm::outs()
-        << "\n<Return values>\n"
-        << "\tIndex: " << solver.get_model().eval(params[0]) << "\n"
-        << "\tSrc: " << or_omit(*st_src.retValue)
+    llvm::outs() << "\n<Return values>\n";
+    for (auto &param: params)
+      llvm::outs() << "\tIndex: " << solver.get_model().eval(param) << "\n";
+    llvm::outs() << "\tSrc: " << or_omit(*st_src.retValue)
         << "\n"
         << "\tTgt: " << or_omit(*st_tgt.retValue)
         << "\n";
