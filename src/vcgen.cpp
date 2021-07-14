@@ -309,16 +309,11 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
-  // m is target memref
-  // here we just convert memref to tensor type and make memref as constant pointer
 
-  // step1. index bound check 이후 welldefined 추가
-  // 이건 우선 스킵..
-
-  // step2. source memref 를 constant 로 만들고.
+  // step1. MemBlock which contains source memref marks as not writable.
   st.m.getMemBlock(m.getBID()).writable = ctx.bool_val(false);
 
-  // step3. create new Tensor that alias origin memref using Tensor::mkLambda
+  // step2. create new Tensor that alias origin memref using Tensor::mkLambda
   auto dims = m.getDims();
   vector<z3::expr> idxs;
   for (int i = 0; i < dims.size(); i ++) {
@@ -327,7 +322,8 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto [expr, success] = m.get(st.m, idxs);
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
-// step4. add result tensor to register
+  // step3. add result tensor to register
+  // (Bounds check would be encoded when getting Tensor element. So it is redundant to check index bounds here.)
   st.regs.add(op.getResult(), t_res);
   st.isWellDefined = st.isWellDefined && success;
   return {};
