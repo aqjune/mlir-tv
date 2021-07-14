@@ -36,7 +36,7 @@ static vector<z3::expr> from1DIdx(
   return idxs;
 }
 
-static z3::expr get1DSize(const vector<z3::expr> &dims) {
+z3::expr get1DSize(const vector<z3::expr> &dims) {
   z3::expr szaccml = Index::one();
   for (auto &d: dims)
     szaccml = szaccml * d;
