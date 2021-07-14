@@ -264,6 +264,35 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
+    // TODO: The MLIR doc isn't explicit about what happens if indices are
+  // out-of-bounds. It is currently encoded as UB.
+
+  const Memory &memory = st.m;
+  auto m = st.regs.get<MemRef>(op.getOperand(0));
+  vector<z3::expr> indices;
+  for (auto idx0: op.indices())
+    indices.emplace_back(st.regs.get<Index>(idx0));
+
+  if (op.getType().isa<mlir::IndexType>())
+    st.regs.add(op, Index(m.get(memory, indices)));
+  else if (op.getType().isa<mlir::Float32Type>())
+    st.regs.add(op, Float(m.get(memory, indices)));
+  else
+    // TODO: how to do this well?
+    return "unsupported type";
+
+  z3::expr wb = ctx.bool_val(true);
+  for (unsigned i = 0; i < indices.size(); ++i)
+    // TODO: revisit this; may not be axis-wise
+    wb = wb && z3::ult(indices[i], m.getDim(i));
+
+  st.isWellDefined = st.isWellDefined && wb;
+
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
   // m is target memref
@@ -647,6 +676,7 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
 
+    ENCODE(st, op, mlir::memref::LoadOp);
     ENCODE(st, op, mlir::memref::TensorLoadOp);
 
     ENCODE(st, op, mlir::linalg::IndexOp);

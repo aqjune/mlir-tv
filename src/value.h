@@ -158,6 +158,7 @@ public:
   z3::expr get(const Memory &m, const std::vector<z3::expr> &indices) const;
   z3::expr getBID() const { return bid; }
   z3::expr getOffset() const { return offset; }
+  Index getDim(uint64_t idx) const;
   std::vector<z3::expr> getDims() const { return dims; }
   static std::vector<z3::expr> getDims(mlir::MemRefType memRefTy);
 

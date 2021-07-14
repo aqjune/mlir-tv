@@ -440,6 +440,10 @@ z3::expr MemRef::get(const Memory &m, const std::vector<z3::expr> &indices) cons
   return result;
 }
 
+Index MemRef::getDim(uint64_t idx) const {
+  return Index(dims[idx]);
+}
+
 vector<z3::expr> MemRef::getDims(mlir::MemRefType memRefTy) {
   vector<z3::expr> dims;
   //static int dim_var = 0;
