@@ -494,7 +494,9 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op) {
     unsigned pos = d.getPosition();
     if (resFilled[pos])
       continue;
-    res[pos] = viewSizes[idx];
+    // If i < N, store N - 1
+    // It is to bound e.g., 'i + j <= N - 1 + M - 1'
+    res[pos] = viewSizes[idx].ofs(-1);
     resFilled[pos] = true;
   }
 
@@ -503,7 +505,7 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op) {
     if (!ae)
       return "unsupported affine expr";
 
-    z3::expr inbounds = z3::ule(*ae, (z3::expr)viewSizes[idx]);
+    z3::expr inbounds = z3::ult(*ae, (z3::expr)viewSizes[idx]);
     st.isWellDefined = st.isWellDefined && inbounds;
   }
 
