@@ -294,8 +294,6 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto memBlock = st.m.getMemBlock(m.getBID());
   memBlock.writable = ctx.bool_val(false);
 
-  st.m.getMemBlock(m.getBID()).writable = ctx.bool_val(false);
-
   // step2. create new Tensor that alias origin memref using Tensor::mkLambda
   auto dims = m.getDims();
   auto memrefSize = get1DSize(dims);
