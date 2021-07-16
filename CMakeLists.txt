@@ -18,9 +18,10 @@ add_executable(${PROJECT_NAME}
     src/value.cpp
     src/vcgen.cpp)
 
+# Libraries can be found in IREE_BUILD_DIR/third_party/llvm-project/llvm/lib
 target_link_libraries(${PROJECT_NAME}
     MLIRViewLikeInterface MLIRInferTypeOpInterface
-    MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRViewLikeInterface MLIRAffine MLIRMemRef MLIRShape
+    MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRViewLikeInterface MLIRAffine MLIRMemRef MLIRShape MLIRMath
     MLIRControlFlowInterfaces MLIRStandard MLIRSideEffectInterfaces MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport MLIRInferTypeOpInterface
     LLVMSupport LLVMDemangle z3 pthread m curses)
 target_link_options(${PROJECT_NAME} PUBLIC -fPIC)
