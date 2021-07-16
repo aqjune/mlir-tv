@@ -158,6 +158,9 @@ public:
       getDimsAndElemTy(mlir::MemRefType memRefTy);
 
   std::pair<z3::expr, z3::expr> get(const Memory &m, const std::vector<z3::expr> &indices) const;
+  z3::expr set(const Memory &m,
+    const std::vector<z3::expr> &indices,
+    const z3::expr &value) const;
   z3::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
   Index getDim(uint64_t idx) const;

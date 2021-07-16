@@ -451,6 +451,14 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
   }
 }
 
+z3::expr MemRef::set(const Memory &m,
+  const std::vector<z3::expr> &indices,
+  const z3::expr &value) const {
+  z3::expr idx = to1DIdx(indices, dims);
+  return m.getMemBlock(bid).store(value, offset + idx);
+}
+
+
 pair<z3::expr, z3::expr> MemRef::get(const Memory &m, const vector<z3::expr> &indices) const {
   z3::expr idx = to1DIdx(indices, dims);
   return m.getMemBlock(bid).load(offset + idx);
