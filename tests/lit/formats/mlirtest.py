@@ -29,22 +29,35 @@ class TestKeyword(Enum):
     VERIFY = auto()
     VERIFY_INCORRECT = auto()
 
+def _includes_unsupported_message(errs: str) -> bool:
+    keywords: List[str] = ["Unknown"]
+    for keyword in keywords:
+        if keyword in errs:
+            return True
+    return False
+
 def _check_exit_code(keyword: TestKeyword, outs: str, errs: str, exit_code: int):
-    if keyword == TestKeyword.VERIFY:
-        if exit_code == 0:
-            return lit.Test.PASS, ""
-        elif exit_code == 1:
-            return lit.Test.TIMEOUT, ""
+    if exit_code == 1:
+        # keyword-independent results
+        if _includes_unsupported_message(errs):
+            return lit.Test.UNRESOLVED, ""
         else:
-            return lit.Test.FAIL, outs + errs
-    
-    elif keyword == TestKeyword.VERIFY_INCORRECT:
-        if exit_code == 0:
-            return lit.Test.FAIL, "This test must fail!"
-        elif exit_code == 1:
             return lit.Test.TIMEOUT, ""
-        else:
-            return lit.Test.PASS, ""
+    elif exit_code >= 65 and exit_code <= 68:
+        return lit.Test.UNRESOLVED, ""
+    else:
+        # keyword-dependent results
+        if keyword == TestKeyword.VERIFY:
+            if exit_code == 0:
+                return lit.Test.PASS, ""
+            else:
+                return lit.Test.FAIL, outs + errs
+        
+        elif keyword == TestKeyword.VERIFY_INCORRECT:
+            if exit_code == 0:
+                return lit.Test.FAIL, "This test must fail!"
+            else:
+                return lit.Test.PASS, ""
 
 class MLIRTest(TestFormat):
     __suffix_src: str = ".src.mlir"
@@ -60,7 +73,7 @@ class MLIRTest(TestFormat):
         source_path = testSuite.getSourcePath(path_in_suite)
         for pass_name in filter(lambda name: (os.path.isdir(os.path.join(source_path, name)) \
                     and not _starts_with_dot(name)
-                    and self.__pass_name in name)
+                    and self.__pass_name == name)
                 , os.listdir(source_path)):
             pass_path: str = os.path.join(source_path, pass_name)
             for case_src_name in filter(lambda name: (os.path.isfile(os.path.join(pass_path, name)) \
