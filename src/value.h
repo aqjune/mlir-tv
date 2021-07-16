@@ -145,8 +145,6 @@ class MemRef {
   std::vector<z3::expr> dims;
 
 public:
-  static const unsigned BID_BITS = 1;
-
   MemRef();
   MemRef(const std::string &name, const std::vector<z3::expr> &dims,
          const z3::sort &elemty);

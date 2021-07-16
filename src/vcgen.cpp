@@ -315,8 +315,8 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
 
   // step1. MemBlock which contains source memref marks as not writable.
-  auto memBlock = st.m.getMemBlock(m.getBID());
-  memBlock.writable = ctx.bool_val(false);
+  auto &memory = st.m;
+  memory.updateMemBlock(m.getBID(), false);
 
   // step2. create new Tensor that alias origin memref using Tensor::mkLambda
   auto dims = m.getDims();
@@ -331,8 +331,8 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   // step3. add result tensor to register
   st.regs.add(op.getResult(), t_res);
   st.isWellDefined = st.isWellDefined &&
-    z3::uge(memBlock.numelem, memrefSize) &&
-    z3::ult(m.getOffset(), memBlock.numelem - memrefSize);
+    z3::uge(memory.getMemBlock(m.getBID()).numelem, memrefSize) &&
+    z3::ult(m.getOffset(), memory.getMemBlock(m.getBID()).numelem - memrefSize);
 
   return {};
 }
