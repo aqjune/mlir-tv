@@ -421,7 +421,6 @@ MemRef::MemRef(): bid(ctx), offset(ctx) {}
 MemRef::MemRef(const std::string &name, const std::vector<z3::expr> &dims,
          const z3::sort &elemty):
     bid(ctx.bv_const((name + "_bid").c_str(), Memory::BID_BITS)),
-    // bid(ctx.bv_val(1, 2)),
     offset(Index((name + "_offset").c_str())),
     dims(dims) {}
 
