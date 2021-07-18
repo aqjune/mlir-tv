@@ -524,6 +524,8 @@ static optional<string> initInputStateForLoopBody(
   // Fill in args
   assert(op.getInputOperands().size() + op.getNumOutputs() ==
          indexingMaps.size());
+
+  // Output variables are not encoded! Reduction loops are dealt specially
   for (unsigned arg_i = 0; arg_i + op.getNumOutputs() < indexingMaps.size();
        ++arg_i) {
     auto inputMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
@@ -537,26 +539,12 @@ static optional<string> initInputStateForLoopBody(
     } else if (auto tensorty = op_i.getType().dyn_cast<mlir::TensorType>()) {
       // A tensor value.
       auto elemty = tensorty.getElementType();
-
-      if (!elemty.isa<mlir::IntegerType>() &&
-          !elemty.isa<mlir::Float32Type>()) {
-        return "unsupported element type";
-      }
-
-      auto toRegValue = [&elemty](const z3::expr &e) -> ValueTy {
-        if (elemty.isa<mlir::Float32Type>())
-          return Float(e);
-        else if (elemty.isa<mlir::IntegerType>())
-          return Integer(e);
-        llvm_unreachable("unexpected elemty");
-      };
-
       Tensor t_input = st.regs.get<Tensor>(op_i);
 
       if (inputMap.getNumResults() == 0) {
         // A tensor with a single element; e.g. tensor<f32>.
-        st.regs.add(block.getArgument(arg_i),
-                       toRegValue(t_input.get({Index::zero()})));
+        st.regs.add(block.getArgument(arg_i), t_input.get({Index::zero()}),
+                    elemty);
       } else {
         vector<z3::expr> affine_exprs;
         for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
@@ -569,7 +557,7 @@ static optional<string> initInputStateForLoopBody(
         }
 
         auto t_elem = t_input.get(affine_exprs);
-        st.regs.add(block.getArgument(arg_i), toRegValue(t_elem));
+        st.regs.add(block.getArgument(arg_i), t_elem, elemty);
       }
     } else {
       return "unsupported block argument type";
@@ -578,6 +566,51 @@ static optional<string> initInputStateForLoopBody(
 
   st.linalgGenericScopes.push(move(output_dimvars));
   return {};
+}
+
+static optional<string> encodeParallelLoopBodyAndOutput(
+    State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
+    const mlir::TensorType &outputType, Tensor &t_res) {
+  // Encode the loop body
+  // TODO: deal with merging UBs and memorys
+  auto &ops = block.getOperations();
+  mlir::Value yieldedValue;
+  for (auto &op: ops) {
+    ENCODE(newst, op, mlir::AddFOp);
+    ENCODE(newst, op, mlir::MulFOp);
+    ENCODE(newst, op, mlir::AddIOp);
+    ENCODE(newst, op, mlir::SubIOp);
+    ENCODE(newst, op, mlir::IndexCastOp);
+    ENCODE(newst, op, mlir::linalg::IndexOp);
+    if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
+      yieldedValue = op2.getOperand(0);
+      break;
+    }
+    RET_STR("has an unsupported operation" << op);
+  }
+
+  auto output_dimvars = newst.linalgGenericScopes.top();
+
+  if (!outputMap.isIdentity()) {
+    vector<z3::expr> newvars;
+    for (unsigned i = 0; i < outputMap.getNumResults(); ++i) {
+      auto ade = outputMap.getResult(i).dyn_cast<mlir::AffineDimExpr>();
+      newvars.emplace_back(output_dimvars[ade.getPosition()]);
+    }
+    output_dimvars = move(newvars);
+  }
+
+  auto tensor_sz = getDims(outputType);
+  t_res = Tensor::mkLambda(move(tensor_sz), move(output_dimvars),
+      newst.regs.getZ3Expr(yieldedValue));
+
+  return {};
+}
+
+static optional<string> encodeReductionLoopBodyAndOutput(
+    State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
+    const mlir::TensorType &outputType, Tensor &t_res) {
+  return "reduction loops are unsupported";
 }
 
 template<>
@@ -597,56 +630,47 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
       [](auto &arg) { return arg.getType().isSignlessIntOrFloat(); }))
     return "unsupported block arguments";
 
-  encodeUBForTensorShapeMatch(st, op);
+  if (llvm::any_of(op.iterator_types(), [](mlir::Attribute attr) {
+    auto str = attr.cast<mlir::StringAttr>().getValue();
+    return str != mlir::getParallelIteratorTypeName() &&
+           str != mlir::getReductionIteratorTypeName();
+  }))
+    return "unsupported iterator type";
+
+
+  if (auto errmsg = encodeUBForTensorShapeMatch(st, op))
+    return errmsg;
 
   // Start from newst
   State newst = st;
   if (auto msg = initInputStateForLoopBody(newst, op))
     return msg;
 
+  Tensor t_res;
   auto indexingMaps = op.indexing_maps().getValue();
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
-  if (!outputMap.isPermutation())
-    return "permutation output map is supported only";
+  auto outputType = op.getOutputOperand(0)->get().getType()
+      .cast<mlir::TensorType>();
 
-  // Encode the loop body
-  // TODO: deal with merging UBs and memorys
-  auto &ops = block.getOperations();
-  mlir::Value yieldedValue;
-  for (auto &op: ops) {
-    ENCODE(newst, op, mlir::AddFOp);
-    ENCODE(newst, op, mlir::MulFOp);
-    ENCODE(newst, op, mlir::AddIOp);
-    ENCODE(newst, op, mlir::SubIOp);
-    ENCODE(newst, op, mlir::IndexCastOp);
-    ENCODE(newst, op, mlir::linalg::IndexOp);
-    if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
-      yieldedValue = op2.getOperand(0);
-      break;
-    }
-    RET_STR("has an unsupported operation: " << op);
+  if (outputMap.isPermutation()) {
+    if (auto errmsg = encodeParallelLoopBodyAndOutput(newst, block, outputMap,
+                                                      outputType, t_res))
+      return errmsg;
+
+  } else {
+    if (auto errmsg = encodeReductionLoopBodyAndOutput(newst, block, outputMap,
+                                                       outputType, t_res))
+      return errmsg;
   }
 
-  // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
-  // aqjune talked with mlir people and it is confirmed by them
-
-  auto output_dimvars = move(newst.linalgGenericScopes.top());
   newst.linalgGenericScopes.pop();
 
-  if (!outputMap.isIdentity()) {
-    vector<z3::expr> newvars;
-    for (unsigned i = 0; i < outputMap.getNumResults(); ++i) {
-      auto ade = outputMap.getResult(i).dyn_cast<mlir::AffineDimExpr>();
-      newvars.emplace_back(output_dimvars[ade.getPosition()]);
-    }
-    output_dimvars = move(newvars);
+  if (op.getNumResults() != 0) {
+    // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
+    // aqjune talked with mlir people and confirmed
+    assert(op.getNumResults() == 1);
+    st.regs.add(op.getResult(0), move(t_res));
   }
-
-  auto tensor_sz = getDims(
-      op.getOutputOperand(0)->get().getType().cast<mlir::TensorType>());
-  Tensor t_res = Tensor::mkLambda(move(tensor_sz), move(output_dimvars),
-      newst.regs.getZ3Expr(yieldedValue));
-  st.regs.add(op.getResult(0), move(t_res));
   return {};
 }
 

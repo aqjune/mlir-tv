@@ -16,6 +16,10 @@ private:
 
 public:
   void add(mlir::Value v, ValueTy &&t);
+
+  // For non-aggregate types only
+  void add(mlir::Value v, const z3::expr &e, mlir::Type ty);
+
   ValueTy findOrCrash(mlir::Value v) const;
   template<class T> T get(mlir::Value v) const {
     return std::get<T>(findOrCrash(v));

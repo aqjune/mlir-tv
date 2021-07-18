@@ -18,6 +18,19 @@ void RegFile::add(mlir::Value v, ValueTy &&t) {
   m.insert({v, std::move(t)});
 }
 
+void RegFile::add(mlir::Value v, const z3::expr &e, mlir::Type ty) {
+  assert(!contains(v));
+  if (ty.isa<mlir::Float32Type>())
+    m.insert({v, Float(e)});
+  else if (ty.isa<mlir::IntegerType>())
+    m.insert({v, Integer(e)});
+  else if (ty.isa<mlir::IndexType>())
+    m.insert({v, Index(e)});
+  else
+    // TODO: tensor?
+    llvm_unreachable("Unsupported type");
+}
+
 bool RegFile::contains(mlir::Value v) const {
   return (bool)m.count(v);
 }

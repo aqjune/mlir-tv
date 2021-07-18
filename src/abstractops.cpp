@@ -35,6 +35,19 @@ z3::expr fp_mul(const z3::expr &a, const z3::expr &b) {
   return mulfn(a, b);
 }
 
+z3::expr sum(const z3::expr &a, const z3::expr &n) {
+  // TODO: check that a.sort is Index::sort() -> Float::sort()
+
+  z3::sort_vector domain(ctx);
+  domain.push_back(a.get_sort());
+  auto sumfn = ctx.function("smt_sum", domain, Float::sort());
+
+  auto i = Index("idx");
+  z3::expr ai = z3::select(a, i);
+  z3::expr zero = mkZeroElemFromArr(a);
+  return sumfn(z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)));
+}
+
 z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
   if (alDot == FULLY_ABS) {
     // TODO: check that a.get_sort() == b.get_sort()
@@ -54,15 +67,8 @@ z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
   } else if (alDot == SUM_MUL) {
     // TODO: check that a.get_sort() == b.get_sort()
     auto i = Index("idx");
-
-    z3::sort_vector domain(ctx);
-    domain.push_back(a.get_sort());
-    auto raddfn = ctx.function("reduce_add", domain, Float::sort());
-
-    z3::expr_vector args(ctx);
     z3::expr ai = z3::select(a, i), bi = z3::select(b, i);
-    z3::expr zero = mkZeroElemFromArr(a);
-    return raddfn(z3::lambda(i, z3::ite(z3::ult(i, n), fp_mul(ai, bi), zero)));
+    return sum(z3::lambda(i, fp_mul(ai, bi)), n);
   }
   llvm_unreachable("Unknown abstraction level for dot");
 }
