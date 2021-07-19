@@ -325,14 +325,15 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   for (int i = 0; i < dims.size(); i ++) {
     idxs.push_back(Index("Index_" + std::to_string(i)));
   }
-  auto [expr, success] = m.get(st.m, idxs);
+  auto [expr, success] = m.get(memory, idxs);
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
   // step3. add result tensor to register
+  auto numelem = memory.getNumElementsOfMemBlock(m.getBID());
   st.regs.add(op.getResult(), t_res);
   st.isWellDefined = st.isWellDefined &&
-    z3::uge(memory.getMemBlock(m.getBID()).numelem, memrefSize) &&
-    z3::ult(m.getOffset(), memory.getMemBlock(m.getBID()).numelem - memrefSize);
+    z3::uge(numelem, memrefSize) &&
+    z3::ult(m.getOffset(), numelem - memrefSize);
 
   return {};
 }
