@@ -43,7 +43,7 @@ z3::expr SingleArrayMemory::getNumElementsOfMemBlock(const z3::expr &bid) const 
   return getMemBlock(bid).numelem;
 }
 
-void SingleArrayMemory::updateMemBlock(const z3::expr &bid, bool writable) {
+void SingleArrayMemory::setWritable(const z3::expr &bid, bool writable) {
   writableMaps = z3::store(writableMaps, bid, ctx.bool_val(writable));
 }
 
@@ -96,7 +96,7 @@ z3::expr MultipleArrayMemory::getNumElementsOfMemBlock(const z3::expr &bid) cons
   return getMemBlock(bid).numelem;
 }
 
-void MultipleArrayMemory::updateMemBlock(const z3::expr &bid, bool writable) {
+void MultipleArrayMemory::setWritable(const z3::expr &bid, bool writable) {
   writableMaps = z3::store(writableMaps, bid, ctx.bool_val(writable));
 }
 

@@ -17,7 +17,7 @@ public:
 
   virtual z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const = 0;
 
-  virtual void updateMemBlock(const z3::expr &bid, bool writable) = 0;
+  virtual void setWritable(const z3::expr &bid, bool writable) = 0;
   // Returns: store successful?
   virtual z3::expr store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx) = 0;
   // Returns: (loaded value, load successful?)
@@ -52,7 +52,7 @@ public:
 
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const;
 
-  void updateMemBlock(const z3::expr &bid, bool writable);
+  void setWritable(const z3::expr &bid, bool writable);
 
   // Returns: store successful?
   z3::expr store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx);
@@ -88,7 +88,7 @@ public:
 
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const;
 
-  void updateMemBlock(const z3::expr &bid, bool writable);
+  void setWritable(const z3::expr &bid, bool writable);
 
   // Returns: store successful?
   z3::expr store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx);

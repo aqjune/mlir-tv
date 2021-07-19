@@ -317,7 +317,7 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
 
   // step1. MemBlock which contains source memref marks as not writable.
   auto &memory = *(st.m);
-  memory.updateMemBlock(m.getBID(), false);
+  memory.setWritable(m.getBID(), false);
 
   // step2. create new Tensor that alias origin memref using Tensor::mkLambda
   auto dims = m.getDims();
