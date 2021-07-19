@@ -5,7 +5,7 @@
 
 using namespace std;
 
-Memory* Memory::resolve(unsigned int NUM_BLOCKS, MemType type) {
+Memory* Memory::create(unsigned int NUM_BLOCKS, MemType type) {
   switch(type) {
     case MemType::SINGLE:
       return new SingleArrayMemory(NUM_BLOCKS);
