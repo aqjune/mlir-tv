@@ -44,7 +44,7 @@ std::pair<z3::expr, z3::expr> Memory::load(const z3::expr &bid, const z3::expr &
 NewMemory::NewMemory(unsigned int NUM_BLOCKS):
   NUM_BLOCKS(NUM_BLOCKS),
   arrayMaps(NUM_BLOCKS, ctx.constant("arrayMap",
-    ctx.array_sort(ctx.bv_sort(BID_BITS), ctx.array_sort(Index::sort(), Float::sort())))),
+    ctx.array_sort(Index::sort(), Float::sort()))),
   writableMaps(ctx.constant("writableMap",
     ctx.array_sort(ctx.bv_sort(BID_BITS), ctx.bool_sort()))),
   numelemMaps(ctx.constant("numelemMap",
