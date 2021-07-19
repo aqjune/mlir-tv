@@ -855,12 +855,23 @@ static Results verifyFunction(
     auto s = z3::solver(ctx, "QF_UFBV");
     auto not_refines =
         (st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
-    auto res = solve(s, not_refines, dump_smt_to, fnname + ".ub");
+    auto res = solve(s, not_refines, dump_smt_to, fnname + ".1.ub");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       // Well... let's use Alive2's wording.
       printErrorMsg(s, res.first, "Source is more defined than target", {});
       return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
+    }
+  }
+
+  { // 2. Check whether src is always UB
+    auto s = z3::solver(ctx, "QF_UFBV");
+    auto not_ub = st_src.isWellDefined.simplify();
+    auto res = solve(s, not_ub, dump_smt_to, fnname + ".2.notub");
+    elapsedMillisec += res.second;
+    if (res.first == z3::unsat) {
+      llvm::outs() << "== Result: correct (source is always undefined) ==\n";
+      return Results::SUCCESS;
     }
   }
 
@@ -876,7 +887,7 @@ static Results verifyFunction(
 
     auto not_refines =
       (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
-    auto res = solve(s, not_refines, dump_smt_to, fnname + ".retval");
+    auto res = solve(s, not_refines, dump_smt_to, fnname + ".3.retval");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Return value mismatch", move(params));
