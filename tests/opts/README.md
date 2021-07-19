@@ -14,6 +14,7 @@ Use suffix `-bad` for `// VERIFY-INCORRECT` test cases
 ## Test keywords
 `// VERIFY` : check if the transformation is correct  
 `// VERIFY-INCORRECT` : check if the transformation is indeed wrong
+`// EXPECT "<message>"` : check if the stdout/stderr includes the provided message
 
 ## And some more
 Each `.src.mlir` file must include the command used to create the pair `.tgt.mlir` file. For now they are written in the first-line comment. The `iree-opt` flag sometimes isn't identical to the pass name, so reproducing the src-tgt pair becomes troublesome. Including the flag(command) will be very much appreciated for this reason ;)  
