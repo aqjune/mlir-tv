@@ -291,7 +291,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
 
-  const Memory &memory = st.m;
+  Memory &memory = st.m;
   auto m = st.regs.get<MemRef>(op.getOperand(1));
   vector<z3::expr> indices;
   for (auto idx0: op.indices())

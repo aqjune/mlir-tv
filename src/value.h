@@ -155,10 +155,11 @@ public:
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
       getDimsAndElemTy(mlir::MemRefType memRefTy);
 
-  std::pair<z3::expr, z3::expr> get(const Memory &m, const std::vector<z3::expr> &indices) const;
-  z3::expr set(const Memory &m,
+  std::pair<z3::expr, z3::expr> get(const Memory &memory,
+    const std::vector<z3::expr> &indices) const;
+  z3::expr set(Memory &memory,
     const std::vector<z3::expr> &indices,
-    const z3::expr &value) const;
+    const z3::expr &value);
   z3::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
   Index getDim(uint64_t idx) const;

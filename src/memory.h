@@ -12,11 +12,6 @@ public:
   z3::expr numelem;  // Index::sort()
 
   MemBlock(z3::expr &array, z3::expr &writable, z3::expr &numelem);
-
-  // Returns: store successful?
-  z3::expr store(const z3::expr &f32val, const z3::expr &idx);
-  // Returns: (loaded value, load successful?)
-  std::pair<z3::expr, z3::expr> load(const z3::expr &idx) const;
 };
 
 class Memory {
@@ -31,4 +26,9 @@ public:
   MemBlock getMemBlock(const z3::expr &bid) const;
 
   void updateMemBlock(const z3::expr &bid, bool writable);
+
+  // Returns: store successful?
+  z3::expr store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx);
+  // Returns: (loaded value, load successful?)
+  std::pair<z3::expr, z3::expr> load(const z3::expr &bid, const z3::expr &idx) const;
 };

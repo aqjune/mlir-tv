@@ -451,17 +451,17 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
   }
 }
 
-z3::expr MemRef::set(const Memory &m,
+z3::expr MemRef::set(Memory &memory,
   const std::vector<z3::expr> &indices,
-  const z3::expr &value) const {
+  const z3::expr &value) {
   z3::expr idx = to1DIdx(indices, dims);
-  return m.getMemBlock(bid).store(value, offset + idx);
+  return memory.store(value, bid, offset + idx);
 }
 
-
-pair<z3::expr, z3::expr> MemRef::get(const Memory &m, const vector<z3::expr> &indices) const {
+pair<z3::expr, z3::expr> MemRef::get(const Memory &memory,
+  const vector<z3::expr> &indices) const {
   z3::expr idx = to1DIdx(indices, dims);
-  return m.getMemBlock(bid).load(offset + idx);
+  return memory.load(bid, offset + idx);
 }
 
 Index MemRef::getDim(uint64_t idx) const {
