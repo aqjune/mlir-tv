@@ -50,11 +50,3 @@ public:
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };
-
-
-class Factory {
-public:
-  static Memory * resolve() {
-    return new SingleArrayMemory(2);
-  }
-};

@@ -5,9 +5,14 @@
 #include <algorithm>
 #include <vector>
 
+enum MemType {
+  SINGLE, MULTIPLE
+};
+
 class Memory {
 public:
   static const unsigned BID_BITS = 10;
+  static Memory * resolve(unsigned int NUM_BLOCKS, MemType type);
 
   virtual z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const = 0;
 

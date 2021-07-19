@@ -5,6 +5,15 @@
 
 using namespace std;
 
+Memory* Memory::resolve(unsigned int NUM_BLOCKS, MemType type) {
+  switch(type) {
+    case MemType::SINGLE:
+      return new SingleArrayMemory(NUM_BLOCKS);
+    case MemType::MULTIPLE:
+      return new MultipleArrayMemory(NUM_BLOCKS);
+  }
+}
+
 SingleArrayMemory::SingleArrayMemory(unsigned int NUM_BLOCKS):
   NUM_BLOCKS(NUM_BLOCKS),
   arrayMaps(ctx.constant("arrayMaps",

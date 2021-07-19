@@ -57,5 +57,5 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
 }
 
 State::State(): isWellDefined(ctx) {
-  m = Factory::resolve();
+  m = Memory::resolve(10, MemType::MULTIPLE);
 }
