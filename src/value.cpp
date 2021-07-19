@@ -465,6 +465,12 @@ pair<z3::expr, z3::expr> MemRef::get(const Memory &memory,
   return memory.load(bid, offset + idx);
 }
 
+z3::expr MemRef::isInBounds(const Memory &memory) const {
+  auto numelem = memory.getNumElementsOfMemBlock(bid);
+  auto memrefSize = get1DSize(dims);
+  return z3::uge(numelem, memrefSize) && z3::ult(offset, numelem - memrefSize);
+}
+
 Index MemRef::getDim(uint64_t idx) const {
   return Index(dims[idx]);
 }

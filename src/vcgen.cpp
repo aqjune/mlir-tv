@@ -321,7 +321,6 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
 
   // step2. create new Tensor that alias origin memref using Tensor::mkLambda
   auto dims = m.getDims();
-  auto memrefSize = get1DSize(dims);
   vector<z3::expr> idxs;
   for (int i = 0; i < dims.size(); i ++) {
     idxs.push_back(Index("Index_" + std::to_string(i)));
@@ -330,11 +329,8 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
   // step3. add result tensor to register
-  auto numelem = memory.getNumElementsOfMemBlock(m.getBID());
   st.regs.add(op.getResult(), t_res);
-  st.isWellDefined = st.isWellDefined &&
-    z3::uge(numelem, memrefSize) &&
-    z3::ult(m.getOffset(), numelem - memrefSize);
+  st.isWellDefined = st.isWellDefined && m.isInBounds(memory);
 
   return {};
 }

@@ -161,6 +161,7 @@ public:
   z3::expr set(Memory &memory,
     const std::vector<z3::expr> &indices,
     const z3::expr &value);
+  z3::expr isInBounds(const Memory &memory) const;
   z3::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
   Index getDim(uint64_t idx) const;
