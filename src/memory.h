@@ -6,9 +6,10 @@
 #include <vector>
 
 class Memory {
-  z3::expr arrayMap; // bv(2)::sort() -> (Index::sort() -> Float::sort())
-  z3::expr writableMap; // bv(2)::sort() -> bool::sort()
-  z3::expr numelemMap; // bv(2)::sort() -> Index::sort()
+  unsigned int NUM_BLOCKS;
+  z3::expr arrayMaps; // bv(2)::sort() -> (Index::sort() -> Float::sort())
+  z3::expr writableMaps; // bv(2)::sort() -> bool::sort()
+  z3::expr numelemMaps; // bv(2)::sort() -> Index::sort()
 
   // A memory block containing f32 elements.
   class MemBlock {
@@ -27,7 +28,7 @@ private:
 public:
   static const unsigned BID_BITS = 1;
 
-  Memory();
+  Memory(unsigned int NUM_BLOCKS);
 
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const;
 
