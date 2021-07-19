@@ -5,6 +5,10 @@
 
 using namespace std;
 
+static int log2(unsigned int NUM_BLOCKS) {
+  return (int)floor(log2(max((int)NUM_BLOCKS - 1, 1))) + 1;
+}
+
 Memory* Memory::create(unsigned int NUM_BLOCKS, MemType type) {
   switch(type) {
     case MemType::SINGLE:
@@ -15,6 +19,7 @@ Memory* Memory::create(unsigned int NUM_BLOCKS, MemType type) {
 }
 
 SingleArrayMemory::SingleArrayMemory(unsigned int NUM_BLOCKS):
+  BID_BITS(log2(NUM_BLOCKS)),
   NUM_BLOCKS(NUM_BLOCKS),
   arrayMaps(ctx.constant("arrayMaps",
     ctx.array_sort(ctx.bv_sort(BID_BITS), ctx.array_sort(Index::sort(), Float::sort())))),
@@ -28,6 +33,10 @@ SingleArrayMemory::MemBlock SingleArrayMemory::getMemBlock(const z3::expr &bid) 
   z3::expr writable = z3::select(writableMaps, bid);
   z3::expr numelem = z3::select(numelemMaps, bid);
   return MemBlock(array, writable, numelem);
+}
+
+unsigned int SingleArrayMemory::getBIDBits() const {
+  return BID_BITS;
 }
 
 z3::expr SingleArrayMemory::getNumElementsOfMemBlock(const z3::expr &bid) const {
@@ -52,6 +61,7 @@ std::pair<z3::expr, z3::expr> SingleArrayMemory::load(
 }
 
 MultipleArrayMemory::MultipleArrayMemory(unsigned int NUM_BLOCKS):
+  BID_BITS(log2(NUM_BLOCKS)),
   NUM_BLOCKS(NUM_BLOCKS),
   arrayMaps(NUM_BLOCKS, ctx.constant("arrayMaps",
     ctx.array_sort(Index::sort(), Float::sort()))),
@@ -76,6 +86,10 @@ MultipleArrayMemory::MemBlock MultipleArrayMemory::getMemBlock(const z3::expr &b
   z3::expr writable = z3::select(writableMaps, bid);
   z3::expr numelem = z3::select(numelemMaps, bid);
   return MemBlock(array, writable, numelem);
+}
+
+unsigned int MultipleArrayMemory::getBIDBits() const {
+  return BID_BITS;
 }
 
 z3::expr MultipleArrayMemory::getNumElementsOfMemBlock(const z3::expr &bid) const {

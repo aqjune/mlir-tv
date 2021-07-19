@@ -11,13 +11,13 @@ enum MemType {
 
 class Memory {
 public:
-  static const unsigned BID_BITS = 10;
   static Memory * create(unsigned int NUM_BLOCKS, MemType type);
+
+  virtual unsigned int getBIDBits() const = 0;
 
   virtual z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const = 0;
 
   virtual void updateMemBlock(const z3::expr &bid, bool writable) = 0;
-
   // Returns: store successful?
   virtual z3::expr store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx) = 0;
   // Returns: (loaded value, load successful?)
@@ -25,6 +25,7 @@ public:
 };
 
 class SingleArrayMemory: public Memory {
+  unsigned int BID_BITS;
   unsigned int NUM_BLOCKS;
   z3::expr arrayMaps; // bv(2)::sort() -> (Index::sort() -> Float::sort())
   z3::expr writableMaps; // bv(2)::sort() -> bool::sort()
@@ -47,6 +48,8 @@ private:
 public:
   SingleArrayMemory(unsigned int NUM_BLOCKS);
 
+  unsigned int getBIDBits() const;
+
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const;
 
   void updateMemBlock(const z3::expr &bid, bool writable);
@@ -58,6 +61,7 @@ public:
 };
 
 class MultipleArrayMemory: public Memory {
+  unsigned int BID_BITS;
   unsigned int NUM_BLOCKS;
   std::vector<z3::expr> arrayMaps; // bv(2) -> (Index::sort() -> Float::sort()) 
   z3::expr writableMaps; // bv(2) -> Bool::sort()
@@ -79,6 +83,8 @@ private:
 
 public:
   MultipleArrayMemory(unsigned int NUM_BLOCKS);
+
+  unsigned int getBIDBits() const;
 
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const;
 
