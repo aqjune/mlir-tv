@@ -420,7 +420,7 @@ MemRef::MemRef(): bid(ctx), offset(ctx) {}
 
 MemRef::MemRef(const std::string &name, const std::vector<z3::expr> &dims,
          const z3::sort &elemty):
-    bid(ctx.bv_const((name + "_bid").c_str(), BID_BITS)),
+    bid(ctx.bv_const((name + "_bid").c_str(), Memory::BID_BITS)),
     offset(Index((name + "_offset").c_str())),
     dims(dims) {}
 
@@ -450,6 +450,14 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
     return {};
   }
 }
+
+z3::expr MemRef::set(const Memory &m,
+  const std::vector<z3::expr> &indices,
+  const z3::expr &value) const {
+  z3::expr idx = to1DIdx(indices, dims);
+  return m.getMemBlock(bid).store(value, offset + idx);
+}
+
 
 pair<z3::expr, z3::expr> MemRef::get(const Memory &m, const vector<z3::expr> &indices) const {
   z3::expr idx = to1DIdx(indices, dims);

@@ -287,12 +287,36 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
+  // TODO: The MLIR doc isn't explicit about what happens if indices are
+  // out-of-bounds. It is currently encoded as UB.
+
+  const Memory &memory = st.m;
+  auto m = st.regs.get<MemRef>(op.getOperand(1));
+  vector<z3::expr> indices;
+  for (auto idx0: op.indices())
+    indices.emplace_back(st.regs.get<Index>(idx0));
+
+  if (op.getOperand(0).getType().isa<mlir::Float32Type>()) {
+    auto val = st.regs.get<Float>(op.getOperand(0));
+    auto success = m.set(memory, indices, val);
+    st.isWellDefined = st.isWellDefined && success;
+  } else {
+    // Currently we support only f32 memory type
+    return "unsupported type";
+  }
+
+  return {};
+}
+
+
+template<>
 optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
 
   // step1. MemBlock which contains source memref marks as not writable.
-  auto memBlock = st.m.getMemBlock(m.getBID());
-  memBlock.writable = ctx.bool_val(false);
+  auto &memory = st.m;
+  memory.updateMemBlock(m.getBID(), false);
 
   // step2. create new Tensor that alias origin memref using Tensor::mkLambda
   auto dims = m.getDims();
@@ -307,8 +331,8 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   // step3. add result tensor to register
   st.regs.add(op.getResult(), t_res);
   st.isWellDefined = st.isWellDefined &&
-    z3::uge(memBlock.numelem, memrefSize) &&
-    z3::ult(m.getOffset(), memBlock.numelem - memrefSize);
+    z3::uge(memory.getMemBlock(m.getBID()).numelem, memrefSize) &&
+    z3::ult(m.getOffset(), memory.getMemBlock(m.getBID()).numelem - memrefSize);
 
   return {};
 }
@@ -697,6 +721,7 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::tensor::ExtractOp);
 
     ENCODE(st, op, mlir::memref::LoadOp);
+    ENCODE(st, op, mlir::memref::StoreOp);
     ENCODE(st, op, mlir::memref::TensorLoadOp);
 
     ENCODE(st, op, mlir::linalg::IndexOp);
