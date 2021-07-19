@@ -25,7 +25,7 @@ z3::expr Memory::getNumElementsOfMemBlock(const z3::expr &bid) const {
 }
 
 void Memory::updateMemBlock(const z3::expr &bid, bool writable) {
-  z3::store(writableMap, bid, ctx.bool_val(writable));
+  writableMap = z3::store(writableMap, bid, ctx.bool_val(writable));
 }
 
 z3::expr Memory::store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx) {
@@ -73,7 +73,7 @@ z3::expr NewMemory::getNumElementsOfMemBlock(const z3::expr &bid) const {
 }
 
 void NewMemory::updateMemBlock(const z3::expr &bid, bool writable) {
-  z3::store(writableMaps, bid, ctx.bool_val(writable));
+  writableMaps = z3::store(writableMaps, bid, ctx.bool_val(writable));
 }
 
 z3::expr NewMemory::store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx) {
