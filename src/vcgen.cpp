@@ -269,7 +269,7 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
 
-  const Memory &memory = st.m;
+  const Memory &memory = *(st.m);
   auto m = st.regs.get<MemRef>(op.getOperand(0));
   vector<z3::expr> indices;
   for (auto idx0: op.indices())
@@ -292,7 +292,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
 
-  Memory &memory = st.m;
+  Memory &memory = *(st.m);
   auto m = st.regs.get<MemRef>(op.getOperand(1));
   vector<z3::expr> indices;
   for (auto idx0: op.indices())
@@ -316,7 +316,7 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
 
   // step1. MemBlock which contains source memref marks as not writable.
-  auto &memory = st.m;
+  auto &memory = *(st.m);
   memory.updateMemBlock(m.getBID(), false);
 
   // step2. create new Tensor that alias origin memref using Tensor::mkLambda

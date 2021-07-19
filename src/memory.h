@@ -6,6 +6,20 @@
 #include <vector>
 
 class Memory {
+public:
+  static const unsigned BID_BITS = 10;
+
+  virtual z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const = 0;
+
+  virtual void updateMemBlock(const z3::expr &bid, bool writable) = 0;
+
+  // Returns: store successful?
+  virtual z3::expr store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx) = 0;
+  // Returns: (loaded value, load successful?)
+  virtual std::pair<z3::expr, z3::expr> load(const z3::expr &bid, const z3::expr &idx) const = 0;
+};
+
+class SingleArrayMemory: public Memory {
   unsigned int NUM_BLOCKS;
   z3::expr arrayMaps; // bv(2)::sort() -> (Index::sort() -> Float::sort())
   z3::expr writableMaps; // bv(2)::sort() -> bool::sort()
@@ -26,9 +40,7 @@ private:
   MemBlock getMemBlock(const z3::expr &bid) const;
 
 public:
-  static const unsigned BID_BITS = 1;
-
-  Memory(unsigned int NUM_BLOCKS);
+  SingleArrayMemory(unsigned int NUM_BLOCKS);
 
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const;
 
@@ -40,7 +52,7 @@ public:
   std::pair<z3::expr, z3::expr> load(const z3::expr &bid, const z3::expr &idx) const;
 };
 
-class NewMemory {
+class MultipleArrayMemory: public Memory {
   unsigned int NUM_BLOCKS;
   std::vector<z3::expr> arrayMaps; // bv(2) -> (Index::sort() -> Float::sort()) 
   z3::expr writableMaps; // bv(2) -> Bool::sort()
@@ -61,9 +73,7 @@ private:
   MemBlock getMemBlock(const z3::expr &bid) const;
 
 public:
-  static const unsigned BID_BITS = 2;
-
-  NewMemory(unsigned int NUM_BLOCKS);
+  MultipleArrayMemory(unsigned int NUM_BLOCKS);
 
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const;
 

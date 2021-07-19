@@ -56,4 +56,6 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
   return os;
 }
 
-State::State(): isWellDefined(ctx), m(2) {}
+State::State(): isWellDefined(ctx) {
+  m = Factory::resolve();
+}
