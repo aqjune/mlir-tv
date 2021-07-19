@@ -11,7 +11,6 @@ public:
   z3::expr writable; // bool::sort()
   z3::expr numelem;  // Index::sort()
 
-  MemBlock();
   MemBlock(z3::expr &array, z3::expr &writable, z3::expr &numelem);
 
   // Returns: store successful?

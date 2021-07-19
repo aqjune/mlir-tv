@@ -5,12 +5,6 @@
 
 using namespace std;
 
-MemBlock::MemBlock():
-    array(ctx.constant("blk", ctx.array_sort(Index::sort(), Float::sort()))),
-    writable(ctx.bool_const("writable")),
-    numelem(ctx.constant("numelem", Index::sort())) {
-}
-
 MemBlock::MemBlock(z3::expr &array, z3::expr &writable, z3::expr &numelem):
     array(array), writable(writable), numelem(numelem) {}
 
