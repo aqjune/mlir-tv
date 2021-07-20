@@ -611,6 +611,22 @@ static optional<string> initInputStateForLoopBody(
   return {};
 }
 
+// map := (i, j, k) -> (j, k, i)
+// input := [a, b, c]
+// output := [b, c, a]
+static vector<z3::expr> doMap(
+    const vector<z3::expr> &input, const mlir::AffineMap &map) {
+  if (map.isIdentity())
+    return input;
+
+  vector<z3::expr> output;
+  for (unsigned i = 0; i < map.getNumResults(); ++i) {
+    auto ade = map.getResult(i).dyn_cast<mlir::AffineDimExpr>();
+    output.push_back(input[ade.getPosition()]);
+  }
+  return output;
+}
+
 static optional<string> encodeParallelLoopBodyAndOutput(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
     const mlir::TensorType &outputType, Tensor &t_res) {
@@ -632,20 +648,11 @@ static optional<string> encodeParallelLoopBodyAndOutput(
     RET_STR("has an unsupported operation" << op);
   }
 
-  const auto &inductionVars = newst.linalgGenericScopes.top().indVars;
-  vector<z3::expr> outputDimVars;
-
-  if (!outputMap.isIdentity()) {
-    for (unsigned i = 0; i < outputMap.getNumResults(); ++i) {
-      auto ade = outputMap.getResult(i).dyn_cast<mlir::AffineDimExpr>();
-      outputDimVars.push_back(inductionVars[ade.getPosition()]);
-    }
-  } else {
-    outputDimVars = move(inductionVars);
-  }
+  vector<z3::expr> outputIndVars = doMap(
+      newst.linalgGenericScopes.top().indVars, outputMap);
 
   auto tensorSz = getDims(outputType);
-  t_res = Tensor::mkLambda(move(tensorSz), move(outputDimVars),
+  t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars),
       newst.regs.getZ3Expr(yieldedValue));
 
   return {};
@@ -672,6 +679,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   //   %sum = addf %v, %arg_out
   //   yield %sum
   auto lastarg = block.getArgument(block.getNumArguments() - 1);
+  assert(!newst.regs.contains(lastarg));
+
   auto p = m_Op<mlir::linalg::YieldOp>(
       m_Op<mlir::AddFOp>(m_Any(), m_Val(lastarg)));
   if (!p.match(&ops.back()))
@@ -693,7 +702,12 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   auto tensorSz = getDims(outputType);
   auto linalgInfo = newst.linalgGenericScopes.top();
 
-  // Is it output[0][0] = ...?
+  // Represent %v as an element of a tensor.
+  Tensor t_v = Tensor::mkLambda(
+      vector(linalgInfo.indVarUpperBounds),
+      vector(linalgInfo.indVars),
+      newst.regs.getZ3Expr(sumvar));
+
   if (llvm::all_of(outputMap.getResults(), [](const mlir::AffineExpr &expr) {
     auto ac = expr.dyn_cast<mlir::AffineConstantExpr>();
     return ac && ac.getValue() == 0;
@@ -702,17 +716,47 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // out: (i, j) -> (0)
     // =>
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
-    Index dummyIdx("dummyidx", true);
-    Tensor in_tensor = Tensor::mkLambda(
-        vector(linalgInfo.indVarUpperBounds),
-        vector(linalgInfo.indVars),
-        newst.regs.getZ3Expr(sumvar));
-    t_res = Tensor(
-        aop::sum(in_tensor.asArray(), in_tensor.get1DSize()),
-        tensorSz);
+
+    // Define this as a splat tensor (num. elems is 1 anyway)
+    t_res = Tensor(t_v.sum(), tensorSz);
     return {};
   } else {
-    return errmsg;
+    // in:  (i, j) -> (i, j)
+    // out: (i, j) -> (i)
+    // =>
+    // t_res[i] = sum(\j. t_input[i][j] , j < m)
+
+    // Gather affine vars that are unused in the output (e.g. j) first.
+    vector<bool> isInputIdxUsed(outputMap.getNumInputs());
+    for (unsigned j = 0; j < outputMap.getNumResults(); ++j) {
+      auto expr = outputMap.getResult(j);
+
+      if (auto ade = expr.dyn_cast<mlir::AffineDimExpr>()) {
+        isInputIdxUsed[ade.getPosition()] = true;
+      } else {
+        // Output map has an unknown form
+        return errmsg;
+      }
+    }
+
+    vector<z3::expr> boundsForRes;
+    vector<z3::expr> indVarsForRes;
+    for (unsigned j = 0; j < isInputIdxUsed.size(); ++j) {
+      if (!isInputIdxUsed[j]) {
+        boundsForRes.push_back(linalgInfo.indVarUpperBounds[j]);
+        indVarsForRes.push_back(linalgInfo.indVars[j]);
+      }
+    }
+
+    auto t_sum = Tensor::mkLambda(
+          vector(boundsForRes),
+          vector(indVarsForRes),
+          t_v.get(linalgInfo.indVars))
+        .sum();
+
+    auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
+    t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars), t_sum);
+    return {};
   }
 }
 

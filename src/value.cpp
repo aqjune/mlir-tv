@@ -317,6 +317,10 @@ Tensor Tensor::matmul(const Tensor &b) const {
       aop::dot(a_row, bt_row, dims[1]));
 }
 
+z3::expr Tensor::sum() const {
+  return aop::sum(arr, get1DSize());
+}
+
 pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
   assert(arr.get_sort().is_array());
   assert(src.arr.get_sort().is_array());

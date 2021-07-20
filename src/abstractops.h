@@ -6,7 +6,7 @@ namespace aop {
 
 enum AbsLevelDot {
   FULLY_ABS = 0, // Dot is a fully unknown function
-  SUM_MUL   = 1  // Dot is a summation of pairwisely multiplied result
+  SUM_MUL   = 1  // Dot is a summation of pairwisely multiplied values
 };
 
 void setAbstractionLevel(AbsLevelDot);
