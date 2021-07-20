@@ -899,7 +899,7 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
 
 static void printCounterEx(
     z3::solver &solver, const vector<z3::expr> &params, mlir::FuncOp src,
-    State &st_src, State &st_tgt, bool printRetValue) {
+    mlir::FuncOp tgt, State &st_src, State &st_tgt, bool printRetValue) {
   auto m = solver.get_model();
   auto or_omit_z3 = [&](const z3::expr &e) -> string {
     string s;
@@ -915,22 +915,25 @@ static void printCounterEx(
   llvm::outs() << "<Inputs>\n";
 
   unsigned n = src.getNumArguments();
+  llvm::DenseSet<mlir::Value> args_src, args_tgt;
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
+    args_src.insert(argsrc);
+    args_tgt.insert(tgt.getArgument(i));
     llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
                  << st_src.regs.findOrCrash(argsrc) << "\n";
   }
 
   llvm::outs() << "\n<Source's instructions>\n";
   for (auto &[v, e]: st_src.regs) {
-    if (st_src.regs.contains(v))
+    if (args_src.contains(v))
       continue;
     llvm::outs() << "\t'" << v << "'\n\t\tValue: " << e << "\n";
   }
 
   llvm::outs() << "\n<Target's instructions>\n";
   for (auto &[v, e]: st_tgt.regs) {
-    if (st_tgt.regs.contains(v))
+    if (args_tgt.contains(v))
       continue;
     llvm::outs() << "\t'" << v << "'\n\t\tValue: " << e << "\n";
   }
@@ -1041,7 +1044,7 @@ static Results verifyFunction(
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res == z3::sat) {
       llvm::outs() << "== Result: " << msg << "\n";
-      printCounterEx(s, params, src, st_src, st_tgt, printRetValue);
+      printCounterEx(s, params, src, tgt, st_src, st_tgt, printRetValue);
     } else {
       llvm_unreachable("unexpected result");
     }
