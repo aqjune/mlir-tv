@@ -28,6 +28,7 @@ class TestKeyword(Enum):
     NOTEST = auto()
     VERIFY = auto()
     VERIFY_INCORRECT = auto()
+    UNSUPPORTED = auto()
 
 class TestMetaData:
     def __init__(self) -> None:
@@ -79,6 +80,7 @@ class MLIRTest(TestFormat):
     __suffix_tgt: str = ".tgt.mlir"
     __verify_regex = re.compile(r"^// ?VERIFY$")
     __verify_incorrect_regex = re.compile(r"^// ?VERIFY-INCORRECT$")
+    __unsupported_regex = re.compile(r"^// ?UNSUPPORTED$")
 
     def __init__(self, dir_tv: str, pass_name: str) -> None:
         self.__dir_tv: str = dir_tv
@@ -115,10 +117,16 @@ class MLIRTest(TestFormat):
                 elif MLIRTest.__verify_incorrect_regex.match(line):
                     test_info = TestInfo(TestKeyword.VERIFY_INCORRECT)
                     break
+                elif MLIRTest.__unsupported_regex.match(line):
+                    test_info = TestInfo(TestKeyword.UNSUPPORTED)
+                    break
 
         if test_info == TestKeyword.NOTEST:
             # file does not include test keyword
-            return lit.Test.SKIPPED
+            return lit.Test.SKIPPED, ""
+        elif test_info == TestKeyword.UNSUPPORTED:
+            # file includes dialect that is yet to be implemented in iree-tv
+            return lit.Test.UNSUPPORTED, ""
         else:
             cmd = [self.__dir_tv, "-smt-to=10000", tc_src, tc_tgt]
             return _check_exit_code(test_info, *_executeCommand(cmd))
