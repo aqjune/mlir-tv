@@ -5,8 +5,10 @@
 
 using namespace std;
 
-static int log2(unsigned int NUM_BLOCKS) {
-  return (int)floor(log2(max((int)NUM_BLOCKS - 1, 1))) + 1;
+static unsigned int log2(unsigned int NUM_BLOCKS) {
+  if (NUM_BLOCKS == 0)
+    return 0;
+  return (unsigned int) ceil(log2(std::max(NUM_BLOCKS, (unsigned int) 2)));
 }
 
 z3::expr MemBlock::store(const z3::expr &f32val, const z3::expr &idx) {
