@@ -29,10 +29,16 @@ class TestKeyword(Enum):
     VERIFY = auto()
     VERIFY_INCORRECT = auto()
     UNSUPPORTED = auto()
+    EXPECT = auto()
 
 class TestMetaData:
     def __init__(self) -> None:
         pass
+
+class ExpectTestMetaData(TestMetaData):
+    def __init__(self, msg: str) -> None:
+        super().__init__()
+        self.msg: str = msg
 
 class TestInfo:
     def __init__(self, keyword: TestKeyword, metadata: Optional[TestMetaData] = None) -> None:
@@ -67,7 +73,7 @@ def _check_exit_code(test_info: TestInfo, outs: str, errs: str, exit_code: int):
             if exit_code == 0:
                 return lit.Test.PASS, ""
             else:
-                return lit.Test.FAIL, outs + errs
+                return lit.Test.FAIL, f"stdout >>\n{outs}\n\nstderr >>\n{errs}"
         
         elif test_info == TestKeyword.VERIFY_INCORRECT:
             if exit_code == 0:
@@ -75,12 +81,20 @@ def _check_exit_code(test_info: TestInfo, outs: str, errs: str, exit_code: int):
             else:
                 return lit.Test.PASS, ""
 
+        elif test_info == TestKeyword.EXPECT:
+            msg: str = test_info.getData().msg
+            if msg in outs or msg in errs:
+                return lit.Test.PASS, ""
+            else:
+                return lit.Test.FAIL, f"Expected message >>\n{msg}\n\nstdout >>\n{outs}\n\nstderr >>\n{errs}"
+
 class MLIRTest(TestFormat):
     __suffix_src: str = ".src.mlir"
     __suffix_tgt: str = ".tgt.mlir"
     __verify_regex = re.compile(r"^// ?VERIFY$")
     __verify_incorrect_regex = re.compile(r"^// ?VERIFY-INCORRECT$")
     __unsupported_regex = re.compile(r"^// ?UNSUPPORTED$")
+    __expect_regex = re.compile(r"^// ?EXPECT \"(.*)\"$")
 
     def __init__(self, dir_tv: str, pass_name: str) -> None:
         self.__dir_tv: str = dir_tv
@@ -119,6 +133,11 @@ class MLIRTest(TestFormat):
                     break
                 elif MLIRTest.__unsupported_regex.match(line):
                     test_info = TestInfo(TestKeyword.UNSUPPORTED)
+                    break
+                elif MLIRTest.__expect_regex.match(line):
+                    msg: str = MLIRTest.__expect_regex.findall(line)[0]
+                    metadata = ExpectTestMetaData(msg)
+                    test_info = TestInfo(TestKeyword.EXPECT, metadata)
                     break
 
         if test_info == TestKeyword.NOTEST:
