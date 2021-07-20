@@ -69,8 +69,8 @@ createInputState(mlir::FuncOp fn, unsigned int num_memblocks) {
       if (!dimsAndElemTy)
         RET_STR("Unsupported MemRef element type: " << arg.getType());
       // TODO : out of bounds pointer is allowed?
-      s.regs.add(arg, MemRef(&s.m, "arg" + to_string(arg.getArgNumber()),
-        s.m.getBIDBits(),
+      s.regs.add(arg, MemRef(s.m, "arg" + to_string(arg.getArgNumber()),
+        s.m->getBIDBits(),
         dimsAndElemTy->first,
         dimsAndElemTy->second));
 
@@ -271,7 +271,7 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
 
-  const Memory &memory = st.m;
+  Memory &memory = *(st.m);
   auto m = st.regs.get<MemRef>(op.getOperand(0));
   vector<z3::expr> indices;
   for (auto idx0: op.indices())
@@ -294,7 +294,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
 
-  const Memory &memory = st.m;
+  Memory &memory = *(st.m);
   auto m = st.regs.get<MemRef>(op.getOperand(1));
   vector<z3::expr> indices;
   for (auto idx0: op.indices())
@@ -318,7 +318,7 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
   llvm::outs() << "TEMP111" << "\n";
   // step1. MemBlock which contains source memref marks as not writable.
-  auto &memory = st.m;
+  auto &memory = *(st.m);
   memory.setWritable(m.getBID(), false);
   llvm::outs() << "TEMP222" << "\n";
 
