@@ -3,7 +3,7 @@ from lit.formats.base import TestFormat
 import lit
 from lit.Test import *
 
-from typing import List
+from typing import Optional
 import subprocess
 import os
 import re
@@ -12,7 +12,7 @@ import signal
 def _starts_with_dot(name: str) -> bool:
         return name.startswith(".")
 
-def _executeCommand(command: List[str]):
+def _executeCommand(command: list[str]):
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8") as proc:
         exitCode = proc.wait()
 
@@ -29,14 +29,29 @@ class TestKeyword(Enum):
     VERIFY = auto()
     VERIFY_INCORRECT = auto()
 
+class TestMetaData:
+    def __init__(self) -> None:
+        pass
+
+class TestInfo:
+    def __init__(self, keyword: TestKeyword, metadata: Optional[TestMetaData] = None) -> None:
+        self.__keyword: TestKeyword = keyword
+        self.__metadata: Optional[TestMetaData] = metadata
+
+    def __eq__(self, other: TestKeyword) -> bool:
+        return self.__keyword == other
+
+    def getData(self) -> Optional[TestMetaData]:
+        return self.__metadata
+
 def _includes_unsupported_message(errs: str) -> bool:
-    keywords: List[str] = ["Unknown"]
+    keywords: list[str] = ["Unknown"]
     for keyword in keywords:
         if keyword in errs:
             return True
     return False
 
-def _check_exit_code(keyword: TestKeyword, outs: str, errs: str, exit_code: int):
+def _check_exit_code(test_info: TestInfo, outs: str, errs: str, exit_code: int):
     if exit_code == 1:
         # keyword-independent results
         if _includes_unsupported_message(errs):
@@ -47,13 +62,13 @@ def _check_exit_code(keyword: TestKeyword, outs: str, errs: str, exit_code: int)
         return lit.Test.UNRESOLVED, ""
     else:
         # keyword-dependent results
-        if keyword == TestKeyword.VERIFY:
+        if test_info == TestKeyword.VERIFY:
             if exit_code == 0:
                 return lit.Test.PASS, ""
             else:
                 return lit.Test.FAIL, outs + errs
         
-        elif keyword == TestKeyword.VERIFY_INCORRECT:
+        elif test_info == TestKeyword.VERIFY_INCORRECT:
             if exit_code == 0:
                 return lit.Test.FAIL, "This test must fail!"
             else:
@@ -91,19 +106,19 @@ class MLIRTest(TestFormat):
             # src or tgt mlir file is missing
             return lit.Test.SKIPPED
 
-        test_keyword = TestKeyword.NOTEST
+        test_info = TestInfo(TestKeyword.NOTEST)
         with open(tc_src, 'r') as src_file:
             for line in src_file.readlines():
                 if MLIRTest.__verify_regex.match(line):
-                    test_keyword = TestKeyword.VERIFY
+                    test_info = TestInfo(TestKeyword.VERIFY)
                     break
                 elif MLIRTest.__verify_incorrect_regex.match(line):
-                    test_keyword = TestKeyword.VERIFY_INCORRECT
+                    test_info = TestInfo(TestKeyword.VERIFY_INCORRECT)
                     break
 
-        if test_keyword == TestKeyword.NOTEST:
+        if test_info == TestKeyword.NOTEST:
             # file does not include test keyword
             return lit.Test.SKIPPED
         else:
             cmd = [self.__dir_tv, "-smt-to=10000", tc_src, tc_tgt]
-            return _check_exit_code(test_keyword, *_executeCommand(cmd))
+            return _check_exit_code(test_info, *_executeCommand(cmd))
