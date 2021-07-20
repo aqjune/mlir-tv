@@ -660,6 +660,12 @@ static vector<z3::expr> doMap(
   return output;
 }
 
+static vector<z3::expr> addOne(vector<z3::expr> &&vec) {
+  for (unsigned i = 0; i < vec.size(); ++i)
+    vec[i] = vec[i] + 1;
+  return vec;
+}
+
 static optional<string> encodeParallelLoopBodyAndOutput(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
     const mlir::TensorType &outputType, Tensor &t_res) {
@@ -681,10 +687,9 @@ static optional<string> encodeParallelLoopBodyAndOutput(
     RET_STR("has an unsupported operation" << op);
   }
 
-  vector<z3::expr> outputIndVars = doMap(
-      newst.linalgGenericScopes.top().indVars, outputMap);
-
-  auto tensorSz = getDims(outputType);
+  auto &scope = newst.linalgGenericScopes.top();
+  auto outputIndVars = doMap(scope.indVars, outputMap);
+  auto tensorSz = addOne(doMap(scope.indVarUpperBounds, outputMap));
   t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars),
       newst.regs.getZ3Expr(yieldedValue));
 
@@ -732,8 +737,9 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   }
 
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
-  auto tensorSz = getDims(outputType);
-  auto linalgInfo = newst.linalgGenericScopes.top();
+
+  auto &linalgInfo = newst.linalgGenericScopes.top();
+  auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
 
   // Represent %v as an element of a tensor.
   Tensor t_v = Tensor::mkLambda(
