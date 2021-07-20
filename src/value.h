@@ -140,14 +140,14 @@ private:
 };
 
 class MemRef {
-  const Memory &m;
+  Memory &m;
   z3::expr bid; // blockID
   Index offset; // offset
   std::vector<z3::expr> dims;
 
 public:
-  MemRef(const Memory &m);
-  MemRef(const Memory &m,
+  MemRef(Memory &m);
+  MemRef(Memory &m,
         const std::string &name,
         const unsigned int BID_BITS,
         const std::vector<z3::expr> &dims,
@@ -159,12 +159,9 @@ public:
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
       getDimsAndElemTy(mlir::MemRefType memRefTy);
 
-  std::pair<z3::expr, z3::expr> get(const Memory &memory,
-    const std::vector<z3::expr> &indices) const;
-  z3::expr set(Memory &memory,
-    const std::vector<z3::expr> &indices,
-    const z3::expr &value);
-  z3::expr isInBounds(const Memory &memory) const;
+  std::pair<z3::expr, z3::expr> get(const std::vector<z3::expr> &indices) const;
+  z3::expr set(const std::vector<z3::expr> &indices, const z3::expr &value);
+  z3::expr isInBounds() const;
   z3::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
   Index getDim(uint64_t idx) const;
