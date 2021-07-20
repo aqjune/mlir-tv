@@ -416,9 +416,9 @@ z3::expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::MemRef(Memory &m): m(m), bid(ctx), offset(ctx) {}
+MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx) {}
 
-MemRef::MemRef(Memory &m,
+MemRef::MemRef(Memory *m,
   const std::string &name,
   const unsigned int BID_BITS,
   const std::vector<z3::expr> &dims,
@@ -457,29 +457,22 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
 
 z3::expr MemRef::set(const std::vector<z3::expr> &indices, const z3::expr &value) {
   z3::expr idx = to1DIdx(indices, dims);
-  return m.store(value, bid, offset + idx);
+  return m->store(value, bid, offset + idx);
 }
 
 pair<z3::expr, z3::expr> MemRef::get(const vector<z3::expr> &indices) const {
   z3::expr idx = to1DIdx(indices, dims);
-  return m.load(bid, offset + idx);
+  return m->load(bid, offset + idx);
 }
 
 z3::expr MemRef::isInBounds() const {
-  auto numelem = m.getNumElementsOfMemBlock(bid);
+  auto numelem = m->getNumElementsOfMemBlock(bid);
   auto memrefSize = get1DSize(dims);
   return z3::uge(numelem, memrefSize) && z3::ult(offset, numelem - memrefSize);
 }
 
 Index MemRef::getDim(uint64_t idx) const {
   return Index(dims[idx]);
-}
-
-MemRef& MemRef::operator=(const MemRef& m) {
-  this->bid = m.bid;
-  this->offset = m.offset;
-  this->dims = m.dims;
-  return *this;
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
