@@ -33,9 +33,6 @@ class TestMetaData:
     def __init__(self) -> None:
         pass
 
-    def __repr__(self) -> str:
-        return ""
-
 class TestInfo:
     def __init__(self, keyword: TestKeyword, metadata: Optional[TestMetaData] = None) -> None:
         self.__keyword: TestKeyword = keyword
@@ -44,8 +41,8 @@ class TestInfo:
     def __eq__(self, other: TestKeyword) -> bool:
         return self.__keyword == other
 
-    def getData(self) -> str:
-        return f"{self.__metadata}"
+    def getData(self) -> Optional[TestMetaData]:
+        return self.__metadata
 
 def _includes_unsupported_message(errs: str) -> bool:
     keywords: list[str] = ["Unknown"]
