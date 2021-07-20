@@ -151,8 +151,10 @@ class MemRef {
 
 public:
   MemRef();
-  MemRef(const std::string &name, const std::vector<z3::expr> &dims,
-         const z3::sort &elemty);
+  MemRef(const std::string &name,
+    const unsigned int bits,
+    const std::vector<z3::expr> &dims,
+    const z3::sort &elemty);
 
   operator z3::expr() const { return bid && offset; }
 
