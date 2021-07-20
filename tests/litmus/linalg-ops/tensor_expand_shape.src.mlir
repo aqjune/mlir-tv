@@ -1,4 +1,4 @@
-// VERIFY-INCORRECT
+// EXPECT: "Source is more defined than target"
 
 // tensor_expand_shape raises UB if casting to the dest type is infeasible.
 
