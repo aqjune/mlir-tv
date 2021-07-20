@@ -28,19 +28,11 @@ SingleArrayMemory::SingleArrayMemory(unsigned int NUM_BLOCKS):
   numelemMaps(ctx.constant("numelemMaps",
     ctx.array_sort(ctx.bv_sort(BID_BITS), Index::sort()))) {}
 
-SingleArrayMemory::MemBlock SingleArrayMemory::getMemBlock(const z3::expr &bid) const {
+MemBlock SingleArrayMemory::getMemBlock(const z3::expr &bid) const {
   z3::expr array = z3::select(arrayMaps, bid);
   z3::expr writable = z3::select(writableMaps, bid);
   z3::expr numelem = z3::select(numelemMaps, bid);
   return MemBlock(array, writable, numelem);
-}
-
-unsigned int SingleArrayMemory::getBIDBits() const {
-  return BID_BITS;
-}
-
-z3::expr SingleArrayMemory::getNumElementsOfMemBlock(const z3::expr &bid) const {
-  return getMemBlock(bid).numelem;
 }
 
 void SingleArrayMemory::setWritable(const z3::expr &bid, bool writable) {
@@ -70,7 +62,7 @@ MultipleArrayMemory::MultipleArrayMemory(unsigned int NUM_BLOCKS):
   numelemMaps(ctx.constant("numelemMaps",
     ctx.array_sort(ctx.bv_sort(BID_BITS), Index::sort()))) {}
 
-MultipleArrayMemory::MemBlock MultipleArrayMemory::getMemBlock(const z3::expr &bid) const {
+MemBlock MultipleArrayMemory::getMemBlock(const z3::expr &bid) const {
   z3::expr array(ctx);
   if (NUM_BLOCKS == 1) {
     array = arrayMaps[0];
@@ -86,14 +78,6 @@ MultipleArrayMemory::MemBlock MultipleArrayMemory::getMemBlock(const z3::expr &b
   z3::expr writable = z3::select(writableMaps, bid);
   z3::expr numelem = z3::select(numelemMaps, bid);
   return MemBlock(array, writable, numelem);
-}
-
-unsigned int MultipleArrayMemory::getBIDBits() const {
-  return BID_BITS;
-}
-
-z3::expr MultipleArrayMemory::getNumElementsOfMemBlock(const z3::expr &bid) const {
-  return getMemBlock(bid).numelem;
 }
 
 void MultipleArrayMemory::setWritable(const z3::expr &bid, bool writable) {
