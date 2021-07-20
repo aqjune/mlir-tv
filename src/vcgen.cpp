@@ -951,22 +951,26 @@ static void printCounterEx(
         src.getType().getResult(0).isa<mlir::TensorType>()) {
       llvm::outs() << "\n<Returned tensor>\n";
 
-      assert(params.size() == 1);
       auto model = solver.get_model();
-      auto param = model.eval(params[0]);
       auto t_src = get<Tensor>(*st_src.retValue).eval(model);
       auto t_tgt = get<Tensor>(*st_tgt.retValue).eval(model);
 
       llvm::outs() << "Dimensions (src): " << t_src.getDims() << '\n';
       llvm::outs() << "Dimensions (tgt): " << t_tgt.getDims() << '\n';
-      auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
-      llvm::outs() << "Index: " << indices << '\n';
-      llvm::outs() << "Element (src): "
-                   << or_omit_z3(t_src.get(indices).simplify())
-                   << '\n';
-      llvm::outs() << "Element (tgt): "
-                   << or_omit_z3(t_tgt.get(indices).simplify())
-                   << '\n';
+
+      if (params.size() > 0) {
+        // More than size mismatch
+        assert(params.size() == 1);
+        auto param = model.eval(params[0]);
+        auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
+        llvm::outs() << "Index: " << indices << '\n';
+        llvm::outs() << "Element (src): "
+                    << or_omit_z3(t_src.get(indices).simplify())
+                    << '\n';
+        llvm::outs() << "Element (tgt): "
+                    << or_omit_z3(t_tgt.get(indices).simplify())
+                    << '\n';
+      }
 
     } else {
       llvm::outs() << "\n<Returned value>\n";

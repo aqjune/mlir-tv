@@ -307,10 +307,23 @@ pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
   assert(arr.get_sort().is_array());
   assert(src.arr.get_sort().is_array());
 
+  // Size mismatch check.
+  // If it does, don't return index var.
+  size_t sz = getDims().size();
+  if (src.getDims().size() != sz)
+    return {ctx.bool_val(false), {}};
+
+  z3::expr size_match = ctx.bool_val(true);
+  for (size_t i = 0; i < sz; ++i)
+    size_match = size_match && (z3::expr)src.getDim(i) == (z3::expr)getDim(i);
+  size_match = size_match.simplify();
+  if (size_match.is_false())
+    return {size_match, {}};
+
   // Assume that src and tgt's shape equality is already checked
   z3::expr i = Index("i");
   vector<z3::expr> params = {i};
-  return {z3::implies(
+  return {size_match && z3::implies(
       z3::ult(i, ::get1DSize(dims)),
       z3::select(arr, i) == z3::select(src.arr, i)),
     params};
