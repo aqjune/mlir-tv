@@ -56,7 +56,7 @@ public:
   z3::expr isWellDefined;
   Memory *m;
 
-  State(unsigned int NUM_BLOCKS);
+  State(unsigned int numBlocks);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };

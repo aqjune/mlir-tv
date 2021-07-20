@@ -16,8 +16,8 @@ public:
 };
 
 class Memory {
-  unsigned int BID_BITS;
-  unsigned int NUM_BLOCKS;
+  const unsigned int bits;
+  const unsigned int numBlocks;
 
   z3::expr arrayMaps; // bv(2)::sort() -> (Index::sort() -> Float::sort())
   z3::expr writableMaps; // bv(2)::sort() -> bool::sort()
@@ -27,10 +27,10 @@ private:
   MemBlock getMemBlock(const z3::expr &bid) const;
 
 public:
-  Memory(unsigned int NUM_BLOCKS);
+  Memory(unsigned int numblocks);
 
   unsigned int getBIDBits() const {
-    return BID_BITS;
+    return bits;
   }
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const {
     return getMemBlock(bid).numelem;
