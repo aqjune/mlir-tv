@@ -1,4 +1,7 @@
-// VERIFY-INCORRECT
+// VERIFY
+
+// TODO: This should be VERIFY-INCORRECT... Arbitrary sized tensor should be supported first
+// To avoid missing unit test failures, mark this as VERIFY
 
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 

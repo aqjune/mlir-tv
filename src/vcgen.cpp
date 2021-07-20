@@ -340,8 +340,8 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::IndexOp op) {
   uint64_t i = op.dim();
-  assert(i < st.linalgGenericScopes.top().size());
-  z3::expr idxvar = st.linalgGenericScopes.top()[i];
+  assert(i < st.linalgGenericScopes.top().indVars.size());
+  z3::expr idxvar = st.linalgGenericScopes.top().indVars[i];
   st.regs.add(op, Index(idxvar));
   return {};
 }
@@ -470,16 +470,10 @@ optional<string> encodeOp(State &st, mlir::shape::ToExtentTensorOp op) {
   return {};
 }
 
-
-static optional<string>
-encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op) {
-  // In high-level:
-  // (1) The size of the loop is calculated (analogous to what
-  //     LinalgOp::createLoopRanges does).
-  // (2) UB is encoded so that the elements of the tensors are accessed
-  //     in-bounds.
-
-  // Note that the process of getting the size of the loop is unclear;
+vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
+  // The size of the loop is calculated (analogous to what
+  // LinalgOp::createLoopRanges does).
+  // The process of getting the size of the loop seems fishy;
   // LinalgOp::createLoopRanges relies on the "first" dimension that is
   // matched, and it isn't clear what happens if there are multiple matching
   // dimensions. For example,
@@ -504,7 +498,14 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op) {
   }
 
   mlir::AffineMap map = op.getLoopsToShapesMap();
-  unsigned numDims = map.getNumDims(), numRes = map.getNumResults();
+  // numDims: # of induction variables
+  unsigned numDims = map.getNumDims();
+  // numRes: # of output affine exprs
+  // For example, given two affine maps
+  //   (i, j, k) -> (i, j)
+  //   (i, j, k) -> (i, k)
+  //   numDims = 3 (i, j, k), numRes = 4 (i, j, i, k)
+  unsigned numRes = map.getNumResults();
 
   vector<Index> res(numDims);
   vector<bool> resFilled(numDims);
@@ -523,8 +524,29 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op) {
     resFilled[pos] = true;
   }
 
+  return res;
+}
+
+static optional<string>
+encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
+                            const vector<Index> &indVarBounds) {
+  mlir::AffineMap map = op.getLoopsToShapesMap();
+  unsigned numRes = map.getNumResults();
+
+  vector<Index> viewSizes;
+  for (auto *opOperand : op.getInputAndOutputOperands()) {
+    unsigned r = op.getRank(opOperand);
+    if (!r)
+      continue;
+
+    auto t = st.regs.get<Tensor>(opOperand->get());
+    for (int64_t i = 0, e = r; i < e; ++i) {
+      viewSizes.push_back(t.getDim(i));
+    }
+  }
+
   for (unsigned idx = 0; idx < numRes; ++idx) {
-    auto ae = encodeAffineExpr(map.getResult(idx), res);
+    auto ae = encodeAffineExpr(map.getResult(idx), indVarBounds);
     if (!ae)
       return "unsupported affine expr";
 
@@ -541,9 +563,7 @@ static optional<string> initInputStateForLoopBody(
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
   auto &block = *op.region().begin();
 
-  vector<z3::expr> output_dimvars;
-  for (unsigned i = 0; i < outputMap.getNumInputs(); ++i)
-    output_dimvars.emplace_back(Index("i" + to_string(i)));
+  const vector<z3::expr> &inductionVars = st.linalgGenericScopes.top().indVars;
 
   // Fill in args
   assert(op.getInputOperands().size() + op.getNumOutputs() ==
@@ -572,7 +592,7 @@ static optional<string> initInputStateForLoopBody(
       } else {
         vector<z3::expr> affine_exprs;
         for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
-          auto ae_res = encodeAffineExpr(inputMap.getResult(i), output_dimvars);
+          auto ae_res = encodeAffineExpr(inputMap.getResult(i), inductionVars);
           if (!ae_res)
             RET_STR_WITH_PREFIX("unsupported affine expr ",
                                 inputMap.getResult(i));
@@ -588,7 +608,6 @@ static optional<string> initInputStateForLoopBody(
     }
   }
 
-  st.linalgGenericScopes.push(move(output_dimvars));
   return {};
 }
 
@@ -613,28 +632,88 @@ static optional<string> encodeParallelLoopBodyAndOutput(
     RET_STR("has an unsupported operation" << op);
   }
 
-  auto output_dimvars = newst.linalgGenericScopes.top();
+  const auto &inductionVars = newst.linalgGenericScopes.top().indVars;
+  vector<z3::expr> outputDimVars;
 
   if (!outputMap.isIdentity()) {
-    vector<z3::expr> newvars;
     for (unsigned i = 0; i < outputMap.getNumResults(); ++i) {
       auto ade = outputMap.getResult(i).dyn_cast<mlir::AffineDimExpr>();
-      newvars.emplace_back(output_dimvars[ade.getPosition()]);
+      outputDimVars.push_back(inductionVars[ade.getPosition()]);
     }
-    output_dimvars = move(newvars);
+  } else {
+    outputDimVars = move(inductionVars);
   }
 
-  auto tensor_sz = getDims(outputType);
-  t_res = Tensor::mkLambda(move(tensor_sz), move(output_dimvars),
+  auto tensorSz = getDims(outputType);
+  t_res = Tensor::mkLambda(move(tensorSz), move(outputDimVars),
       newst.regs.getZ3Expr(yieldedValue));
 
   return {};
 }
 
 static optional<string> encodeReductionLoopBodyAndOutput(
-    State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
+    State &newst, mlir::Block &block,
+    const mlir::ArrayRef<mlir::Attribute> &indexingMaps,
     const mlir::TensorType &outputType, Tensor &t_res) {
-  return "reduction loops are unsupported";
+  // Deal with simple reduction loops.
+  // TODO: support more kinds of reduction loops!
+  string errmsg = "permutated output map or simple reduction form is"
+                  " supported only";
+
+  // TODO: deal with merging UBs and memorys
+  auto &ops = block.getOperations();
+  mlir::Value yieldedValue;
+
+  using mlir::m_Op;
+  using mlir::matchers::m_Any;
+  using mlir::matchers::m_Val;
+  // Support this form:
+  //   ...
+  //   %sum = addf %v, %arg_out
+  //   yield %sum
+  auto lastarg = block.getArgument(block.getNumArguments() - 1);
+  auto p = m_Op<mlir::linalg::YieldOp>(
+      m_Op<mlir::AddFOp>(m_Any(), m_Val(lastarg)));
+  if (!p.match(&ops.back()))
+    return errmsg;
+  auto sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(0);
+
+  unsigned cnt = 0;
+  for (auto &op: ops) {
+    if (cnt++ == ops.size() - 2)
+      // Don't directly encode %sum
+      break;
+
+    ENCODE(newst, op, mlir::AddFOp);
+    ENCODE(newst, op, mlir::MulFOp);
+    RET_STR("has an unsupported operation" << op);
+  }
+
+  auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
+  auto tensorSz = getDims(outputType);
+  auto linalgInfo = newst.linalgGenericScopes.top();
+
+  // Is it output[0][0] = ...?
+  if (llvm::all_of(outputMap.getResults(), [](const mlir::AffineExpr &expr) {
+    auto ac = expr.dyn_cast<mlir::AffineConstantExpr>();
+    return ac && ac.getValue() == 0;
+  })) {
+    // in:  (i, j) -> (i, j)
+    // out: (i, j) -> (0)
+    // =>
+    // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
+    Index dummyIdx("dummyidx", true);
+    Tensor in_tensor = Tensor::mkLambda(
+        vector(linalgInfo.indVarUpperBounds),
+        vector(linalgInfo.indVars),
+        newst.regs.getZ3Expr(sumvar));
+    t_res = Tensor(
+        aop::sum(in_tensor.asArray(), in_tensor.get1DSize()),
+        tensorSz);
+    return {};
+  } else {
+    return errmsg;
+  }
 }
 
 template<>
@@ -661,12 +740,15 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   }))
     return "unsupported iterator type";
 
+  auto loopBounds = findLoopBounds(st, op);
 
-  if (auto errmsg = encodeUBForTensorShapeMatch(st, op))
+  if (auto errmsg = encodeUBForTensorShapeMatch(st, op, loopBounds))
     return errmsg;
 
   // Start from newst
   State newst = st;
+  newst.linalgGenericScopes.push(State::LinalgGenericScope{move(loopBounds)});
+
   if (auto msg = initInputStateForLoopBody(newst, op))
     return msg;
 
@@ -678,12 +760,12 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
 
   if (outputMap.isPermutation()) {
     if (auto errmsg = encodeParallelLoopBodyAndOutput(newst, block, outputMap,
-                                                      outputType, t_res))
+          outputType, t_res))
       return errmsg;
 
   } else {
-    if (auto errmsg = encodeReductionLoopBodyAndOutput(newst, block, outputMap,
-                                                       outputType, t_res))
+    if (auto errmsg = encodeReductionLoopBodyAndOutput(newst, block,
+          indexingMaps, outputType, t_res))
       return errmsg;
   }
 
@@ -900,7 +982,7 @@ static Results verifyFunction(
     }
   }
 
-  if (st_src.retValue) { // 2. Check the return values
+  if (st_src.retValue) { // 3. Check the return values
     auto s = z3::solver(ctx, "QF_UFBV");
 
     z3::expr refines(ctx);

@@ -56,6 +56,14 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
   return os;
 }
 
+State::LinalgGenericScope::LinalgGenericScope(
+    std::vector<Index> &&upperbounds) {
+  for (unsigned i = 0; i < upperbounds.size(); ++i) {
+    indVarUpperBounds.push_back(upperbounds[i]);
+    indVars.emplace_back(Index("i" + to_string(i), true));
+  }
+}
+
 State::State(): isWellDefined(ctx) {
   m = Memory::create(10, MemType::MULTIPLE);
 }

@@ -33,8 +33,18 @@ public:
 
 class State {
 public:
+
+  class LinalgGenericScope {
+  public:
+    std::vector<z3::expr> indVars;
+    // indVars[i] <= indVarUpperBounds[i]
+    std::vector<z3::expr> indVarUpperBounds;
+
+    LinalgGenericScope(std::vector<Index> &&upperbounds);
+  };
+
   RegFile regs;
-  std::stack<std::vector<z3::expr>> linalgGenericScopes;
+  std::stack<LinalgGenericScope> linalgGenericScopes;
   // If returns void, it is nullopt
   std::optional<ValueTy> retValue;
 
