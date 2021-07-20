@@ -278,12 +278,9 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
     // TODO: how to do this well?
     return "unsupported type";
 
-  z3::expr wb = ctx.bool_val(true);
   for (unsigned i = 0; i < indices.size(); ++i)
     // TODO: revisit this; may not be axis-wise
-    wb = wb && z3::ult(indices[i], t.getDim(i));
-
-  st.isWellDefined = st.isWellDefined && wb;
+    st.wellDefined(z3::ult(indices[i], t.getDim(i)));
 
   return {};
 }
@@ -302,7 +299,7 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
   if (op.getType().isa<mlir::Float32Type>()) {
     auto [expr, success] = m.get(memory, indices);
     st.regs.add(op, Float(expr));
-    st.isWellDefined = st.isWellDefined && success;
+    st.wellDefined(success);
   }
   else
     // TODO: how to do this well?
@@ -325,7 +322,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   if (op.getOperand(0).getType().isa<mlir::Float32Type>()) {
     auto val = st.regs.get<Float>(op.getOperand(0));
     auto success = m.set(memory, indices, val);
-    st.isWellDefined = st.isWellDefined && success;
+    st.wellDefined(success);
   } else {
     // Currently we support only f32 memory type
     return "unsupported type";
@@ -576,7 +573,7 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
       return "unsupported affine expr";
 
     z3::expr inbounds = z3::ult(*ae, (z3::expr)viewSizes[idx]);
-    st.isWellDefined = st.isWellDefined && inbounds;
+    st.wellDefined(inbounds);
   }
 
   return {};
