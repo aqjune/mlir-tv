@@ -315,11 +315,9 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
-  llvm::outs() << "TEMP111" << "\n";
   // step1. MemBlock which contains source memref marks as not writable.
   auto &memory = *(st.m);
   memory.setWritable(m.getBID(), false);
-  llvm::outs() << "TEMP222" << "\n";
 
   // step2. create new Tensor that alias origin memref using Tensor::mkLambda
   auto dims = m.getDims();
@@ -328,15 +326,12 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   for (int i = 0; i < dims.size(); i ++) {
     idxs.push_back(Index("Index_" + std::to_string(i)));
   }
-  llvm::outs() << "TEMP33" << "\n";
   auto [expr, success] = m.get(idxs);
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
   // step3. add result tensor to register
   st.regs.add(op.getResult(), t_res);
-  llvm::outs() << "TEMP44" << "\n";
   st.isWellDefined = st.isWellDefined && m.isInBounds();
-  llvm::outs() << "TEMP55" << "\n";
 
   return {};
 }

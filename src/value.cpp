@@ -468,7 +468,6 @@ z3::expr MemRef::set(const std::vector<z3::expr> &indices, const z3::expr &value
 
 pair<z3::expr, z3::expr> MemRef::get(const vector<z3::expr> &indices) const {
   z3::expr idx = to1DIdx(indices, dims);
-  llvm::outs() << "HERE??\n";
   return m->load(bid, offset + idx);
 }
 
