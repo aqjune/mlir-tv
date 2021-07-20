@@ -426,10 +426,10 @@ z3::expr Tensor::to1DArrayWithOfs(
 MemRef::MemRef(): bid(ctx), offset(ctx) {}
 
 MemRef::MemRef(const std::string &name,
-  const unsigned int BID_BITS,
+  const unsigned int bits,
   const std::vector<z3::expr> &dims,
   const z3::sort &elemty):
-    bid(ctx.bv_const((name + "_bid").c_str(), BID_BITS)),
+    bid(ctx.bv_const((name + "_bid").c_str(), bits)),
     offset(Index((name + "_offset").c_str())),
     dims(dims) {}
 

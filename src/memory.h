@@ -21,19 +21,19 @@ public:
 };
 
 class Memory {
-  unsigned int BID_BITS;
-  unsigned int NUM_BLOCKS;
+  const unsigned int bits;
+  const unsigned int numBlocks;
 
   z3::expr arrayMap; // bv(2)::sort() -> (Index::sort() -> Float::sort())
   z3::expr writableMap; // bv(2)::sort() -> bool::sort()
   z3::expr numelemMap; // bv(2)::sort() -> Index::sort()
 
 public:
-  Memory(unsigned int NUM_BLOCKS);
+  Memory(unsigned int numBlocks);
 
   MemBlock getMemBlock(const z3::expr &bid) const;
 
-  unsigned int getBIDBits() const { return BID_BITS; }
+  unsigned int getBIDBits() const { return bits; }
 
   void updateMemBlock(const z3::expr &bid, bool writable);
 };
