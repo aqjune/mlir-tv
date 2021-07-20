@@ -412,6 +412,14 @@ optional<string> encodeOp(State &st, mlir::SubIOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::MulIOp op) {
+  auto a = st.regs.get<Integer>(op.getOperand(0));
+  auto b = st.regs.get<Integer>(op.getOperand(1));
+  st.regs.add(op, Integer((z3::expr)a * (z3::expr)b));
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
   auto src = st.regs.getZ3Expr(op.getOperand());
   assert(src.is_bv());
@@ -468,6 +476,14 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
 
     auto dims = getDims(op.getType().cast<mlir::TensorType>());
     st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), move(dims)));
+    return {};
+  } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
+    llvm::APInt i = intAttr.getValue();
+    unsigned bw = i.getBitWidth();
+    if (bw > 64)
+      return "size is too large";
+
+    st.regs.add(op, Integer(i.getSExtValue(), bw));
     return {};
   }
   return "unsupported constant";
@@ -678,6 +694,7 @@ static optional<string> encodeParallelLoopBodyAndOutput(
     ENCODE(newst, op, mlir::MulFOp);
     ENCODE(newst, op, mlir::AddIOp);
     ENCODE(newst, op, mlir::SubIOp);
+    ENCODE(newst, op, mlir::MulIOp);
     ENCODE(newst, op, mlir::IndexCastOp);
     ENCODE(newst, op, mlir::linalg::IndexOp);
     if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
@@ -879,6 +896,7 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::AddIOp);
     ENCODE(st, op, mlir::IndexCastOp);
     ENCODE(st, op, mlir::MulFOp);
+    ENCODE(st, op, mlir::MulIOp);
     ENCODE(st, op, mlir::ReturnOp);
     ENCODE(st, op, mlir::SubIOp);
 

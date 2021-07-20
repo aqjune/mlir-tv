@@ -153,6 +153,9 @@ Float Float::mul(const Float &b) const {
 Integer::Integer(const std::string &name, unsigned bw):
   e(ctx.bv_const(name.c_str(), bw)) {}
 
+Integer::Integer(int64_t i, unsigned bw):
+  e(ctx.bv_val(i, bw)) {}
+
 z3::sort Integer::sort(unsigned sz) {
   return ctx.bv_sort(sz);
 }

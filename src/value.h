@@ -64,6 +64,7 @@ class Integer {
 public:
   Integer(const std::string &name, unsigned bw);
   Integer(const z3::expr &e): e(e) {}
+  Integer(int64_t i, unsigned bw);
 
   operator z3::expr() const { return e; }
 
