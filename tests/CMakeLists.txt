@@ -20,5 +20,8 @@ foreach(PASS_NAME ${PASSES})
     COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=${PASS_NAME} --param root=opts)
 endforeach()
 
-add_test(NAME Litmus
-    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=linalg-litmus --param root=litmus)
+SUBDIRLIST(PASSES "${PROJECT_SOURCE_DIR}/tests/litmus")
+foreach(PASS_NAME ${PASSES})
+  add_test(NAME Litmus-${PASS_NAME}
+    COMMAND python3 ${PROJECT_SOURCE_DIR}/tests/passes.py "${CMAKE_CURRENT_BINARY_DIR}" -v --param pass=${PASS_NAME} --param root=litmus)
+endforeach()

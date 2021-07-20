@@ -1,5 +1,6 @@
 #pragma once
 
+#include "smt.h"
 #include "z3++.h"
 #include "llvm/ADT/APFloat.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
@@ -8,8 +9,8 @@
 
 class Memory;
 
-z3::expr get1DSize(const std::vector<z3::expr> &dims);
-std::vector<z3::expr> getDims(const mlir::ShapedType &shapedTy);
+std::vector<z3::expr> getDims(
+    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize = false);
 
 class Index {
   z3::expr e;
@@ -119,6 +120,8 @@ public:
   Tensor transpose() const;
 
   Tensor matmul(const Tensor &b) const;
+
+  z3::expr sum() const;
 
   operator z3::expr() const { return arr; }
 
