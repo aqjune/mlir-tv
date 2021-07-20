@@ -167,14 +167,22 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   auto ty = res.getType().dyn_cast<mlir::TensorType>();
   assert(ty);
 
-  auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
-  if (!dimsAndElemTy)
+  vector<z3::expr> sizes;
+  for (unsigned i = 0; i < ty.getRank(); ++i) {
+    if (op.isDynamicSize(i))
+      sizes.push_back(st.regs.get<Index>(op.getDynamicSize(i)));
+    else
+      sizes.push_back(Index(op.getStaticSize(i)));
+  }
+
+  auto elemTy = Tensor::getElemTy(ty);
+  if (!elemTy)
     return "Unsupported tensor type";
 
   // FIXME: can we use res's name?
   static int new_var_idx = 0;
   auto name = string("init_tensor_") + to_string(new_var_idx++);
-  st.regs.add(res, Tensor(name, dimsAndElemTy->first, dimsAndElemTy->second));
+  st.regs.add(res, Tensor(name, sizes, *elemTy));
 
   return {};
 }

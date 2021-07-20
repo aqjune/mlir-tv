@@ -318,6 +318,13 @@ pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
 
 optional<pair<vector<z3::expr>, z3::sort>>
 Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
+  auto ety = getElemTy(tensorTy);
+  if (!ety)
+    return {};
+  return {{::getDims(tensorTy), *ety}};
+}
+
+optional<z3::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
   auto elemty = tensorTy.getElementType();
   z3::sort elemty2(ctx);
 
@@ -332,7 +339,7 @@ Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
     return {};
   }
 
-  return {{::getDims(tensorTy), elemty2}};
+  return elemty2;
 }
 
 

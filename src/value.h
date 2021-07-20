@@ -129,6 +129,8 @@ public:
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
       getDimsAndElemTy(mlir::TensorType tensorTy);
 
+  static std::optional<z3::sort> getElemTy(mlir::TensorType tensorTy);
+
   static Tensor mkLambda(
       std::vector<z3::expr> &&newdims,
       std::vector<z3::expr> &&indexvars, z3::expr body);
