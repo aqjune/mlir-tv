@@ -5,8 +5,9 @@
 
 using namespace std;
 
-MemBlock::MemBlock(z3::expr &array, z3::expr &writable, z3::expr &numelem):
-    array(array), writable(writable), numelem(numelem) {}
+static int log2(unsigned int NUM_BLOCKS) {
+  return (int)floor(log2(max((int)NUM_BLOCKS - 1, 1))) + 1;
+}
 
 z3::expr MemBlock::store(const z3::expr &f32val, const z3::expr &idx) {
   array = z3::store(array, idx, f32val);
@@ -17,7 +18,9 @@ pair<z3::expr, z3::expr> MemBlock::load(const z3::expr &idx) const {
   return {z3::select(array, idx), z3::ult(idx, numelem)};
 }
 
-Memory::Memory():
+Memory::Memory(unsigned int NUM_BLOCKS):
+  BID_BITS(log2(NUM_BLOCKS)),
+  NUM_BLOCKS(NUM_BLOCKS),
   arrayMap(ctx.constant("arrayMap",
     ctx.array_sort(ctx.bv_sort(BID_BITS), ctx.array_sort(Index::sort(), Float::sort())))),
   writableMap(ctx.constant("writableMap",

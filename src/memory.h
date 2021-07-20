@@ -11,7 +11,8 @@ public:
   z3::expr writable; // bool::sort()
   z3::expr numelem;  // Index::sort()
 
-  MemBlock(z3::expr &array, z3::expr &writable, z3::expr &numelem);
+  MemBlock(z3::expr &array, z3::expr &writable, z3::expr &numelem):
+     array(array), writable(writable), numelem(numelem) {}
 
   // Returns: store successful?
   z3::expr store(const z3::expr &f32val, const z3::expr &idx);
@@ -20,15 +21,19 @@ public:
 };
 
 class Memory {
+  unsigned int BID_BITS;
+  unsigned int NUM_BLOCKS;
+
   z3::expr arrayMap; // bv(2)::sort() -> (Index::sort() -> Float::sort())
   z3::expr writableMap; // bv(2)::sort() -> bool::sort()
   z3::expr numelemMap; // bv(2)::sort() -> Index::sort()
 
 public:
-  static const unsigned BID_BITS = 1;
-  Memory();
+  Memory(unsigned int NUM_BLOCKS);
 
   MemBlock getMemBlock(const z3::expr &bid) const;
+
+  unsigned int getBIDBits() const { return BID_BITS; }
 
   void updateMemBlock(const z3::expr &bid, bool writable);
 };
