@@ -31,4 +31,5 @@ public:
 };
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
-    const std::string &dump_smt_to);
+    const std::string &dump_smt_to,
+    const unsigned int num_memblocks);

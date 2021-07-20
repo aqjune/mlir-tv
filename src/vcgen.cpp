@@ -47,8 +47,8 @@ public:
 };
 
 static variant<string, State>
-createInputState(mlir::FuncOp fn) {
-  State s;
+createInputState(mlir::FuncOp fn, unsigned int num_memblocks) {
+  State s(num_memblocks);
   s.isWellDefined = ctx.bool_val(true);
 
   unsigned n = fn.getNumArguments();
@@ -910,7 +910,9 @@ static pair<z3::check_result, int64_t> solve(
 }
 
 static Results verifyFunction(
-    mlir::FuncOp src, mlir::FuncOp tgt, const string &dump_smt_to) {
+    mlir::FuncOp src, mlir::FuncOp tgt,
+    const string &dump_smt_to,
+    const unsigned int num_memblocks) {
   llvm::outs() << "Function " << src.getName() << "\n\n";
   assert(src.getNumArguments() == tgt.getNumArguments());
 
@@ -922,13 +924,13 @@ static Results verifyFunction(
   // TODO: do this after static analysis
   aop::setAbstractionLevel(aop::FULLY_ABS);
 
-  auto st_src_or_err = createInputState(src);
+  auto st_src_or_err = createInputState(src, num_memblocks);
   if (holds_alternative<string>(st_src_or_err))
     raiseUnsupported(get<string>(st_src_or_err));
   auto st_src = get<State>(st_src_or_err);
   auto st_src_in = st_src; // for printing counter ex.
 
-  auto st_tgt_or_err = createInputState(tgt);
+  auto st_tgt_or_err = createInputState(tgt, num_memblocks);
   if (holds_alternative<string>(st_tgt_or_err))
     raiseUnsupported(get<string>(st_tgt_or_err));
   auto st_tgt = get<State>(st_tgt_or_err);
@@ -1010,7 +1012,8 @@ static Results verifyFunction(
 }
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
-            const string &dump_smt_to) {
+            const string &dump_smt_to,
+            const unsigned int num_memblocks) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -1030,7 +1033,7 @@ Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
       continue;
     }
     // TODO: check fn signature
-    verificationResult.merge(verifyFunction(srcfn, itr->second, dump_smt_to));
+    verificationResult.merge(verifyFunction(srcfn, itr->second, dump_smt_to, num_memblocks));
   }
 
   return verificationResult;

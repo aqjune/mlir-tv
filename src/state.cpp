@@ -64,4 +64,4 @@ State::LinalgGenericScope::LinalgGenericScope(
   }
 }
 
-State::State(): m(2), isWellDefined(ctx) {}
+State::State(unsigned int NUM_BLOCKS): m(NUM_BLOCKS), isWellDefined(ctx) {}
