@@ -18,7 +18,7 @@ static z3::expr to1DIdx(
   return idx;
 }
 
-static vector<z3::expr> from1DIdx(
+vector<z3::expr> from1DIdx(
     z3::expr idx1d,
     const vector<z3::expr> &dims) {
   assert(dims.size() > 0);
@@ -62,7 +62,7 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
   return ev;
 }
 
-static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
+vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
   vector<z3::expr> v;
   v.reserve(exprs.size());
   for (auto &e: exprs)

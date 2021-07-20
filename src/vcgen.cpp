@@ -912,6 +912,17 @@ static void printCounterEx(
     return s;
   };
 
+  auto or_omit_z3 = [&](const z3::expr &e) -> string {
+    string s;
+    llvm::raw_string_ostream rso(s);
+    rso << e;
+    rso.flush();
+
+    if (s.size() > 500)
+      return "(omitted)";
+    return s;
+  };
+
   llvm::outs() << "<Inputs>\n";
 
   unsigned n = src.getNumArguments();
@@ -936,13 +947,34 @@ static void printCounterEx(
   }
 
   if (st_src.retValue) {
-    llvm::outs() << "\n<Return values>\n";
-    for (auto &param: params)
-      llvm::outs() << "\tIndex: " << solver.get_model().eval(param) << "\n";
-    llvm::outs() << "\tSrc: " << or_omit(*st_src.retValue)
-        << "\n"
-        << "\tTgt: " << or_omit(*st_tgt.retValue)
-        << "\n";
+    if (src.getNumResults() == 1 &&
+        src.getType().getResult(0).isa<mlir::TensorType>()) {
+      llvm::outs() << "\n<Return tensor>\n";
+
+      assert(params.size() == 1);
+      auto model = solver.get_model();
+      auto param = model.eval(params[0]);
+      auto t_src = get<Tensor>(*st_src.retValue).eval(model);
+      auto t_tgt = get<Tensor>(*st_tgt.retValue).eval(model);
+
+      llvm::outs() << "Dimensions (src): " << t_src.getDims() << '\n';
+      llvm::outs() << "Dimensions (tgt): " << t_tgt.getDims() << '\n';
+      auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
+      llvm::outs() << "Index: " << indices << '\n';
+      llvm::outs() << "Element (src): " << or_omit_z3(t_src.get(indices))
+                   << '\n';
+      llvm::outs() << "Element (tgt): " << or_omit_z3(t_tgt.get(indices))
+                   << '\n';
+
+    } else {
+      llvm::outs() << "\n<Return values>\n";
+      for (auto &param: params)
+        llvm::outs() << "\tIndex: " << solver.get_model().eval(param) << "\n";
+      llvm::outs() << "\tSrc: " << or_omit(*st_src.retValue)
+          << "\n"
+          << "\tTgt: " << or_omit(*st_tgt.retValue)
+          << "\n";
+    }
   }
 
 #if FALSE
