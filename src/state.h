@@ -10,6 +10,9 @@
 
 using ValueTy = std::variant<Tensor, MemRef, Index, Float, Integer>;
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream&, const ValueTy &);
+
+
 class RegFile {
 private:
   llvm::DenseMap<mlir::Value, ValueTy> m;

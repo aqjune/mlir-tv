@@ -36,6 +36,18 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
   return ev;
 }
 
+static string or_omit(const z3::expr &e) {
+  string s;
+  llvm::raw_string_ostream rso(s);
+  rso << e;
+  rso.flush();
+
+  if (s.size() > 500)
+    return "(omitted)";
+  return s;
+}
+
+
 vector<z3::expr> getDims(
     const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize) {
   vector<z3::expr> dims;
@@ -87,7 +99,7 @@ Index Index::one() { return Index(1); }
 Index Index::zero() { return Index(0); }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
-  os << (z3::expr)i;
+  os << or_omit((z3::expr)i);
   return os;
 };
 
@@ -117,7 +129,7 @@ z3::sort Float::sort() {
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
-  os << (z3::expr)f;
+  os << or_omit((z3::expr)f);
   return os;
 };
 
@@ -146,7 +158,7 @@ z3::sort Integer::sort(unsigned sz) {
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
-  os << (z3::expr)i;
+  os << or_omit((z3::expr)i);
   return os;
 };
 
@@ -326,10 +338,10 @@ Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   assert(t.dims.size() > 0);
-  os << t.arr << "(dim :" << t.dims[0];
+  os << "(dim :" << or_omit(t.dims[0]);
   for (size_t i = 1; i < t.dims.size(); ++i)
-    os << ", " << t.dims[i];
-  os << ")";
+    os << ", " << or_omit(t.dims[i]);
+  os << ") " << or_omit(t.arr);
   return os;
 };
 
@@ -453,10 +465,10 @@ Index MemRef::getDim(uint64_t idx) const {
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   assert(m.dims.size() > 0);
-  os << "bid: " << m.bid << ", offset: " << m.offset << "\n";
-  os << "(dim :" << m.dims[0];
+  os << "bid: " << or_omit(m.bid) << ", offset: " << or_omit(m.offset) << "\n";
+  os << "(dim :" << or_omit(m.dims[0]);
   for (size_t i = 1; i < m.dims.size(); ++i)
-    os << ", " << m.dims[i];
+    os << ", " << or_omit(m.dims[i]);
   os << ")";
   return os;
 };

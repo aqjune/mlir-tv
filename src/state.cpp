@@ -3,6 +3,14 @@
 
 using namespace std;
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream &os, const ValueTy &v) {
+  visit([&](auto &&itm) {
+    os << itm;
+  }, v);
+  return os;
+}
+
+
 ValueTy RegFile::findOrCrash(mlir::Value v) const {
   auto itr = m.find(v);
   if (itr != m.end()) {

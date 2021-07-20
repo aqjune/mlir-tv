@@ -899,22 +899,8 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
 
 static void printCounterEx(
     z3::solver &solver, const vector<z3::expr> &params, mlir::FuncOp src,
-    State &st_src, State &st_tgt) {
+    State &st_src, State &st_tgt, bool printRetValue) {
   auto m = solver.get_model();
-  auto or_omit = [&](const ValueTy &val) -> string {
-    ValueTy evaluatedVal;
-    visit([&](auto &&v) { evaluatedVal = v.eval(m); }, val);
-
-    string s;
-    llvm::raw_string_ostream rso(s);
-    visit([&](auto &&v) { rso << v; }, evaluatedVal);
-    rso.flush();
-
-    if (s.size() > 500)
-      return "(omitted)";
-    return s;
-  };
-
   auto or_omit_z3 = [&](const z3::expr &e) -> string {
     string s;
     llvm::raw_string_ostream rso(s);
@@ -932,27 +918,27 @@ static void printCounterEx(
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
     llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
-                 << or_omit(st_src.regs.findOrCrash(argsrc)) << "\n";
+                 << st_src.regs.findOrCrash(argsrc) << "\n";
   }
 
-  llvm::outs() << "\n<Source's variables>\n";
+  llvm::outs() << "\n<Source's instructions>\n";
   for (auto &[v, e]: st_src.regs) {
     if (st_src.regs.contains(v))
       continue;
-    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
+    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << e << "\n";
   }
 
-  llvm::outs() << "\n<Target's variables>\n";
+  llvm::outs() << "\n<Target's instructions>\n";
   for (auto &[v, e]: st_tgt.regs) {
     if (st_tgt.regs.contains(v))
       continue;
-    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
+    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << e << "\n";
   }
 
-  if (st_src.retValue) {
+  if (st_src.retValue && printRetValue) {
     if (src.getNumResults() == 1 &&
         src.getType().getResult(0).isa<mlir::TensorType>()) {
-      llvm::outs() << "\n<Return tensor>\n";
+      llvm::outs() << "\n<Returned tensor>\n";
 
       assert(params.size() == 1);
       auto model = solver.get_model();
@@ -964,18 +950,20 @@ static void printCounterEx(
       llvm::outs() << "Dimensions (tgt): " << t_tgt.getDims() << '\n';
       auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
       llvm::outs() << "Index: " << indices << '\n';
-      llvm::outs() << "Element (src): " << or_omit_z3(t_src.get(indices))
+      llvm::outs() << "Element (src): "
+                   << or_omit_z3(t_src.get(indices).simplify())
                    << '\n';
-      llvm::outs() << "Element (tgt): " << or_omit_z3(t_tgt.get(indices))
+      llvm::outs() << "Element (tgt): "
+                   << or_omit_z3(t_tgt.get(indices).simplify())
                    << '\n';
 
     } else {
-      llvm::outs() << "\n<Return values>\n";
+      llvm::outs() << "\n<Returned value>\n";
       for (auto &param: params)
         llvm::outs() << "\tIndex: " << solver.get_model().eval(param) << "\n";
-      llvm::outs() << "\tSrc: " << or_omit(*st_src.retValue)
+      llvm::outs() << "\tSrc: " << *st_src.retValue
           << "\n"
-          << "\tTgt: " << or_omit(*st_tgt.retValue)
+          << "\tTgt: " << *st_tgt.retValue
           << "\n";
     }
   }
@@ -1048,12 +1036,12 @@ static Results verifyFunction(
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
   auto printErrorMsg = [&](z3::solver &s, z3::check_result res, const char *msg,
-                           vector<z3::expr> &&params){
+                           vector<z3::expr> &&params, bool printRetValue){
     if (res == z3::unknown) {
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res == z3::sat) {
       llvm::outs() << "== Result: " << msg << "\n";
-      printCounterEx(s, params, src, st_src, st_tgt);
+      printCounterEx(s, params, src, st_src, st_tgt, printRetValue);
     } else {
       llvm_unreachable("unexpected result");
     }
@@ -1067,7 +1055,8 @@ static Results verifyFunction(
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       // Well... let's use Alive2's wording.
-      printErrorMsg(s, res.first, "Source is more defined than target", {});
+      printErrorMsg(s, res.first, "Source is more defined than target", {},
+                    false);
       return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
     }
   }
@@ -1098,7 +1087,7 @@ static Results verifyFunction(
     auto res = solve(s, not_refines, dump_smt_to, fnname + ".3.retval");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
-      printErrorMsg(s, res.first, "Return value mismatch", move(params));
+      printErrorMsg(s, res.first, "Return value mismatch", move(params), true);
       return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
     }
   }
