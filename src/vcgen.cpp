@@ -178,11 +178,6 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
-  // TODO: is tensor_collapse_shape with permutated indices valid?
-  //   ex: %2 = linalg.tensor_collapse_shape %1 [[0, 2], [1, 3]]
-  // Then, it isn't simply reinterpretation of the operand; it needs permutation
-  // of elements.
-
   Tensor t = st.regs.get<Tensor>(op.getOperand());
   st.regs.add(op.getResult(), t.reshape(getDims(op.getResultType())));
   return {};
@@ -190,11 +185,6 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
-  // TODO: is tensor_expand_shape with permutated indices valid?
-  //   ex: %2 = linalg.tensor_expand_shape %1 [[0], [2], [1, 3]]
-  // Then, it isn't simply reinterpretation of the operand; it needs permutation
-  // of elements.
-
   Tensor t = st.regs.get<Tensor>(op.getOperand());
   st.regs.add(op.getResult(), t.reshape(getDims(op.getResultType())));
   return {};
