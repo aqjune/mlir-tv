@@ -416,11 +416,14 @@ z3::expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::MemRef(): bid(ctx), offset(ctx) {}
+MemRef::MemRef(const Memory &m): m(m), bid(ctx), offset(ctx) {}
 
-MemRef::MemRef(const std::string &name, const unsigned int BID_BITS,
+MemRef::MemRef(const Memory &m,
+  const std::string &name,
+  const unsigned int BID_BITS,
   const std::vector<z3::expr> &dims,
   const z3::sort &elemty):
+    m(m),
     bid(ctx.bv_const((name + "_bid").c_str(), BID_BITS)),
     offset(Index((name + "_offset").c_str())),
     dims(dims) {}
@@ -475,6 +478,13 @@ Index MemRef::getDim(uint64_t idx) const {
   return Index(dims[idx]);
 }
 
+MemRef& MemRef::operator=(const MemRef& m) {
+  this->bid = m.bid;
+  this->offset = m.offset;
+  this->dims = m.dims;
+  return *this;
+}
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   assert(m.dims.size() > 0);
   os << "bid: " << m.bid << ", offset: " << m.offset << "\n";
@@ -490,7 +500,7 @@ std::pair<z3::expr, vector<z3::expr>> MemRef::refines(const MemRef &src) const {
 }
 
 MemRef MemRef::eval(z3::model m) const {
-  MemRef m2;
+  MemRef m2(this->m);
   m2.dims.reserve(dims.size());
   for (size_t i = 0; i < dims.size(); ++i) {
     auto v = m.eval(dims[i], true).simplify();
