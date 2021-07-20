@@ -69,7 +69,7 @@ createInputState(mlir::FuncOp fn, unsigned int num_memblocks) {
       if (!dimsAndElemTy)
         RET_STR("Unsupported MemRef element type: " << arg.getType());
       // TODO : out of bounds pointer is allowed?
-      s.regs.add(arg, MemRef("arg0",
+      s.regs.add(arg, MemRef(&s.m, "arg" + to_string(arg.getArgNumber()),
         s.m.getBIDBits(),
         dimsAndElemTy->first,
         dimsAndElemTy->second));
@@ -278,7 +278,7 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
     indices.emplace_back(st.regs.get<Index>(idx0));
 
   if (op.getType().isa<mlir::Float32Type>()) {
-    auto [expr, success] = m.get(memory, indices);
+    auto [expr, success] = m.get(indices);
     st.regs.add(op, Float(expr));
     st.isWellDefined = st.isWellDefined && success;
   }
@@ -302,7 +302,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
 
   if (op.getOperand(0).getType().isa<mlir::Float32Type>()) {
     auto val = st.regs.get<Float>(op.getOperand(0));
-    auto success = m.set(memory, indices, val);
+    auto success = m.set(indices, val);
     st.isWellDefined = st.isWellDefined && success;
   } else {
     // Currently we support only f32 memory type
@@ -316,10 +316,11 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
-
+  llvm::outs() << "TEMP111" << "\n";
   // step1. MemBlock which contains source memref marks as not writable.
   auto &memory = st.m;
-  memory.updateMemBlock(m.getBID(), false);
+  memory.setWritable(m.getBID(), false);
+  llvm::outs() << "TEMP222" << "\n";
 
   // step2. create new Tensor that alias origin memref using Tensor::mkLambda
   auto dims = m.getDims();
@@ -328,14 +329,15 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   for (int i = 0; i < dims.size(); i ++) {
     idxs.push_back(Index("Index_" + std::to_string(i)));
   }
-  auto [expr, success] = m.get(st.m, idxs);
+  llvm::outs() << "TEMP33" << "\n";
+  auto [expr, success] = m.get(idxs);
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
   // step3. add result tensor to register
   st.regs.add(op.getResult(), t_res);
-  st.isWellDefined = st.isWellDefined &&
-    z3::uge(memory.getMemBlock(m.getBID()).numelem, memrefSize) &&
-    z3::ult(m.getOffset(), memory.getMemBlock(m.getBID()).numelem - memrefSize);
+  llvm::outs() << "TEMP44" << "\n";
+  st.isWellDefined = st.isWellDefined && m.isInBounds();
+  llvm::outs() << "TEMP55" << "\n";
 
   return {};
 }

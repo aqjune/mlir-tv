@@ -423,12 +423,14 @@ z3::expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::MemRef(): bid(ctx), offset(ctx) {}
+MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx) {}
 
-MemRef::MemRef(const std::string &name,
+MemRef::MemRef(Memory *m,
+  const std::string &name,
   const unsigned int BID_BITS,
   const std::vector<z3::expr> &dims,
   const z3::sort &elemty):
+    m(m),
     bid(ctx.bv_const((name + "_bid").c_str(), BID_BITS)),
     offset(Index((name + "_offset").c_str())),
     dims(dims) {}
@@ -460,18 +462,22 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
   }
 }
 
-z3::expr MemRef::set(const Memory &m,
-  const std::vector<z3::expr> &indices,
-  const z3::expr &value) const {
+z3::expr MemRef::set(const std::vector<z3::expr> &indices, const z3::expr &value) const {
   z3::expr idx = to1DIdx(indices, dims);
-  return m.getMemBlock(bid).store(value, offset + idx);
+  return m->store(value, bid, offset + idx);
 }
 
-
-pair<z3::expr, z3::expr> MemRef::get(const Memory &m, const vector<z3::expr> &indices) const {
+pair<z3::expr, z3::expr> MemRef::get(const vector<z3::expr> &indices) const {
   z3::expr idx = to1DIdx(indices, dims);
-  return m.getMemBlock(bid).load(offset + idx);
+  llvm::outs() << "HERE??\n";
+  return m->load(bid, offset + idx);
 }
+
+z3::expr MemRef::isInBounds() const {
+   auto numelem = m->getNumElementsOfMemBlock(bid);
+   auto memrefSize = get1DSize(dims);
+   return z3::uge(numelem, memrefSize) && z3::ult(offset, numelem - memrefSize);
+ }
 
 Index MemRef::getDim(uint64_t idx) const {
   return Index(dims[idx]);
@@ -492,7 +498,7 @@ std::pair<z3::expr, vector<z3::expr>> MemRef::refines(const MemRef &src) const {
 }
 
 MemRef MemRef::eval(z3::model m) const {
-  MemRef m2;
+  MemRef m2(this->m);
   m2.dims.reserve(dims.size());
   for (size_t i = 0; i < dims.size(); ++i) {
     auto v = m.eval(dims[i], true).simplify();
