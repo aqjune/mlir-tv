@@ -660,20 +660,34 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   string errmsg = "permutated output map or simple reduction form is"
                   " supported only";
 
-  // Assumes that # of outputs is 1.
-  if (indexingMaps.size() != 2)
-    // More than one input is unsupported.
-    return errmsg;
+  // TODO: deal with merging UBs and memorys
+  auto &ops = block.getOperations();
+  mlir::Value yieldedValue;
 
   using mlir::m_Op;
+  using mlir::matchers::m_Any;
   using mlir::matchers::m_Val;
-  auto &ops = block.getOperations();
+  // Support this form:
+  //   ...
+  //   %sum = addf %v, %arg_out
+  //   yield %sum
+  auto lastarg = block.getArgument(block.getNumArguments() - 1);
   auto p = m_Op<mlir::linalg::YieldOp>(
-      m_Op<mlir::AddFOp>(
-        m_Val(block.getArgument(0)),
-        m_Val(block.getArgument(1))));
-  if (ops.size() != 2 || !p.match(&ops.back()))
+      m_Op<mlir::AddFOp>(m_Any(), m_Val(lastarg)));
+  if (!p.match(&ops.back()))
     return errmsg;
+  auto sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(0);
+
+  unsigned cnt = 0;
+  for (auto &op: ops) {
+    if (cnt++ == ops.size() - 2)
+      // Don't directly encode %sum
+      break;
+
+    ENCODE(newst, op, mlir::AddFOp);
+    ENCODE(newst, op, mlir::MulFOp);
+    RET_STR("has an unsupported operation" << op);
+  }
 
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
   auto tensorSz = getDims(outputType);
@@ -692,12 +706,13 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     Tensor in_tensor = Tensor::mkLambda(
         vector(linalgInfo.indVarUpperBounds),
         vector(linalgInfo.indVars),
-        newst.regs.getZ3Expr(block.getArgument(0)));
+        newst.regs.getZ3Expr(sumvar));
     t_res = Tensor(
         aop::sum(in_tensor.asArray(), in_tensor.get1DSize()),
         tensorSz);
+    return {};
   } else {
-    return "unsupported";
+    return errmsg;
   }
 }
 
