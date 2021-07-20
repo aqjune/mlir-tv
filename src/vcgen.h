@@ -1,5 +1,6 @@
 #pragma once
 
+#include "memory.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <string>
 #include <algorithm>
@@ -32,4 +33,5 @@ public:
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const std::string &dump_smt_to,
-    const unsigned int num_memblocks);
+    const unsigned int numBlocks,
+    const MemType type);

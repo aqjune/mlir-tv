@@ -1,5 +1,6 @@
 #include "smt.h"
 #include "vcgen.h"
+#include "memory.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -41,6 +42,14 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::desc("Number of memory blocks required to verify translation (default=16)"),
   llvm::cl::init(16), llvm::cl::value_desc("number"));
 
+llvm::cl::opt<MemType> memory_type("memory-type",
+  llvm::cl::desc("Type of memref memory model (default=MULTIPLE)"),
+  llvm::cl::init(MemType::MULTIPLE),
+  llvm::cl::values(
+    clEnumValN(MemType::SINGLE, "SINGLE", "Using single array memory encoding"),
+    clEnumValN(MemType::MULTIPLE, "MULTIPLE", "Using multiple arrays memory encoding")
+  ));
+
 // These functions are excerpted from ToolUtilities.cpp in mlir
 static unsigned verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
@@ -61,7 +70,8 @@ static unsigned verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     return 66;
   }
 
-  return verify(ir_before, ir_after, arg_dump_smt_to.getValue(), num_memblocks.getValue()).code;
+  return verify(ir_before, ir_after,
+    arg_dump_smt_to.getValue(), num_memblocks.getValue(), memory_type.getValue()).code;
 }
 
 static unsigned splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
