@@ -896,7 +896,7 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
 
 static void printCounterEx(
     z3::solver &solver, const vector<z3::expr> &params, mlir::FuncOp src,
-    State &st_src, State &st_src_in, State &st_tgt, State &st_tgt_in) {
+    State &st_src, State &st_tgt) {
   auto m = solver.get_model();
   auto or_omit = [&](const ValueTy &val) -> string {
     ValueTy evaluatedVal;
@@ -929,19 +929,19 @@ static void printCounterEx(
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
     llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
-                 << or_omit(st_src_in.regs.findOrCrash(argsrc)) << "\n";
+                 << or_omit(st_src.regs.findOrCrash(argsrc)) << "\n";
   }
 
   llvm::outs() << "\n<Source's variables>\n";
   for (auto &[v, e]: st_src.regs) {
-    if (st_src_in.regs.contains(v))
+    if (st_src.regs.contains(v))
       continue;
     llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
   }
 
   llvm::outs() << "\n<Target's variables>\n";
   for (auto &[v, e]: st_tgt.regs) {
-    if (st_tgt_in.regs.contains(v))
+    if (st_tgt.regs.contains(v))
       continue;
     llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
   }
@@ -1021,13 +1021,11 @@ static Results verifyFunction(
   if (holds_alternative<string>(st_src_or_err))
     raiseUnsupported(get<string>(st_src_or_err));
   auto st_src = get<State>(st_src_or_err);
-  auto st_src_in = st_src; // for printing counter ex.
 
   auto st_tgt_or_err = createInputState(tgt);
   if (holds_alternative<string>(st_tgt_or_err))
     raiseUnsupported(get<string>(st_tgt_or_err));
   auto st_tgt = get<State>(st_tgt_or_err);
-  auto st_tgt_in = st_tgt; // for printing counter ex.
 
   llvm::outs() << "<src>\n";
   if (auto msg = encode(st_src, src))
@@ -1050,7 +1048,7 @@ static Results verifyFunction(
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res == z3::sat) {
       llvm::outs() << "== Result: " << msg << "\n";
-      printCounterEx(s, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
+      printCounterEx(s, params, src, st_src, st_tgt);
     } else {
       llvm_unreachable("unexpected result");
     }
