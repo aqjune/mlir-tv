@@ -22,7 +22,7 @@ public:
 
 class Memory {
 public:
-  static Memory * create(unsigned int NUM_BLOCKS, MemType type);
+  static Memory * create(unsigned int numBlocks, MemType type);
 
   virtual unsigned int getBIDBits() const = 0;
   virtual z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const = 0;
@@ -35,8 +35,8 @@ public:
 };
 
 class SingleArrayMemory: public Memory {
-  unsigned int BID_BITS;
-  unsigned int NUM_BLOCKS;
+  const unsigned int bits;
+  const unsigned int numBlocks;
   z3::expr arrayMaps; // bv::sort() -> (Index::sort() -> Float::sort())
   z3::expr writableMaps; // bv::sort() -> bool::sort()
   z3::expr numelemMaps; // bv::sort() -> Index::sort()
@@ -45,10 +45,10 @@ private:
   MemBlock getMemBlock(const z3::expr &bid) const;
 
 public:
-  SingleArrayMemory(unsigned int NUM_BLOCKS);
+  SingleArrayMemory(unsigned int numBlocks);
 
   unsigned int getBIDBits() const {
-    return BID_BITS;
+    return bits;
   }
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const {
     return getMemBlock(bid).numelem;
@@ -60,8 +60,8 @@ public:
 };
 
 class MultipleArrayMemory: public Memory {
-  unsigned int BID_BITS;
-  unsigned int NUM_BLOCKS;
+  const unsigned int bits;
+  const unsigned int numBlocks;
   std::vector<z3::expr> arrayMaps; //  vector<(Index::sort() -> Float::sort())>
   z3::expr writableMaps; // bv::sort() -> Bool::sort()
   z3::expr numelemMaps; // bv::sort() -> Index::sort
@@ -70,11 +70,12 @@ private:
   MemBlock getMemBlock(const z3::expr &bid) const;
 
 public:
-  MultipleArrayMemory(unsigned int NUM_BLOCKS);
+  MultipleArrayMemory(unsigned int numBlocks);
 
   unsigned int getBIDBits() const {
-    return BID_BITS;
+    return bits;
   }
+
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const {
     return getMemBlock(bid).numelem;
   }

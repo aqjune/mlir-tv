@@ -56,7 +56,9 @@ public:
   z3::expr isWellDefined;
   Memory *m;
 
-  State();
+  State(unsigned int numBlocks);
+
+  void wellDefined(const z3::expr &e) { isWellDefined = isWellDefined && e; };
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };

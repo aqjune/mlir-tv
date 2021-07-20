@@ -1,5 +1,6 @@
 #pragma once
 
+#include "smt.h"
 #include "z3++.h"
 #include "llvm/ADT/APFloat.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
@@ -8,8 +9,8 @@
 
 class Memory;
 
-z3::expr get1DSize(const std::vector<z3::expr> &dims);
-std::vector<z3::expr> getDims(const mlir::ShapedType &shapedTy);
+std::vector<z3::expr> getDims(
+    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize = false);
 
 class Index {
   z3::expr e;
@@ -120,6 +121,8 @@ public:
 
   Tensor matmul(const Tensor &b) const;
 
+  z3::expr sum() const;
+
   operator z3::expr() const { return arr; }
 
   // If tensorTy is unsupported, return nullopt
@@ -150,10 +153,9 @@ class MemRef {
 public:
   MemRef(Memory *m);
   MemRef(Memory *m,
-        const std::string &name,
-        const unsigned int BID_BITS,
-        const std::vector<z3::expr> &dims,
-        const z3::sort &elemty);
+    const std::string &name,
+    const std::vector<z3::expr> &dims,
+    const z3::sort &elemty);
 
   operator z3::expr() const { return bid && offset; }
 
@@ -162,7 +164,7 @@ public:
       getDimsAndElemTy(mlir::MemRefType memRefTy);
 
   std::pair<z3::expr, z3::expr> get(const std::vector<z3::expr> &indices) const;
-  z3::expr set(const std::vector<z3::expr> &indices, const z3::expr &value);
+  z3::expr set(const std::vector<z3::expr> &indices, const z3::expr &value) const;
   z3::expr isInBounds() const;
   z3::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }

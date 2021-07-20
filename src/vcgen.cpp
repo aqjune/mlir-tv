@@ -47,8 +47,8 @@ public:
 };
 
 static variant<string, State>
-createInputState(mlir::FuncOp fn) {
-  State s;
+createInputState(mlir::FuncOp fn, unsigned int num_memblocks) {
+  State s(num_memblocks);
   s.isWellDefined = ctx.bool_val(true);
 
   unsigned n = fn.getNumArguments();
@@ -70,7 +70,6 @@ createInputState(mlir::FuncOp fn) {
         RET_STR("Unsupported MemRef element type: " << arg.getType());
       // TODO : out of bounds pointer is allowed?
       s.regs.add(arg, MemRef(s.m, "arg" + to_string(arg.getArgNumber()),
-        s.m->getBIDBits(),
         dimsAndElemTy->first,
         dimsAndElemTy->second));
 
@@ -181,11 +180,6 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
-  // TODO: is tensor_collapse_shape with permutated indices valid?
-  //   ex: %2 = linalg.tensor_collapse_shape %1 [[0, 2], [1, 3]]
-  // Then, it isn't simply reinterpretation of the operand; it needs permutation
-  // of elements.
-
   Tensor t = st.regs.get<Tensor>(op.getOperand());
   st.regs.add(op.getResult(), t.reshape(getDims(op.getResultType())));
   return {};
@@ -193,13 +187,43 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
-  // TODO: is tensor_expand_shape with permutated indices valid?
-  //   ex: %2 = linalg.tensor_expand_shape %1 [[0], [2], [1, 3]]
-  // Then, it isn't simply reinterpretation of the operand; it needs permutation
-  // of elements.
-
   Tensor t = st.regs.get<Tensor>(op.getOperand());
-  st.regs.add(op.getResult(), t.reshape(getDims(op.getResultType())));
+
+  auto newdims = getDims(op.getResultType(), true);
+  auto indices = op.getReassociationIndices();
+
+  unsigned i = 0;
+  for (unsigned srci = 0; srci < indices.size(); ++srci) {
+    auto &ids = indices[srci];
+    auto orgdim = (z3::expr)t.getDim(srci);
+
+    // Allow one '?' only.
+    int unknown_dim = -1;
+    int64_t const_size = 1;
+    for (auto id: ids) {
+      if (op.getResultType().getDimSize(id) == -1) {
+        if (unknown_dim != -1)
+          return "has more than one unknown size in one group";
+        unknown_dim = i;
+      } else {
+        const_size *= op.getResultType().getDimSize(id);
+      }
+      ++i;
+    }
+
+    if (unknown_dim == -1)
+      // Nothing to do
+      continue;
+
+    if (const_size >= (1ull << Index::BITS))
+      return "tensor size is too large";
+
+    // If the original size isn't divisible, raise UB
+    st.wellDefined(z3::mod(orgdim, const_size) == 0);
+    newdims[unknown_dim] = z3::udiv(orgdim, const_size); 
+  }
+
+  st.regs.add(op.getResult(), t.reshape(newdims));
   return {};
 }
 
@@ -256,12 +280,9 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
     // TODO: how to do this well?
     return "unsupported type";
 
-  z3::expr wb = ctx.bool_val(true);
   for (unsigned i = 0; i < indices.size(); ++i)
     // TODO: revisit this; may not be axis-wise
-    wb = wb && z3::ult(indices[i], t.getDim(i));
-
-  st.isWellDefined = st.isWellDefined && wb;
+    st.wellDefined(z3::ult(indices[i], t.getDim(i)));
 
   return {};
 }
@@ -280,7 +301,7 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
   if (op.getType().isa<mlir::Float32Type>()) {
     auto [expr, success] = m.get(indices);
     st.regs.add(op, Float(expr));
-    st.isWellDefined = st.isWellDefined && success;
+    st.wellDefined(success);
   }
   else
     // TODO: how to do this well?
@@ -303,7 +324,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   if (op.getOperand(0).getType().isa<mlir::Float32Type>()) {
     auto val = st.regs.get<Float>(op.getOperand(0));
     auto success = m.set(indices, val);
-    st.isWellDefined = st.isWellDefined && success;
+    st.wellDefined(success);
   } else {
     // Currently we support only f32 memory type
     return "unsupported type";
@@ -316,7 +337,6 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
-
   // step1. MemBlock which contains source memref marks as not writable.
   auto &memory = *(st.m);
   memory.setWritable(m.getBID(), false);
@@ -551,7 +571,7 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
       return "unsupported affine expr";
 
     z3::expr inbounds = z3::ult(*ae, (z3::expr)viewSizes[idx]);
-    st.isWellDefined = st.isWellDefined && inbounds;
+    st.wellDefined(inbounds);
   }
 
   return {};
@@ -611,6 +631,22 @@ static optional<string> initInputStateForLoopBody(
   return {};
 }
 
+// map := (i, j, k) -> (j, k, i)
+// input := [a, b, c]
+// output := [b, c, a]
+static vector<z3::expr> doMap(
+    const vector<z3::expr> &input, const mlir::AffineMap &map) {
+  if (map.isIdentity())
+    return input;
+
+  vector<z3::expr> output;
+  for (unsigned i = 0; i < map.getNumResults(); ++i) {
+    auto ade = map.getResult(i).dyn_cast<mlir::AffineDimExpr>();
+    output.push_back(input[ade.getPosition()]);
+  }
+  return output;
+}
+
 static optional<string> encodeParallelLoopBodyAndOutput(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
     const mlir::TensorType &outputType, Tensor &t_res) {
@@ -632,20 +668,11 @@ static optional<string> encodeParallelLoopBodyAndOutput(
     RET_STR("has an unsupported operation" << op);
   }
 
-  const auto &inductionVars = newst.linalgGenericScopes.top().indVars;
-  vector<z3::expr> outputDimVars;
-
-  if (!outputMap.isIdentity()) {
-    for (unsigned i = 0; i < outputMap.getNumResults(); ++i) {
-      auto ade = outputMap.getResult(i).dyn_cast<mlir::AffineDimExpr>();
-      outputDimVars.push_back(inductionVars[ade.getPosition()]);
-    }
-  } else {
-    outputDimVars = move(inductionVars);
-  }
+  vector<z3::expr> outputIndVars = doMap(
+      newst.linalgGenericScopes.top().indVars, outputMap);
 
   auto tensorSz = getDims(outputType);
-  t_res = Tensor::mkLambda(move(tensorSz), move(outputDimVars),
+  t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars),
       newst.regs.getZ3Expr(yieldedValue));
 
   return {};
@@ -672,6 +699,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   //   %sum = addf %v, %arg_out
   //   yield %sum
   auto lastarg = block.getArgument(block.getNumArguments() - 1);
+  assert(!newst.regs.contains(lastarg));
+
   auto p = m_Op<mlir::linalg::YieldOp>(
       m_Op<mlir::AddFOp>(m_Any(), m_Val(lastarg)));
   if (!p.match(&ops.back()))
@@ -693,7 +722,12 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   auto tensorSz = getDims(outputType);
   auto linalgInfo = newst.linalgGenericScopes.top();
 
-  // Is it output[0][0] = ...?
+  // Represent %v as an element of a tensor.
+  Tensor t_v = Tensor::mkLambda(
+      vector(linalgInfo.indVarUpperBounds),
+      vector(linalgInfo.indVars),
+      newst.regs.getZ3Expr(sumvar));
+
   if (llvm::all_of(outputMap.getResults(), [](const mlir::AffineExpr &expr) {
     auto ac = expr.dyn_cast<mlir::AffineConstantExpr>();
     return ac && ac.getValue() == 0;
@@ -702,17 +736,47 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // out: (i, j) -> (0)
     // =>
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
-    Index dummyIdx("dummyidx", true);
-    Tensor in_tensor = Tensor::mkLambda(
-        vector(linalgInfo.indVarUpperBounds),
-        vector(linalgInfo.indVars),
-        newst.regs.getZ3Expr(sumvar));
-    t_res = Tensor(
-        aop::sum(in_tensor.asArray(), in_tensor.get1DSize()),
-        tensorSz);
+
+    // Define this as a splat tensor (num. elems is 1 anyway)
+    t_res = Tensor(t_v.sum(), tensorSz);
     return {};
   } else {
-    return errmsg;
+    // in:  (i, j) -> (i, j)
+    // out: (i, j) -> (i)
+    // =>
+    // t_res[i] = sum(\j. t_input[i][j] , j < m)
+
+    // Gather affine vars that are unused in the output (e.g. j) first.
+    vector<bool> isInputIdxUsed(outputMap.getNumInputs());
+    for (unsigned j = 0; j < outputMap.getNumResults(); ++j) {
+      auto expr = outputMap.getResult(j);
+
+      if (auto ade = expr.dyn_cast<mlir::AffineDimExpr>()) {
+        isInputIdxUsed[ade.getPosition()] = true;
+      } else {
+        // Output map has an unknown form
+        return errmsg;
+      }
+    }
+
+    vector<z3::expr> boundsForRes;
+    vector<z3::expr> indVarsForRes;
+    for (unsigned j = 0; j < isInputIdxUsed.size(); ++j) {
+      if (!isInputIdxUsed[j]) {
+        boundsForRes.push_back(linalgInfo.indVarUpperBounds[j]);
+        indVarsForRes.push_back(linalgInfo.indVars[j]);
+      }
+    }
+
+    auto t_sum = Tensor::mkLambda(
+          vector(boundsForRes),
+          vector(indVarsForRes),
+          t_v.get(linalgInfo.indVars))
+        .sum();
+
+    auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
+    t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars), t_sum);
+    return {};
   }
 }
 
@@ -830,7 +894,7 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
 
 static void printCounterEx(
     z3::solver &solver, const vector<z3::expr> &params, mlir::FuncOp src,
-    State &st_src, State &st_src_in, State &st_tgt, State &st_tgt_in) {
+    State &st_src, State &st_tgt) {
   auto m = solver.get_model();
   auto or_omit = [&](const ValueTy &val) -> string {
     ValueTy evaluatedVal;
@@ -846,37 +910,69 @@ static void printCounterEx(
     return s;
   };
 
+  auto or_omit_z3 = [&](const z3::expr &e) -> string {
+    string s;
+    llvm::raw_string_ostream rso(s);
+    rso << e;
+    rso.flush();
+
+    if (s.size() > 500)
+      return "(omitted)";
+    return s;
+  };
+
   llvm::outs() << "<Inputs>\n";
 
   unsigned n = src.getNumArguments();
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
     llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
-                 << or_omit(st_src_in.regs.findOrCrash(argsrc)) << "\n";
+                 << or_omit(st_src.regs.findOrCrash(argsrc)) << "\n";
   }
 
   llvm::outs() << "\n<Source's variables>\n";
   for (auto &[v, e]: st_src.regs) {
-    if (st_src_in.regs.contains(v))
+    if (st_src.regs.contains(v))
       continue;
     llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
   }
 
   llvm::outs() << "\n<Target's variables>\n";
   for (auto &[v, e]: st_tgt.regs) {
-    if (st_tgt_in.regs.contains(v))
+    if (st_tgt.regs.contains(v))
       continue;
     llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
   }
 
   if (st_src.retValue) {
-    llvm::outs() << "\n<Return values>\n";
-    for (auto &param: params)
-      llvm::outs() << "\tIndex: " << solver.get_model().eval(param) << "\n";
-    llvm::outs() << "\tSrc: " << or_omit(*st_src.retValue)
-        << "\n"
-        << "\tTgt: " << or_omit(*st_tgt.retValue)
-        << "\n";
+    if (src.getNumResults() == 1 &&
+        src.getType().getResult(0).isa<mlir::TensorType>()) {
+      llvm::outs() << "\n<Return tensor>\n";
+
+      assert(params.size() == 1);
+      auto model = solver.get_model();
+      auto param = model.eval(params[0]);
+      auto t_src = get<Tensor>(*st_src.retValue).eval(model);
+      auto t_tgt = get<Tensor>(*st_tgt.retValue).eval(model);
+
+      llvm::outs() << "Dimensions (src): " << t_src.getDims() << '\n';
+      llvm::outs() << "Dimensions (tgt): " << t_tgt.getDims() << '\n';
+      auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
+      llvm::outs() << "Index: " << indices << '\n';
+      llvm::outs() << "Element (src): " << or_omit_z3(t_src.get(indices))
+                   << '\n';
+      llvm::outs() << "Element (tgt): " << or_omit_z3(t_tgt.get(indices))
+                   << '\n';
+
+    } else {
+      llvm::outs() << "\n<Return values>\n";
+      for (auto &param: params)
+        llvm::outs() << "\tIndex: " << solver.get_model().eval(param) << "\n";
+      llvm::outs() << "\tSrc: " << or_omit(*st_src.retValue)
+          << "\n"
+          << "\tTgt: " << or_omit(*st_tgt.retValue)
+          << "\n";
+    }
   }
 
 #if FALSE
@@ -907,7 +1003,9 @@ static pair<z3::check_result, int64_t> solve(
 }
 
 static Results verifyFunction(
-    mlir::FuncOp src, mlir::FuncOp tgt, const string &dump_smt_to) {
+    mlir::FuncOp src, mlir::FuncOp tgt,
+    const string &dump_smt_to,
+    const unsigned int num_memblocks) {
   llvm::outs() << "Function " << src.getName() << "\n\n";
   assert(src.getNumArguments() == tgt.getNumArguments());
 
@@ -919,17 +1017,15 @@ static Results verifyFunction(
   // TODO: do this after static analysis
   aop::setAbstractionLevel(aop::FULLY_ABS);
 
-  auto st_src_or_err = createInputState(src);
+  auto st_src_or_err = createInputState(src, num_memblocks);
   if (holds_alternative<string>(st_src_or_err))
     raiseUnsupported(get<string>(st_src_or_err));
   auto st_src = get<State>(st_src_or_err);
-  auto st_src_in = st_src; // for printing counter ex.
 
-  auto st_tgt_or_err = createInputState(tgt);
+  auto st_tgt_or_err = createInputState(tgt, num_memblocks);
   if (holds_alternative<string>(st_tgt_or_err))
     raiseUnsupported(get<string>(st_tgt_or_err));
   auto st_tgt = get<State>(st_tgt_or_err);
-  auto st_tgt_in = st_tgt; // for printing counter ex.
 
   llvm::outs() << "<src>\n";
   if (auto msg = encode(st_src, src))
@@ -952,7 +1048,7 @@ static Results verifyFunction(
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res == z3::sat) {
       llvm::outs() << "== Result: " << msg << "\n";
-      printCounterEx(s, params, src, st_src, st_src_in, st_tgt, st_tgt_in);
+      printCounterEx(s, params, src, st_src, st_tgt);
     } else {
       llvm_unreachable("unexpected result");
     }
@@ -1007,7 +1103,8 @@ static Results verifyFunction(
 }
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
-            const string &dump_smt_to) {
+            const string &dump_smt_to,
+            const unsigned int num_memblocks) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -1027,7 +1124,7 @@ Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
       continue;
     }
     // TODO: check fn signature
-    verificationResult.merge(verifyFunction(srcfn, itr->second, dump_smt_to));
+    verificationResult.merge(verifyFunction(srcfn, itr->second, dump_smt_to, num_memblocks));
   }
 
   return verificationResult;

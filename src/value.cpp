@@ -18,32 +18,6 @@ static z3::expr to1DIdx(
   return idx;
 }
 
-static vector<z3::expr> from1DIdx(
-    z3::expr idx1d,
-    const vector<z3::expr> &dims) {
-  assert(dims.size() > 0);
-  vector<z3::expr> idxs;
-
-  for (size_t ii = dims.size(); ii > 0; --ii) {
-    size_t i = ii - 1;
-    // TODO: migrate constant foldings & simplifications
-    auto a = z3::urem(idx1d, dims[i]), b = z3::udiv(idx1d, dims[i]);
-    idxs.emplace_back(a);
-    idx1d = b;
-  }
-
-  reverse(idxs.begin(), idxs.end());
-  return idxs;
-}
-
-z3::expr get1DSize(const vector<z3::expr> &dims) {
-  z3::expr szaccml = Index::one();
-  for (auto &d: dims)
-    szaccml = szaccml * d;
-  szaccml = szaccml.simplify();
-  return szaccml;
-}
-
 static z3::expr fitsInDims(
     const vector<z3::expr> &idxs,
     const vector<z3::expr> &sizes) {
@@ -62,15 +36,8 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
   return ev;
 }
 
-static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
-  vector<z3::expr> v;
-  v.reserve(exprs.size());
-  for (auto &e: exprs)
-    v.push_back(std::move(e.simplify()));
-  return v;
-}
-
-vector<z3::expr> getDims(const mlir::ShapedType &shapedTy) {
+vector<z3::expr> getDims(
+    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize) {
   vector<z3::expr> dims;
   //static int dim_var = 0;
 
@@ -83,11 +50,14 @@ vector<z3::expr> getDims(const mlir::ShapedType &shapedTy) {
   dims.reserve(rank);
   for (auto i = 0; i < rank; ++i) {
     uint64_t sz = shapedTy.getDimSize(i);
-    if (sz == (uint64_t)-1ull)
-      // TODO: this requires encoding of well-formedness of input tensors.
-      // dims.emplace_back(Index("dim" + to_string(dim_var++)));
-      dims.push_back(Index(100));
-    else
+    if (sz == (uint64_t)-1ull) {
+      if (freshVarForUnknownSize) {
+        dims.emplace_back(Index("dim", true));
+      } else {
+        // TODO: raise assert failure at some point.
+        dims.push_back(Index(100));
+      }
+    } else
       dims.push_back(Index(sz));
   }
 
@@ -317,6 +287,10 @@ Tensor Tensor::matmul(const Tensor &b) const {
       aop::dot(a_row, bt_row, dims[1]));
 }
 
+z3::expr Tensor::sum() const {
+  return aop::sum(arr, get1DSize());
+}
+
 pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
   assert(arr.get_sort().is_array());
   assert(src.arr.get_sort().is_array());
@@ -427,11 +401,10 @@ MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx) {}
 
 MemRef::MemRef(Memory *m,
   const std::string &name,
-  const unsigned int BID_BITS,
   const std::vector<z3::expr> &dims,
   const z3::sort &elemty):
     m(m),
-    bid(ctx.bv_const((name + "_bid").c_str(), BID_BITS)),
+    bid(ctx.bv_const((name + "_bid").c_str(), m->getBIDBits())),
     offset(Index((name + "_offset").c_str())),
     dims(dims) {}
 
@@ -462,7 +435,7 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
   }
 }
 
-z3::expr MemRef::set(const std::vector<z3::expr> &indices, const z3::expr &value) {
+z3::expr MemRef::set(const std::vector<z3::expr> &indices, const z3::expr &value) const {
   z3::expr idx = to1DIdx(indices, dims);
   return m->store(value, bid, offset + idx);
 }
