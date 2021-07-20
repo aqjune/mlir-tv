@@ -98,7 +98,14 @@ Index::Index(): e(ctx) {}
 
 Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {}
 
-Index::Index(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {}
+Index::Index(const std::string &name, bool freshvar):
+    e(ctx) {
+  static int count = 0;
+  string name0 = name;
+  if (freshvar)
+    name0 = name0 + "." + to_string(count);
+  e = ctx.bv_const(name0.c_str(), BITS);
+}
 
 Index::Index(const z3::expr &e): e(e) {}
 
@@ -231,7 +238,7 @@ Tensor Tensor::affine(
   newm.arr = z3::lambda(
       idxvar,
       z3::ite(
-        z3::ult(idxvar, get1DSize(newsizes)),
+        z3::ult(idxvar, ::get1DSize(newsizes)),
         get(srcidxs),
         aop::mkZeroElemFromArr(arr)
       ));
@@ -318,7 +325,7 @@ pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
   z3::expr i = Index("i");
   vector<z3::expr> params = {i};
   return {z3::implies(
-      z3::ult(i, get1DSize(dims)),
+      z3::ult(i, ::get1DSize(dims)),
       z3::select(arr, i) == z3::select(src.arr, i)),
     params};
 }
@@ -411,7 +418,7 @@ z3::expr Tensor::to1DArrayWithOfs(
   return z3::lambda(
       idxvar,
       z3::ite(
-        z3::ult(idxvar, get1DSize(sizes)),
+        z3::ult(idxvar, ::get1DSize(sizes)),
         get(absidxs),
         aop::mkZeroElemFromArr(arr)));
 }
