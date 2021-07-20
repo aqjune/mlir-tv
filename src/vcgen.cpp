@@ -186,7 +186,42 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
-  st.regs.add(op.getResult(), t.reshape(getDims(op.getResultType())));
+
+  auto newdims = getDims(op.getResultType(), true);
+  auto indices = op.getReassociationIndices();
+
+  unsigned i = 0;
+  for (unsigned srci = 0; srci < indices.size(); ++srci) {
+    auto &ids = indices[srci];
+    auto orgdim = (z3::expr)t.getDim(srci);
+
+    // Allow one '?' only.
+    int unknown_dim = -1;
+    int64_t const_size = 1;
+    for (auto id: ids) {
+      if (op.getResultType().getDimSize(id) == -1) {
+        if (unknown_dim != -1)
+          return "has more than one unknown size in one group";
+        unknown_dim = i;
+      } else {
+        const_size *= op.getResultType().getDimSize(id);
+      }
+      ++i;
+    }
+
+    if (unknown_dim == -1)
+      // Nothing to do
+      continue;
+
+    if (const_size >= (1ull << Index::BITS))
+      return "tensor size is too large";
+
+    // If the original size isn't divisible, raise UB
+    st.wellDefined(z3::mod(orgdim, const_size) == 0);
+    newdims[unknown_dim] = z3::udiv(orgdim, const_size); 
+  }
+
+  st.regs.add(op.getResult(), t.reshape(newdims));
   return {};
 }
 

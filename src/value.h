@@ -9,7 +9,8 @@
 class Memory;
 
 z3::expr get1DSize(const std::vector<z3::expr> &dims);
-std::vector<z3::expr> getDims(const mlir::ShapedType &shapedTy);
+std::vector<z3::expr> getDims(
+    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize = false);
 
 class Index {
   z3::expr e;

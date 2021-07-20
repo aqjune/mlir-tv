@@ -70,7 +70,8 @@ static vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
   return v;
 }
 
-vector<z3::expr> getDims(const mlir::ShapedType &shapedTy) {
+vector<z3::expr> getDims(
+    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize) {
   vector<z3::expr> dims;
   //static int dim_var = 0;
 
@@ -83,11 +84,14 @@ vector<z3::expr> getDims(const mlir::ShapedType &shapedTy) {
   dims.reserve(rank);
   for (auto i = 0; i < rank; ++i) {
     uint64_t sz = shapedTy.getDimSize(i);
-    if (sz == (uint64_t)-1ull)
-      // TODO: this requires encoding of well-formedness of input tensors.
-      // dims.emplace_back(Index("dim" + to_string(dim_var++)));
-      dims.push_back(Index(100));
-    else
+    if (sz == (uint64_t)-1ull) {
+      if (freshVarForUnknownSize) {
+        dims.emplace_back(Index("dim", true));
+      } else {
+        // TODO: raise assert failure at some point.
+        dims.push_back(Index(100));
+      }
+    } else
       dims.push_back(Index(sz));
   }
 
