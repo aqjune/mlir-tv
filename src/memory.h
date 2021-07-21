@@ -65,14 +65,11 @@ class MultipleArrayMemory: public Memory {
   z3::expr writableMaps; // bv(bits)::sort() -> Bool::sort()
   z3::expr numelemMaps; // bv(bits)::sort() -> Index::sort
 
-private:
-  MemBlock getMemBlock(const z3::expr &bid) const;
-
 public:
   MultipleArrayMemory(unsigned int numBlocks);
 
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const {
-    return getMemBlock(bid).numelem;
+    return z3::select(numelemMaps, bid);
   }
 
   void setWritable(const z3::expr &bid, bool writable);
