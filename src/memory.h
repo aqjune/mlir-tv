@@ -19,9 +19,9 @@ class Memory {
   const unsigned int bits;
   const unsigned int numBlocks;
 
-  z3::expr arrayMaps; // bv(2)::sort() -> (Index::sort() -> Float::sort())
-  z3::expr writableMaps; // bv(2)::sort() -> bool::sort()
-  z3::expr numelemMaps; // bv(2)::sort() -> Index::sort()
+  z3::expr arrayMaps; // bv(bits)::sort() -> (Index::sort() -> Float::sort())
+  z3::expr writableMaps; // bv(bits)::sort() -> bool::sort()
+  z3::expr numelemMaps; // bv(bits)::sort() -> Index::sort()
 
 private:
   MemBlock getMemBlock(const z3::expr &bid) const;

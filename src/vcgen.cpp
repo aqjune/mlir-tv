@@ -291,15 +291,13 @@ template<>
 optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
-
-  Memory &memory = *(st.m);
   auto m = st.regs.get<MemRef>(op.getOperand(0));
   vector<z3::expr> indices;
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
   if (op.getType().isa<mlir::Float32Type>()) {
-    auto [expr, success] = m.get(indices);
+    auto [expr, success] = m.load(indices);
     st.regs.add(op, Float(expr));
     st.wellDefined(success);
   }
@@ -314,8 +312,6 @@ template<>
 optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
-
-  Memory &memory = *(st.m);
   auto m = st.regs.get<MemRef>(op.getOperand(1));
   vector<z3::expr> indices;
   for (auto idx0: op.indices())
@@ -323,7 +319,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
 
   if (op.getOperand(0).getType().isa<mlir::Float32Type>()) {
     auto val = st.regs.get<Float>(op.getOperand(0));
-    auto success = m.set(indices, val);
+    auto success = m.store(val, indices);
     st.wellDefined(success);
   } else {
     // Currently we support only f32 memory type
@@ -348,12 +344,12 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   for (int i = 0; i < dims.size(); i ++) {
     idxs.push_back(Index("Index_" + std::to_string(i)));
   }
-  auto [expr, success] = m.get(idxs);
+  auto [expr, success] = m.load(idxs);
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
   // step3. add result tensor to register
   st.regs.add(op.getResult(), t_res);
-  st.isWellDefined = st.isWellDefined && m.isInBounds();
+  st.wellDefined(m.isInBounds());
 
   return {};
 }
