@@ -998,12 +998,12 @@ static void printCounterEx(
 
     } else {
       llvm::outs() << "\n<Returned value>\n";
+
+      auto model = solver.get_model();
       for (auto &param: params)
-        llvm::outs() << "\tIndex: " << solver.get_model().eval(param) << "\n";
-      llvm::outs() << "\tSrc: " << *st_src.retValue
-          << "\n"
-          << "\tTgt: " << *st_tgt.retValue
-          << "\n";
+        llvm::outs() << "\tIndex: " << model.eval(param) << "\n";
+      visit([&](auto &&ret) { llvm::outs() << "\tSrc: " << ret.eval(model) << "\n"; }, *st_src.retValue);
+      visit([&](auto &&ret) { llvm::outs() << "\tTgt: " << ret.eval(model) << "\n"; }, *st_tgt.retValue);
     }
   }
 
