@@ -47,8 +47,8 @@ public:
 };
 
 static variant<string, State>
-createInputState(mlir::FuncOp fn, const unsigned int numBlocks, const MemType type) {
-  State s(numBlocks, type);
+createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding) {
+  State s(numBlocks, encoding);
   s.isWellDefined = ctx.bool_val(true);
 
   unsigned n = fn.getNumArguments();
@@ -1037,7 +1037,7 @@ static Results verifyFunction(
     mlir::FuncOp src, mlir::FuncOp tgt,
     const string &dump_smt_to,
     const unsigned int numBlocks,
-    const MemType type) {
+    const MemEncoding type) {
   llvm::outs() << "Function " << src.getName() << "\n\n";
   assert(src.getNumArguments() == tgt.getNumArguments());
 
@@ -1137,8 +1137,8 @@ static Results verifyFunction(
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
             const string &dump_smt_to,
-            const unsigned int num_memblocks,
-            const MemType type) {
+            unsigned int numBlocks,
+            MemEncoding encoding) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -1158,9 +1158,7 @@ Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
       continue;
     }
     // TODO: check fn signature
-    verificationResult.merge(
-      verifyFunction(srcfn, itr->second, dump_smt_to, num_memblocks, type)
-    );
+    verificationResult.merge(verifyFunction(srcfn, itr->second, dump_smt_to, numBlocks, encoding));
   }
 
   return verificationResult;

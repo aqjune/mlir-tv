@@ -72,6 +72,6 @@ State::LinalgGenericScope::LinalgGenericScope(
   }
 }
 
-State::State(const unsigned int numBlocks, const MemType type):  isWellDefined(ctx) {
-  m = Memory::create(numBlocks, type);
+State::State(unsigned int numBlocks, MemEncoding encoding):  isWellDefined(ctx) {
+  m = Memory::create(numBlocks, encoding);
 }

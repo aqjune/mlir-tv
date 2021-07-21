@@ -33,5 +33,5 @@ public:
 
 Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const std::string &dump_smt_to,
-    const unsigned int numBlocks,
-    const MemType type);
+    unsigned int numBlocks,
+    MemEncoding encoding);

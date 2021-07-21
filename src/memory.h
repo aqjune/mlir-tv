@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <vector>
 
-enum MemType {
+enum MemEncoding {
   SINGLE, MULTIPLE
 };
 
@@ -22,7 +22,7 @@ public:
 
 class Memory {
 public:
-  static Memory * create(unsigned int numBlocks, MemType type);
+  static Memory * create(unsigned int numBlocks, MemEncoding encoding);
 
   virtual unsigned int getBIDBits() const = 0;
   virtual z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const = 0;

@@ -11,11 +11,11 @@ static unsigned int ulog2(unsigned int numBlocks) {
   return (unsigned int) ceil(log2(std::max(numBlocks, (unsigned int) 2)));
 }
 
-Memory* Memory::create(unsigned int numBlocks, MemType type) {
-  switch(type) {
-    case MemType::SINGLE:
+Memory* Memory::create(unsigned int numBlocks, MemEncoding encoding) {
+  switch(encoding) {
+    case MemEncoding::SINGLE:
       return new SingleArrayMemory(numBlocks);
-    case MemType::MULTIPLE:
+    case MemEncoding::MULTIPLE:
       return new MultipleArrayMemory(numBlocks);
   }
 }
