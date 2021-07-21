@@ -1036,8 +1036,8 @@ static pair<z3::check_result, int64_t> solve(
 static Results verifyFunction(
     mlir::FuncOp src, mlir::FuncOp tgt,
     const string &dump_smt_to,
-    const unsigned int numBlocks,
-    const MemEncoding type) {
+    unsigned int numBlocks,
+    MemEncoding encoding) {
   llvm::outs() << "Function " << src.getName() << "\n\n";
   assert(src.getNumArguments() == tgt.getNumArguments());
 
@@ -1049,12 +1049,12 @@ static Results verifyFunction(
   // TODO: do this after static analysis
   aop::setAbstractionLevel(aop::FULLY_ABS);
 
-  auto st_src_or_err = createInputState(src, numBlocks, type);
+  auto st_src_or_err = createInputState(src, numBlocks, encoding);
   if (holds_alternative<string>(st_src_or_err))
     raiseUnsupported(get<string>(st_src_or_err));
   auto st_src = get<State>(st_src_or_err);
 
-  auto st_tgt_or_err = createInputState(tgt, numBlocks, type);
+  auto st_tgt_or_err = createInputState(tgt, numBlocks, encoding);
   if (holds_alternative<string>(st_tgt_or_err))
     raiseUnsupported(get<string>(st_tgt_or_err));
   auto st_tgt = get<State>(st_tgt_or_err);
