@@ -94,7 +94,7 @@ class MLIRTest(TestFormat):
     __verify_regex = re.compile(r"^// ?VERIFY$")
     __verify_incorrect_regex = re.compile(r"^// ?VERIFY-INCORRECT$")
     __unsupported_regex = re.compile(r"^// ?UNSUPPORTED$")
-    __expect_regex = re.compile(r"^// ?EXPECT \"(.*)\"$")
+    __expect_regex = re.compile(r"^// ?EXPECT ?: ?\"(.*)\"$")
 
     def __init__(self, dir_tv: str, pass_name: str) -> None:
         self.__dir_tv: str = dir_tv
@@ -141,8 +141,8 @@ class MLIRTest(TestFormat):
                     break
 
         if test_info == TestKeyword.NOTEST:
-            # file does not include test keyword
-            return lit.Test.SKIPPED, ""
+            # file does not include valid test keyword
+            return lit.Test.UNRESOLVED, ""
         elif test_info == TestKeyword.UNSUPPORTED:
             # file includes dialect that is yet to be implemented in iree-tv
             return lit.Test.UNSUPPORTED, ""
