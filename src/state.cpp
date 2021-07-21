@@ -72,4 +72,6 @@ State::LinalgGenericScope::LinalgGenericScope(
   }
 }
 
-State::State(unsigned int numBlocks): m(numBlocks), isWellDefined(ctx) {}
+State::State(unsigned int numBlocks):  isWellDefined(ctx) {
+  m = new Memory(numBlocks);
+}
