@@ -22,10 +22,6 @@ link_libraries(
 
 # Add each test file as executable
 add_executable(
-  smt_test
-  smt_test.cpp
-)
-add_executable(
   state_test
   state_test.cpp
   ../src/state.cpp
@@ -42,14 +38,8 @@ add_executable(
   ../src/abstractops.cpp
   ../src/memory.cpp
 )
-add_executable(
-  vcgen_test
-  vcgen_test.cpp
-)
-
 include(GoogleTest)
 # Add each executable to gtest
-gtest_discover_tests(smt_test)
+
 gtest_discover_tests(state_test)
 gtest_discover_tests(value_test)
-gtest_discover_tests(vcgen_test)

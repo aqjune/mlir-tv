@@ -11,55 +11,54 @@ TEST(UnitIndexTest, Static) {
   EXPECT_Z3_EQ(ZE_INDEX::zero(), ZE_INDEX(0));
 }
 
-TEST(UnitIndexTest, ConstantComparison) {
-  Index zero(0);
-  Index answer(42);
-  Index zero_2(0);
+TEST(UnitIndexTest, Comparison) {
+  {
+    Index zero(0);
+    Index answer(42);
+    Index zero_2(0);
 
-  EXPECT_Z3_EQ((ZE)zero, (ZE)zero_2);
-  EXPECT_Z3_NE((ZE)zero, (ZE)answer);
-}
+    EXPECT_Z3_EQ((ZE)zero, (ZE)zero_2);
+    EXPECT_Z3_NE((ZE)zero, (ZE)answer);
+  }
 
-TEST(UnitIndexTest, VariableComparison) {
-  Index named("hello");
-  Index unnamed("anonymous");
-  Index named_2("hello");
-  Index answer(42);
+  {
+    Index named("hello");
+    Index unnamed("anonymous");
+    Index named_2("hello");
+    Index answer(42);
 
-  EXPECT_Z3_EQ((ZE)named, (ZE)named_2);
-  EXPECT_Z3_NE((ZE)named, (ZE)unnamed);
-  EXPECT_Z3_NE((ZE)named, (ZE)answer);
+    EXPECT_Z3_EQ((ZE)named, (ZE)named_2);
+    EXPECT_Z3_NE((ZE)named, (ZE)unnamed);
+    EXPECT_Z3_NE((ZE)named, (ZE)answer);
+  }
 }
 
 // TODO: test for Index.eval(z3::model)
 // TEST(UnitIndexTest, Eval) {}
 
+TEST(UnitFloatTest, Comparison) {
+  {
+    Float zero(0.0);
+    Float one(1.0);
+    Float answer(42.0);
+    Float zero_2(0.0);
+    Float answer_2(llvm::APFloat(42.0));
 
-TEST(UnitFloatTest, Default) {
-  EXPECT_THROW((ZE_INDEX()).get_sort(), z3::exception);
-}
+    EXPECT_Z3_EQ((ZE)zero, (ZE)zero_2);
+    EXPECT_Z3_NE((ZE)one, (ZE)answer);
+    EXPECT_Z3_EQ((ZE)answer, (ZE)answer_2);
+  }
 
-TEST(UnitFloatTest, ConstantComparison) {
-  Float zero(0.0);
-  Float one(1.0);
-  Float answer(42.0);
-  Float zero_2(0.0);
-  Float answer_2(llvm::APFloat(42.0));
+  {
+    Float named("hello");
+    Float unnamed("anonymous");
+    Float named_2("hello");
+    Float answer(42.0);
 
-  EXPECT_Z3_EQ((ZE)zero, (ZE)zero_2);
-  EXPECT_Z3_NE((ZE)one, (ZE)answer);
-  EXPECT_Z3_EQ((ZE)answer, (ZE)answer_2);
-}
-
-TEST(UnitFloatTest, VariableComparison) {
-  Float named("hello");
-  Float unnamed("anonymous");
-  Float named_2("hello");
-  Float answer(42.0);
-
-  EXPECT_Z3_EQ((ZE)named, (ZE)named_2);
-  EXPECT_Z3_NE((ZE)named, (ZE)unnamed);
-  EXPECT_Z3_NE((ZE)named, (ZE)answer);
+    EXPECT_Z3_EQ((ZE)named, (ZE)named_2);
+    EXPECT_Z3_NE((ZE)named, (ZE)unnamed);
+    EXPECT_Z3_NE((ZE)named, (ZE)answer);
+  }
 }
 
 
@@ -77,30 +76,32 @@ TEST(UnitTensorTest, Default) {
   EXPECT_THROW(((ZE)Tensor()).get_sort(), z3::exception);
 }
 
-TEST(UnitTensorTest, Splat1D) {
-  Integer elem("elem", 32);
-  Integer not_elem("eeee", 32);
+TEST(UnitTensorTest, Splat) {
+  {
+    Integer elem("elem", 32);
+    Integer not_elem("eeee", 32);
 
-  Tensor splat((ZE)elem, std::vector<ZE>{ZE_INDEX(42)});
-  EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(0)}).simplify());
-  EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(3)}).simplify());
-  EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(41)}).simplify());
+    Tensor splat((ZE)elem, std::vector<ZE>{ZE_INDEX(42)});
+    EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(0)}).simplify());
+    EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(3)}).simplify());
+    EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(41)}).simplify());
 
-  EXPECT_Z3_NE((ZE)not_elem, splat.get(std::vector<ZE>{ZE_INDEX(2)}).simplify());
-  EXPECT_Z3_NE((ZE)not_elem, splat.get(std::vector<ZE>{ZE_INDEX(22)}).simplify());
-}
+    EXPECT_Z3_NE((ZE)not_elem, splat.get(std::vector<ZE>{ZE_INDEX(2)}).simplify());
+    EXPECT_Z3_NE((ZE)not_elem, splat.get(std::vector<ZE>{ZE_INDEX(22)}).simplify());
+  }
 
-TEST(UnitTensorTest, Splat3D) {
-  Integer elem("elem", 32);
-  Integer not_elem("eeee", 32);
+  {
+    Integer elem("elem", 32);
+    Integer not_elem("eeee", 32);
 
-  Tensor splat((ZE)elem, std::vector<ZE>{ZE_INDEX(3), ZE_INDEX(4), ZE_INDEX(5)});
-  EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(0), ZE_INDEX(0), ZE_INDEX(0)}).simplify());
-  EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(1), ZE_INDEX(2), ZE_INDEX(3)}).simplify());
-  EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(2), ZE_INDEX(2), ZE_INDEX(2)}).simplify());
+    Tensor splat((ZE)elem, std::vector<ZE>{ZE_INDEX(3), ZE_INDEX(4), ZE_INDEX(5)});
+    EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(0), ZE_INDEX(0), ZE_INDEX(0)}).simplify());
+    EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(1), ZE_INDEX(2), ZE_INDEX(3)}).simplify());
+    EXPECT_Z3_EQ((ZE)elem, splat.get(std::vector<ZE>{ZE_INDEX(2), ZE_INDEX(2), ZE_INDEX(2)}).simplify());
 
-  EXPECT_Z3_NE((ZE)not_elem, splat.get(std::vector<ZE>{ZE_INDEX(0), ZE_INDEX(1), ZE_INDEX(2)}).simplify());
-  EXPECT_Z3_NE((ZE)not_elem, splat.get(std::vector<ZE>{ZE_INDEX(1), ZE_INDEX(1), ZE_INDEX(1)}).simplify());
+    EXPECT_Z3_NE((ZE)not_elem, splat.get(std::vector<ZE>{ZE_INDEX(0), ZE_INDEX(1), ZE_INDEX(2)}).simplify());
+    EXPECT_Z3_NE((ZE)not_elem, splat.get(std::vector<ZE>{ZE_INDEX(1), ZE_INDEX(1), ZE_INDEX(1)}).simplify());
+  }
 }
 
 TEST(UnitTensorTest, Elem1D) {
@@ -116,24 +117,26 @@ TEST(UnitTensorTest, Elem1D) {
   EXPECT_Z3_EQ((ZE)idx4, tensor.get(std::vector<ZE>{ZE_INDEX(4)}).simplify());
 }
 
-TEST(UnitTensorTest, Named1D) {
-  Tensor named_int("named", std::vector<ZE>{ZE_INDEX(42)}, Integer::sort(32));
-  EXPECT_Z3_EQ(Integer::sort(32), named_int.get(std::vector<ZE>{ZE_INDEX(0)}).simplify().get_sort());
-  EXPECT_Z3_NE(Float::sort(), named_int.get(std::vector<ZE>{ZE_INDEX(0)}).simplify().get_sort());
+TEST(UnitTensorTest, Named) {
+  {
+    Tensor named_int("named", std::vector<ZE>{ZE_INDEX(42)}, Integer::sort(32));
+    EXPECT_Z3_EQ(Integer::sort(32), named_int.get(std::vector<ZE>{ZE_INDEX(0)}).simplify().get_sort());
+    EXPECT_Z3_NE(Float::sort(), named_int.get(std::vector<ZE>{ZE_INDEX(0)}).simplify().get_sort());
 
-  Tensor named_float("named", std::vector<ZE>{ZE_INDEX(42)}, Float::sort());
-  EXPECT_Z3_EQ(Float::sort(), named_float.get(std::vector<ZE>{ZE_INDEX(0)}).simplify().get_sort());
-  EXPECT_Z3_NE(Index::sort(), named_float.get(std::vector<ZE>{ZE_INDEX(0)}).simplify().get_sort());
-}
+    Tensor named_float("named", std::vector<ZE>{ZE_INDEX(42)}, Float::sort());
+    EXPECT_Z3_EQ(Float::sort(), named_float.get(std::vector<ZE>{ZE_INDEX(0)}).simplify().get_sort());
+    EXPECT_Z3_NE(Index::sort(), named_float.get(std::vector<ZE>{ZE_INDEX(0)}).simplify().get_sort());
+  }
 
-TEST(UnitTensorTest, Named3D) {
-  Tensor named_int("named", std::vector<ZE>{ZE_INDEX(3), ZE_INDEX(4), ZE_INDEX(5)}, Integer::sort(32));
-  EXPECT_Z3_EQ(Integer::sort(32), named_int.get(std::vector<ZE>{ZE_INDEX(0), ZE_INDEX(0), ZE_INDEX(0)}).simplify().get_sort());
-  EXPECT_Z3_EQ(Integer::sort(32), named_int.get(std::vector<ZE>{ZE_INDEX(1), ZE_INDEX(2), ZE_INDEX(3)}).simplify().get_sort());
-  EXPECT_Z3_EQ(Integer::sort(32), named_int.get(std::vector<ZE>{ZE_INDEX(2), ZE_INDEX(2), ZE_INDEX(2)}).simplify().get_sort());
+  {
+    Tensor named_int("named", std::vector<ZE>{ZE_INDEX(3), ZE_INDEX(4), ZE_INDEX(5)}, Integer::sort(32));
+    EXPECT_Z3_EQ(Integer::sort(32), named_int.get(std::vector<ZE>{ZE_INDEX(0), ZE_INDEX(0), ZE_INDEX(0)}).simplify().get_sort());
+    EXPECT_Z3_EQ(Integer::sort(32), named_int.get(std::vector<ZE>{ZE_INDEX(1), ZE_INDEX(2), ZE_INDEX(3)}).simplify().get_sort());
+    EXPECT_Z3_EQ(Integer::sort(32), named_int.get(std::vector<ZE>{ZE_INDEX(2), ZE_INDEX(2), ZE_INDEX(2)}).simplify().get_sort());
 
-  EXPECT_Z3_NE(Float::sort(), named_int.get(std::vector<ZE>{ZE_INDEX(0), ZE_INDEX(1), ZE_INDEX(2)}).simplify().get_sort());
-  EXPECT_Z3_NE(Float::sort(), named_int.get(std::vector<ZE>{ZE_INDEX(1), ZE_INDEX(1), ZE_INDEX(1)}).simplify().get_sort());
+    EXPECT_Z3_NE(Float::sort(), named_int.get(std::vector<ZE>{ZE_INDEX(0), ZE_INDEX(1), ZE_INDEX(2)}).simplify().get_sort());
+    EXPECT_Z3_NE(Float::sort(), named_int.get(std::vector<ZE>{ZE_INDEX(1), ZE_INDEX(1), ZE_INDEX(1)}).simplify().get_sort());
+  }
 }
 
 TEST(UnitTensorTest, RotateDimensions) {
@@ -191,6 +194,7 @@ TEST(UnitTensorTest, Transpose) {
   EXPECT_DEATH(named_int.transpose(), ""); // only 2D tensors supported
 }*/
 
+/*
 TEST(UnitTensorTest, Convolution) {
   // TODO
   //EXPECT_FALSE(true);
@@ -215,3 +219,4 @@ TEST(UnitTensorTest, MkLambda) {
   // TODO
   //EXPECT_FALSE(true);
 }
+*/

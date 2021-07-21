@@ -76,7 +76,7 @@ TEST_F(UnitRegFileTest, IsEmptyInitially) {
   EXPECT_EQ(r1.begin(), r1.end());
 }
 
-TEST_F(UnitRegFileTest, Contains) {
+TEST_F(UnitRegFileTest, Get) {
   EXPECT_TRUE(r2.contains(indexOp0));
   EXPECT_FALSE(r2.contains(indexOp1));
   EXPECT_TRUE(r2.contains(floatOp0));
@@ -86,14 +86,21 @@ TEST_F(UnitRegFileTest, Contains) {
   EXPECT_TRUE(r3.contains(floatOp0));
   EXPECT_TRUE(r3.contains(floatOp1));
   EXPECT_TRUE(r3.contains(indexOp1));
-}
 
-TEST_F(UnitRegFileTest, Get) {
   EXPECT_NO_THROW(r2.get<Index>(indexOp0));
   EXPECT_THROW(r2.get<Float>(indexOp0), std::bad_variant_access);
   EXPECT_DEATH(r2.get<Index>(indexOp1), "Cannot find key"); // llvm_unreachable
   EXPECT_THROW(r2.get<Index>(floatOp0), std::bad_variant_access);
   EXPECT_NO_THROW(r2.get<Float>(floatOp0));
+
+  EXPECT_Z3_EQ(r2.getZ3Expr(indexOp0), ZE_INDEX(indexOp0.getValue()));
+  EXPECT_DEATH(r2.getZ3Expr(indexOp1), "Cannot find key"); // llvm_unreachable
+  EXPECT_Z3_EQ(r2.getZ3Expr(floatOp0), ZE_FLOAT(floatOp0.getValue()));
+
+  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp0), ZE_INDEX(indexOp0.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp1), ZE_INDEX(indexOp1.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp0), ZE_FLOAT(floatOp0.getValue()));
+  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp1), ZE_FLOAT(floatOp1.getValue()));
 }
 
 TEST_F(UnitRegFileTest, Iterator) {
@@ -125,15 +132,4 @@ TEST_F(UnitRegFileTest, Iterator) {
     }
   }
   EXPECT_TRUE(hasIndexOp0 && hasIndexOp1 && hasFloatOp0);
-}
-
-TEST_F(UnitRegFileTest, GetZ3Expr) {
-  EXPECT_Z3_EQ(r2.getZ3Expr(indexOp0), ZE_INDEX(indexOp0.getValue()));
-  EXPECT_DEATH(r2.getZ3Expr(indexOp1), "Cannot find key"); // llvm_unreachable
-  EXPECT_Z3_EQ(r2.getZ3Expr(floatOp0), ZE_FLOAT(floatOp0.getValue()));
-
-  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp0), ZE_INDEX(indexOp0.getValue()));
-  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp1), ZE_INDEX(indexOp1.getValue()));
-  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp0), ZE_FLOAT(floatOp0.getValue()));
-  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp1), ZE_FLOAT(floatOp1.getValue()));
 }
