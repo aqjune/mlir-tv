@@ -21,8 +21,7 @@ Memory* Memory::create(unsigned int numBlocks, MemEncoding encoding) {
 }
 
 SingleArrayMemory::SingleArrayMemory(unsigned int numBlocks):
-  bits(ulog2(numBlocks)),
-  numBlocks(numBlocks),
+  Memory(ulog2(numBlocks), numBlocks),
   arrayMaps(ctx.constant("arrayMaps",
     ctx.array_sort(ctx.bv_sort(bits), ctx.array_sort(Index::sort(), Float::sort())))),
   writableMaps(ctx.constant("writableMaps",
@@ -55,8 +54,7 @@ std::pair<z3::expr, z3::expr> SingleArrayMemory::load(
 }
 
 MultipleArrayMemory::MultipleArrayMemory(unsigned int numBlocks):
-  bits(ulog2(numBlocks)),
-  numBlocks(numBlocks),
+  Memory(ulog2(numBlocks), numBlocks),
   arrayMaps(numBlocks, ctx.constant("arrayMaps",
     ctx.array_sort(Index::sort(), Float::sort()))),
   writableMaps(ctx.constant("writableMaps",

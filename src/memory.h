@@ -21,10 +21,16 @@ public:
 };
 
 class Memory {
+protected:
+  const unsigned int bits;
+  const unsigned int numBlocks;
+
 public:
   static Memory * create(unsigned int numBlocks, MemEncoding encoding);
+  Memory(unsigned int bits, unsigned int numBlocks): bits(bits), numBlocks(numBlocks) {}
 
-  virtual unsigned int getBIDBits() const = 0;
+  unsigned int getBIDBits() const { return bits; }
+
   virtual z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const = 0;
   // Mark memblock's writable flag to `writable`
   virtual void setWritable(const z3::expr &bid, bool writable) = 0;
@@ -35,8 +41,6 @@ public:
 };
 
 class SingleArrayMemory: public Memory {
-  const unsigned int bits;
-  const unsigned int numBlocks;
   z3::expr arrayMaps; // bv(bits)::sort() -> (Index::sort() -> Float::sort())
   z3::expr writableMaps; // bv(bits)::sort() -> bool::sort()
   z3::expr numelemMaps; // bv(bits)::sort() -> Index::sort()
@@ -47,9 +51,6 @@ private:
 public:
   SingleArrayMemory(unsigned int numBlocks);
 
-  unsigned int getBIDBits() const {
-    return bits;
-  }
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const {
     return getMemBlock(bid).numelem;
   }
@@ -60,8 +61,6 @@ public:
 };
 
 class MultipleArrayMemory: public Memory {
-  const unsigned int bits;
-  const unsigned int numBlocks;
   std::vector<z3::expr> arrayMaps; //  vector<(Index::sort() -> Float::sort())>
   z3::expr writableMaps; // bv(bits)::sort() -> Bool::sort()
   z3::expr numelemMaps; // bv(bits)::sort() -> Index::sort
@@ -71,10 +70,6 @@ private:
 
 public:
   MultipleArrayMemory(unsigned int numBlocks);
-
-  unsigned int getBIDBits() const {
-    return bits;
-  }
 
   z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const {
     return getMemBlock(bid).numelem;
