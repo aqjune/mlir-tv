@@ -677,8 +677,13 @@ static vector<z3::expr> doMap(
 }
 
 static vector<z3::expr> addOne(vector<z3::expr> &&vec) {
-  for (unsigned i = 0; i < vec.size(); ++i)
-    vec[i] = vec[i] + 1;
+  for (unsigned i = 0; i < vec.size(); ++i) {
+    uint64_t v;
+    if (vec[i].is_bv() && vec[i].is_numeral_u64(v))
+      vec[i] = ctx.bv_val(v + 1, vec[i].get_sort().bv_size());
+    else
+      vec[i] = vec[i] + 1;
+  }
   return vec;
 }
 
@@ -756,7 +761,6 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
 
   auto &linalgInfo = newst.linalgGenericScopes.top();
-  auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
 
   // Represent %v as an element of a tensor.
   Tensor t_v = Tensor::mkLambda(
@@ -774,6 +778,9 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
+    vector<z3::expr> tensorSz;
+    for (unsigned i = 0; i < outputType.getRank(); ++i)
+      tensorSz.push_back(Index(1));
     t_res = Tensor(t_v.sum(), tensorSz);
     return {};
   } else {
@@ -804,6 +811,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
       }
     }
 
+    auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
     auto t_sum = Tensor::mkLambda(
           vector(boundsForRes),
           vector(indVarsForRes),

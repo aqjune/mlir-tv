@@ -392,7 +392,10 @@ Tensor Tensor::mkLambda(
     int64_t i;
     // If indexvars is empty, let's assume that the tensor has only one
     // element.
-    assert(newdims.size() == 1 && newdims[0].is_numeral_i64(i) && i == 1);
+    if (newdims.size() == 0) {
+      newdims.push_back(Index(1));
+    } else
+      assert(newdims.size() == 1 && newdims[0].is_numeral_i64(i) && i == 1);
   } else
     assert(newdims.size() == indexvars.size());
 

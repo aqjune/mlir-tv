@@ -24,7 +24,12 @@ public:
   Index(const z3::expr &e);
 
   operator z3::expr() const { return e; }
-  Index ofs(int i) const { return Index(e + i); }
+  Index ofs(int i) const {
+    uint64_t v;
+    if (e.is_numeral_u64(v))
+      return Index(v + i);
+    return Index(e + i);
+  }
 
   static z3::sort sort();
   static Index one();
