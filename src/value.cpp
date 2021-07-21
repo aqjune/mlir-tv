@@ -39,7 +39,7 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
 static string or_omit(const z3::expr &e) {
   string s;
   llvm::raw_string_ostream rso(s);
-  rso << e;
+  rso << e.simplify();
   rso.flush();
 
   if (s.size() > 500)
@@ -495,8 +495,9 @@ Index MemRef::getDim(uint64_t idx) const {
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   assert(m.dims.size() > 0);
-  os << "bid: " << or_omit(m.bid) << ", offset: " << or_omit(m.offset) << "\n";
-  os << "(dim :" << or_omit(m.dims[0]);
+  os << "(bid: " << or_omit(m.bid)
+    << ", offset: " << or_omit(m.offset)
+    << ", dim: " << or_omit(m.dims[0]);
   for (size_t i = 1; i < m.dims.size(); ++i)
     os << ", " << or_omit(m.dims[i]);
   os << ")";
