@@ -59,7 +59,7 @@ public:
   z3::expr isWellDefined;
   Memory *m;
 
-  State(unsigned int numBlocks);
+  State(unsigned int numBlocks, MemEncoding encoding);
 
   void wellDefined(const z3::expr &e) { isWellDefined = isWellDefined && e; };
 

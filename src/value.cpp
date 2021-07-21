@@ -484,10 +484,10 @@ z3::expr MemRef::store(const z3::expr &value, const std::vector<z3::expr> &indic
 }
 
 z3::expr MemRef::isInBounds() const {
-   auto numelem = m->getNumElementsOfMemBlock(bid);
-   auto memrefSize = get1DSize(dims);
-   return z3::uge(numelem, memrefSize) && z3::ult(offset, numelem - memrefSize);
- }
+  auto numelem = m->getNumElementsOfMemBlock(bid);
+  auto memrefSize = get1DSize(dims);
+  return z3::uge(numelem, memrefSize) && z3::ult(offset, numelem - memrefSize);
+}
 
 Index MemRef::getDim(uint64_t idx) const {
   return Index(dims[idx]);
