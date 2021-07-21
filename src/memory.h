@@ -6,7 +6,7 @@
 #include <vector>
 
 enum MemEncoding {
-  SINGLE, MULTIPLE
+  SINGLE_ARRAY, MULTIPLE_ARRAY
 };
 
 // A memory block containing f32 elements.

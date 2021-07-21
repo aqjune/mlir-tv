@@ -43,11 +43,11 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::init(16), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
-  llvm::cl::desc("Type of memref memory model (default=MULTIPLE)"),
-  llvm::cl::init(MemEncoding::MULTIPLE), llvm::cl::Hidden,
+  llvm::cl::desc("Type of memref memory model (default=MULTIPLE_ARRAY)"),
+  llvm::cl::init(MemEncoding::MULTIPLE_ARRAY), llvm::cl::Hidden,
   llvm::cl::values(
-    clEnumValN(MemEncoding::SINGLE, "SINGLE", "Using single array memory encoding"),
-    clEnumValN(MemEncoding::MULTIPLE, "MULTIPLE", "Using multiple arrays memory encoding")
+    clEnumValN(MemEncoding::SINGLE_ARRAY, "SINGLE", "Using single array memory encoding"),
+    clEnumValN(MemEncoding::MULTIPLE_ARRAY, "MULTIPLE", "Using multiple arrays memory encoding")
   ));
 
 // These functions are excerpted from ToolUtilities.cpp in mlir
