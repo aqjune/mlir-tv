@@ -108,12 +108,9 @@ std::pair<z3::expr, z3::expr> MultipleArrayMemory::load(
 pair<z3::expr, std::vector<z3::expr>>
 MultipleArrayMemory::refines(const Memory &other) const {
   auto bid = ctx.bv_const("bid", bits);
-  auto idx = Index("idx", true);
-  auto [srcValue, srcSuccess] = load(bid, idx);
-  auto [tgtValue, tgtSuccess] = other.load(bid, idx);
+  auto offset = Index("offset", true);
+  auto [srcValue, srcSuccess] = load(bid, offset);
+  auto [tgtValue, tgtSuccess] = other.load(bid, offset);
   auto ret = z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue);
-  // llvm::outs() << ret << "\n";
-  // llvm::outs() << ret.simplify() << "\n";
-  return {z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue), {bid, idx}};
-  // return {srcValue == tgtValue, {bid, idx}};
+  return {z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue), {bid, offset}};
 }

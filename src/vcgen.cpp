@@ -47,7 +47,11 @@ public:
 };
 };
 
-enum VerificationStep { UB, RetValue, Memory };
+enum VerificationStep {
+  UB,
+  RetValue,
+  Memory
+};
 
 static variant<string, State>
 createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding) {
@@ -1125,7 +1129,6 @@ static Results verifyFunction(
   Defer timePrinter([&]() {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
-
   auto printErrorMsg = [&](z3::solver &s, z3::check_result res, const char *msg,
                            vector<z3::expr> &&params, VerificationStep step){
     if (res == z3::unknown) {
@@ -1142,7 +1145,6 @@ static Results verifyFunction(
     auto s = z3::solver(ctx, "QF_UFBV");
     auto not_refines =
         (st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
-    // llvm::outs() << "TEST!! : " << not_refines << "\n";
     auto res = solve(s, not_refines, dump_smt_to, fnname + ".1.ub");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
