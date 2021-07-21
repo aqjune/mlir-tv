@@ -36,7 +36,7 @@ public:
   static Index zero();
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const Index &src) const;
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const Index &other) const;
   Index eval(z3::model m) const;
 };
 
@@ -59,7 +59,7 @@ public:
   Float mul(const Float &b) const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const Float &src) const;
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const Float &other) const;
   Float eval(z3::model m) const;
 };
 
@@ -76,7 +76,7 @@ public:
   static z3::sort sort(unsigned bw);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const Integer &src) const;
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const Integer &other) const;
   Integer eval(z3::model m) const;
 };
 
@@ -143,7 +143,7 @@ public:
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
   // Returns (arr[idx] == src.arr[idx], idx var)
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const Tensor &src) const;
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const Tensor &other) const;
   Tensor eval(z3::model m) const;
 
 private:
@@ -180,7 +180,7 @@ public:
   std::vector<z3::expr> getDims() const { return dims; }
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const MemRef &src) const;
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const MemRef &other) const;
   MemRef eval(z3::model m) const;
 
   private:

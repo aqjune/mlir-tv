@@ -52,6 +52,9 @@ public:
   virtual z3::expr store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx) = 0;
   // Returns: (loaded value, load successful?)
   virtual std::pair<z3::expr, z3::expr> load(const z3::expr &bid, const z3::expr &idx) const = 0;
+
+  // Define refinement of memory
+  virtual std::pair<z3::expr, std::vector<z3::expr>> refines(const Memory &other) const = 0;
 };
 
 class SingleArrayMemory: public Memory {
@@ -72,6 +75,8 @@ public:
   void setWritable(const z3::expr &bid, bool writable);
   z3::expr store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx);
   std::pair<z3::expr, z3::expr> load(const z3::expr &bid, const z3::expr &idx) const;
+
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const Memory &other) const;
 };
 
 class MultipleArrayMemory: public Memory {
@@ -89,4 +94,6 @@ public:
   void setWritable(const z3::expr &bid, bool writable);
   z3::expr store(const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx);
   std::pair<z3::expr, z3::expr> load(const z3::expr &bid, const z3::expr &idx) const;
+
+  std::pair<z3::expr, std::vector<z3::expr>> refines(const Memory &other) const;
 };

@@ -53,6 +53,16 @@ std::pair<z3::expr, z3::expr> SingleArrayMemory::load(
   return {z3::select(block.array, idx), z3::ult(idx, block.numelem)};
 }
 
+pair<z3::expr, std::vector<z3::expr>>
+SingleArrayMemory::refines(const Memory &other) const {
+  auto bid = ctx.bv_const("bid", bits);
+  auto idx = Index("idx", true);
+  auto [srcValue, srcSuccess] = load(bid, idx);
+  auto [tgtValue, tgtSuccess] = other.load(bid, idx);
+
+  return {z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue), {bid, idx}};
+}
+
 MultipleArrayMemory::MultipleArrayMemory(unsigned int numBlocks):
   Memory(ulog2(numBlocks), numBlocks),
   arrayMaps(numBlocks, ctx.constant("arrayMaps",
@@ -93,4 +103,17 @@ std::pair<z3::expr, z3::expr> MultipleArrayMemory::load(
   z3::expr numelem = z3::select(numelemMaps, bid);
   z3::expr success = z3::ult(idx, numelem);
   return {value, success};
+}
+
+pair<z3::expr, std::vector<z3::expr>>
+MultipleArrayMemory::refines(const Memory &other) const {
+  auto bid = ctx.bv_const("bid", bits);
+  auto idx = Index("idx", true);
+  auto [srcValue, srcSuccess] = load(bid, idx);
+  auto [tgtValue, tgtSuccess] = other.load(bid, idx);
+  auto ret = z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue);
+  // llvm::outs() << ret << "\n";
+  // llvm::outs() << ret.simplify() << "\n";
+  return {z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue), {bid, idx}};
+  // return {srcValue == tgtValue, {bid, idx}};
 }

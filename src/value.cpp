@@ -103,8 +103,8 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
   return os;
 };
 
-std::pair<z3::expr, vector<z3::expr>> Index::refines(const Index &src) const {
-  return {(z3::expr) src == (z3::expr) *this, {}};
+std::pair<z3::expr, vector<z3::expr>> Index::refines(const Index &other) const {
+  return {(z3::expr) other == (z3::expr) *this, {}};
 }
 
 Index Index::eval(z3::model m) const {
@@ -133,8 +133,8 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
   return os;
 };
 
-std::pair<z3::expr, vector<z3::expr>> Float::refines(const Float &src) const {
-  return {(z3::expr) src == (z3::expr) *this, {}};
+std::pair<z3::expr, vector<z3::expr>> Float::refines(const Float &other) const {
+  return {(z3::expr) other == (z3::expr) *this, {}};
 }
 
 Float Float::eval(z3::model m) const {
@@ -165,8 +165,8 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
   return os;
 };
 
-std::pair<z3::expr, vector<z3::expr>> Integer::refines(const Integer &src) const {
-  return {(z3::expr) src == (z3::expr) *this, {}};
+std::pair<z3::expr, vector<z3::expr>> Integer::refines(const Integer &other) const {
+  return {(z3::expr) other == (z3::expr) *this, {}};
 }
 
 Integer Integer::eval(z3::model m) const {
@@ -306,19 +306,19 @@ z3::expr Tensor::sum() const {
   return aop::sum(arr, get1DSize());
 }
 
-pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
+pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &other) const {
   assert(arr.get_sort().is_array());
-  assert(src.arr.get_sort().is_array());
+  assert(other.arr.get_sort().is_array());
 
   // Size mismatch check.
   // If it does, don't return index var.
   size_t sz = getDims().size();
-  if (src.getDims().size() != sz)
+  if (other.getDims().size() != sz)
     return {ctx.bool_val(false), {}};
 
   z3::expr size_match = ctx.bool_val(true);
   for (size_t i = 0; i < sz; ++i)
-    size_match = size_match && (z3::expr)src.getDim(i) == (z3::expr)getDim(i);
+    size_match = size_match && (z3::expr)other.getDim(i) == (z3::expr)getDim(i);
   size_match = size_match.simplify();
   if (size_match.is_false())
     return {size_match, {}};
@@ -328,7 +328,7 @@ pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
   vector<z3::expr> params = {i};
   return {size_match && z3::implies(
       z3::ult(i, ::get1DSize(dims)),
-      z3::select(arr, i) == z3::select(src.arr, i)),
+      z3::select(arr, i) == z3::select(other.arr, i)),
     params};
 }
 
@@ -504,8 +504,8 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   return os;
 };
 
-std::pair<z3::expr, vector<z3::expr>> MemRef::refines(const MemRef &src) const {
-  return {(z3::expr) src == (z3::expr) *this, {}};
+std::pair<z3::expr, vector<z3::expr>> MemRef::refines(const MemRef &other) const {
+  return {(z3::expr) other == (z3::expr) *this, {}};
 }
 
 MemRef MemRef::eval(z3::model m) const {

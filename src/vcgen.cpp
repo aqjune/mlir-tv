@@ -47,6 +47,8 @@ public:
 };
 };
 
+enum VerificationStep { UB, RetValue, Memory };
+
 static variant<string, State>
 createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding) {
   State s(numBlocks, encoding);
@@ -952,7 +954,7 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
 
 static void printCounterEx(
     z3::solver &solver, const vector<z3::expr> &params, mlir::FuncOp src,
-    mlir::FuncOp tgt, State &st_src, State &st_tgt, bool printRetValue) {
+    mlir::FuncOp tgt, State &st_src, State &st_tgt, VerificationStep step) {
   auto m = solver.get_model();
   auto or_omit_z3 = [&](const z3::expr &e) -> string {
     string s;
@@ -991,7 +993,7 @@ static void printCounterEx(
     llvm::outs() << "\t'" << v << "'\n\t\tValue: " << e << "\n";
   }
 
-  if (st_src.retValue && printRetValue) {
+  if (st_src.retValue && step == VerificationStep::RetValue) {
     if (src.getNumResults() == 1 &&
         src.getType().getResult(0).isa<mlir::TensorType>()) {
       llvm::outs() << "\n<Returned tensor>\n";
@@ -1026,6 +1028,33 @@ static void printCounterEx(
       visit([&](auto &&ret) { llvm::outs() << "\tSrc: " << ret.eval(model) << "\n"; }, *st_src.retValue);
       visit([&](auto &&ret) { llvm::outs() << "\tTgt: " << ret.eval(model) << "\n"; }, *st_tgt.retValue);
     }
+  }
+
+  if (step == VerificationStep::Memory) {
+    // Print Memory counter example
+    auto bid = params[0];
+    auto offset = params[1];
+    auto model = solver.get_model();
+    auto [srcValue, srcSuccess] = st_src.m->load(bid, offset);
+    auto [tgtValue, tgtSuccess] = st_tgt.m->load(bid, offset);
+    srcValue = model.eval(srcValue);
+    srcSuccess = model.eval(srcSuccess);
+    tgtValue = model.eval(tgtValue);
+    tgtSuccess = model.eval(tgtSuccess);
+
+    llvm::outs() << "\n<Source memory state>\n";
+    if (srcSuccess.is_true()) {
+      llvm::outs() << "\tMemory[bid: " << model.eval(bid)
+        << ", offset: " << model.eval(offset) << "] : "
+        << srcValue << "\n";
+    } else {
+      llvm::outs() << "Memory is not defined properly\n";
+    }
+
+    llvm::outs() << "\n<Target memory state>\n";
+    llvm::outs() << "\tMemory[bid: " << model.eval(bid)
+      << ", offset: " << model.eval(offset) << "] : "
+      << tgtValue << "\n\n";
   }
 
 #if FALSE
@@ -1096,13 +1125,14 @@ static Results verifyFunction(
   Defer timePrinter([&]() {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
+
   auto printErrorMsg = [&](z3::solver &s, z3::check_result res, const char *msg,
-                           vector<z3::expr> &&params, bool printRetValue){
+                           vector<z3::expr> &&params, VerificationStep step){
     if (res == z3::unknown) {
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res == z3::sat) {
       llvm::outs() << "== Result: " << msg << "\n";
-      printCounterEx(s, params, src, tgt, st_src, st_tgt, printRetValue);
+      printCounterEx(s, params, src, tgt, st_src, st_tgt, step);
     } else {
       llvm_unreachable("unexpected result");
     }
@@ -1112,12 +1142,11 @@ static Results verifyFunction(
     auto s = z3::solver(ctx, "QF_UFBV");
     auto not_refines =
         (st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
+    // llvm::outs() << "TEST!! : " << not_refines << "\n";
     auto res = solve(s, not_refines, dump_smt_to, fnname + ".1.ub");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
-      // Well... let's use Alive2's wording.
-      printErrorMsg(s, res.first, "Source is more defined than target", {},
-                    false);
+      printErrorMsg(s, res.first, "Source is more defined than target", {}, VerificationStep::UB);
       return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
     }
   }
@@ -1148,7 +1177,20 @@ static Results verifyFunction(
     auto res = solve(s, not_refines, dump_smt_to, fnname + ".3.retval");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
-      printErrorMsg(s, res.first, "Return value mismatch", move(params), true);
+      printErrorMsg(s, res.first, "Return value mismatch", move(params), VerificationStep::RetValue);
+      return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
+    }
+  }
+
+  if (numBlocks > 0) { // 4. Check memory refinement
+    auto s = z3::solver(ctx, "QF_UFBV");
+    auto [refines, params] = st_src.m->refines(*st_tgt.m);
+    auto not_refines =
+      (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
+    auto res = solve(s, not_refines, dump_smt_to, fnname + ".4.memory");
+    elapsedMillisec += res.second;
+    if (res.first != z3::unsat) {
+      printErrorMsg(s, res.first, "Memory mismatch", move(params), VerificationStep::Memory);
       return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
     }
   }
