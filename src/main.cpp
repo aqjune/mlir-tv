@@ -44,7 +44,7 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
 
 llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
   llvm::cl::desc("Type of memref memory model (default=MULTIPLE)"),
-  llvm::cl::init(MemEncoding::MULTIPLE),
+  llvm::cl::init(MemEncoding::MULTIPLE), llvm::cl::Hidden,
   llvm::cl::values(
     clEnumValN(MemEncoding::SINGLE, "SINGLE", "Using single array memory encoding"),
     clEnumValN(MemEncoding::MULTIPLE, "MULTIPLE", "Using multiple arrays memory encoding")
