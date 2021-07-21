@@ -4,6 +4,7 @@
 #include "state.h"
 #include "vcgen.h"
 
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
 #include "mlir/Dialect/Shape/IR/Shape.h"
@@ -435,6 +436,23 @@ optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::AffineApplyOp op) {
+  auto m = op.getAffineMap();
+  if (m.getNumResults() != 1)
+    return "num results is larger than one";
+
+  vector<Index> indices;
+  for (auto arg: op.mapOperands()) {
+    indices.push_back(st.regs.get<Index>(arg));
+  }
+  auto res = encodeAffineExpr(m.getResult(0), indices);
+  if (!res)
+    return "unsupported affine expr";
+  st.regs.add(op, Index(move(*res)));
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::ReturnOp op) {
   if (op.getNumOperands() == 0)
     return {};
@@ -693,12 +711,13 @@ static optional<string> encodeParallelLoopBodyAndOutput(
     ENCODE(newst, op, mlir::SubIOp);
     ENCODE(newst, op, mlir::MulIOp);
     ENCODE(newst, op, mlir::IndexCastOp);
+    ENCODE(newst, op, mlir::AffineApplyOp);
     ENCODE(newst, op, mlir::linalg::IndexOp);
     if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
       yieldedValue = op2.getOperand(0);
       break;
     }
-    RET_STR("has an unsupported operation" << op);
+    RET_STR("has an unsupported operation: '" << op << "'");
   }
 
   auto &scope = newst.linalgGenericScopes.top();
@@ -899,6 +918,8 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::MulIOp);
     ENCODE(st, op, mlir::ReturnOp);
     ENCODE(st, op, mlir::SubIOp);
+
+    ENCODE(st, op, mlir::AffineApplyOp);
 
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
