@@ -166,14 +166,22 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   auto ty = res.getType().dyn_cast<mlir::TensorType>();
   assert(ty);
 
-  auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
-  if (!dimsAndElemTy)
+  vector<z3::expr> sizes;
+  for (unsigned i = 0; i < ty.getRank(); ++i) {
+    if (op.isDynamicSize(i))
+      sizes.push_back(st.regs.get<Index>(op.getDynamicSize(i)));
+    else
+      sizes.push_back(Index(op.getStaticSize(i)));
+  }
+
+  auto elemTy = Tensor::getElemTy(ty);
+  if (!elemTy)
     return "Unsupported tensor type";
 
   // FIXME: can we use res's name?
   static int new_var_idx = 0;
   auto name = string("init_tensor_") + to_string(new_var_idx++);
-  st.regs.add(res, Tensor(name, dimsAndElemTy->first, dimsAndElemTy->second));
+  st.regs.add(res, Tensor(name, sizes, *elemTy));
 
   return {};
 }
@@ -395,6 +403,14 @@ optional<string> encodeOp(State &st, mlir::SubIOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::MulIOp op) {
+  auto a = st.regs.get<Integer>(op.getOperand(0));
+  auto b = st.regs.get<Integer>(op.getOperand(1));
+  st.regs.add(op, Integer((z3::expr)a * (z3::expr)b));
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
   auto src = st.regs.getZ3Expr(op.getOperand());
   assert(src.is_bv());
@@ -451,6 +467,14 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
 
     auto dims = getDims(op.getType().cast<mlir::TensorType>());
     st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), move(dims)));
+    return {};
+  } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
+    llvm::APInt i = intAttr.getValue();
+    unsigned bw = i.getBitWidth();
+    if (bw > 64)
+      return "size is too large";
+
+    st.regs.add(op, Integer(i.getSExtValue(), bw));
     return {};
   }
   return "unsupported constant";
@@ -643,6 +667,17 @@ static vector<z3::expr> doMap(
   return output;
 }
 
+static vector<z3::expr> addOne(vector<z3::expr> &&vec) {
+  for (unsigned i = 0; i < vec.size(); ++i) {
+    uint64_t v;
+    if (vec[i].is_bv() && vec[i].is_numeral_u64(v))
+      vec[i] = ctx.bv_val(v + 1, vec[i].get_sort().bv_size());
+    else
+      vec[i] = vec[i] + 1;
+  }
+  return vec;
+}
+
 static optional<string> encodeParallelLoopBodyAndOutput(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
     const mlir::TensorType &outputType, Tensor &t_res) {
@@ -655,6 +690,7 @@ static optional<string> encodeParallelLoopBodyAndOutput(
     ENCODE(newst, op, mlir::MulFOp);
     ENCODE(newst, op, mlir::AddIOp);
     ENCODE(newst, op, mlir::SubIOp);
+    ENCODE(newst, op, mlir::MulIOp);
     ENCODE(newst, op, mlir::IndexCastOp);
     ENCODE(newst, op, mlir::linalg::IndexOp);
     if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
@@ -664,10 +700,9 @@ static optional<string> encodeParallelLoopBodyAndOutput(
     RET_STR("has an unsupported operation" << op);
   }
 
-  vector<z3::expr> outputIndVars = doMap(
-      newst.linalgGenericScopes.top().indVars, outputMap);
-
-  auto tensorSz = getDims(outputType);
+  auto &scope = newst.linalgGenericScopes.top();
+  auto outputIndVars = doMap(scope.indVars, outputMap);
+  auto tensorSz = addOne(doMap(scope.indVarUpperBounds, outputMap));
   t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars),
       newst.regs.getZ3Expr(yieldedValue));
 
@@ -715,8 +750,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   }
 
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
-  auto tensorSz = getDims(outputType);
-  auto linalgInfo = newst.linalgGenericScopes.top();
+
+  auto &linalgInfo = newst.linalgGenericScopes.top();
 
   // Represent %v as an element of a tensor.
   Tensor t_v = Tensor::mkLambda(
@@ -734,6 +769,9 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
+    vector<z3::expr> tensorSz;
+    for (unsigned i = 0; i < outputType.getRank(); ++i)
+      tensorSz.push_back(Index(1));
     t_res = Tensor(t_v.sum(), tensorSz);
     return {};
   } else {
@@ -764,6 +802,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
       }
     }
 
+    auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
     auto t_sum = Tensor::mkLambda(
           vector(boundsForRes),
           vector(indVarsForRes),
@@ -856,6 +895,7 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::AddIOp);
     ENCODE(st, op, mlir::IndexCastOp);
     ENCODE(st, op, mlir::MulFOp);
+    ENCODE(st, op, mlir::MulIOp);
     ENCODE(st, op, mlir::ReturnOp);
     ENCODE(st, op, mlir::SubIOp);
 
@@ -890,22 +930,8 @@ static optional<string> encode(State &st, mlir::FuncOp &fn) {
 
 static void printCounterEx(
     z3::solver &solver, const vector<z3::expr> &params, mlir::FuncOp src,
-    State &st_src, State &st_tgt) {
+    mlir::FuncOp tgt, State &st_src, State &st_tgt, bool printRetValue) {
   auto m = solver.get_model();
-  auto or_omit = [&](const ValueTy &val) -> string {
-    ValueTy evaluatedVal;
-    visit([&](auto &&v) { evaluatedVal = v.eval(m); }, val);
-
-    string s;
-    llvm::raw_string_ostream rso(s);
-    visit([&](auto &&v) { rso << v; }, evaluatedVal);
-    rso.flush();
-
-    if (s.size() > 500)
-      return "(omitted)";
-    return s;
-  };
-
   auto or_omit_z3 = [&](const z3::expr &e) -> string {
     string s;
     llvm::raw_string_ostream rso(s);
@@ -920,53 +946,62 @@ static void printCounterEx(
   llvm::outs() << "<Inputs>\n";
 
   unsigned n = src.getNumArguments();
+  llvm::DenseSet<mlir::Value> args_src, args_tgt;
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
+    args_src.insert(argsrc);
+    args_tgt.insert(tgt.getArgument(i));
     llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
-                 << or_omit(st_src.regs.findOrCrash(argsrc)) << "\n";
+                 << st_src.regs.findOrCrash(argsrc) << "\n";
   }
 
-  llvm::outs() << "\n<Source's variables>\n";
+  llvm::outs() << "\n<Source's instructions>\n";
   for (auto &[v, e]: st_src.regs) {
-    if (st_src.regs.contains(v))
+    if (args_src.contains(v))
       continue;
-    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
+    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << e << "\n";
   }
 
-  llvm::outs() << "\n<Target's variables>\n";
+  llvm::outs() << "\n<Target's instructions>\n";
   for (auto &[v, e]: st_tgt.regs) {
-    if (st_tgt.regs.contains(v))
+    if (args_tgt.contains(v))
       continue;
-    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << or_omit(e) << "\n";
+    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << e << "\n";
   }
 
-  if (st_src.retValue) {
+  if (st_src.retValue && printRetValue) {
     if (src.getNumResults() == 1 &&
         src.getType().getResult(0).isa<mlir::TensorType>()) {
-      llvm::outs() << "\n<Return tensor>\n";
+      llvm::outs() << "\n<Returned tensor>\n";
 
-      assert(params.size() == 1);
       auto model = solver.get_model();
-      auto param = model.eval(params[0]);
       auto t_src = get<Tensor>(*st_src.retValue).eval(model);
       auto t_tgt = get<Tensor>(*st_tgt.retValue).eval(model);
 
       llvm::outs() << "Dimensions (src): " << t_src.getDims() << '\n';
       llvm::outs() << "Dimensions (tgt): " << t_tgt.getDims() << '\n';
-      auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
-      llvm::outs() << "Index: " << indices << '\n';
-      llvm::outs() << "Element (src): " << or_omit_z3(t_src.get(indices))
-                   << '\n';
-      llvm::outs() << "Element (tgt): " << or_omit_z3(t_tgt.get(indices))
-                   << '\n';
+
+      if (params.size() > 0) {
+        // More than size mismatch
+        assert(params.size() == 1);
+        auto param = model.eval(params[0]);
+        auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
+        llvm::outs() << "Index: " << indices << '\n';
+        llvm::outs() << "Element (src): "
+                    << or_omit_z3(t_src.get(indices).simplify())
+                    << '\n';
+        llvm::outs() << "Element (tgt): "
+                    << or_omit_z3(t_tgt.get(indices).simplify())
+                    << '\n';
+      }
 
     } else {
-      llvm::outs() << "\n<Return values>\n";
+      llvm::outs() << "\n<Returned value>\n";
       for (auto &param: params)
         llvm::outs() << "\tIndex: " << solver.get_model().eval(param) << "\n";
-      llvm::outs() << "\tSrc: " << or_omit(*st_src.retValue)
+      llvm::outs() << "\tSrc: " << *st_src.retValue
           << "\n"
-          << "\tTgt: " << or_omit(*st_tgt.retValue)
+          << "\tTgt: " << *st_tgt.retValue
           << "\n";
     }
   }
@@ -1040,12 +1075,12 @@ static Results verifyFunction(
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
   auto printErrorMsg = [&](z3::solver &s, z3::check_result res, const char *msg,
-                           vector<z3::expr> &&params){
+                           vector<z3::expr> &&params, bool printRetValue){
     if (res == z3::unknown) {
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res == z3::sat) {
       llvm::outs() << "== Result: " << msg << "\n";
-      printCounterEx(s, params, src, st_src, st_tgt);
+      printCounterEx(s, params, src, tgt, st_src, st_tgt, printRetValue);
     } else {
       llvm_unreachable("unexpected result");
     }
@@ -1059,7 +1094,8 @@ static Results verifyFunction(
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       // Well... let's use Alive2's wording.
-      printErrorMsg(s, res.first, "Source is more defined than target", {});
+      printErrorMsg(s, res.first, "Source is more defined than target", {},
+                    false);
       return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
     }
   }
@@ -1090,7 +1126,7 @@ static Results verifyFunction(
     auto res = solve(s, not_refines, dump_smt_to, fnname + ".3.retval");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
-      printErrorMsg(s, res.first, "Return value mismatch", move(params));
+      printErrorMsg(s, res.first, "Return value mismatch", move(params), true);
       return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
     }
   }

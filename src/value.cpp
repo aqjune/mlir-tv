@@ -36,6 +36,18 @@ static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
   return ev;
 }
 
+static string or_omit(const z3::expr &e) {
+  string s;
+  llvm::raw_string_ostream rso(s);
+  rso << e;
+  rso.flush();
+
+  if (s.size() > 500)
+    return "(omitted)";
+  return s;
+}
+
+
 vector<z3::expr> getDims(
     const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize) {
   vector<z3::expr> dims;
@@ -87,7 +99,7 @@ Index Index::one() { return Index(1); }
 Index Index::zero() { return Index(0); }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
-  os << (z3::expr)i;
+  os << or_omit((z3::expr)i);
   return os;
 };
 
@@ -117,7 +129,7 @@ z3::sort Float::sort() {
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
-  os << (z3::expr)f;
+  os << or_omit((z3::expr)f);
   return os;
 };
 
@@ -141,12 +153,15 @@ Float Float::mul(const Float &b) const {
 Integer::Integer(const std::string &name, unsigned bw):
   e(ctx.bv_const(name.c_str(), bw)) {}
 
+Integer::Integer(int64_t i, unsigned bw):
+  e(ctx.bv_val(i, bw)) {}
+
 z3::sort Integer::sort(unsigned sz) {
   return ctx.bv_sort(sz);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
-  os << (z3::expr)i;
+  os << or_omit((z3::expr)i);
   return os;
 };
 
@@ -295,10 +310,23 @@ pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
   assert(arr.get_sort().is_array());
   assert(src.arr.get_sort().is_array());
 
+  // Size mismatch check.
+  // If it does, don't return index var.
+  size_t sz = getDims().size();
+  if (src.getDims().size() != sz)
+    return {ctx.bool_val(false), {}};
+
+  z3::expr size_match = ctx.bool_val(true);
+  for (size_t i = 0; i < sz; ++i)
+    size_match = size_match && (z3::expr)src.getDim(i) == (z3::expr)getDim(i);
+  size_match = size_match.simplify();
+  if (size_match.is_false())
+    return {size_match, {}};
+
   // Assume that src and tgt's shape equality is already checked
   z3::expr i = Index("i");
   vector<z3::expr> params = {i};
-  return {z3::implies(
+  return {size_match && z3::implies(
       z3::ult(i, ::get1DSize(dims)),
       z3::select(arr, i) == z3::select(src.arr, i)),
     params};
@@ -306,6 +334,13 @@ pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &src) const {
 
 optional<pair<vector<z3::expr>, z3::sort>>
 Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
+  auto ety = getElemTy(tensorTy);
+  if (!ety)
+    return {};
+  return {{::getDims(tensorTy), *ety}};
+}
+
+optional<z3::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
   auto elemty = tensorTy.getElementType();
   z3::sort elemty2(ctx);
 
@@ -320,16 +355,16 @@ Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
     return {};
   }
 
-  return {{::getDims(tensorTy), elemty2}};
+  return elemty2;
 }
 
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   assert(t.dims.size() > 0);
-  os << t.arr << "(dim :" << t.dims[0];
+  os << "(dim :" << or_omit(t.dims[0]);
   for (size_t i = 1; i < t.dims.size(); ++i)
-    os << ", " << t.dims[i];
-  os << ")";
+    os << ", " << or_omit(t.dims[i]);
+  os << ") " << or_omit(t.arr);
   return os;
 };
 
@@ -357,7 +392,10 @@ Tensor Tensor::mkLambda(
     int64_t i;
     // If indexvars is empty, let's assume that the tensor has only one
     // element.
-    assert(newdims.size() == 1 && newdims[0].is_numeral_i64(i) && i == 1);
+    if (newdims.size() == 0) {
+      newdims.push_back(Index(1));
+    } else
+      assert(newdims.size() == 1 && newdims[0].is_numeral_i64(i) && i == 1);
   } else
     assert(newdims.size() == indexvars.size());
 
@@ -457,10 +495,10 @@ Index MemRef::getDim(uint64_t idx) const {
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   assert(m.dims.size() > 0);
-  os << "bid: " << m.bid << ", offset: " << m.offset << "\n";
-  os << "(dim :" << m.dims[0];
+  os << "bid: " << or_omit(m.bid) << ", offset: " << or_omit(m.offset) << "\n";
+  os << "(dim :" << or_omit(m.dims[0]);
   for (size_t i = 1; i < m.dims.size(); ++i)
-    os << ", " << m.dims[i];
+    os << ", " << or_omit(m.dims[i]);
   os << ")";
   return os;
 };

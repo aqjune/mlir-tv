@@ -24,7 +24,12 @@ public:
   Index(const z3::expr &e);
 
   operator z3::expr() const { return e; }
-  Index ofs(int i) const { return Index(e + i); }
+  Index ofs(int i) const {
+    uint64_t v;
+    if (e.is_numeral_u64(v))
+      return Index(v + i);
+    return Index(e + i);
+  }
 
   static z3::sort sort();
   static Index one();
@@ -64,6 +69,7 @@ class Integer {
 public:
   Integer(const std::string &name, unsigned bw);
   Integer(const z3::expr &e): e(e) {}
+  Integer(int64_t i, unsigned bw);
 
   operator z3::expr() const { return e; }
 
@@ -128,6 +134,8 @@ public:
   // If tensorTy is unsupported, return nullopt
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
       getDimsAndElemTy(mlir::TensorType tensorTy);
+
+  static std::optional<z3::sort> getElemTy(mlir::TensorType tensorTy);
 
   static Tensor mkLambda(
       std::vector<z3::expr> &&newdims,
