@@ -37,9 +37,9 @@ public:
 class SingleArrayMemory: public Memory {
   const unsigned int bits;
   const unsigned int numBlocks;
-  z3::expr arrayMaps; // bv::sort() -> (Index::sort() -> Float::sort())
-  z3::expr writableMaps; // bv::sort() -> bool::sort()
-  z3::expr numelemMaps; // bv::sort() -> Index::sort()
+  z3::expr arrayMaps; // bv(bits)::sort() -> (Index::sort() -> Float::sort())
+  z3::expr writableMaps; // bv(bits)::sort() -> bool::sort()
+  z3::expr numelemMaps; // bv(bits)::sort() -> Index::sort()
 
 private:
   MemBlock getMemBlock(const z3::expr &bid) const;
@@ -63,8 +63,8 @@ class MultipleArrayMemory: public Memory {
   const unsigned int bits;
   const unsigned int numBlocks;
   std::vector<z3::expr> arrayMaps; //  vector<(Index::sort() -> Float::sort())>
-  z3::expr writableMaps; // bv::sort() -> Bool::sort()
-  z3::expr numelemMaps; // bv::sort() -> Index::sort
+  z3::expr writableMaps; // bv(bits)::sort() -> Bool::sort()
+  z3::expr numelemMaps; // bv(bits)::sort() -> Index::sort
 
 private:
   MemBlock getMemBlock(const z3::expr &bid) const;
