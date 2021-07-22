@@ -20,6 +20,20 @@ Memory* Memory::create(unsigned int numBlocks, MemEncoding encoding) {
   }
 }
 
+pair<z3::expr, std::vector<z3::expr>> Memory::refines(const Memory &other) const {
+  auto bid = ctx.bv_const("bid", bits);
+  auto offset = Index("offset", true);
+  auto [srcValue, srcSuccess] = load(bid, offset);
+  auto srcWritable = getWritable(bid);
+  auto [tgtValue, tgtSuccess] = other.load(bid, offset);
+  auto tgtWritable = other.getWritable(bid);
+  // define memory refinement using writable refinement and value refinement
+  auto wRefinement = z3::implies(srcWritable, tgtWritable);
+  auto vRefinement = z3::eq(tgtValue, srcValue);
+  auto refinement = z3::implies(tgtSuccess, srcSuccess && wRefinement && vRefinement);
+  return {refinement, {bid, offset}};
+}
+
 SingleArrayMemory::SingleArrayMemory(unsigned int numBlocks):
   Memory(ulog2(numBlocks), numBlocks),
   arrayMaps(ctx.constant("arrayMaps",
@@ -38,6 +52,10 @@ MemBlock SingleArrayMemory::getMemBlock(const z3::expr &bid) const {
 
 void SingleArrayMemory::setWritable(const z3::expr &bid, bool writable) {
   writableMaps = z3::store(writableMaps, bid, ctx.bool_val(writable));
+}
+
+z3::expr SingleArrayMemory::getWritable(const z3::expr &bid) const {
+  return z3::select(writableMaps, bid);
 }
 
 z3::expr SingleArrayMemory::store(const z3::expr &f32val,
@@ -64,6 +82,10 @@ MultipleArrayMemory::MultipleArrayMemory(unsigned int numBlocks):
 
 void MultipleArrayMemory::setWritable(const z3::expr &bid, bool writable) {
   writableMaps = z3::store(writableMaps, bid, ctx.bool_val(writable));
+}
+
+z3::expr MultipleArrayMemory::getWritable(const z3::expr &bid) const {
+  return z3::select(writableMaps, bid);
 }
 
 z3::expr MultipleArrayMemory::store(const z3::expr &f32val,
