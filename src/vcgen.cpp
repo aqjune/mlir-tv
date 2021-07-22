@@ -362,7 +362,6 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
   // step3. add result tensor to register
-  auto numelem = memory.getNumElementsOfMemBlock(m.getBID());
   st.regs.add(op.getResult(), t_res);
   st.wellDefined(m.isInBounds());
 
