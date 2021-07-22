@@ -153,14 +153,14 @@ private:
 };
 
 class MemRef {
-  std::shared_ptr<Memory> m;
+  Memory *m;
   z3::expr bid; // blockID
   Index offset; // offset
   std::vector<z3::expr> dims;
 
 public:
-  MemRef(std::shared_ptr<Memory> m);
-  MemRef(std::shared_ptr<Memory> m,
+  MemRef(Memory *m);
+  MemRef(Memory *m,
     const std::string &name,
     const std::vector<z3::expr> &dims,
     const z3::sort &elemty);
