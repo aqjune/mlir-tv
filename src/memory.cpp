@@ -20,6 +20,15 @@ Memory* Memory::create(unsigned int numBlocks, MemEncoding encoding) {
   }
 }
 
+pair<z3::expr, std::vector<z3::expr>> Memory::refines(const Memory &other) const {
+  auto bid = ctx.bv_const("bid", getBIDBits());
+  auto offset = Index("offset", true);
+  auto [srcValue, srcSuccess] = load(bid, offset);
+  auto [tgtValue, tgtSuccess] = other.load(bid, offset);
+  auto ret = z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue);
+  return {z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue), {bid, offset}};
+}
+
 SingleArrayMemory::SingleArrayMemory(unsigned int numBlocks):
   Memory(ulog2(numBlocks), numBlocks),
   arrayMaps(ctx.constant("arrayMaps",
@@ -51,16 +60,6 @@ std::pair<z3::expr, z3::expr> SingleArrayMemory::load(
   const z3::expr &bid, const z3::expr &idx) const {
   const auto block = getMemBlock(bid);
   return {z3::select(block.array, idx), z3::ult(idx, block.numelem)};
-}
-
-pair<z3::expr, std::vector<z3::expr>>
-SingleArrayMemory::refines(const Memory &other) const {
-  auto bid = ctx.bv_const("bid", bits);
-  auto idx = Index("idx", true);
-  auto [srcValue, srcSuccess] = load(bid, idx);
-  auto [tgtValue, tgtSuccess] = other.load(bid, idx);
-
-  return {z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue), {bid, idx}};
 }
 
 MultipleArrayMemory::MultipleArrayMemory(unsigned int numBlocks):
@@ -103,14 +102,4 @@ std::pair<z3::expr, z3::expr> MultipleArrayMemory::load(
   z3::expr numelem = z3::select(numelemMaps, bid);
   z3::expr success = z3::ult(idx, numelem);
   return {value, success};
-}
-
-pair<z3::expr, std::vector<z3::expr>>
-MultipleArrayMemory::refines(const Memory &other) const {
-  auto bid = ctx.bv_const("bid", bits);
-  auto offset = Index("offset", true);
-  auto [srcValue, srcSuccess] = load(bid, offset);
-  auto [tgtValue, tgtSuccess] = other.load(bid, offset);
-  auto ret = z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue);
-  return {z3::implies(tgtSuccess, srcSuccess && srcValue == tgtValue), {bid, offset}};
 }
