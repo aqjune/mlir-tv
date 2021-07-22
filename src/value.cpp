@@ -435,9 +435,9 @@ z3::expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx) {}
+MemRef::MemRef(std::shared_ptr<Memory> m): m(m), bid(ctx), offset(ctx) {}
 
-MemRef::MemRef(Memory *m,
+MemRef::MemRef(shared_ptr<Memory> m,
   const std::string &name,
   const std::vector<z3::expr> &dims,
   const z3::sort &elemty):

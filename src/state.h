@@ -57,7 +57,7 @@ public:
   // expr some day (or simply use Alive2's one), and this form will be helpful
   // then.
   z3::expr isWellDefined;
-  Memory *m;
+  std::shared_ptr<Memory> m;
 
   State(unsigned int numBlocks, MemEncoding encoding);
 

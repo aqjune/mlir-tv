@@ -28,6 +28,7 @@ protected:
 public:
   static Memory * create(unsigned int numBlocks, MemEncoding encoding);
   Memory(unsigned int bits, unsigned int numBlocks): bits(bits), numBlocks(numBlocks) {}
+  virtual ~Memory() {}
 
   unsigned int getBIDBits() const { return bits; }
 
