@@ -1040,9 +1040,9 @@ static void printCounterEx(
     auto model = solver.get_model();
     auto [srcValue, srcSuccess] = st_src.m->load(bid, offset);
     auto [tgtValue, tgtSuccess] = st_tgt.m->load(bid, offset);
-    srcValue = model.eval(srcValue);
+    srcValue = model.eval(srcValue, true);
     srcSuccess = model.eval(srcSuccess);
-    tgtValue = model.eval(tgtValue);
+    tgtValue = model.eval(tgtValue, true);
     tgtSuccess = model.eval(tgtSuccess);
 
     llvm::outs() << "\n<Source memory state>\n";
