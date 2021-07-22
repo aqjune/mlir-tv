@@ -1038,22 +1038,13 @@ static void printCounterEx(
     auto bid = params[0];
     auto offset = params[1];
     auto model = solver.get_model();
-    auto [srcValue, srcSuccess] = st_src.m->load(bid, offset);
-    auto [tgtValue, tgtSuccess] = st_tgt.m->load(bid, offset);
-    srcValue = model.eval(srcValue, true);
-    srcSuccess = model.eval(srcSuccess);
-    tgtValue = model.eval(tgtValue, true);
-    tgtSuccess = model.eval(tgtSuccess);
+    auto srcValue = model.eval(st_src.m->load(bid, offset).first, true);
+    auto tgtValue = model.eval(st_tgt.m->load(bid, offset).first, true);
 
     llvm::outs() << "\n<Source memory state>\n";
-    if (srcSuccess.is_true()) {
-      llvm::outs() << "\tMemory[bid: " << model.eval(bid)
-        << ", offset: " << model.eval(offset) << "] : "
-        << srcValue << "\n";
-    } else {
-      llvm::outs() << "Memory is not defined properly\n";
-    }
-
+    llvm::outs() << "\tMemory[bid: " << model.eval(bid)
+      << ", offset: " << model.eval(offset) << "] : "
+      << srcValue << "\n";
     llvm::outs() << "\n<Target memory state>\n";
     llvm::outs() << "\tMemory[bid: " << model.eval(bid)
       << ", offset: " << model.eval(offset) << "] : "
