@@ -25,17 +25,6 @@ protected:
   const unsigned int bits;
   const unsigned int numBlocks;
 
-  // A memory block containing f32 elements.
-  class MemBlock {
-  public:
-    z3::expr array;    // Index::sort() -> Float::sort()
-    z3::expr writable; // bool::sort()
-    z3::expr numelem;  // Index::sort()
-
-    MemBlock(z3::expr &array, z3::expr &writable, z3::expr &numelem):
-      array(array), writable(writable), numelem(numelem) {}
-  };
-
 private:
   MemBlock getMemBlock(const z3::expr &bid) const;
 
