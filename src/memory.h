@@ -28,6 +28,7 @@ protected:
 public:
   static Memory * create(unsigned int numBlocks, MemEncoding encoding);
   Memory(unsigned int bits, unsigned int numBlocks): bits(bits), numBlocks(numBlocks) {}
+  virtual ~Memory() {}
   // Define refinement of memory
   std::pair<z3::expr, std::vector<z3::expr>> refines(const Memory &other) const;
 
