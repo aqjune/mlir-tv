@@ -245,7 +245,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
   if (!op.hasTensorSemantics())
-    return "operation with tensor semantics is supported only";
+    return "tensor semantics is supported only";
 
   if (op.getNumInputs() != 2 || op.getNumOutputs() != 1)
     return "unsupported form";
@@ -374,6 +374,19 @@ optional<string> encodeOp(State &st, mlir::linalg::IndexOp op) {
   assert(i < st.linalgGenericScopes.top().indVars.size());
   z3::expr idxvar = st.linalgGenericScopes.top().indVars[i];
   st.regs.add(op, Index(idxvar));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::linalg::FillOp op) {
+  if (!op.hasTensorSemantics())
+    return "tensor semantics is supported only";
+  if (op.getNumResults() != 1)
+    return "has multiple results";
+
+  auto t = st.regs.get<Tensor>(op.getOperand(1));
+  auto res = Tensor(st.regs.getZ3Expr(op.getOperand(0)), t.getDims());
+  st.regs.add(op.getResult(0), move(res));
   return {};
 }
 
@@ -843,14 +856,14 @@ static optional<string> encodeReductionLoopBodyAndOutput(
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   if (!op.hasTensorSemantics())
-    return "operation with tensor semantics is supported only";
+    return "tensor semantics is supported only";
 
   if (op.getNumOutputs() != 1)
-    return "operation with single output is supported only";
+    return "a single output is supported only";
 
   auto &region = op.region();
   if (!llvm::hasSingleElement(region))
-    return "operation with one block is supported only";
+    return "a single block is supported only";
 
   auto &block = region.front();
   if (!std::all_of(block.args_begin(), block.args_end(),
@@ -935,6 +948,7 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
 
     ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
+    ENCODE(st, op, mlir::linalg::FillOp);
     ENCODE(st, op, mlir::linalg::GenericOp);
     ENCODE(st, op, mlir::linalg::InitTensorOp);
     ENCODE(st, op, mlir::linalg::MatmulOp);
