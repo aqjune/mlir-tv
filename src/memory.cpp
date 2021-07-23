@@ -13,10 +13,12 @@ static unsigned int ulog2(unsigned int numBlocks) {
 
 Memory* Memory::create(unsigned int numBlocks, MemEncoding encoding) {
   switch(encoding) {
-    case MemEncoding::SINGLE_ARRAY:
-      return new SingleArrayMemory(numBlocks);
-    case MemEncoding::MULTIPLE_ARRAY:
-      return new MultipleArrayMemory(numBlocks);
+  case MemEncoding::SINGLE_ARRAY:
+    return new SingleArrayMemory(numBlocks);
+  case MemEncoding::MULTIPLE_ARRAY:
+    return new MultipleArrayMemory(numBlocks);
+  default:
+    llvm_unreachable("Unknown memory encoding");
   }
 }
 
