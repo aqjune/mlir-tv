@@ -100,13 +100,15 @@ optional<z3::expr> encodeAffineExpr(
     mlir::AffineExpr ae, const vector<T> &dimvars
 ) {
   switch (ae.getKind()) {
-  case mlir::AffineExprKind::Add: {
+  case mlir::AffineExprKind::Add:
+  case mlir::AffineExprKind::Mul: {
     auto aboe = ae.dyn_cast<mlir::AffineBinaryOpExpr>();
     auto lhs = encodeAffineExpr(aboe.getLHS(), dimvars);
     auto rhs = encodeAffineExpr(aboe.getRHS(), dimvars);
     if (!lhs || !rhs)
       return {};
-    return *lhs + *rhs;
+    return (ae.getKind() == mlir::AffineExprKind::Add) ?
+        *lhs + *rhs : *lhs * *rhs;
   }
   case mlir::AffineExprKind::DimId: {
     auto ade = ae.dyn_cast<mlir::AffineDimExpr>();
@@ -116,6 +118,8 @@ optional<z3::expr> encodeAffineExpr(
   }
   case mlir::AffineExprKind::Constant: {
     auto ac = ae.dyn_cast<mlir::AffineConstantExpr>();
+    if (ac.getValue() < 0)
+      return {};
     return Index(ac.getValue());
   }
   default:
