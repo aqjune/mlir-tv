@@ -127,6 +127,7 @@ public:
 
   Tensor matmul(const Tensor &b) const;
 
+  z3::expr dot(const Tensor &b) const;
   z3::expr sum() const;
 
   operator z3::expr() const { return arr; }

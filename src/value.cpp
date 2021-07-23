@@ -302,6 +302,10 @@ Tensor Tensor::matmul(const Tensor &b) const {
       aop::dot(a_row, bt_row, dims[1]));
 }
 
+z3::expr Tensor::dot(const Tensor &t2) const {
+  return aop::dot(arr, t2.arr, get1DSize());
+}
+
 z3::expr Tensor::sum() const {
   return aop::sum(arr, get1DSize());
 }

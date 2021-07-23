@@ -7,7 +7,7 @@ namespace aop {
 static AbsLevelDot alDot;
 
 void setAbstractionLevel(AbsLevelDot ad) {
-  alDot = alDot;
+  alDot = ad;
 }
 
 

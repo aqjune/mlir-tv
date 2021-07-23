@@ -174,11 +174,15 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   assert(ty);
 
   vector<z3::expr> sizes;
-  for (unsigned i = 0; i < ty.getRank(); ++i) {
-    if (op.isDynamicSize(i))
-      sizes.push_back(st.regs.get<Index>(op.getDynamicSize(i)));
-    else
-      sizes.push_back(Index(op.getStaticSize(i)));
+  if (ty.getRank() == 0) {
+    sizes.push_back(Index(1));
+  } else {
+    for (unsigned i = 0; i < ty.getRank(); ++i) {
+      if (op.isDynamicSize(i))
+        sizes.push_back(st.regs.get<Index>(op.getDynamicSize(i)));
+      else
+        sizes.push_back(Index(op.getStaticSize(i)));
+    }
   }
 
   auto elemTy = Tensor::getElemTy(ty);
@@ -382,11 +386,34 @@ optional<string> encodeOp(State &st, mlir::linalg::FillOp op) {
   if (!op.hasTensorSemantics())
     return "tensor semantics is supported only";
   if (op.getNumResults() != 1)
-    return "has multiple results";
+    return "it has multiple results";
 
   auto t = st.regs.get<Tensor>(op.getOperand(1));
   auto res = Tensor(st.regs.getZ3Expr(op.getOperand(0)), t.getDims());
   st.regs.add(op.getResult(0), move(res));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::linalg::DotOp op) {
+  if (!op.hasTensorSemantics())
+    return "tensor semantics is supported only";
+
+  if (op.getNumResults() != 1)
+    return "it has multiple results";
+
+  auto inputOps = op.getInputOperands();
+  auto outputTy = op.getType(0).dyn_cast<mlir::TensorType>();
+  if (outputTy.getElementType() !=
+      inputOps[0]->get().getType().dyn_cast<mlir::TensorType>()
+          .getElementType())
+    return "casting is not supported";
+
+  auto t1 = st.regs.get<Tensor>(inputOps[0]->get());
+  auto t2 = st.regs.get<Tensor>(inputOps[1]->get());
+  st.wellDefined(t1.get1DSize() == t2.get1DSize());
+  auto res = t1.dot(t2);
+  st.regs.add(op.getResult(0), Tensor(res, getDims(outputTy, false)));
   return {};
 }
 
@@ -793,7 +820,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
 
   // Represent %v as an element of a tensor.
   Tensor t_v = Tensor::mkLambda(
-      vector(linalgInfo.indVarUpperBounds),
+      addOne(vector(linalgInfo.indVarUpperBounds)),
       vector(linalgInfo.indVars),
       newst.regs.getZ3Expr(sumvar));
 
@@ -807,8 +834,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
-    vector<z3::expr> tensorSz;
-    for (unsigned i = 0; i < outputType.getRank(); ++i)
+    vector<z3::expr> tensorSz(1, Index(1));
+    for (unsigned i = 1; i < outputType.getRank(); ++i)
       tensorSz.push_back(Index(1));
     t_res = Tensor(t_v.sum(), tensorSz);
     return {};
@@ -842,8 +869,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
 
     auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
     auto t_sum = Tensor::mkLambda(
-          vector(boundsForRes),
-          vector(indVarsForRes),
+          addOne(move(boundsForRes)),
+          move(indVarsForRes),
           t_v.get(linalgInfo.indVars))
         .sum();
 
@@ -906,6 +933,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
       return errmsg;
   }
 
+  assert(t_res.getDims().size() != 0);
   newst.linalgGenericScopes.pop();
 
   if (op.getNumResults() != 0) {
@@ -946,10 +974,11 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
     ENCODE(st, op, mlir::memref::StoreOp);
     ENCODE(st, op, mlir::memref::TensorLoadOp);
 
-    ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
+    ENCODE(st, op, mlir::linalg::DotOp);
     ENCODE(st, op, mlir::linalg::FillOp);
     ENCODE(st, op, mlir::linalg::GenericOp);
+    ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::InitTensorOp);
     ENCODE(st, op, mlir::linalg::MatmulOp);
     ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp);
