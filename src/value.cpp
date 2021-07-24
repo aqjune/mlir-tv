@@ -5,8 +5,8 @@
 
 using namespace std;
 
-vector<z3::expr> getDims(
-    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize) {
+static vector<z3::expr> getDims(
+    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize = false) {
   vector<z3::expr> dims;
   //static int dim_var = 0;
 

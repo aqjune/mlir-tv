@@ -213,7 +213,11 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
-  st.regs.add(op.getResult(), t.reshape(getDims(op.getResultType())));
+  auto res = Tensor::getDimsAndElemTy(op.getResultType());
+  if (!res)
+    return "unsupported type";
+
+  st.regs.add(op.getResult(), t.reshape(res->first));
   return {};
 }
 
@@ -221,7 +225,10 @@ template<>
 optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
 
-  auto newdims = getDims(op.getResultType(), true);
+  auto res = Tensor::getDimsAndElemTy(op.getResultType());
+  if (!res)
+    return "unsupported type";
+  auto newdims = move(res->first);
   auto indices = op.getReassociationIndices();
 
   unsigned i = 0;
@@ -422,11 +429,15 @@ optional<string> encodeOp(State &st, mlir::linalg::DotOp op) {
           .getElementType())
     return "casting is not supported";
 
+  auto resty = Tensor::getDimsAndElemTy(outputTy);
+  if (!resty)
+    return "unsupported type";
+
   auto t1 = st.regs.get<Tensor>(inputOps[0]->get());
   auto t2 = st.regs.get<Tensor>(inputOps[1]->get());
   st.wellDefined(t1.get1DSize() == t2.get1DSize());
   auto res = t1.dot(t2);
-  st.regs.add(op.getResult(0), Tensor(res, getDims(outputTy, false)));
+  st.regs.add(op.getResult(0), Tensor(res, resty->first));
   return {};
 }
 
@@ -542,8 +553,11 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
     if (!splatfval)
       return "a fp splat constant tensor is supported only";
 
-    auto dims = getDims(op.getType().cast<mlir::TensorType>());
-    st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), move(dims)));
+    auto resty = Tensor::getDimsAndElemTy(
+        op.getType().cast<mlir::TensorType>());
+    if (!resty)
+      return "unsupported type";
+    st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), resty->first));
     return {};
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
     llvm::APInt i = intAttr.getValue();
