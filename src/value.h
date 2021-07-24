@@ -131,7 +131,8 @@ public:
 
   // If tensorTy is unsupported, return nullopt
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
-      getDimsAndElemTy(mlir::TensorType tensorTy);
+      getDimsAndElemTy(mlir::TensorType tensorTy,
+                       bool freshVarForUnknownSize = false);
 
   static std::optional<z3::sort> getElemTy(mlir::TensorType tensorTy);
 
@@ -167,7 +168,8 @@ public:
 
   // If memRefTy is unsupported, return nullopt
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
-      getDimsAndElemTy(mlir::MemRefType memRefTy);
+      getDimsAndElemTy(mlir::MemRefType memRefTy,
+                       bool freshVarForUnknownSize = false);
 
   std::pair<z3::expr, z3::expr> load(const std::vector<z3::expr> &indices) const;
   z3::expr store(const z3::expr &value, const std::vector<z3::expr> &indices) const;

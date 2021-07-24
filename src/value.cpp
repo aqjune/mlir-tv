@@ -42,7 +42,7 @@ Index::Index(const std::string &name, bool freshvar):
   static int count = 0;
   string name0 = name;
   if (freshvar)
-    name0 = name0 + "." + to_string(count);
+    name0 = name0 + "." + to_string(count++);
   e = ctx.bv_const(name0.c_str(), BITS);
 }
 
@@ -294,11 +294,12 @@ pair<z3::expr, vector<z3::expr>> Tensor::refines(const Tensor &other) const {
 }
 
 optional<pair<vector<z3::expr>, z3::sort>>
-Tensor::getDimsAndElemTy(mlir::TensorType tensorTy) {
+Tensor::getDimsAndElemTy(
+    mlir::TensorType tensorTy, bool freshVarForUnknownSize) {
   auto ety = getElemTy(tensorTy);
   if (!ety)
     return {};
-  return {{::getDims(tensorTy), *ety}};
+  return {{::getDims(tensorTy, freshVarForUnknownSize), *ety}};
 }
 
 optional<z3::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
@@ -408,7 +409,8 @@ MemRef::MemRef(Memory *m,
     dims(dims) {}
 
 optional<pair<vector<z3::expr>, z3::sort>>
-MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
+MemRef::getDimsAndElemTy(
+    mlir::MemRefType memRefTy, bool freshVarForUnknownSize) {
   // Step1. check element type
   auto elemty = memRefTy.getElementType();
   z3::sort elemty2(ctx);
@@ -427,7 +429,7 @@ MemRef::getDimsAndElemTy(mlir::MemRefType memRefTy) {
   };
   auto affine = memRefTy.getAffineMaps();
   if (all_maps_are_identity(affine)) {
-    return {{::getDims(memRefTy), elemty2}};
+    return {{::getDims(memRefTy, freshVarForUnknownSize), elemty2}};
   } else {
     // Currently we only support identity affine map memref.
     return {};
