@@ -5,49 +5,6 @@
 
 using namespace std;
 
-static z3::expr to1DIdx(
-    const vector<z3::expr> &idxs,
-    const vector<z3::expr> &dims) {
-  assert(idxs.size() == dims.size());
-  auto idx = idxs[0];
-
-  for (size_t i = 1; i < idxs.size(); ++i) {
-    // TODO: migrate constant foldings
-    idx = idx * dims[i] + idxs[i];
-  }
-  return idx;
-}
-
-static z3::expr fitsInDims(
-    const vector<z3::expr> &idxs,
-    const vector<z3::expr> &sizes) {
-  assert(idxs.size() == sizes.size());
-
-  z3::expr cond = ctx.bool_val(true);
-  for (size_t i = 0; i < idxs.size(); ++i)
-    cond = cond && (z3::ult(idxs[i], sizes[i]));
-  return cond;
-}
-
-static z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
-  z3::expr_vector ev(ctx);
-  for (auto &e: vec)
-    ev.push_back(e);
-  return ev;
-}
-
-static string or_omit(const z3::expr &e) {
-  string s;
-  llvm::raw_string_ostream rso(s);
-  rso << e.simplify();
-  rso.flush();
-
-  if (s.size() > 500)
-    return "(omitted)";
-  return s;
-}
-
-
 vector<z3::expr> getDims(
     const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize) {
   vector<z3::expr> dims;
