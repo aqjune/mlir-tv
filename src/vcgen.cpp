@@ -54,13 +54,12 @@ public:
   MemEncoding encoding;
   unsigned int numBlocks;
 };
-};
-
 
 enum VerificationStep {
   UB,
   RetValue,
   Memory
+};
 };
 
 static variant<string, State>
@@ -1273,12 +1272,18 @@ static Results validate(ValidationInput vinput) {
   if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
     return res;
 
-  // Try a different encoding
+  auto usedOps = aop::getUsedAbstractOps();
+  if (usedOps.dot && usedOps.sum)
+    // dot = mul + sum
+    aop::setAbstractionLevel(aop::SUM_MUL);
+  else
+    return res;
+
+  // Try more precise encoding
   llvm::outs()
       << "\n===============================================================\n"
       << "  Giving more precise semantics to abstractly defined ops...\n"
       << "===============================================================\n\n";
-  aop::setAbstractionLevel(aop::SUM_MUL);
   return tryValidation(vinput, false, elapsedMillisec);
 }
 

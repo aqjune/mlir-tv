@@ -5,9 +5,13 @@
 namespace aop {
 
 static AbsLevelDot alDot;
+static UsedAbstractOps usedOps;
+
+UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstractionLevel(AbsLevelDot ad) {
   alDot = ad;
+  memset(&usedOps, 0, sizeof(usedOps));
 }
 
 
@@ -17,6 +21,7 @@ z3::expr mkZeroElemFromArr(const z3::expr &arr) {
 }
 
 z3::expr fp_add(const z3::expr &f1, const z3::expr &f2) {
+  usedOps.add = true;
   auto fty = f1.get_sort();
 
   z3::sort_vector domain(ctx);
@@ -27,6 +32,8 @@ z3::expr fp_add(const z3::expr &f1, const z3::expr &f2) {
 }
 
 z3::expr fp_mul(const z3::expr &a, const z3::expr &b) {
+  usedOps.mul = true;
+
   // TODO: check that a.get_sort() == b.get_sort()
   z3::sort_vector domain(ctx);
   domain.push_back(a.get_sort());
@@ -36,6 +43,7 @@ z3::expr fp_mul(const z3::expr &a, const z3::expr &b) {
 }
 
 z3::expr sum(const z3::expr &a, const z3::expr &n) {
+  usedOps.sum = true;
   // TODO: check that a.sort is Index::sort() -> Float::sort()
 
   z3::sort_vector domain(ctx);
@@ -50,6 +58,7 @@ z3::expr sum(const z3::expr &a, const z3::expr &n) {
 
 z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
   if (alDot == FULLY_ABS) {
+    usedOps.dot = true;
     // TODO: check that a.get_sort() == b.get_sort()
     auto i = Index("idx");
 
@@ -65,6 +74,7 @@ z3::expr dot(const z3::expr &a, const z3::expr &b, const z3::expr &n) {
     args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), bi, zero)));
     return dotfn(args);
   } else if (alDot == SUM_MUL) {
+    usedOps.mul = usedOps.sum = true;
     // TODO: check that a.get_sort() == b.get_sort()
     auto i = Index("idx");
     z3::expr ai = z3::select(a, i), bi = z3::select(b, i);

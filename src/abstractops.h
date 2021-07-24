@@ -4,11 +4,20 @@
 
 namespace aop {
 
+struct UsedAbstractOps {
+  bool dot;
+  bool add;
+  bool mul;
+  bool sum;
+};
+UsedAbstractOps getUsedAbstractOps();
+
 enum AbsLevelDot {
   FULLY_ABS = 0, // Dot is a fully unknown function
   SUM_MUL   = 1  // Dot is a summation of pairwisely multiplied values
 };
 
+// This resets the used abstract ops record.
 void setAbstractionLevel(AbsLevelDot);
 
 z3::expr mkZeroElemFromArr(const z3::expr &arr);
