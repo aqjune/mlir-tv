@@ -1,6 +1,4 @@
-// UNSUPPORTED
-
-// This should be verified as correct.
+// VERIFY
 
 func @f(%a: tensor<?xf32>, %b: tensor<?xf32>) -> tensor<f32> {
   %i = linalg.init_tensor []: tensor<f32>

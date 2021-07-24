@@ -51,7 +51,7 @@ llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
   ));
 
 // These functions are excerpted from ToolUtilities.cpp in mlir
-static unsigned verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
     MLIRContext *context) {
   llvm::SourceMgr src_sourceMgr,  tgt_sourceMgr;
@@ -70,11 +70,11 @@ static unsigned verifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     return 66;
   }
 
-  return verify(ir_before, ir_after,
+  return validate(ir_before, ir_after,
     arg_dump_smt_to.getValue(), num_memblocks.getValue(), memory_encoding.getValue()).code;
 }
 
-static unsigned splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
+static unsigned splitAndValidateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
     MLIRContext *context) {
   const char splitMarker[] = "// -----";
@@ -95,8 +95,8 @@ static unsigned splitAndVerifyBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     auto targetSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(targetBuffers[i]);
 
     retcode = max(retcode,
-        verifyBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer),
-                     context));
+        validateBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer),
+                       context));
   }
 
   // If any fails, then return a failure of the tool.
@@ -139,9 +139,11 @@ int main(int argc, char* argv[]) {
 
   unsigned verificationResult;
   if (split_input_file) {
-    verificationResult = splitAndVerifyBuffer(move(src_file), move(tgt_file), &context);
+    verificationResult = splitAndValidateBuffer(
+        move(src_file), move(tgt_file), &context);
   } else {
-    verificationResult = verifyBuffer(move(src_file), move(tgt_file), &context);
+    verificationResult = validateBuffer(
+        move(src_file), move(tgt_file), &context);
   }
 
   return verificationResult;

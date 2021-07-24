@@ -31,7 +31,7 @@ public:
   Code code;
 };
 
-Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
+Results validate(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const std::string &dump_smt_to,
     unsigned int numBlocks,
     MemEncoding encoding);

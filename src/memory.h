@@ -36,6 +36,7 @@ public:
     refines(const Memory &other) const = 0;
 
   unsigned int getBIDBits() const { return bidBits; }
+  unsigned int getNumBlocks() const { return numBlocks; }
 
   virtual z3::expr getNumElementsOfMemBlock(const z3::expr &bid) const = 0;
   // Mark memblock's writable flag to `writable`

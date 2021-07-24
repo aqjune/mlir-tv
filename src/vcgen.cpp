@@ -45,7 +45,17 @@ public:
   Defer(function<void()> &&fn): fn(fn) {}
   ~Defer() { fn(); }
 };
+
+class ValidationInput {
+public:
+  mlir::FuncOp src, tgt;
+  string dumpSMTPath;
+
+  MemEncoding encoding;
+  unsigned int numBlocks;
 };
+};
+
 
 enum VerificationStep {
   UB,
@@ -950,13 +960,15 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
 }
 
 
-static optional<string> encodeRegion(State &st, mlir::Region &region) {
+static optional<string> encodeRegion(
+    State &st, mlir::Region &region, bool printOps) {
   if (!llvm::hasSingleElement(region))
     return "Only a region with one block is supported";
 
   auto &block = region.front();
   for (auto &op: block) {
-    llvm::outs() << "  " << op << "\n";
+    if (printOps)
+      llvm::outs() << "  " << op << "\n";
     ENCODE(st, op, mlir::ConstantIndexOp);
     ENCODE(st, op, mlir::ConstantFloatOp);
     ENCODE(st, op, mlir::ConstantOp);
@@ -993,18 +1005,20 @@ static optional<string> encodeRegion(State &st, mlir::Region &region) {
 
     RET_STR("Unknown op (" << op.getName() << "): " << op);
   }
-  llvm::outs() << "\n";
+  if (printOps)
+    llvm::outs() << "\n";
   return {};
 }
 
-static optional<string> encode(State &st, mlir::FuncOp &fn) {
-  return encodeRegion(st, fn.getRegion());
+static optional<string> encode(State &st, mlir::FuncOp &fn, bool printOps) {
+  return encodeRegion(st, fn.getRegion(), printOps);
 }
 
 
 static void printCounterEx(
     z3::solver &solver, const vector<z3::expr> &params, mlir::FuncOp src,
-    mlir::FuncOp tgt, State &st_src, State &st_tgt, VerificationStep step) {
+    mlir::FuncOp tgt, const State &st_src, const State &st_tgt,
+    VerificationStep step) {
   auto m = solver.get_model();
   auto or_omit_z3 = [&](const z3::expr &e) -> string {
     string s;
@@ -1114,12 +1128,12 @@ static void printCounterEx(
 
 static pair<z3::check_result, int64_t> solve(
     z3::solver &solver, const z3::expr &refinement_negated,
-    const string &dump_smt_to, const string &dump_string_to_suffix) {
+    const string &dumpSMTPath, const string &dump_string_to_suffix) {
   solver.reset();
   solver.add(refinement_negated);
 
-  if (!dump_smt_to.empty()) {
-    ofstream fout(dump_smt_to + "." + dump_string_to_suffix);
+  if (!dumpSMTPath.empty()) {
+    ofstream fout(dumpSMTPath + "." + dump_string_to_suffix);
     fout << refinement_negated;
     fout.close();
   }
@@ -1133,47 +1147,13 @@ static pair<z3::check_result, int64_t> solve(
   return {result, elapsedMillisec};
 }
 
-static Results verifyFunction(
-    mlir::FuncOp src, mlir::FuncOp tgt,
-    const string &dump_smt_to,
-    unsigned int numBlocks,
-    MemEncoding encoding) {
-  llvm::outs() << "Function " << src.getName() << "\n\n";
-  assert(src.getNumArguments() == tgt.getNumArguments());
-
-  auto raiseUnsupported = [](const string &msg) {
-    llvm::errs() << msg << "\n";
-    exit(1);
-  };
-
-  // TODO: do this after static analysis
-  aop::setAbstractionLevel(aop::FULLY_ABS);
-
-  auto st_src_or_err = createInputState(src, numBlocks, encoding);
-  if (holds_alternative<string>(st_src_or_err))
-    raiseUnsupported(get<string>(st_src_or_err));
-  auto st_src = get<State>(st_src_or_err);
-
-  auto st_tgt_or_err = createInputState(tgt, numBlocks, encoding);
-  if (holds_alternative<string>(st_tgt_or_err))
-    raiseUnsupported(get<string>(st_tgt_or_err));
-  auto st_tgt = get<State>(st_tgt_or_err);
-
-  llvm::outs() << "<src>\n";
-  if (auto msg = encode(st_src, src))
-    raiseUnsupported(*msg);
-
-  llvm::outs() << "<tgt>\n";
-  if (auto msg = encode(st_tgt, tgt))
-    raiseUnsupported(*msg);
-
-
+static Results checkRefinement(
+    const ValidationInput &vinput,
+    const State &st_src, const State &st_tgt, int64_t &elapsedMillisec) {
+  mlir::FuncOp src = vinput.src;
+  mlir::FuncOp tgt = vinput.tgt;
   auto fnname = src.getName().str();
-  int64_t elapsedMillisec = 0;
 
-  Defer timePrinter([&]() {
-    llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
-  });
   auto printErrorMsg = [&](z3::solver &s, z3::check_result res, const char *msg,
                            vector<z3::expr> &&params, VerificationStep step){
     if (res == z3::unknown) {
@@ -1190,7 +1170,7 @@ static Results verifyFunction(
     auto s = z3::solver(ctx, "QF_UFBV");
     auto not_refines =
         (st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
-    auto res = solve(s, not_refines, dump_smt_to, fnname + ".1.ub");
+    auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".1.ub");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Source is more defined than target", {}, VerificationStep::UB);
@@ -1201,7 +1181,7 @@ static Results verifyFunction(
   { // 2. Check whether src is always UB
     auto s = z3::solver(ctx, "QF_UFBV");
     auto not_ub = st_src.isWellDefined.simplify();
-    auto res = solve(s, not_ub, dump_smt_to, fnname + ".2.notub");
+    auto res = solve(s, not_ub, vinput.dumpSMTPath, fnname + ".2.notub");
     elapsedMillisec += res.second;
     if (res.first == z3::unsat) {
       llvm::outs() << "== Result: correct (source is always undefined) ==\n";
@@ -1221,7 +1201,7 @@ static Results verifyFunction(
 
     auto not_refines =
       (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
-    auto res = solve(s, not_refines, dump_smt_to, fnname + ".3.retval");
+    auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".3.retval");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Return value mismatch", move(params), VerificationStep::RetValue);
@@ -1229,12 +1209,13 @@ static Results verifyFunction(
     }
   }
 
-  if (numBlocks > 0) { // 4. Check memory refinement
+  if (st_src.m->getNumBlocks() > 0 ||
+      st_tgt.m->getNumBlocks() > 0) { // 4. Check memory refinement
     auto s = z3::solver(ctx, "QF_UFBV");
     auto [refines, params] = st_src.m->refines(*st_tgt.m);
     auto not_refines =
       (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
-    auto res = solve(s, not_refines, dump_smt_to, fnname + ".4.memory");
+    auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".4.memory");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Memory mismatch", move(params), VerificationStep::Memory);
@@ -1246,10 +1227,65 @@ static Results verifyFunction(
   return Results::SUCCESS;
 }
 
-Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
-            const string &dump_smt_to,
-            unsigned int numBlocks,
-            MemEncoding encoding) {
+static Results tryValidation(
+    const ValidationInput &vinput, bool printOps, int64_t &elapsedMillisec) {
+  auto src = vinput.src, tgt = vinput.tgt;
+  auto raiseUnsupported = [](const string &msg) {
+    llvm::errs() << msg << "\n";
+    exit(1);
+  };
+
+  auto st_src_or_err = createInputState(src, vinput.numBlocks, vinput.encoding);
+  if (holds_alternative<string>(st_src_or_err))
+    raiseUnsupported(get<string>(st_src_or_err));
+  auto st_src = get<State>(st_src_or_err);
+
+  auto st_tgt_or_err = createInputState(tgt, vinput.numBlocks, vinput.encoding);
+  if (holds_alternative<string>(st_tgt_or_err))
+    raiseUnsupported(get<string>(st_tgt_or_err));
+  auto st_tgt = get<State>(st_tgt_or_err);
+
+  if (printOps)
+    llvm::outs() << "<src>\n";
+  if (auto msg = encode(st_src, src, printOps))
+    raiseUnsupported(*msg);
+
+  if (printOps)
+    llvm::outs() << "<tgt>\n";
+  if (auto msg = encode(st_tgt, tgt, printOps))
+    raiseUnsupported(*msg);
+
+  auto res = checkRefinement(vinput, st_src, st_tgt, elapsedMillisec);
+  return res;
+}
+
+static Results validate(ValidationInput vinput) {
+  llvm::outs() << "Function " << vinput.src.getName() << "\n\n";
+  assert(vinput.src.getNumArguments() == vinput.tgt.getNumArguments());
+
+  int64_t elapsedMillisec = 0;
+  Defer timePrinter([&]() {
+    llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
+  });
+
+  aop::setAbstractionLevel(aop::FULLY_ABS);
+  auto res = tryValidation(vinput, true, elapsedMillisec);
+  if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
+    return res;
+
+  // Try a different encoding
+  llvm::outs()
+      << "\n===============================================================\n"
+      << "  Giving more precise semantics to abstractly defined ops...\n"
+      << "===============================================================\n\n";
+  aop::setAbstractionLevel(aop::SUM_MUL);
+  return tryValidation(vinput, false, elapsedMillisec);
+}
+
+
+Results validate(
+    mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
+    const string &dumpSMTPath, unsigned int numBlocks, MemEncoding encoding) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -1269,7 +1305,15 @@ Results verify(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
       continue;
     }
     // TODO: check fn signature
-    verificationResult.merge(verifyFunction(srcfn, itr->second, dump_smt_to, numBlocks, encoding));
+
+    ValidationInput vinput;
+    vinput.src = srcfn;
+    vinput.tgt = itr->second;
+    vinput.dumpSMTPath = dumpSMTPath;
+    vinput.numBlocks = numBlocks;
+    vinput.encoding = encoding;
+
+    verificationResult.merge(validate(vinput));
   }
 
   return verificationResult;
