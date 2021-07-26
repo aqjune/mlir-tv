@@ -146,7 +146,7 @@ static mlir::Type getTensorElemTy(mlir::Value v) {
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
     auto errmsg = encodeOp(st, op2); \
     if (errmsg) { \
-      RET_STR("Cannot encode " << op << "\n\t" << *errmsg << "\n"); \
+      RET_STR("Unknown op: " << op << "\n\t" << *errmsg << "\n") \
     } \
     continue; \
   } \
