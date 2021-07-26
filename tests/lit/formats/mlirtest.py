@@ -1,18 +1,17 @@
 from enum import Enum, auto
 from lit.formats.base import TestFormat
 import lit
-from lit.Test import *
+from lit.Test import ResultCode
 
-from typing import Optional
+from typing import Tuple
+from abc import ABC, abstractmethod
 import subprocess
 import os
 import re
 import signal
 
-def _starts_with_dot(name: str) -> bool:
-        return name.startswith(".")
-
-def _executeCommand(command: list[str]):
+def _executeCommand(dir_tv: str, dir_src: str, dir_tgt: str, timeout: int = 10000) -> Tuple[str, str, int]:
+    command: list[str] = [dir_tv, f"-smt-to={timeout}", dir_src, dir_tgt]
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8") as proc:
         exitCode = proc.wait()
 
@@ -24,6 +23,9 @@ def _executeCommand(command: list[str]):
 
     return out, err, exitCode
 
+def _has_unknown_keyword(errs: str) -> bool:
+    return "Unknown" in errs
+
 class TestKeyword(Enum):
     NOTEST = auto()
     VERIFY = auto()
@@ -31,64 +33,87 @@ class TestKeyword(Enum):
     UNSUPPORTED = auto()
     EXPECT = auto()
 
-class TestMetaData:
-    def __init__(self) -> None:
-        pass
-
-class ExpectTestMetaData(TestMetaData):
-    def __init__(self, msg: str) -> None:
-        super().__init__()
-        self.msg: str = msg
-
-class TestInfo:
-    def __init__(self, keyword: TestKeyword, metadata: Optional[TestMetaData] = None) -> None:
+class TestBase(ABC):
+    @abstractmethod
+    def __init__(self, keyword: TestKeyword) -> None:
         self.__keyword: TestKeyword = keyword
-        self.__metadata: Optional[TestMetaData] = metadata
+
+    @abstractmethod
+    def check_exit_code(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
+        pass
 
     def __eq__(self, other: TestKeyword) -> bool:
         return self.__keyword == other
 
-    def getData(self) -> Optional[TestMetaData]:
-        return self.__metadata
+class ExitCodeDependentTestBase(TestBase):
+    def __init__(self, keyword: TestKeyword) -> None:
+        super().__init__(keyword)
 
-def _includes_unsupported_message(errs: str) -> bool:
-    keywords: list[str] = ["Unknown"]
-    for keyword in keywords:
-        if keyword in errs:
-            return True
-    return False
-
-def _check_exit_code(test_info: TestInfo, outs: str, errs: str, exit_code: int):
-    if exit_code == 1:
-        # keyword-independent results
-        if _includes_unsupported_message(errs):
+    def check_exit_code(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
+        if exit_code == 1:
+            if _has_unknown_keyword(errs):
+                return lit.Test.UNRESOLVED, ""
+            else:
+                return lit.Test.TIMEOUT, ""
+        elif exit_code >= 65 and exit_code <= 68:
             return lit.Test.UNRESOLVED, ""
         else:
-            return lit.Test.TIMEOUT, ""
-    elif exit_code >= 65 and exit_code <= 68:
+            return self._check(outs, errs, exit_code)
+
+    @abstractmethod
+    def _check(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
+        pass
+
+class FixedResultTestBase(TestBase):
+    def __init__(self, keyword: TestKeyword) -> None:
+        super().__init__(keyword)
+
+class NoTest(FixedResultTestBase):
+    def __init__(self):
+        super().__init__(TestKeyword.NOTEST)
+
+    def check_exit_code(self, outs, errs, exit_code) -> Tuple[ResultCode, str]:
         return lit.Test.UNRESOLVED, ""
-    else:
-        # keyword-dependent results
-        if test_info == TestKeyword.VERIFY:
-            if exit_code == 0:
-                return lit.Test.PASS, ""
-            else:
-                return lit.Test.FAIL, f"stdout >>\n{outs}\n\nstderr >>\n{errs}"
-        
-        elif test_info == TestKeyword.VERIFY_INCORRECT:
-            if exit_code == 0:
-                return lit.Test.FAIL, "This test must fail!"
-            else:
-                return lit.Test.PASS, ""
 
-        elif test_info == TestKeyword.EXPECT:
-            msg: str = test_info.getData().msg
-            if msg in outs or msg in errs:
-                return lit.Test.PASS, ""
-            else:
-                return lit.Test.FAIL, f"Expected message >>\n{msg}\n\nstdout >>\n{outs}\n\nstderr >>\n{errs}"
+class UnsupportedTest(FixedResultTestBase):
+    def __init__(self):
+        super().__init__(TestKeyword.UNSUPPORTED)
 
-class MLIRTest(TestFormat):
+    def check_exit_code(self, outs, errs, exit_code) -> Tuple[ResultCode, str]:
+        return lit.Test.UNSUPPORTED, ""
+
+class VerifyTest(ExitCodeDependentTestBase):
+    def __init__(self):
+        super().__init__(TestKeyword.VERIFY)
+
+    def _check(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
+        if exit_code == 0:
+            return lit.Test.PASS, ""
+        else:
+            return lit.Test.FAIL, f"stdout >>\n{outs}\n\nstderr >>\n{errs}"
+
+class VerifyIncorrectTest(ExitCodeDependentTestBase):
+    def __init__(self):
+        super().__init__(TestKeyword.VERIFY_INCORRECT)
+
+    def _check(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
+        if exit_code == 0:
+            return lit.Test.FAIL, "This test must fail!"
+        else:
+            return lit.Test.PASS, ""
+
+class ExpectTest(ExitCodeDependentTestBase):
+    def __init__(self, msg: str):
+        super().__init__(TestKeyword.EXPECT)
+        self.__msg: str = msg
+
+    def _check(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
+        if self.__msg in outs or self.__msg in errs:
+            return lit.Test.PASS, ""
+        else:
+            return lit.Test.FAIL, f"Expected message >>\n{self.__msg}\n\nstdout >>\n{outs}\n\nstderr >>\n{errs}"
+
+class SrcTgtPairTest(TestFormat):
     __suffix_src: str = ".src.mlir"
     __suffix_tgt: str = ".tgt.mlir"
     __verify_regex = re.compile(r"^// ?VERIFY$")
@@ -97,55 +122,54 @@ class MLIRTest(TestFormat):
     __expect_regex = re.compile(r"^// ?EXPECT ?: ?\"(.*)\"$")
 
     def __init__(self, dir_tv: str, pass_name: str) -> None:
-        self.__dir_tv: str = dir_tv
-        self.__pass_name: str = pass_name
+        self._dir_tv: str = dir_tv
+        self._pass_name: str = pass_name
 
     def getTestsInDirectory(self, testSuite, path_in_suite, litConfig, localConfig):
         source_path = testSuite.getSourcePath(path_in_suite)
         for pass_name in filter(lambda name: (os.path.isdir(os.path.join(source_path, name)) \
-                    and not _starts_with_dot(name)
-                    and self.__pass_name == name)
+                    and not name.startswith('.') \
+                    and name == self._pass_name)
                 , os.listdir(source_path)):
             pass_path: str = os.path.join(source_path, pass_name)
-            for case_src_name in filter(lambda name: (os.path.isfile(os.path.join(pass_path, name)) \
-                        and name.endswith(MLIRTest.__suffix_src)
-                        and not _starts_with_dot(name))
+            for case_name in filter(lambda name: (os.path.isfile(os.path.join(pass_path, name)) \
+                        and not name.startswith('.') \
+                        and name.endswith(self.__suffix_src))
                     , os.listdir(pass_path)):
-                case_name: str = case_src_name.removesuffix(MLIRTest.__suffix_src)
-                yield lit.Test.Test(testSuite, path_in_suite + (os.path.join(pass_name, case_name),), localConfig)
+                yield lit.Test.Test(testSuite, path_in_suite 
+                    + (os.path.join(pass_name, case_name.removesuffix(self.__suffix_src)),), localConfig)
 
-    def execute(self, test, litConfig) -> lit.Test:
+    def execute(self, test, litConfig) -> Tuple[ResultCode, str]:
         test = test.getSourcePath()
-        tc_src = test + MLIRTest.__suffix_src
-        tc_tgt = test + MLIRTest.__suffix_tgt
+        tc_src = test + self.__suffix_src
+        tc_tgt = test + self.__suffix_tgt
         if not (os.path.isfile(tc_src) and os.path.isfile(tc_tgt)):
             # src or tgt mlir file is missing
-            return lit.Test.SKIPPED
+            return lit.Test.SKIPPED, ""
 
-        test_info = TestInfo(TestKeyword.NOTEST)
+        src_identity: Tuple[ResultCode, str] = VerifyTest().check_exit_code(*_executeCommand(self._dir_tv, tc_src, tc_src))
+        if src_identity[0] != lit.Test.PASS:
+            return src_identity
+
+        tgt_identity: Tuple[ResultCode, str] = VerifyTest().check_exit_code(*_executeCommand(self._dir_tv, tc_tgt, tc_tgt))
+        if tgt_identity[0] != lit.Test.PASS:
+            return tgt_identity
+
+        test: TestBase = NoTest()
         with open(tc_src, 'r') as src_file:
             for line in src_file.readlines():
-                if MLIRTest.__verify_regex.match(line):
-                    test_info = TestInfo(TestKeyword.VERIFY)
+                if self.__verify_regex.match(line):
+                    test = VerifyTest()
                     break
-                elif MLIRTest.__verify_incorrect_regex.match(line):
-                    test_info = TestInfo(TestKeyword.VERIFY_INCORRECT)
+                elif self.__verify_incorrect_regex.match(line):
+                    test = VerifyIncorrectTest()
                     break
-                elif MLIRTest.__unsupported_regex.match(line):
-                    test_info = TestInfo(TestKeyword.UNSUPPORTED)
+                elif self.__unsupported_regex.match(line):
+                    test = UnsupportedTest()
                     break
-                elif MLIRTest.__expect_regex.match(line):
-                    msg: str = MLIRTest.__expect_regex.findall(line)[0]
-                    metadata = ExpectTestMetaData(msg)
-                    test_info = TestInfo(TestKeyword.EXPECT, metadata)
+                elif self.__expect_regex.match(line):
+                    msg: str = self.__expect_regex.findall(line)[0]
+                    test = ExpectTest(msg)
                     break
 
-        if test_info == TestKeyword.NOTEST:
-            # file does not include valid test keyword
-            return lit.Test.UNRESOLVED, ""
-        elif test_info == TestKeyword.UNSUPPORTED:
-            # file includes dialect that is yet to be implemented in iree-tv
-            return lit.Test.UNSUPPORTED, ""
-        else:
-            cmd = [self.__dir_tv, "-smt-to=10000", tc_src, tc_tgt]
-            return _check_exit_code(test_info, *_executeCommand(cmd))
+        return test.check_exit_code(*_executeCommand(self._dir_tv, tc_src, tc_tgt))
