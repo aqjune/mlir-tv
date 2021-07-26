@@ -51,7 +51,7 @@ class ExitCodeDependentTestBase(TestBase):
 
     def check_exit_code(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
         if exit_code == 1:
-            if _has_unknown_op(errs):
+            if _has_unknown_keyword(errs):
                 return lit.Test.UNRESOLVED, ""
             else:
                 return lit.Test.TIMEOUT, ""
