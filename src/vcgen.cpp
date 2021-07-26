@@ -137,6 +137,9 @@ optional<z3::expr> encodeAffineExpr(
   }
 }
 
+static mlir::Type getTensorElemTy(mlir::Value v) {
+  return v.getType().dyn_cast<mlir::TensorType>().getElementType();
+}
 
 
 #define ENCODE(st, op, ty) { \
@@ -273,6 +276,10 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
 
   if (op.getNumInputs() != 2 || op.getNumOutputs() != 1)
     return "unsupported form";
+
+  if (getTensorElemTy(op.getOperand(0)) != getTensorElemTy(op.getOperand(1)) ||
+      getTensorElemTy(op.getOperand(0)) != getTensorElemTy(op.getResult(0)))
+    return "unsupported types";
 
   // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
   // aqjune talked with mlir people and it is confirmed by them
