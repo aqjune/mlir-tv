@@ -23,12 +23,8 @@ def _executeCommand(dir_tv: str, dir_src: str, dir_tgt: str, timeout: int = 1000
 
     return out, err, exitCode
 
-def _includes_unsupported_message(errs: str) -> bool:
-    unsupported_msg_keywords: list[str] = "Unknown"
-    for keyword in unsupported_msg_keywords:
-        if keyword == errs:
-            return True
-    return False
+def _has_unknown_keyword(errs: str) -> bool:
+    return "Unknown" in errs
 
 class TestKeyword(Enum):
     NOTEST = auto()
@@ -55,7 +51,7 @@ class ExitCodeDependentTestBase(TestBase):
 
     def check_exit_code(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
         if exit_code == 1:
-            if _includes_unsupported_message(errs):
+            if _has_unknown_op(errs):
                 return lit.Test.UNRESOLVED, ""
             else:
                 return lit.Test.TIMEOUT, ""
