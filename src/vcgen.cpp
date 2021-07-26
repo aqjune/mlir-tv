@@ -457,27 +457,35 @@ optional<string> encodeOp(State &st, mlir::MulFOp op) {
   return {};
 }
 
+static void addIntOrIndex(
+    State &st, mlir::Value res, const z3::expr &e, bool isIndex) {
+  if (isIndex)
+    st.regs.add(res, Index(e));
+  else
+    st.regs.add(res, Integer(e));
+}
+
 template<>
 optional<string> encodeOp(State &st, mlir::AddIOp op) {
-  auto a = st.regs.get<Integer>(op.getOperand(0));
-  auto b = st.regs.get<Integer>(op.getOperand(1));
-  st.regs.add(op, Integer((z3::expr)a + (z3::expr)b));
+  auto a = st.regs.getZ3Expr(op.getOperand(0));
+  auto b = st.regs.getZ3Expr(op.getOperand(1));
+  addIntOrIndex(st, op, a + b, op.getType().isIndex());
   return {};
 }
 
 template<>
 optional<string> encodeOp(State &st, mlir::SubIOp op) {
-  auto a = st.regs.get<Integer>(op.getOperand(0));
-  auto b = st.regs.get<Integer>(op.getOperand(1));
-  st.regs.add(op, Integer((z3::expr)a - (z3::expr)b));
+  auto a = st.regs.getZ3Expr(op.getOperand(0));
+  auto b = st.regs.getZ3Expr(op.getOperand(1));
+  addIntOrIndex(st, op, a - b, op.getType().isIndex());
   return {};
 }
 
 template<>
 optional<string> encodeOp(State &st, mlir::MulIOp op) {
-  auto a = st.regs.get<Integer>(op.getOperand(0));
-  auto b = st.regs.get<Integer>(op.getOperand(1));
-  st.regs.add(op, Integer((z3::expr)a * (z3::expr)b));
+  auto a = st.regs.getZ3Expr(op.getOperand(0));
+  auto b = st.regs.getZ3Expr(op.getOperand(1));
+  addIntOrIndex(st, op, a * b, op.getType().isIndex());
   return {};
 }
 
