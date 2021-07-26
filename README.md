@@ -7,6 +7,7 @@ We take the path of a user's local IREE repo to detect MLIR's src and build dire
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
 [IREE](https://github.com/google/iree),
 [Z3-solver](https://github.com/Z3Prover/z3),
+[smt-switch](https://github.com/makaimann/smt-switch),
 [Python3](https://www.python.org/downloads/)(>=3.9)
 
 ```bash
@@ -16,6 +17,7 @@ cd build
 cmake -DIREE_DIR=<dir/to/iree> \
       -DIREE_BUILD_DIR=<dir/to/iree-build> \
       -DZ3_DIR=<dir/to/z3-install> \
+      -DSMT_SWITCH_DIR=<dir/to/smt-switch/install> \
       ..
 cmake --build .
 ```
