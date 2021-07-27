@@ -137,13 +137,16 @@ optional<z3::expr> encodeAffineExpr(
   }
 }
 
+static mlir::Type getTensorElemTy(mlir::Value v) {
+  return v.getType().dyn_cast<mlir::TensorType>().getElementType();
+}
 
 
 #define ENCODE(st, op, ty) { \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
     auto errmsg = encodeOp(st, op2); \
     if (errmsg) { \
-      RET_STR("Cannot encode " << op << "\n\t" << *errmsg << "\n"); \
+      RET_STR("Unknown op: " << op << "\n\t" << *errmsg << "\n") \
     } \
     continue; \
   } \
@@ -273,6 +276,10 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
 
   if (op.getNumInputs() != 2 || op.getNumOutputs() != 1)
     return "unsupported form";
+
+  if (getTensorElemTy(op.getOperand(0)) != getTensorElemTy(op.getOperand(1)) ||
+      getTensorElemTy(op.getOperand(0)) != getTensorElemTy(op.getResult(0)))
+    return "unsupported types";
 
   // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
   // aqjune talked with mlir people and it is confirmed by them
@@ -457,27 +464,35 @@ optional<string> encodeOp(State &st, mlir::MulFOp op) {
   return {};
 }
 
+static void addIntOrIndex(
+    State &st, mlir::Value res, const z3::expr &e, bool isIndex) {
+  if (isIndex)
+    st.regs.add(res, Index(e));
+  else
+    st.regs.add(res, Integer(e));
+}
+
 template<>
 optional<string> encodeOp(State &st, mlir::AddIOp op) {
-  auto a = st.regs.get<Integer>(op.getOperand(0));
-  auto b = st.regs.get<Integer>(op.getOperand(1));
-  st.regs.add(op, Integer((z3::expr)a + (z3::expr)b));
+  auto a = st.regs.getZ3Expr(op.getOperand(0));
+  auto b = st.regs.getZ3Expr(op.getOperand(1));
+  addIntOrIndex(st, op, a + b, op.getType().isIndex());
   return {};
 }
 
 template<>
 optional<string> encodeOp(State &st, mlir::SubIOp op) {
-  auto a = st.regs.get<Integer>(op.getOperand(0));
-  auto b = st.regs.get<Integer>(op.getOperand(1));
-  st.regs.add(op, Integer((z3::expr)a - (z3::expr)b));
+  auto a = st.regs.getZ3Expr(op.getOperand(0));
+  auto b = st.regs.getZ3Expr(op.getOperand(1));
+  addIntOrIndex(st, op, a - b, op.getType().isIndex());
   return {};
 }
 
 template<>
 optional<string> encodeOp(State &st, mlir::MulIOp op) {
-  auto a = st.regs.get<Integer>(op.getOperand(0));
-  auto b = st.regs.get<Integer>(op.getOperand(1));
-  st.regs.add(op, Integer((z3::expr)a * (z3::expr)b));
+  auto a = st.regs.getZ3Expr(op.getOperand(0));
+  auto b = st.regs.getZ3Expr(op.getOperand(1));
+  addIntOrIndex(st, op, a * b, op.getType().isIndex());
   return {};
 }
 
