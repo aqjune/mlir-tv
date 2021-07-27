@@ -32,7 +32,7 @@ SingleArrayMemory::refines(const Memory &other) const {
   auto tgtWritable = other.getWritable(bid);
   // define memory refinement using writable refinement and value refinement
   auto wRefinement = z3::implies(srcWritable, tgtWritable);
-  auto vRefinement = z3::eq(tgtValue, srcValue);
+  auto vRefinement = (tgtValue == srcValue);
   auto refinement = z3::implies(tgtSuccess, srcSuccess && wRefinement && vRefinement);
   return {refinement, {bid, offset}};
 }
@@ -186,7 +186,7 @@ MultipleArrayMemory::refines(const Memory &other0) const {
     auto tgtWritable = other.getWritable(ubid);
 
     auto wRefinement = z3::implies(srcWritable, tgtWritable);
-    auto vRefinement = z3::eq(tgtValue, srcValue);
+    auto vRefinement = (tgtValue == srcValue);
     return z3::implies(tgtSuccess, srcSuccess && wRefinement && vRefinement);
   };
 
