@@ -147,14 +147,7 @@ class SrcTgtPairTest(TestFormat):
             # src or tgt mlir file is missing
             return lit.Test.SKIPPED, ""
 
-        src_identity: Tuple[ResultCode, str] = VerifyTest().check_exit_code(*_executeCommand(self._dir_tv, tc_src, tc_src))
-        if src_identity[0] != lit.Test.PASS:
-            return src_identity
-
-        tgt_identity: Tuple[ResultCode, str] = VerifyTest().check_exit_code(*_executeCommand(self._dir_tv, tc_tgt, tc_tgt))
-        if tgt_identity[0] != lit.Test.PASS:
-            return tgt_identity
-
+        skip_identity_check: bool = False
         test: TestBase = NoTest()
         with open(tc_src, 'r') as src_file:
             for line in src_file.readlines():
@@ -166,10 +159,20 @@ class SrcTgtPairTest(TestFormat):
                     break
                 elif self.__unsupported_regex.match(line):
                     test = UnsupportedTest()
+                    skip_identity_check = True # unsupported anyway
                     break
                 elif self.__expect_regex.match(line):
                     msg: str = self.__expect_regex.findall(line)[0]
                     test = ExpectTest(msg)
                     break
+
+        if not skip_identity_check:
+            src_identity: Tuple[ResultCode, str] = VerifyTest().check_exit_code(*_executeCommand(self._dir_tv, tc_src, tc_src))
+            if src_identity[0] != lit.Test.PASS:
+                return src_identity
+
+            tgt_identity: Tuple[ResultCode, str] = VerifyTest().check_exit_code(*_executeCommand(self._dir_tv, tc_tgt, tc_tgt))
+            if tgt_identity[0] != lit.Test.PASS:
+                return tgt_identity
 
         return test.check_exit_code(*_executeCommand(self._dir_tv, tc_src, tc_tgt))
