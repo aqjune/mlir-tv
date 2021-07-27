@@ -1,4 +1,5 @@
 // EXPECT: "Return value mismatch"
+// NO-IDENTITY
 
 func @f() -> tensor<?xf32> {
 	%c10 = constant 10: index
