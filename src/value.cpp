@@ -417,7 +417,7 @@ MemRef::MemRef(Memory *m,
 z3::expr MemRef::getWellDefined() const {
   auto expr = z3::ule(get1DSize(), MAX_SIZE);
   for (auto dim: dims)
-    expr = expr && z3::ule(dim, MAX_SIZE);
+    expr = expr && z3::ugt(dim, 0) && z3::ule(dim, MAX_SIZE);
   return expr;
 }
 
