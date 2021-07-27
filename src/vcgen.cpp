@@ -76,9 +76,11 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding) 
       auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
       if (!dimsAndElemTy)
         RET_STR("Unsupported Tensor element type: " << arg.getType());
-      s.regs.add(arg, Tensor("arg" + to_string(arg.getArgNumber()),
-                             dimsAndElemTy->first,
-                             dimsAndElemTy->second));
+      auto tensor = Tensor("arg" + to_string(arg.getArgNumber()),
+        dimsAndElemTy->first,
+        dimsAndElemTy->second);
+      s.regs.add(arg, tensor);
+      s.wellDefined(tensor.getWellDefined());
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
       auto dimsAndElemTy = MemRef::getDimsAndElemTy(ty);
@@ -294,6 +296,7 @@ template<>
 optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
 
+  // TODO(seongwon!!)
   auto res = Tensor::getDimsAndElemTy(op.getResultType());
   if (!res)
     return "unsupported type";
@@ -638,7 +641,9 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
         op.getType().cast<mlir::TensorType>());
     if (!resty)
       return "unsupported type";
-    st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), resty->first));
+    auto tensor = Tensor(Float(splatfval.getValueAsDouble()), resty->first);
+    st.regs.add(op, tensor);
+    st.wellDefined(tensor.getWellDefined());
     return {};
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
     llvm::APInt i = intAttr.getValue();
