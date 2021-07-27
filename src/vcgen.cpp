@@ -125,11 +125,8 @@ createPrecondition(mlir::FuncOp src, mlir::FuncOp tgt, State st_src, State st_tg
           RET_STR("Source-Target argument type is different.\n"
             << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
 
-        for (unsigned j = 0; j < srcDims.size(); j ++) {
-          z3::expr srcDim = srcDims[j];
-          z3::expr tgtDim = tgtDims[j];
-          precondition = precondition && (srcDim == tgtDim);
-        }
+        for (unsigned j = 0; j < srcDims.size(); j ++)
+          precondition = precondition && (srcDims[j] == tgtDims[j]);
       } else {
         RET_STR("Source-Target argument type is different.\n"
           << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
@@ -142,11 +139,8 @@ createPrecondition(mlir::FuncOp src, mlir::FuncOp tgt, State st_src, State st_tg
           RET_STR("Source-Target argument type is different.\n"
             << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
 
-        for (unsigned j = 0; j < srcDims.size(); j ++) {
-          z3::expr srcDim = srcDims[j];
-          z3::expr tgtDim = tgtDims[j];
-          precondition = precondition && (srcDim == tgtDim);
-        }
+        for (unsigned j = 0; j < srcDims.size(); j ++)
+          precondition = precondition && (srcDims[j] == tgtDims[j]);
       } else {
         RET_STR("Source-Target argument type is different.\n"
           << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
