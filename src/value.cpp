@@ -153,7 +153,7 @@ Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec,
 z3::expr Tensor::getWellDefined() const {
   auto expr = z3::ule(get1DSize(), MAX_SIZE);
   for (auto dim: dims)
-    expr = expr && z3::ule(dim, MAX_SIZE);
+    expr = expr && z3::ugt(dim, 0) && z3::ule(dim, MAX_SIZE);
   return expr;
 }
 
