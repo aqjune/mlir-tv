@@ -62,6 +62,65 @@ enum VerificationStep {
 };
 };
 
+static optional<string> tryFunctionSignatureCheck(mlir::FuncOp src, mlir::FuncOp tgt) {
+  if (src.getNumArguments() != tgt.getNumArguments())
+    RET_STR("Source Target program has different number of arguments.");
+
+  unsigned n = src.getNumArguments();
+  for (unsigned i = 0; i < n; ++i) {
+    auto srcArg = src.getArgument(i);
+    auto srcArgTy = srcArg.getType();
+    auto tgtArg = tgt.getArgument(i);
+    auto tgtArgTy = tgtArg.getType();
+
+    if (auto srcTy = srcArgTy.dyn_cast<mlir::TensorType>()) {
+      if (auto tgtTy = tgtArgTy.dyn_cast<mlir::TensorType>()) {
+        if (srcTy.getRank() != tgtTy.getRank())
+          RET_STR("Source Target Tensor Rank is different.");
+        for (unsigned j = 0; j < srcTy.getRank(); j ++)
+          if (srcTy.getDimSize(j) != tgtTy.getDimSize(j))
+            RET_STR("Source Target Tensor dimension size is different.");
+
+      } else {
+        RET_STR("Source Target argument type is different.\n"
+          << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+      }
+    } else if (auto srcTy = srcArgTy.dyn_cast<mlir::MemRefType>()) {
+      if (auto tgtTy = tgtArgTy.dyn_cast<mlir::MemRefType>()) {
+        if (srcTy.getRank() != tgtTy.getRank())
+          RET_STR("Source Target MemRef Rank is different.");
+        for (unsigned j = 0; j < srcTy.getRank(); j ++)
+          if (srcTy.getDimSize(j) != tgtTy.getDimSize(j))
+            RET_STR("Source Target MemRef dimension size is different.");
+      } else {
+        RET_STR("Source Target argument type is different.\n"
+          << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+      }
+
+    } else if (auto srcTy = srcArgTy.dyn_cast<mlir::IndexType>()) {
+      if (auto tgtTy = tgtArgTy.dyn_cast<mlir::IndexType>()) {
+        // add additional shape check..
+      } else {
+        RET_STR("Source-Target argument type is different.\n"
+          << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+      }
+
+    } else if (auto srcTy = srcArgTy.dyn_cast<mlir::FloatType>()) {
+      if (auto tgtTy = tgtArgTy.dyn_cast<mlir::FloatType>()) {
+        // add additional shape check..
+      } else {
+        RET_STR("SourceTarget argument type is different.\n"
+          << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+      }
+
+    } else {
+      RET_STR("Unsupported type: " << srcArg.getType());
+    }
+  }
+
+  return {};
+}
+
 static variant<string, State>
 createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding) {
   State s(numBlocks, encoding);
@@ -1262,6 +1321,9 @@ static Results tryValidation(
     llvm::errs() << msg << "\n";
     exit(1);
   };
+
+  if (auto errmsg = tryFunctionSignatureCheck(src, tgt))
+    raiseUnsupported(*errmsg);
 
   auto st_src_or_err = createInputState(src, vinput.numBlocks, vinput.encoding);
   if (holds_alternative<string>(st_src_or_err))
