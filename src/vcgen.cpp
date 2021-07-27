@@ -103,6 +103,76 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding) 
   return s;
 }
 
+static variant<string, z3::expr>
+createPrecondition(mlir::FuncOp src, mlir::FuncOp tgt, State st_src, State st_tgt) {
+  z3::expr precondition = ctx.bool_val(true);
+  assert(src.getNumArguments() == tgt.getNumArguments());
+
+  unsigned n = src.getNumArguments();
+  for (unsigned i = 0; i < n; ++i) {
+    auto srcArg = src.getArgument(i);
+    auto srcArgTy = srcArg.getType();
+    auto tgtArg = tgt.getArgument(i);
+    auto tgtArgTy = tgtArg.getType();
+
+    if (auto srcTy = srcArgTy.dyn_cast<mlir::TensorType>()) {
+      if (auto tgtTy = tgtArgTy.dyn_cast<mlir::TensorType>()) {
+        auto srcDims = st_src.regs.get<Tensor>(srcArg).getDims();
+        auto tgtDims = st_tgt.regs.get<Tensor>(tgtArg).getDims();
+        if (srcDims.size() != tgtDims.size())
+          RET_STR("Source-Target argument type is different.\n"
+            << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+
+        for (unsigned j = 0; j < srcDims.size(); j ++) {
+          z3::expr srcDim = srcDims[j];
+          z3::expr tgtDim = tgtDims[j];
+          precondition = precondition && (srcDim == tgtDim);
+        }
+      } else {
+        RET_STR("Source-Target argument type is different.\n"
+          << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+      }
+    } else if (auto srcTy = srcArgTy.dyn_cast<mlir::MemRefType>()) {
+      if (auto tgtTy = tgtArgTy.dyn_cast<mlir::MemRefType>()) {
+        auto srcDims = st_src.regs.get<MemRef>(srcArg).getDims();
+        auto tgtDims = st_tgt.regs.get<MemRef>(tgtArg).getDims();
+        if (srcDims.size() != tgtDims.size())
+          RET_STR("Source-Target argument type is different.\n"
+            << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+
+        for (unsigned j = 0; j < srcDims.size(); j ++) {
+          z3::expr srcDim = srcDims[j];
+          z3::expr tgtDim = tgtDims[j];
+          precondition = precondition && (srcDim == tgtDim);
+        }
+      } else {
+        RET_STR("Source-Target argument type is different.\n"
+          << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+      }
+
+    } else if (auto srcTy = srcArgTy.dyn_cast<mlir::IndexType>()) {
+      if (auto tgtTy = tgtArgTy.dyn_cast<mlir::IndexType>()) {
+        // add additional shape check..
+      } else {
+        RET_STR("Source-Target argument type is different.\n"
+          << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+      }
+
+    } else if (auto srcTy = srcArgTy.dyn_cast<mlir::FloatType>()) {
+      if (auto tgtTy = tgtArgTy.dyn_cast<mlir::FloatType>()) {
+        // add additional shape check..
+      } else {
+        RET_STR("Source-Target argument type is different.\n"
+          << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+      }
+
+    } else {
+      RET_STR("Unsupported type: " << srcArg.getType());
+    }
+  }
+
+  return precondition;
+}
 
 template<class T>
 optional<z3::expr> encodeAffineExpr(
@@ -1177,6 +1247,7 @@ static pair<z3::check_result, int64_t> solve(
 
 static Results checkRefinement(
     const ValidationInput &vinput,
+    const z3::expr &precondition,
     const State &st_src, const State &st_tgt, int64_t &elapsedMillisec) {
   mlir::FuncOp src = vinput.src;
   mlir::FuncOp tgt = vinput.tgt;
@@ -1196,10 +1267,22 @@ static Results checkRefinement(
 
   { // 1. Check UB
     auto s = z3::solver(ctx, "QF_UFBV");
+    z3::expr my1 = (z3::ule(Index("dim.0"), 1000) && z3::ule(Index("dim.1"), 1000) && z3::ule(Index("dim.3"), 1000) && (z3::expr)Index("dim.1") == (z3::expr)Index("dim.3")  );
+    // z3::expr my1 = ((Index("dim.0") == ctx.bv_val(100, 32)) && (Index("dim.1") == ctx.bv_val(100, 32)) && (Index("dim.4") == ctx.bv_val(100, 32)));
+
     auto not_refines =
-        (st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
+        (precondition && st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
     auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".1.ub");
     elapsedMillisec += res.second;
+
+    llvm::outs() << "\nCheck UB DEBUG MSG!!\n";
+    llvm::outs() << "Source :" << (my1 && st_src.isWellDefined) << "\n";
+    llvm::outs() << "Target :" << (st_tgt.isWellDefined) << "\n";
+    // auto m = s.get_model().to_string();
+    // llvm::outs() << "Models: " << m << "\n";
+    llvm::outs() << "\nCheck UB DEBUG MSG!!\n";
+
+
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Source is more defined than target", {}, VerificationStep::UB);
       return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
@@ -1226,11 +1309,18 @@ static Results checkRefinement(
       auto typedTarget = (decltype(src)) tgt;
       tie(refines, params) = src.refines(typedTarget);
     }, *st_src.retValue, *st_tgt.retValue);
-
+    z3::expr my1 = (z3::ule(Index("dim.0"), 1000) && z3::ule(Index("dim.1"), 1000) && z3::ule(Index("dim.3"), 1000) && (z3::expr)Index("dim.1") == (z3::expr)Index("dim.3")  );
     auto not_refines =
-      (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
+      (precondition && st_src.isWellDefined && my1 && st_tgt.isWellDefined && !refines).simplify();
     auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".3.retval");
     elapsedMillisec += res.second;
+
+    llvm::outs() << "\nCheck Return value DEBUG MSG!!\n";
+    llvm::outs() << "Refines : " <<  refines << "\n";
+    // auto m = s.get_model().to_string();
+    // llvm::outs() << "Models: " << m << "\n";
+    llvm::outs() << "\nCheck Return value DEBUG MSG END!!\n";
+
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Return value mismatch", move(params), VerificationStep::RetValue);
       return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
@@ -1242,7 +1332,7 @@ static Results checkRefinement(
     auto s = z3::solver(ctx, "QF_UFBV");
     auto [refines, params] = st_src.m->refines(*st_tgt.m);
     auto not_refines =
-      (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
+      (precondition && st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
     auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".4.memory");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
@@ -1273,6 +1363,11 @@ static Results tryValidation(
     raiseUnsupported(get<string>(st_tgt_or_err));
   auto st_tgt = get<State>(st_tgt_or_err);
 
+  auto precondition_or_err = createPrecondition(src, tgt, st_src, st_tgt);
+  if (holds_alternative<string>(precondition_or_err))
+    raiseUnsupported(get<string>(precondition_or_err));
+  auto precondition = get<z3::expr>(precondition_or_err);
+
   if (printOps)
     llvm::outs() << "<src>\n";
   if (auto msg = encode(st_src, src, printOps))
@@ -1283,7 +1378,7 @@ static Results tryValidation(
   if (auto msg = encode(st_tgt, tgt, printOps))
     raiseUnsupported(*msg);
 
-  auto res = checkRefinement(vinput, st_src, st_tgt, elapsedMillisec);
+  auto res = checkRefinement(vinput, precondition, st_src, st_tgt, elapsedMillisec);
   return res;
 }
 
