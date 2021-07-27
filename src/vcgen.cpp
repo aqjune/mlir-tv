@@ -85,9 +85,11 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding) 
       if (!dimsAndElemTy)
         RET_STR("Unsupported MemRef element type: " << arg.getType());
       // TODO : out of bounds pointer is allowed?
-      s.regs.add(arg, MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
+      auto memref = MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
         dimsAndElemTy->first,
-        dimsAndElemTy->second));
+        dimsAndElemTy->second);
+      s.regs.add(arg, memref);
+      s.wellDefined(memref.getWellDefined());
 
     } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
       s.regs.add(arg, Index("arg" + to_string(arg.getArgNumber())));
@@ -1267,22 +1269,10 @@ static Results checkRefinement(
 
   { // 1. Check UB
     auto s = z3::solver(ctx, "QF_UFBV");
-    z3::expr my1 = (z3::ule(Index("dim.0"), 1000) && z3::ule(Index("dim.1"), 1000) && z3::ule(Index("dim.3"), 1000) && (z3::expr)Index("dim.1") == (z3::expr)Index("dim.3")  );
-    // z3::expr my1 = ((Index("dim.0") == ctx.bv_val(100, 32)) && (Index("dim.1") == ctx.bv_val(100, 32)) && (Index("dim.4") == ctx.bv_val(100, 32)));
-
     auto not_refines =
         (precondition && st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
     auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".1.ub");
     elapsedMillisec += res.second;
-
-    llvm::outs() << "\nCheck UB DEBUG MSG!!\n";
-    llvm::outs() << "Source :" << (my1 && st_src.isWellDefined) << "\n";
-    llvm::outs() << "Target :" << (st_tgt.isWellDefined) << "\n";
-    // auto m = s.get_model().to_string();
-    // llvm::outs() << "Models: " << m << "\n";
-    llvm::outs() << "\nCheck UB DEBUG MSG!!\n";
-
-
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Source is more defined than target", {}, VerificationStep::UB);
       return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
@@ -1309,18 +1299,10 @@ static Results checkRefinement(
       auto typedTarget = (decltype(src)) tgt;
       tie(refines, params) = src.refines(typedTarget);
     }, *st_src.retValue, *st_tgt.retValue);
-    z3::expr my1 = (z3::ule(Index("dim.0"), 1000) && z3::ule(Index("dim.1"), 1000) && z3::ule(Index("dim.3"), 1000) && (z3::expr)Index("dim.1") == (z3::expr)Index("dim.3")  );
     auto not_refines =
-      (precondition && st_src.isWellDefined && my1 && st_tgt.isWellDefined && !refines).simplify();
+      (precondition && st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
     auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".3.retval");
     elapsedMillisec += res.second;
-
-    llvm::outs() << "\nCheck Return value DEBUG MSG!!\n";
-    llvm::outs() << "Refines : " <<  refines << "\n";
-    // auto m = s.get_model().to_string();
-    // llvm::outs() << "Models: " << m << "\n";
-    llvm::outs() << "\nCheck Return value DEBUG MSG END!!\n";
-
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Return value mismatch", move(params), VerificationStep::RetValue);
       return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;

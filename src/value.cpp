@@ -150,6 +150,12 @@ Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec,
   arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), elemty))),
   dims(dimvec) {}
 
+z3::expr Tensor::getWellDefined() const {
+  auto expr = z3::ule(get1DSize(), MAX_SIZE);
+  for (auto dim: dims)
+    expr = expr && z3::ule(dim, MAX_SIZE);
+  return expr;
+}
 
 z3::expr Tensor::get(const vector<z3::expr> &idxs) const {
   return z3::select(arr, to1DIdx(idxs, dims));
@@ -408,6 +414,13 @@ MemRef::MemRef(Memory *m,
     offset(Index((name + "_offset").c_str())),
     dims(dims) {}
 
+z3::expr MemRef::getWellDefined() const {
+  auto expr = z3::ule(get1DSize(), MAX_SIZE);
+  for (auto dim: dims)
+    expr = expr && z3::ule(dim, MAX_SIZE);
+  return expr;
+}
+
 optional<pair<vector<z3::expr>, z3::sort>>
 MemRef::getDimsAndElemTy(
     mlir::MemRefType memRefTy, bool freshVarForUnknownSize) {
@@ -448,7 +461,7 @@ z3::expr MemRef::store(const z3::expr &value, const std::vector<z3::expr> &indic
 
 z3::expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(bid);
-  auto memrefSize = get1DSize(dims);
+  auto memrefSize = get1DSize();
   return z3::uge(numelem, memrefSize) && z3::ult(offset, numelem - memrefSize);
 }
 
