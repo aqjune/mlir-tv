@@ -97,36 +97,37 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
       } else {
         s.regs.add(arg, move(*value));
       }
-    } else {
-      // Encode each arguments of source.
-      if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
-        auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
-        if (!dimsAndElemTy)
-          RET_STR("Unsupported Tensor element type: " << arg.getType());
-        s.regs.add(arg, Tensor("arg" + to_string(arg.getArgNumber()),
-                              dimsAndElemTy->first,
-                              dimsAndElemTy->second));
-
-      } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
-        auto dimsAndElemTy = MemRef::getDimsAndElemTy(ty);
-        if (!dimsAndElemTy)
-          RET_STR("Unsupported MemRef element type: " << arg.getType());
-        // TODO : out of bounds pointer is allowed?
-        s.regs.add(arg, MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
-          dimsAndElemTy->first,
-          dimsAndElemTy->second));
-
-      } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
-        s.regs.add(arg, Index("arg" + to_string(arg.getArgNumber())));
-
-      } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
-        s.regs.add(arg, Float("arg" + to_string(arg.getArgNumber())));
-
-      } else {
-        RET_STR("Unsupported type: " << arg.getType());
-      }
-      args.add(i, s.regs.findOrCrash(arg));
+      continue;
     }
+
+    // Encode each arguments of source.
+    if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
+      auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
+      if (!dimsAndElemTy)
+        RET_STR("Unsupported Tensor element type: " << arg.getType());
+      s.regs.add(arg, Tensor("arg" + to_string(arg.getArgNumber()),
+                            dimsAndElemTy->first,
+                            dimsAndElemTy->second));
+
+    } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
+      auto dimsAndElemTy = MemRef::getDimsAndElemTy(ty);
+      if (!dimsAndElemTy)
+        RET_STR("Unsupported MemRef element type: " << arg.getType());
+      // TODO : out of bounds pointer is allowed?
+      s.regs.add(arg, MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
+        dimsAndElemTy->first,
+        dimsAndElemTy->second));
+
+    } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
+      s.regs.add(arg, Index("arg" + to_string(arg.getArgNumber())));
+
+    } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
+      s.regs.add(arg, Float("arg" + to_string(arg.getArgNumber())));
+
+    } else {
+      RET_STR("Unsupported type: " << arg.getType());
+    }
+    args.add(i, s.regs.findOrCrash(arg));
   }
   return s;
 }
