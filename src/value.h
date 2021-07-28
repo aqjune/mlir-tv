@@ -83,8 +83,8 @@ class Tensor {
 
 public:
   // This may be parameterized later..
-  static const unsigned MAX_TENSOR_SIZE = 10000;
-  static const unsigned MAX_DIM_SIZE = 50;
+  static const unsigned MAX_TENSOR_SIZE = 100;
+  static const unsigned MAX_DIM_SIZE = 10;
 
   Tensor();
   // A splat tensor.

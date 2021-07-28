@@ -151,9 +151,14 @@ Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec,
   dims(dimvec) {}
 
 z3::expr Tensor::getWellDefined() const {
-  auto expr = z3::ule(get1DSize(), MAX_TENSOR_SIZE);
-  for (auto dim: dims)
-    expr = expr && z3::ule(dim, MAX_TENSOR_SIZE);
+  z3::expr size = get1DSize();
+  if (size.is_numeral())
+    return ctx.bool_val(true);
+  auto expr = z3::ule(size, MAX_TENSOR_SIZE);
+  for (auto dim: dims) {
+    if (dim.is_numeral()) continue;
+    expr = expr && z3::ugt(dim, 0)&& z3::ule(dim, MAX_TENSOR_SIZE);
+  }
   return expr.simplify();
 }
 
