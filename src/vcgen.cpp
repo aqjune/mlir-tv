@@ -132,8 +132,16 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
     auto argty = arg.getType();
 
     if (auto value = args.get(i)) {
-      s.regs.add(arg, move(*value));
+      // Use identical arguments from source when encoding target.
+      if (holds_alternative<MemRef>(*value)) {
+        auto memref = get<MemRef>(*value);
+        memref.setMemory(s.m.get());
+        s.regs.add(arg, memref);
+      } else {
+        s.regs.add(arg, move(*value));
+      }
     } else {
+      // Encode each arguments of source.
       if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
         auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
         if (!dimsAndElemTy)
