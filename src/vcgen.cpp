@@ -62,23 +62,52 @@ enum VerificationStep {
 };
 };
 
+static optional<string> checkFunctionSignatures(mlir::FuncOp src, mlir::FuncOp tgt) {
+  if (src.getNumArguments() != tgt.getNumArguments())
+    RET_STR("The source and target program has different number of arguments.");
+
+  unsigned n = src.getNumArguments();
+  for (unsigned i = 0; i < n; ++i) {
+    auto srcArgTy = src.getArgument(i).getType();
+    auto tgtArgTy = tgt.getArgument(i).getType();
+    if (srcArgTy != tgtArgTy)
+      RET_STR("The source and target argument type is different.\n"
+          << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+  }
+
+  return {};
+}
+
 static variant<string, State>
-createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding) {
+createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, ArgInfo &args) {
   State s(numBlocks, encoding);
   s.isWellDefined = ctx.bool_val(true);
-
   unsigned n = fn.getNumArguments();
+
   for (unsigned i = 0; i < n; ++i) {
     auto arg = fn.getArgument(i);
     auto argty = arg.getType();
 
+    if (auto value = args.get(i)) {
+      // Use identical arguments from source when encoding target.
+      if (holds_alternative<MemRef>(*value)) {
+        MemRef memref = get<MemRef>(*value);
+        memref.setMemory(s.m.get());
+        s.regs.add(arg, move(memref));
+      } else {
+        s.regs.add(arg, move(*value));
+      }
+      continue;
+    }
+
+    // Encode each arguments of source.
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
       auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
       if (!dimsAndElemTy)
         RET_STR("Unsupported Tensor element type: " << arg.getType());
       s.regs.add(arg, Tensor("arg" + to_string(arg.getArgNumber()),
-                             dimsAndElemTy->first,
-                             dimsAndElemTy->second));
+                            dimsAndElemTy->first,
+                            dimsAndElemTy->second));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
       auto dimsAndElemTy = MemRef::getDimsAndElemTy(ty);
@@ -98,8 +127,8 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding) 
     } else {
       RET_STR("Unsupported type: " << arg.getType());
     }
+    args.add(i, s.regs.findOrCrash(arg));
   }
-
   return s;
 }
 
@@ -1263,12 +1292,17 @@ static Results tryValidation(
     exit(1);
   };
 
-  auto st_src_or_err = createInputState(src, vinput.numBlocks, vinput.encoding);
+  if (auto errmsg = checkFunctionSignatures(src, tgt))
+    raiseUnsupported(*errmsg);
+
+  ArgInfo args;
+
+  auto st_src_or_err = createInputState(src, vinput.numBlocks, vinput.encoding, args);
   if (holds_alternative<string>(st_src_or_err))
     raiseUnsupported(get<string>(st_src_or_err));
   auto st_src = get<State>(st_src_or_err);
 
-  auto st_tgt_or_err = createInputState(tgt, vinput.numBlocks, vinput.encoding);
+  auto st_tgt_or_err = createInputState(tgt, vinput.numBlocks, vinput.encoding, args);
   if (holds_alternative<string>(st_tgt_or_err))
     raiseUnsupported(get<string>(st_tgt_or_err));
   auto st_tgt = get<State>(st_tgt_or_err);

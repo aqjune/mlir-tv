@@ -12,6 +12,18 @@ using ValueTy = std::variant<Tensor, MemRef, Index, Float, Integer>;
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream&, const ValueTy &);
 
+class ArgInfo {
+private:
+  llvm::DenseMap<int, ValueTy> m;
+public:
+  void add(int v, ValueTy &&t) { m.insert({v, std::move(t)}); }
+  std::optional<ValueTy> get(int v) const {
+    auto itr = m.find(v);
+    if (itr != m.end())
+      return {itr->second};
+    return {};
+  }
+};
 
 class RegFile {
 private:
