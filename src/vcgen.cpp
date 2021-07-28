@@ -91,9 +91,9 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
     if (auto value = args.get(i)) {
       // Use identical arguments from source when encoding target.
       if (holds_alternative<MemRef>(*value)) {
-        auto memref = get<MemRef>(*value);
+        MemRef memref = get<MemRef>(*value);
         memref.setMemory(s.m.get());
-        s.regs.add(arg, memref);
+        s.regs.add(arg, move(memref));
       } else {
         s.regs.add(arg, move(*value));
       }
