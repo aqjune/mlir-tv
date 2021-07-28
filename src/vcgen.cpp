@@ -105,9 +105,11 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
       auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
       if (!dimsAndElemTy)
         RET_STR("Unsupported Tensor element type: " << arg.getType());
-      s.regs.add(arg, Tensor("arg" + to_string(arg.getArgNumber()),
-                            dimsAndElemTy->first,
-                            dimsAndElemTy->second));
+      auto tensor = Tensor("arg" + to_string(arg.getArgNumber()),
+        dimsAndElemTy->first,
+        dimsAndElemTy->second);
+      s.wellDefined(tensor.getWellDefined());
+      s.regs.add(arg, move(tensor));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
       auto dimsAndElemTy = MemRef::getDimsAndElemTy(ty);
