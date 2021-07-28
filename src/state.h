@@ -16,7 +16,7 @@ class ArgInfo {
 private:
   llvm::DenseMap<int, ValueTy> m;
 public:
-  void add(int v, ValueTy &&t) { m.insert({v, t}); }
+  void add(int v, ValueTy &&t) { m.insert({v, std::move(t)}); }
   std::optional<ValueTy> get(int v) const {
     auto itr = m.find(v);
     if (itr != m.end())
