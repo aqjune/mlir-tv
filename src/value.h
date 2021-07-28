@@ -164,6 +164,10 @@ class MemRef {
   std::vector<z3::expr> dims;
 
 public:
+  // This may be parameterized later..
+  static const unsigned MAX_MEMREF_SIZE = 10000;
+  static const unsigned MAX_DIM_SIZE = 25;
+
   MemRef(Memory *m);
   MemRef(Memory *m,
     const std::string &name,
@@ -171,6 +175,8 @@ public:
     const z3::sort &elemty);
 
   operator z3::expr() const { return bid && offset; }
+
+  z3::expr getWellDefined() const;
 
   // If memRefTy is unsupported, return nullopt
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
@@ -182,6 +188,7 @@ public:
   z3::expr isInBounds() const;
   z3::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
+  z3::expr get1DSize() const { return ::get1DSize(dims); }
   Index getDim(uint64_t idx) const;
   std::vector<z3::expr> getDims() const { return dims; }
   void setMemory(Memory *m) { this->m = m; }

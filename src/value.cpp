@@ -419,6 +419,18 @@ MemRef::MemRef(Memory *m,
     offset(Index((name + "_offset").c_str())),
     dims(dims) {}
 
+z3::expr MemRef::getWellDefined() const {
+  z3::expr size = get1DSize();
+  if (size.is_numeral())
+    return ctx.bool_val(true);
+  auto expr = z3::ule(size, MAX_MEMREF_SIZE);
+  for (auto dim: dims) {
+    if (dim.is_numeral()) continue;
+    expr = expr && z3::ugt(dim, 0)&& z3::ule(dim, MAX_DIM_SIZE);
+  }
+  return expr.simplify();
+}
+
 optional<pair<vector<z3::expr>, z3::sort>>
 MemRef::getDimsAndElemTy(
     mlir::MemRefType memRefTy, bool freshVarForUnknownSize) {
@@ -459,7 +471,7 @@ z3::expr MemRef::store(const z3::expr &value, const std::vector<z3::expr> &indic
 
 z3::expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(bid);
-  auto memrefSize = get1DSize(dims);
+  auto memrefSize = get1DSize();
   return z3::uge(numelem, memrefSize) && z3::ult(offset, numelem - memrefSize);
 }
 
