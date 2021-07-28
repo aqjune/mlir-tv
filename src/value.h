@@ -132,7 +132,7 @@ public:
   // If tensorTy is unsupported, return nullopt
   static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
       getDimsAndElemTy(mlir::TensorType tensorTy,
-                       bool freshVarForUnknownSize = false);
+                       bool freshVarForUnknownSize = true);
 
   static std::optional<z3::sort> getElemTy(mlir::TensorType tensorTy);
 
