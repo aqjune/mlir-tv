@@ -603,9 +603,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
         op.getType().cast<mlir::TensorType>());
     if (!resty)
       return "unsupported type";
-    auto tensor = Tensor(Float(splatfval.getValueAsDouble()), resty->first);
-    st.wellDefined(tensor.getWellDefined());
-    st.regs.add(op, move(tensor));
+    st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), resty->first));
     return {};
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
     llvm::APInt i = intAttr.getValue();
