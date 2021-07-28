@@ -150,6 +150,12 @@ Tensor::Tensor(const string &name, const vector<z3::expr> &dimvec,
   arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), elemty))),
   dims(dimvec) {}
 
+z3::expr Tensor::getWellDefined() const {
+  auto expr = z3::ule(get1DSize(), MAX_TENSOR_SIZE);
+  for (auto dim: dims)
+    expr = expr && z3::ule(dim, MAX_TENSOR_SIZE);
+  return expr.simplify();
+}
 
 z3::expr Tensor::get(const vector<z3::expr> &idxs) const {
   return z3::select(arr, to1DIdx(idxs, dims));

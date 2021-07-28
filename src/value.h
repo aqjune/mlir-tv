@@ -82,6 +82,10 @@ class Tensor {
   z3::expr arr;
 
 public:
+  // This may be parameterized later..
+  static const unsigned MAX_TENSOR_SIZE = 10000;
+  static const unsigned MAX_DIM_SIZE = 50;
+
   Tensor();
   // A splat tensor.
   Tensor(const z3::expr &splat_elem, const std::vector<z3::expr> &dims);
@@ -90,6 +94,8 @@ public:
          const z3::sort &elemty);
 
   z3::expr asArray() const { return arr; }
+
+  z3::expr getWellDefined() const;
 
   // Return the element at indices.
   //   z3::expr v = tensor.get(indices)
