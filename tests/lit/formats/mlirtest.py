@@ -120,6 +120,7 @@ class SrcTgtPairTest(TestFormat):
     __verify_incorrect_regex = re.compile(r"^// ?VERIFY-INCORRECT$")
     __unsupported_regex = re.compile(r"^// ?UNSUPPORTED$")
     __expect_regex = re.compile(r"^// ?EXPECT ?: ?\"(.*)\"$")
+    __no_identity_regex = re.compile(r"^// ?NO-IDENTITY$")
 
     def __init__(self, dir_tv: str, pass_name: str) -> None:
         self._dir_tv: str = dir_tv
@@ -153,17 +154,16 @@ class SrcTgtPairTest(TestFormat):
             for line in src_file.readlines():
                 if self.__verify_regex.match(line):
                     test = VerifyTest()
-                    break
                 elif self.__verify_incorrect_regex.match(line):
                     test = VerifyIncorrectTest()
-                    break
                 elif self.__unsupported_regex.match(line):
                     test = UnsupportedTest()
-                    skip_identity_check = True # unsupported anyway
-                    break
                 elif self.__expect_regex.match(line):
                     msg: str = self.__expect_regex.findall(line)[0]
                     test = ExpectTest(msg)
+                elif self.__no_identity_regex.match(line):
+                    skip_identity_check = True
+                elif not line.strip(): # empty line: no more test keyword
                     break
 
         if not skip_identity_check:
