@@ -62,9 +62,9 @@ enum VerificationStep {
 };
 };
 
-static optional<string> tryFunctionSignatureCheck(mlir::FuncOp src, mlir::FuncOp tgt) {
+static optional<string> checkFunctionSignatures(mlir::FuncOp src, mlir::FuncOp tgt) {
   if (src.getNumArguments() != tgt.getNumArguments())
-    RET_STR("Source Target program has different number of arguments.");
+    RET_STR("The source and target program has different number of arguments.");
 
   unsigned n = src.getNumArguments();
   for (unsigned i = 0; i < n; ++i) {
@@ -76,24 +76,24 @@ static optional<string> tryFunctionSignatureCheck(mlir::FuncOp src, mlir::FuncOp
     if (auto srcTy = srcArgTy.dyn_cast<mlir::TensorType>()) {
       if (auto tgtTy = tgtArgTy.dyn_cast<mlir::TensorType>()) {
         if (srcTy.getRank() != tgtTy.getRank())
-          RET_STR("Source Target Tensor Rank is different.");
+          RET_STR("The source and target Tensor Rank is different.");
         for (unsigned j = 0; j < srcTy.getRank(); j ++)
           if (srcTy.getDimSize(j) != tgtTy.getDimSize(j))
-            RET_STR("Source Target Tensor dimension size is different.");
+            RET_STR("The source and target Tensor dimension size is different.");
 
       } else {
-        RET_STR("Source Target argument type is different.\n"
+        RET_STR("The source and target argument type is different.\n"
           << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
       }
     } else if (auto srcTy = srcArgTy.dyn_cast<mlir::MemRefType>()) {
       if (auto tgtTy = tgtArgTy.dyn_cast<mlir::MemRefType>()) {
         if (srcTy.getRank() != tgtTy.getRank())
-          RET_STR("Source Target MemRef Rank is different.");
+          RET_STR("The source and target MemRef Rank is different.");
         for (unsigned j = 0; j < srcTy.getRank(); j ++)
           if (srcTy.getDimSize(j) != tgtTy.getDimSize(j))
-            RET_STR("Source Target MemRef dimension size is different.");
+            RET_STR("The source and target MemRef dimension size is different.");
       } else {
-        RET_STR("Source Target argument type is different.\n"
+        RET_STR("The source and target argument type is different.\n"
           << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
       }
 
@@ -1334,7 +1334,7 @@ static Results tryValidation(
     exit(1);
   };
 
-  if (auto errmsg = tryFunctionSignatureCheck(src, tgt))
+  if (auto errmsg = checkFunctionSignatures(src, tgt))
     raiseUnsupported(*errmsg);
 
   ArgInfo args;
