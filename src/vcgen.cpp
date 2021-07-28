@@ -108,8 +108,8 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
       auto tensor = Tensor("arg" + to_string(arg.getArgNumber()),
         dimsAndElemTy->first,
         dimsAndElemTy->second);
-      s.regs.add(arg, tensor);
       s.wellDefined(tensor.getWellDefined());
+      s.regs.add(arg, move(tensor));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
       auto dimsAndElemTy = MemRef::getDimsAndElemTy(ty);
@@ -603,9 +603,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
         op.getType().cast<mlir::TensorType>());
     if (!resty)
       return "unsupported type";
-    auto tensor = Tensor(Float(splatfval.getValueAsDouble()), resty->first);
-    st.regs.add(op, tensor);
-    st.wellDefined(tensor.getWellDefined());
+    st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), resty->first));
     return {};
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
     llvm::APInt i = intAttr.getValue();
