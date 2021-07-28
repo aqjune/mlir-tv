@@ -116,9 +116,11 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
       if (!dimsAndElemTy)
         RET_STR("Unsupported MemRef element type: " << arg.getType());
       // TODO : out of bounds pointer is allowed?
-      s.regs.add(arg, MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
+      auto memref = MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
         dimsAndElemTy->first,
-        dimsAndElemTy->second));
+        dimsAndElemTy->second);
+      s.wellDefined(memref.getWellDefined());
+      s.regs.add(arg, move(memref));
 
     } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
       s.regs.add(arg, Index("arg" + to_string(arg.getArgNumber())));
