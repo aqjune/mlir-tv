@@ -165,8 +165,8 @@ class MemRef {
 
 public:
   // This may be parameterized later..
-  static const unsigned MAX_MEMREF_SIZE = 10000;
-  static const unsigned MAX_DIM_SIZE = 25;
+  static const unsigned MAX_MEMREF_SIZE = 1000000;
+  static const unsigned MAX_DIM_SIZE = 1000;
 
   MemRef(Memory *m);
   MemRef(Memory *m,
