@@ -163,7 +163,7 @@ class SrcTgtPairTest(TestFormat):
                     test = ExpectTest(msg)
                 elif self.__no_identity_regex.match(line):
                     skip_identity_check = True
-                elif not line: # end of test keywords
+                elif not line.strip(): # empty line: no more test keyword
                     break
 
         if not skip_identity_check:
