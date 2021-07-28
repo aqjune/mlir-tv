@@ -157,7 +157,7 @@ z3::expr Tensor::getWellDefined() const {
   auto expr = z3::ule(size, MAX_TENSOR_SIZE);
   for (auto dim: dims) {
     if (dim.is_numeral()) continue;
-    expr = expr && z3::ugt(dim, 0) && z3::ule(dim, MAX_DIM_SIZE);
+    expr = expr && z3::ule(dim, MAX_DIM_SIZE);
   }
   return expr.simplify();
 }
