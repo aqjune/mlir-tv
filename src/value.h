@@ -162,6 +162,7 @@ class MemRef {
   z3::expr bid; // blockID
   Index offset; // offset
   std::vector<z3::expr> dims;
+  z3::expr layout;
 
 public:
   // This may be parameterized later..
@@ -172,6 +173,7 @@ public:
   MemRef(Memory *m,
     const std::string &name,
     const std::vector<z3::expr> &dims,
+    const z3::expr &layout,
     const z3::sort &elemty);
 
   operator z3::expr() const { return bid && offset; }
@@ -179,8 +181,8 @@ public:
   z3::expr getWellDefined() const;
 
   // If memRefTy is unsupported, return nullopt
-  static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
-      getDimsAndElemTy(mlir::MemRefType memRefTy,
+  static std::optional<std::tuple<std::vector<z3::expr>, z3::expr, z3::sort>>
+      getDimsAndLayoutAndElemTy(mlir::MemRefType memRefTy,
                        bool freshVarForUnknownSize = true);
 
   std::pair<z3::expr, z3::expr> load(const std::vector<z3::expr> &indices) const;

@@ -408,16 +408,18 @@ z3::expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx) {}
+MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx), layout(ctx) {}
 
 MemRef::MemRef(Memory *m,
   const std::string &name,
   const std::vector<z3::expr> &dims,
+  const z3::expr &layout,
   const z3::sort &elemty):
     m(m),
     bid(ctx.bv_const((name + "_bid").c_str(), m->getBIDBits())),
     offset(Index((name + "_offset").c_str())),
-    dims(dims) {}
+    dims(dims),
+    layout(layout) {}
 
 z3::expr MemRef::getWellDefined() const {
   z3::expr size = get1DSize();
@@ -431,8 +433,8 @@ z3::expr MemRef::getWellDefined() const {
   return expr.simplify();
 }
 
-optional<pair<vector<z3::expr>, z3::sort>>
-MemRef::getDimsAndElemTy(
+optional<tuple<vector<z3::expr>, z3::expr, z3::sort>>
+MemRef::getDimsAndLayoutAndElemTy(
     mlir::MemRefType memRefTy, bool freshVarForUnknownSize) {
   // Step1. check element type
   auto elemty = memRefTy.getElementType();
@@ -446,15 +448,11 @@ MemRef::getDimsAndElemTy(
   }
 
   // Step2. check affine map
-  auto all_maps_are_identity = [](llvm::ArrayRef<mlir::AffineMap> maps) {
-    return llvm::all_of(maps,
-                        [](mlir::AffineMap map) { return map.isIdentity(); });
-  };
-  auto affine = memRefTy.getAffineMaps();
-  if (all_maps_are_identity(affine)) {
-    return {{::getDims(memRefTy, freshVarForUnknownSize), elemty2}};
+  if (isStrided(memRefTy)) {
+    // LayoutEncoding here...
+  return {{::getDims(memRefTy, freshVarForUnknownSize), ctx, elemty2}};
   } else {
-    // Currently we only support identity affine map memref.
+    // Currently we only support strided Memref.
     return {};
   }
 }

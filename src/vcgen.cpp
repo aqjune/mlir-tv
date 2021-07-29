@@ -112,13 +112,23 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
       s.regs.add(arg, move(tensor));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
-      auto dimsAndElemTy = MemRef::getDimsAndElemTy(ty);
-      if (!dimsAndElemTy)
+      auto dimsAndLayoutAndElemTy = MemRef::getDimsAndLayoutAndElemTy(ty);
+      if (!dimsAndLayoutAndElemTy)
         RET_STR("Unsupported MemRef element type: " << arg.getType());
       // TODO : out of bounds pointer is allowed?
+      // int64_t offset;
+      // llvm::SmallVector<int64_t, 4> strides;
+      // getStridesAndOffset(ty, strides, offset);
+      // llvm::outs() << "\nㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡTESTㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ" << "\n";
+      // llvm::outs() << "Strides: ";
+      // for (auto s: strides) llvm::outs() << s << " ";
+      // llvm::outs() << "\n";
+      // llvm::outs() << "Offset: " << offset << "\n";
+      // llvm::outs() << "\nㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡTESTㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ" << "\n";
       auto memref = MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
-        dimsAndElemTy->first,
-        dimsAndElemTy->second);
+        get<0>(*dimsAndLayoutAndElemTy),
+        get<1>(*dimsAndLayoutAndElemTy),
+        get<2>(*dimsAndLayoutAndElemTy));
       s.wellDefined(memref.getWellDefined());
       s.regs.add(arg, move(memref));
 
