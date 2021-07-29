@@ -478,7 +478,6 @@ MemRef::getDimsAndLayoutAndElemTy(
 
   // Step2. check affine map
   if (isStrided(memRefTy)) {
-    // LayoutEncoding here...
     auto dims = ::getDims(memRefTy, freshVarForUnknownSize);
     auto layout = ::getLayout(memRefTy, dims);
     return {{dims, layout, elemty2}};
@@ -489,12 +488,12 @@ MemRef::getDimsAndLayoutAndElemTy(
 }
 
 pair<z3::expr, z3::expr> MemRef::load(const vector<z3::expr> &indices) const {
-  z3::expr idx = to1DIdx(indices, dims);
+  z3::expr idx = to1DIdxWithLayout(indices, layout);
   return m->load(bid, offset + idx);
 }
 
 z3::expr MemRef::store(const z3::expr &value, const std::vector<z3::expr> &indices) const {
-  z3::expr idx = to1DIdx(indices, dims);
+  z3::expr idx = to1DIdxWithLayout(indices, layout);
   return m->store(value, bid, offset + idx);
 }
 

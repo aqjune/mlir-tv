@@ -17,6 +17,7 @@ std::vector<z3::expr> simplifyList(const std::vector<z3::expr> &exprs);
 
 z3::expr to1DIdx(const std::vector<z3::expr> &idxs,
                  const std::vector<z3::expr> &dims);
+z3::expr to1DIdxWithLayout(const std::vector<z3::expr> &idxs, z3::expr layout);
 z3::expr fitsInDims(const std::vector<z3::expr> &idxs,
                     const std::vector<z3::expr> &sizes);
 z3::expr_vector toExprVector(const std::vector<z3::expr> &vec);

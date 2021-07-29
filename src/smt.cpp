@@ -74,6 +74,14 @@ z3::expr to1DIdx(
   return idx;
 }
 
+z3::expr to1DIdxWithLayout(const vector<z3::expr> &idxs, z3::expr layout) {
+  vector<z3::expr> indices;
+  for (unsigned i = 0; i < idxs.size(); i ++)
+    indices.push_back(Index("idx" + to_string(i)));
+
+  return layout.substitute(toExprVector(indices), toExprVector(idxs));
+}
+
 z3::expr fitsInDims(
     const vector<z3::expr> &idxs,
     const vector<z3::expr> &sizes) {
