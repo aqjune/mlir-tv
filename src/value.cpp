@@ -433,6 +433,35 @@ z3::expr MemRef::getWellDefined() const {
   return expr.simplify();
 }
 
+static z3::expr getConstOrVal(int64_t val, const std::string &name) {
+  return (val == mlir::ShapedType::kDynamicStrideOrOffset) ? Index(name, true) : Index(val);
+}
+
+static z3::expr getLayout(const mlir::MemRefType &memRefTy, const vector<z3::expr> &dims) {
+  auto affineMaps = memRefTy.getAffineMaps();
+
+  if (affineMaps.empty()) {
+    z3::expr layout = Index::zero();
+    z3::expr stride = Index::one();
+    for (int i = dims.size() - 1; i >= 0; i --) {
+      layout = layout + stride * Index("idx" + to_string(i));
+      stride = stride * dims[i];
+    }
+
+    return layout;
+  } else {
+    int64_t offset;
+    llvm::SmallVector<int64_t, 4> strides;
+    auto success = getStridesAndOffset(memRefTy, strides, offset);
+    assert(succeeded(success) && "unexpected non-strided memref");
+    z3::expr layout = getConstOrVal(offset, "offset");
+    for (int i = 0; i < strides.size(); i ++)
+      layout = layout + getConstOrVal(strides[i], "strides") * Index("idx" + to_string(i));
+
+    return layout;
+  }
+}
+
 optional<tuple<vector<z3::expr>, z3::expr, z3::sort>>
 MemRef::getDimsAndLayoutAndElemTy(
     mlir::MemRefType memRefTy, bool freshVarForUnknownSize) {
@@ -450,7 +479,9 @@ MemRef::getDimsAndLayoutAndElemTy(
   // Step2. check affine map
   if (isStrided(memRefTy)) {
     // LayoutEncoding here...
-  return {{::getDims(memRefTy, freshVarForUnknownSize), ctx, elemty2}};
+    auto dims = ::getDims(memRefTy, freshVarForUnknownSize);
+    auto layout = ::getLayout(memRefTy, dims);
+    return {{dims, layout, elemty2}};
   } else {
     // Currently we only support strided Memref.
     return {};

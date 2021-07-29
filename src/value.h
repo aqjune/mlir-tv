@@ -162,7 +162,7 @@ class MemRef {
   z3::expr bid; // blockID
   Index offset; // offset
   std::vector<z3::expr> dims;
-  z3::expr layout;
+  z3::expr layout; // memory layout defined by affine_map (ex. s0 * idx0 + s1 * idx1 + ... + offset)
 
 public:
   // This may be parameterized later..
