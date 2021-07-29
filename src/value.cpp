@@ -33,6 +33,35 @@ static vector<z3::expr> getDims(
   return dims;
 }
 
+static z3::expr getConstOrVal(int64_t val, const std::string &name) {
+  return (val == mlir::ShapedType::kDynamicStrideOrOffset) ? Index(name, true) : Index(val);
+}
+
+static z3::expr getLayout(const mlir::MemRefType &memRefTy, const vector<z3::expr> &dims) {
+  auto affineMaps = memRefTy.getAffineMaps();
+
+  if (affineMaps.empty()) {
+    z3::expr layout = Index::zero();
+    z3::expr stride = Index::one();
+    for (int i = dims.size() - 1; i >= 0; i --) {
+      layout = layout + stride * Index("idx" + to_string(i));
+      stride = stride * dims[i];
+    }
+
+    return layout;
+  } else {
+    int64_t offset;
+    llvm::SmallVector<int64_t, 4> strides;
+    auto success = getStridesAndOffset(memRefTy, strides, offset);
+    assert(succeeded(success) && "unexpected non-strided memref");
+    z3::expr layout = getConstOrVal(offset, "offset");
+    for (int i = 0; i < strides.size(); i ++)
+      layout = layout + getConstOrVal(strides[i], "strides") * Index("idx" + to_string(i));
+
+    return layout;
+  }
+}
+
 Index::Index(): e(ctx) {}
 
 Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {}
@@ -431,35 +460,6 @@ z3::expr MemRef::getWellDefined() const {
     expr = expr && z3::ule(dim, MAX_DIM_SIZE);
   }
   return expr.simplify();
-}
-
-static z3::expr getConstOrVal(int64_t val, const std::string &name) {
-  return (val == mlir::ShapedType::kDynamicStrideOrOffset) ? Index(name, true) : Index(val);
-}
-
-static z3::expr getLayout(const mlir::MemRefType &memRefTy, const vector<z3::expr> &dims) {
-  auto affineMaps = memRefTy.getAffineMaps();
-
-  if (affineMaps.empty()) {
-    z3::expr layout = Index::zero();
-    z3::expr stride = Index::one();
-    for (int i = dims.size() - 1; i >= 0; i --) {
-      layout = layout + stride * Index("idx" + to_string(i));
-      stride = stride * dims[i];
-    }
-
-    return layout;
-  } else {
-    int64_t offset;
-    llvm::SmallVector<int64_t, 4> strides;
-    auto success = getStridesAndOffset(memRefTy, strides, offset);
-    assert(succeeded(success) && "unexpected non-strided memref");
-    z3::expr layout = getConstOrVal(offset, "offset");
-    for (int i = 0; i < strides.size(); i ++)
-      layout = layout + getConstOrVal(strides[i], "strides") * Index("idx" + to_string(i));
-
-    return layout;
-  }
 }
 
 optional<tuple<vector<z3::expr>, z3::expr, z3::sort>>
