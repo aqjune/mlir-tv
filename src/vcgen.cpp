@@ -564,25 +564,18 @@ optional<string> encodeOp(State &st, mlir::AffineApplyOp op) {
   if (m.getNumResults() != 1)
     return "num results is larger than one";
 
-  // AffineMap map = op.getAffineMap();
-  // ValueRange dimOperands = op.getMapOperands().take_front(map.getNumDims());
-  // ValueRange symbolOperands =
-      // op.getMapOperands().take_back(map.getNumSymbols());
   auto dimOperands = op.mapOperands().take_front(m.getNumDims());
   auto symbolOperands = op.mapOperands().take_back(m.getNumSymbols());
 
-  vector<Index> indices;
-  for (auto arg: dimOperands) {
+  vector<Index> indices, symbols;
+  for (auto arg: dimOperands)
     indices.push_back(st.regs.get<Index>(arg));
-  }
-  vector<Index> symbols;
-  for (auto symbol: symbolOperands) {
+  for (auto symbol: symbolOperands)
     symbols.push_back(st.regs.get<Index>(symbol));
-  }
+
   auto res = encodeAffineExpr(m.getResult(0), indices, symbols);
   if (!res)
     return "unsupported affine expr";
-  llvm::outs() << "RES: " << *res << "\n";
   st.regs.add(op, Index(move(*res)));
   return {};
 }
