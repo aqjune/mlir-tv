@@ -409,6 +409,31 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
+  auto tensor = st.regs.get<Tensor>(op.getOperand());
+  auto memrefTy = op.memref().getType().cast<mlir::MemRefType>();
+  auto dimsAndLayoutAndElemTy = MemRef::getDimsAndLayoutAndElemTy(memrefTy);
+  if (!dimsAndLayoutAndElemTy)
+    return "unsupported type";
+
+  auto memref = MemRef(st.m.get(), "memref",
+    get<0>(*dimsAndLayoutAndElemTy),
+    get<1>(*dimsAndLayoutAndElemTy),
+    get<2>(*dimsAndLayoutAndElemTy));
+
+  vector<z3::expr> idxs;
+  for (int i = 0; i < memrefTy.getRank(); i ++)
+    idxs.push_back(Index("Index", true));
+
+  auto tVal = tensor.get(idxs);
+  auto [mVal, success] = memref.load(idxs);
+  memref.setWritable(false); // mutating result memref is undefined behavior
+  st.wellDefined(z3::implies(success, tVal == mVal));
+  st.regs.add(op.memref(), move(memref));
+  return {};
+}
+
 
 template<>
 optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
@@ -1050,6 +1075,7 @@ static optional<string> encodeRegion(
 
     ENCODE(st, op, mlir::memref::LoadOp);
     ENCODE(st, op, mlir::memref::StoreOp);
+    ENCODE(st, op, mlir::memref::BufferCastOp);
     ENCODE(st, op, mlir::memref::TensorLoadOp);
 
     ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
