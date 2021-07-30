@@ -158,22 +158,25 @@ private:
 };
 
 class MemRef {
-  Memory *m;
-  z3::expr bid; // blockID
-  Index offset; // offset
-  std::vector<z3::expr> dims;
-  z3::expr layout; // memory layout defined by affine_map (ex. s0 * idx0 + s1 * idx1 + ... + offset)
-
 public:
   // This may be parameterized later..
   static const unsigned MAX_MEMREF_SIZE = 1000000;
   static const unsigned MAX_DIM_SIZE = 1000;
 
+  class Layout {
+  public:
+    std::vector<z3::expr> indVars;
+    z3::expr expr;
+
+    Layout(const std::vector<z3::expr> &indVars, const z3::expr &expr):
+      indVars(indVars), expr(expr) {}
+  };
+
   MemRef(Memory *m);
   MemRef(Memory *m,
     const std::string &name,
     const std::vector<z3::expr> &dims,
-    const z3::expr &layout,
+    const Layout &layout,
     const z3::sort &elemty);
 
   operator z3::expr() const { return bid && offset; }
@@ -181,12 +184,12 @@ public:
   z3::expr getWellDefined() const;
 
   // If memRefTy is unsupported, return nullopt
-  static std::optional<std::tuple<std::vector<z3::expr>, z3::expr, z3::sort>>
+  static std::optional<std::tuple<std::vector<z3::expr>, Layout, z3::sort>>
       getDimsAndLayoutAndElemTy(mlir::MemRefType memRefTy,
                        bool freshVarForUnknownSize = true);
 
-  std::pair<z3::expr, z3::expr> load(const std::vector<z3::expr> &indices) const;
-  z3::expr store(const z3::expr &value, const std::vector<z3::expr> &indices) const;
+  std::pair<z3::expr, z3::expr> load(const std::vector<z3::expr> &indices);
+  z3::expr store(const z3::expr &value, const std::vector<z3::expr> &indices);
   z3::expr isInBounds() const;
   z3::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
@@ -200,7 +203,14 @@ public:
   MemRef eval(z3::model m) const;
 
   private:
-    z3::expr to1DArrayWithOfs(
-      const std::vector<z3::expr> &offbegins,
-      const std::vector<z3::expr> &sizes) const;
+  Memory *m;
+  z3::expr bid; // blockID
+  Index offset; // offset
+  std::vector<z3::expr> dims;
+  Layout layout; // memory layout defined by affine_map (ex. s0 * idx0 + s1 * idx1 + ... + offset)
+
+  z3::expr to1DArrayWithOfs(
+    const std::vector<z3::expr> &offbegins,
+    const std::vector<z3::expr> &sizes) const;
+  z3::expr to1DIdxWithLayout(const std::vector<z3::expr> &idxs);
 };
