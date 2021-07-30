@@ -52,7 +52,7 @@ static z3::expr getLayout(const mlir::MemRefType &memRefTy, const vector<z3::exp
   } else {
     int64_t offset;
     llvm::SmallVector<int64_t, 4> strides;
-    auto success = getStridesAndOffset(memRefTy, strides, offset);
+    auto success = mlir::getStridesAndOffset(memRefTy, strides, offset);
     assert(succeeded(success) && "unexpected non-strided memref");
     z3::expr layout = getConstOrVal(offset, "offset");
     for (int i = 0; i < strides.size(); i ++)
@@ -477,7 +477,7 @@ MemRef::getDimsAndLayoutAndElemTy(
   }
 
   // Step2. check affine map
-  if (isStrided(memRefTy)) {
+  if (mlir::isStrided(memRefTy)) {
     auto dims = ::getDims(memRefTy, freshVarForUnknownSize);
     auto layout = ::getLayout(memRefTy, dims);
     return {{dims, layout, elemty2}};
