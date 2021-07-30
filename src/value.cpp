@@ -516,6 +516,10 @@ Index MemRef::getDim(uint64_t idx) const {
   return Index(dims[idx]);
 }
 
+void MemRef::setWritable(bool writable) {
+  m->setWritable(bid, writable);
+}
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   assert(m.dims.size() > 0);
   os << "(bid: " << or_omit(m.bid)

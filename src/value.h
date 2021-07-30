@@ -196,6 +196,7 @@ public:
   z3::expr get1DSize() const { return ::get1DSize(dims); }
   Index getDim(uint64_t idx) const;
   std::vector<z3::expr> getDims() const { return dims; }
+  void setWritable(bool writable);
   void setMemory(Memory *m) { this->m = m; }
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
