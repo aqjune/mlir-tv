@@ -1304,7 +1304,7 @@ static Results tryValidation(
   auto src = vinput.src, tgt = vinput.tgt;
   auto raiseUnsupported = [](const string &msg) {
     llvm::errs() << msg << "\n";
-    exit(1);
+    exit(91);
   };
 
   if (auto errmsg = checkFunctionSignatures(src, tgt))

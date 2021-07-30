@@ -8,7 +8,10 @@
 class Results {
 public:
   enum Code {
-    SUCCESS = 0, TIMEOUT, RETVALUE, UB
+    SUCCESS = 0,
+    TIMEOUT = 101,
+    RETVALUE = 102,
+    UB = 103,
   };
 
   // Returns true if the value equals zero.
