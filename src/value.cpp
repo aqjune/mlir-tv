@@ -37,28 +37,37 @@ static z3::expr getConstOrVal(int64_t val, const std::string &name) {
   return (val == mlir::ShapedType::kDynamicStrideOrOffset) ? Index(name, true) : Index(val);
 }
 
-static z3::expr getLayout(const mlir::MemRefType &memRefTy, const vector<z3::expr> &dims) {
+static MemRef::Layout
+getLayout(const mlir::MemRefType &memRefTy, const vector<z3::expr> &dims) {
   auto affineMaps = memRefTy.getAffineMaps();
 
   if (affineMaps.empty()) {
     z3::expr layout = Index::zero();
     z3::expr stride = Index::one();
+    vector<z3::expr> indVars;
+
+    for (int i = 0; i < dims.size(); i ++)
+      indVars.push_back(Index("idx" + to_string(i)));
+
     for (int i = dims.size() - 1; i >= 0; i --) {
-      layout = layout + stride * Index("idx" + to_string(i));
+      layout = layout + stride * indVars[i];
       stride = stride * dims[i];
     }
 
-    return layout;
+    return MemRef::Layout(indVars, layout);
   } else {
     int64_t offset;
     llvm::SmallVector<int64_t, 4> strides;
-    auto success = getStridesAndOffset(memRefTy, strides, offset);
+    auto success = mlir::getStridesAndOffset(memRefTy, strides, offset);
     assert(succeeded(success) && "unexpected non-strided memref");
     z3::expr layout = getConstOrVal(offset, "offset");
-    for (int i = 0; i < strides.size(); i ++)
-      layout = layout + getConstOrVal(strides[i], "strides") * Index("idx" + to_string(i));
+    vector<z3::expr> indVars;
+    for (int i = 0; i < strides.size(); i ++) {
+      indVars.push_back(Index("idx" + to_string(i)));
+      layout = layout + getConstOrVal(strides[i], "strides") * indVars[i];
+    }
 
-    return layout;
+    return MemRef::Layout(indVars, layout);
   }
 }
 
@@ -437,12 +446,12 @@ z3::expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx), layout(ctx) {}
+MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx), layout(Layout({}, ctx)) {}
 
 MemRef::MemRef(Memory *m,
   const std::string &name,
   const std::vector<z3::expr> &dims,
-  const z3::expr &layout,
+  const Layout &layout,
   const z3::sort &elemty):
     m(m),
     bid(ctx.bv_const((name + "_bid").c_str(), m->getBIDBits())),
@@ -462,7 +471,7 @@ z3::expr MemRef::getWellDefined() const {
   return expr.simplify();
 }
 
-optional<tuple<vector<z3::expr>, z3::expr, z3::sort>>
+optional<tuple<vector<z3::expr>, MemRef::Layout, z3::sort>>
 MemRef::getDimsAndLayoutAndElemTy(
     mlir::MemRefType memRefTy, bool freshVarForUnknownSize) {
   // Step1. check element type
@@ -477,7 +486,7 @@ MemRef::getDimsAndLayoutAndElemTy(
   }
 
   // Step2. check affine map
-  if (isStrided(memRefTy)) {
+  if (mlir::isStrided(memRefTy)) {
     auto dims = ::getDims(memRefTy, freshVarForUnknownSize);
     auto layout = ::getLayout(memRefTy, dims);
     return {{dims, layout, elemty2}};
@@ -487,13 +496,13 @@ MemRef::getDimsAndLayoutAndElemTy(
   }
 }
 
-pair<z3::expr, z3::expr> MemRef::load(const vector<z3::expr> &indices) const {
-  z3::expr idx = to1DIdxWithLayout(indices, layout);
+pair<z3::expr, z3::expr> MemRef::load(const vector<z3::expr> &indices) {
+  z3::expr idx = to1DIdxWithLayout(indices);
   return m->load(bid, offset + idx);
 }
 
-z3::expr MemRef::store(const z3::expr &value, const std::vector<z3::expr> &indices) const {
-  z3::expr idx = to1DIdxWithLayout(indices, layout);
+z3::expr MemRef::store(const z3::expr &value, const std::vector<z3::expr> &indices) {
+  z3::expr idx = to1DIdxWithLayout(indices);
   return m->store(value, bid, offset + idx);
 }
 
@@ -536,4 +545,8 @@ MemRef MemRef::eval(z3::model m) const {
   m2.bid = m.eval(bid, true).simplify();
   m2.offset = m.eval(offset, true).simplify();
   return m2;
+}
+
+z3::expr MemRef::to1DIdxWithLayout(const vector<z3::expr> &idxs) {
+  return layout.expr.substitute(toExprVector(layout.indVars), toExprVector(idxs));
 }
