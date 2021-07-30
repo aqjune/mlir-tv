@@ -139,14 +139,14 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
 
 template<class T>
 optional<z3::expr> encodeAffineExpr(
-    mlir::AffineExpr ae, const vector<T> &dimvars
+    mlir::AffineExpr ae, const vector<T> &dimvars, const vector<T> &symbolvars
 ) {
   switch (ae.getKind()) {
   case mlir::AffineExprKind::Add:
   case mlir::AffineExprKind::Mul: {
     auto aboe = ae.dyn_cast<mlir::AffineBinaryOpExpr>();
-    auto lhs = encodeAffineExpr(aboe.getLHS(), dimvars);
-    auto rhs = encodeAffineExpr(aboe.getRHS(), dimvars);
+    auto lhs = encodeAffineExpr(aboe.getLHS(), dimvars, symbolvars);
+    auto rhs = encodeAffineExpr(aboe.getRHS(), dimvars, symbolvars);
     if (!lhs || !rhs)
       return {};
     return (ae.getKind() == mlir::AffineExprKind::Add) ?
@@ -157,6 +157,12 @@ optional<z3::expr> encodeAffineExpr(
     auto id = ade.getPosition();
     assert(id < dimvars.size());
     return dimvars[id];
+  }
+  case mlir::AffineExprKind::SymbolId: {
+    auto ade = ae.dyn_cast<mlir::AffineSymbolExpr>();
+    auto id = ade.getPosition();
+    assert(id < symbolvars.size());
+    return symbolvars[id];
   }
   case mlir::AffineExprKind::Constant: {
     auto ac = ae.dyn_cast<mlir::AffineConstantExpr>();
@@ -558,11 +564,16 @@ optional<string> encodeOp(State &st, mlir::AffineApplyOp op) {
   if (m.getNumResults() != 1)
     return "num results is larger than one";
 
-  vector<Index> indices;
-  for (auto arg: op.mapOperands()) {
+  auto dimOperands = op.mapOperands().take_front(m.getNumDims());
+  auto symbolOperands = op.mapOperands().take_back(m.getNumSymbols());
+
+  vector<Index> indices, symbols;
+  for (auto arg: dimOperands)
     indices.push_back(st.regs.get<Index>(arg));
-  }
-  auto res = encodeAffineExpr(m.getResult(0), indices);
+  for (auto symbol: symbolOperands)
+    symbols.push_back(st.regs.get<Index>(symbol));
+
+  auto res = encodeAffineExpr(m.getResult(0), indices, symbols);
   if (!res)
     return "unsupported affine expr";
   st.regs.add(op, Index(move(*res)));
@@ -725,7 +736,7 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
   }
 
   for (unsigned idx = 0; idx < numRes; ++idx) {
-    auto ae = encodeAffineExpr(map.getResult(idx), indVarBounds);
+    auto ae = encodeAffineExpr(map.getResult(idx), indVarBounds, {});
     if (!ae)
       return "unsupported affine expr";
 
@@ -771,7 +782,7 @@ static optional<string> initInputStateForLoopBody(
       } else {
         vector<z3::expr> affine_exprs;
         for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
-          auto ae_res = encodeAffineExpr(inputMap.getResult(i), inductionVars);
+          auto ae_res = encodeAffineExpr(inputMap.getResult(i), inductionVars, {});
           if (!ae_res)
             RET_STR_WITH_PREFIX("unsupported affine expr ",
                                 inputMap.getResult(i));
