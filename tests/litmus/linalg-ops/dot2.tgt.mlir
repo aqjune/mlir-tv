@@ -1,11 +1,11 @@
-func @f(%a: tensor<100xf32>, %b: tensor<100xf32>) -> tensor<f32> {
+func @f(%a: tensor<?xf32>, %b: tensor<?xf32>) -> tensor<f32> {
   %outty = linalg.init_tensor [] : tensor<f32>
   %result = linalg.generic {
       indexing_maps = [affine_map<(d0) -> (d0)>,
                        affine_map<(d0) -> (d0)>,
                        affine_map<(d0) -> ()>],
       iterator_types = ["reduction"]}
-     ins(%a, %b : tensor<100xf32>, tensor<100xf32>)
+     ins(%a, %b : tensor<?xf32>, tensor<?xf32>)
      outs(%outty : tensor<f32>) {
      ^bb0(%ai : f32, %bi: f32, %res : f32):
     %s = mulf %ai, %bi: f32
