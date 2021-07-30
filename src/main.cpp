@@ -60,14 +60,14 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
 
   auto ir_before = parseSourceFile(src_sourceMgr, context);
   if (!ir_before) {
-    llvm::errs() << "Cannot read source file\n";
-    return 65;
+    llvm::errs() << "Cannot parse source file\n";
+    return 81;
   }
 
   auto ir_after = parseSourceFile(tgt_sourceMgr, context);
   if (!ir_after) {
-    llvm::errs() << "Cannot read target file\n";
-    return 66;
+    llvm::errs() << "Cannot parse target file\n";
+    return 82;
   }
 
   return validate(ir_before, ir_after,
@@ -86,7 +86,7 @@ static unsigned splitAndValidateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   tgtMemBuffer->getBuffer().split(targetBuffers, splitMarker);
 
   if (sourceBuffers.size() != targetBuffers.size()) {
-    return 64;
+    return 65;
   }
 
   unsigned retcode = 0;
@@ -128,13 +128,13 @@ int main(int argc, char* argv[]) {
   auto src_file = openInputFile(filename_src, &errorMessage);
   if (!src_file) {
     llvm::errs() << errorMessage << "\n";
-    return 67;
+    return 66;
   }
 
   auto tgt_file = openInputFile(filename_tgt, &errorMessage);
   if (!tgt_file) {
     llvm::errs() << errorMessage << "\n";
-    return 68;
+    return 66;
   }
 
   unsigned verificationResult;

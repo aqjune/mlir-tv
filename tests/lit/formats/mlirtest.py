@@ -50,14 +50,23 @@ class ExitCodeDependentTestBase(TestBase):
         super().__init__(keyword)
 
     def check_exit_code(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
-        if exit_code == 1:
-            if _has_unknown_keyword(errs):
-                return lit.Test.UNRESOLVED, ""
-            else:
-                return lit.Test.TIMEOUT, ""
-        elif exit_code >= 65 and exit_code <= 68:
+        if exit_code == 66:
+            # failed to read file
+            return lit.Test.SKIPPED, ""
+        elif exit_code == 65:
+            # split src and tgt do not match
+            return lit.Test.SKIPPED, ""
+        elif int(exit_code / 10) == 8:
+            # exit code 80~89: parsing related errors
             return lit.Test.UNRESOLVED, ""
-        else:
+        elif int(exit_code / 10) == 9:
+            # exit code 90~99: iree-tv related errors
+            return lit.Test.UNRESOLVED, ""
+        elif exit_code == 101:
+            # timeout
+            return lit.Test.TIMEOUT, ""
+        elif exit_code == 0 or int(exit_code / 10) == 10:
+            # behavior is defined by tests
             return self._check(outs, errs, exit_code)
 
     @abstractmethod
@@ -98,9 +107,9 @@ class VerifyIncorrectTest(ExitCodeDependentTestBase):
 
     def _check(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
         if exit_code == 0:
-            return lit.Test.FAIL, "This test must fail!"
+            return lit.Test.XPASS, "This test must fail!"
         else:
-            return lit.Test.PASS, ""
+            return lit.Test.XFAIL, ""
 
 class ExpectTest(ExitCodeDependentTestBase):
     def __init__(self, msg: str):
