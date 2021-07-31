@@ -770,7 +770,8 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
     if (!ae)
       return "unsupported affine expr";
 
-    z3::expr inbounds = z3::ult(*ae, (z3::expr)viewSizes[idx]);
+    z3::expr size = (z3::expr)viewSizes[idx];
+    z3::expr inbounds = z3::implies(size > 0, z3::ult(*ae, size));
     st.wellDefined(inbounds);
   }
 
