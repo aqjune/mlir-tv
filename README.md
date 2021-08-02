@@ -1,6 +1,9 @@
-# IREE-TV project
+# MLIR-TV project
 
-## How to build IREE-TV
+## How to build MLIR-TV
+
+We take the path of a user's local IREE repo to detect MLIR's src and build directory.
+
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
 [IREE](https://github.com/google/iree),
 [Z3-solver](https://github.com/Z3Prover/z3),
@@ -17,7 +20,7 @@ cmake -DIREE_DIR=<dir/to/iree> \
 cmake --build .
 ```
 
-## How to run IREE-TV
+## How to run MLIR-TV
 Run the built `iree-tv` executable as following:
 ```bash
 iree-tv <.mlir before opt> <.mlir after opt>`
@@ -26,7 +29,7 @@ iree-tv <.mlir before opt> <.mlir after opt>`
 #        tests/opts/conv2d_to_img2col/nhwc_filter.tgt.mlir -smt-to=5000
 ```
 
-## How to test IREE-TV
+## How to test MLIR-TV
 ```bash
 cd build
 # A detailed log is written to build/Testing/Temporary/LastTest.log
