@@ -21,10 +21,10 @@ cmake --build .
 ```
 
 ## How to run MLIR-TV
-Run the built `iree-tv` executable as following:
+Run the built `mlir-tv` executable as following:
 ```bash
-iree-tv <.mlir before opt> <.mlir after opt>`
-# ex: ./build/iree-tv \
+mlir-tv <.mlir before opt> <.mlir after opt>`
+# ex: ./build/mlir-tv \
 #        tests/opts/conv2d_to_img2col/nhwc_filter.src.mlir \
 #        tests/opts/conv2d_to_img2col/nhwc_filter.tgt.mlir -smt-to=5000
 ```

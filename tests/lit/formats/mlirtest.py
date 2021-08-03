@@ -60,7 +60,7 @@ class ExitCodeDependentTestBase(TestBase):
             # exit code 80~89: parsing related errors
             return lit.Test.UNRESOLVED, ""
         elif int(exit_code / 10) == 9:
-            # exit code 90~99: iree-tv related errors
+            # exit code 90~99: mlir-tv related errors
             return lit.Test.UNRESOLVED, ""
         elif exit_code == 101:
             # timeout
