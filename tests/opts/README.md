@@ -29,4 +29,4 @@ Each `.src.mlir` file must include the command used to create the pair `.tgt.mli
 When implementing a negative test case by modifying valid `tgt.mlir`, the diff must be annotated with comments.
 
 ## Reference
-https://github.com/aqjune/iree-tv/issues/13
+https://github.com/aqjune/mlir-tv/issues/13
