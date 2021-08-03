@@ -12,14 +12,6 @@ FetchContent_MakeAvailable(googletest)
 link_libraries(gtest_main)
 include_directories(${PROJECT_SOURCE_DIR})
 
-link_directories(${IREE_BUILD_DIR}/third_party/llvm-project/llvm/lib)
-link_directories(${Z3_LIB_DIR})
-link_libraries(
-    MLIRViewLikeInterface MLIRInferTypeOpInterface
-    MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRViewLikeInterface MLIRAffine MLIRMemRef MLIRShape
-    MLIRControlFlowInterfaces MLIRStandard MLIRSideEffectInterfaces MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport MLIRInferTypeOpInterface
-    LLVMSupport LLVMDemangle z3 pthread m curses)
-
 # Add each test file as executable
 add_executable(
   state_test
