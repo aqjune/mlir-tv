@@ -2,15 +2,29 @@
 
 #include "smt.h"
 #include "z3++.h"
+#include "smt-switch/term.h"
+#include "smt-switch/sort.h"
+
 #include "llvm/ADT/APFloat.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 class Memory;
 
+enum class SolverName {
+  Z3,
+  CVC4,
+};
+
+using SortMap = std::unordered_map<SolverName, smt::Sort>;
+using TermMap = std::unordered_map<SolverName, smt::Term>;
+using TermVecMap = std::unordered_map<SolverName, smt::TermVec>;
+
 class Index {
   z3::expr e;
+  TermMap terms;
 
 public:
   static const unsigned BITS = 32;
@@ -29,39 +43,45 @@ public:
   }
 
   static z3::sort sort();
+  static SortMap swSort();
   static Index one();
   static Index zero();
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
   std::pair<z3::expr, std::vector<z3::expr>> refines(const Index &other) const;
+  std::pair<TermMap, TermVecMap> swRefines(const Index &other) const;
   Index eval(z3::model m) const;
 };
 
 class Float {
   z3::expr e;
+  TermMap terms;
 
 public:
   static const unsigned BITS = 4;
 
   Float(const std::string &name);
-  Float(const z3::expr &e): e(e) {}
+  Float(const z3::expr &e);
   Float(const llvm::APFloat &apf);
   Float(double f);
 
   operator z3::expr() const { return e; }
 
   static z3::sort sort();
+  static SortMap swSort();
 
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
   std::pair<z3::expr, std::vector<z3::expr>> refines(const Float &other) const;
+  std::pair<TermMap, TermVecMap> swRefines(const Float &other) const;
   Float eval(z3::model m) const;
 };
 
 class Integer {
   z3::expr e;
+  TermMap terms;
 
 public:
   Integer(const std::string &name, unsigned bw);
@@ -71,9 +91,11 @@ public:
   operator z3::expr() const { return e; }
 
   static z3::sort sort(unsigned bw);
+  static SortMap swSort(unsigned bw);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
   std::pair<z3::expr, std::vector<z3::expr>> refines(const Integer &other) const;
+  std::pair<TermMap, TermVecMap> swRefines(const Integer &other) const;
   Integer eval(z3::model m) const;
 };
 

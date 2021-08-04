@@ -3,7 +3,53 @@
 #include "smt.h"
 #include "memory.h"
 
+#include "smt-switch/z3_term.h"
+#include "smt-switch/z3_factory.h"
+
 using namespace std;
+
+static std::unordered_map<SolverName, smt::SmtSolver> solvers = {{SolverName::Z3, smt::Z3SolverFactory::create(false)}};
+static std::unordered_map<std::string, TermMap> symbol_map;
+
+static TermMap getOrCreateSymbol(std::string name, SortMap&& swSort) {
+  if (symbol_map.count(name) == 0) {
+    TermMap term_map;
+    for (auto &sv: solvers) {
+      term_map.insert({sv.first, sv.second->make_symbol(name, swSort[sv.first])});
+    }
+    symbol_map.insert({name, std::move(term_map)});
+  }
+  // value for name always exists, so it is safe to directly deref it
+  // TODO: add sort assertion?
+  return symbol_map.at(name);
+}
+
+static TermMap createValueTerm(int64_t i, SortMap&& swSort) {
+  TermMap terms;
+  for (auto &sv : solvers) {
+    terms.insert({sv.first, sv.second->make_term(i, swSort.at(sv.first))});
+  }
+
+  return terms;
+}
+
+static TermMap createEqComparisonTerm(const TermMap &lhs, const TermMap &rhs) {
+  TermMap term_map;
+  for (auto &sv : solvers) {
+    smt::Term term = sv.second->make_term(smt::Equal, lhs.at(sv.first), rhs.at(sv.first));
+    term_map.insert({sv.first, term});
+  }
+
+  return term_map;
+}
+
+static SortMap createSort(uint64_t bw) {
+  SortMap sort_map;
+  for (auto &sv : solvers) {
+    sort_map.insert({sv.first, sv.second->make_sort(smt::BV, bw)});
+  }
+  return sort_map;
+}
 
 static vector<z3::expr> getDims(
     const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize = false) {
@@ -73,7 +119,10 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<z3::expr> &dims) {
 
 Index::Index(): e(ctx) {}
 
-Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {}
+Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {
+  // implicit conversion from unsigned to int64_t
+  this->terms = createValueTerm(i, Index::swSort());
+}
 
 Index::Index(const std::string &name, bool freshvar):
     e(ctx) {
@@ -82,12 +131,21 @@ Index::Index(const std::string &name, bool freshvar):
   if (freshvar)
     name0 = name0 + "." + to_string(count++);
   e = ctx.bv_const(name0.c_str(), BITS);
+
+  this->terms = getOrCreateSymbol(name0, Index::swSort());
 }
 
-Index::Index(const z3::expr &e): e(e) {}
+Index::Index(const z3::expr &e): e(e) {
+  // TOFIX: this expr is solver-dependent!
+  this->terms[SolverName::Z3] = std::make_shared<smt::Z3Term>(e, ctx);
+}
 
 z3::sort Index::sort() {
   return ctx.bv_sort(BITS);
+}
+
+SortMap Index::swSort() {
+  return createSort(BITS);
 }
 
 Index Index::one() { return Index(1); }
@@ -102,25 +160,48 @@ std::pair<z3::expr, vector<z3::expr>> Index::refines(const Index &other) const {
   return {(z3::expr) other == (z3::expr) *this, {}};
 }
 
+std::pair<TermMap, TermVecMap> Index::swRefines(const Index &other) const {
+  TermMap term_map = createEqComparisonTerm(this->terms, other.terms);
+  TermVecMap term_vec_map;
+  for (auto &sv : solvers) {
+    term_vec_map.insert({sv.first, {}});
+  }
+
+  return std::pair(term_map, term_vec_map);
+}
+
 Index Index::eval(z3::model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
-Float::Float(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {}
+Float::Float(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {
+  this->terms = getOrCreateSymbol(name, Float::swSort());
+}
 
 static map<double, std::string> const_vars;
+
+Float::Float(const z3::expr &e): e(e) {
+  // TOFIX: this expr is solver-dependent!
+  this->terms[SolverName::Z3] = std::make_shared<smt::Z3Term>(e, ctx);
+}
 
 Float::Float(double f): e(ctx) {
   // We don't explicitly encode f
   auto res = const_vars.try_emplace(f,
       "#float_const" + to_string(const_vars.size()));
   e = ctx.bv_const(res.first->second.c_str(), BITS);
+
+  this->terms = getOrCreateSymbol(res.first->second, Float::swSort());
 }
 
 Float::Float(const llvm::APFloat &f): Float(f.convertToDouble()) {}
 
 z3::sort Float::sort() {
   return ctx.bv_sort(BITS);
+}
+
+SortMap Float::swSort() {
+  return createSort(BITS);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
@@ -130,6 +211,16 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
 
 std::pair<z3::expr, vector<z3::expr>> Float::refines(const Float &other) const {
   return {(z3::expr) other == (z3::expr) *this, {}};
+}
+
+std::pair<TermMap, TermVecMap> Float::swRefines(const Float &other) const {
+  TermMap term_map = createEqComparisonTerm(this->terms, other.terms);
+  TermVecMap term_vec_map;
+  for (auto &sv : solvers) {
+    term_vec_map.insert({sv.first, {}});
+  }
+
+  return std::pair(term_map, term_vec_map);
 }
 
 Float Float::eval(z3::model m) const {
@@ -146,13 +237,21 @@ Float Float::mul(const Float &b) const {
 
 
 Integer::Integer(const std::string &name, unsigned bw):
-  e(ctx.bv_const(name.c_str(), bw)) {}
+  e(ctx.bv_const(name.c_str(), bw)) {
+    this->terms = getOrCreateSymbol(name, Integer::swSort(bw));
+  }
 
 Integer::Integer(int64_t i, unsigned bw):
-  e(ctx.bv_val(i, bw)) {}
+  e(ctx.bv_val(i, bw)) {
+    this->terms = createValueTerm(i, Integer::swSort(bw));
+  }
 
 z3::sort Integer::sort(unsigned sz) {
   return ctx.bv_sort(sz);
+}
+
+SortMap Integer::swSort(unsigned sz) {
+  return createSort(sz);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
@@ -162,6 +261,16 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
 
 std::pair<z3::expr, vector<z3::expr>> Integer::refines(const Integer &other) const {
   return {(z3::expr) other == (z3::expr) *this, {}};
+}
+
+std::pair<TermMap, TermVecMap> Integer::swRefines(const Integer &other) const {
+  TermMap term_map = createEqComparisonTerm(this->terms, other.terms);
+  TermVecMap term_vec_map;
+  for (auto &sv : solvers) {
+    term_vec_map.insert({sv.first, {}});
+  }
+
+  return std::pair(term_map, term_vec_map);
 }
 
 Integer Integer::eval(z3::model m) const {
