@@ -68,6 +68,24 @@ z3::expr SingleArrayMemory::store(const z3::expr &f32val,
   return z3::ult(idx, block.numelem) && block.writable;
 }
 
+z3::expr SingleArrayMemory::storeArray(
+  const z3::expr &arr, const z3::expr &bid, const z3::expr &offset, const z3::expr &size) {
+  auto lhs = offset;
+  auto rhs = offset + size;
+  auto idx = Index("idx");
+  auto arrayVal = z3::select(arr, idx - lhs);
+
+  auto block = getMemBlock(bid);
+  auto currentVal = z3::select(block.array, idx);
+  auto cond = z3::ule(lhs, idx) && z3::ult(idx, rhs);
+  auto stored = z3::lambda(idx, z3::ite(cond, arrayVal, currentVal));
+  arrayMaps = z3::store(arrayMaps, bid, stored);
+
+  return z3::ule(lhs, rhs) && // lhs < rhs (to prevent overflow)
+    z3::ult(rhs, block.numelem) &&
+    block.writable;
+}
+
 std::pair<z3::expr, z3::expr> SingleArrayMemory::load(
   const z3::expr &bid, const z3::expr &idx) const {
   const auto block = getMemBlock(bid);
@@ -149,6 +167,25 @@ z3::expr MultipleArrayMemory::store(const z3::expr &f32val,
       [&](auto ubid) { return z3::store(arrays[ubid], idx, f32val); });
 
   return z3::ult(idx, getNumElementsOfMemBlock(bid)) && getWritable(bid);
+}
+
+z3::expr MultipleArrayMemory::storeArray(
+  const z3::expr &arr, const z3::expr &bid, const z3::expr &offset, const z3::expr &size) {
+  auto lhs = offset;
+  auto rhs = offset + size;
+  auto idx = Index("idx");
+  auto arrayVal = z3::select(arr, idx - lhs);
+
+  update(bid, [&](auto ubid) { return &arrays[ubid]; },
+    [&](auto ubid) {
+      auto currentVal = z3::select(arrays[ubid], idx);
+      z3::expr cond = z3::ule(lhs, idx) && z3::ult(idx, rhs);
+      return z3::lambda(idx, z3::ite(cond, arrayVal, currentVal));
+    });
+
+  return z3::ule(lhs, rhs) && // lhs < rhs (to prevent overflow)
+    z3::ult(rhs, getNumElementsOfMemBlock(bid)) &&
+    getWritable(bid);
 }
 
 std::pair<z3::expr, z3::expr> MultipleArrayMemory::load(

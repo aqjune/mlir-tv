@@ -508,6 +508,12 @@ z3::expr MemRef::store(const z3::expr &value, const std::vector<z3::expr> &indic
   return m->store(value, bid, offset + idx);
 }
 
+z3::expr MemRef::storeArray(const z3::expr &array,
+  const z3::expr &startOffset,
+  const z3::expr &size) {
+  return m->storeArray(array, bid, offset + startOffset, size);
+}
+
 z3::expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(bid);
   auto memrefSize = get1DSize();

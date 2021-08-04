@@ -424,26 +424,33 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
     getDimsAndLayoutAndElemTy(memrefTy, predefinedDims);
   if (!dimsAndLayoutAndElemTy)
     return "unsupported type";
-
   auto memref = MemRef(st.m.get(), "memref",
     get<0>(*dimsAndLayoutAndElemTy),
     get<1>(*dimsAndLayoutAndElemTy),
     get<2>(*dimsAndLayoutAndElemTy));
 
-  vector<z3::expr> idxs;
-  for (int i = 0; i < memrefTy.getRank(); i ++)
-    idxs.push_back(Index("Index", true));
+  if (memrefTy.getAffineMaps().empty()) {
+    // memref with identity map
+    auto success = memref.storeArray(tensor.asArray(), Index::zero(), tensor.get1DSize());
+    st.wellDefined(success);
+    st.regs.add(op.memref(), move(memref));
+  } else {
+    // memref with affine maps
+    vector<z3::expr> idxs;
+    for (int i = 0; i < memrefTy.getRank(); i ++)
+      idxs.push_back(Index("Index", true));
 
-  auto tVal = tensor.get(idxs);
-  auto [mVal, success] = memref.load(idxs);
-  memref.setWritable(false); // mutating result memref is undefined behavior
+    auto tVal = tensor.get(idxs);
+    auto [mVal, success] = memref.load(idxs);
+    memref.setWritable(false); // mutating result memref is undefined behavior
 
-  z3::expr_vector xs(ctx);
-  for (auto idx: idxs)
-    xs.push_back(idx);
+    z3::expr_vector xs(ctx);
+    for (auto idx: idxs)
+      xs.push_back(idx);
 
-  st.wellDefined(z3::forall(xs, mVal == tVal));
-  st.regs.add(op.memref(), move(memref));
+    st.wellDefined(z3::forall(xs, mVal == tVal));
+    st.regs.add(op.memref(), move(memref));
+  }
   return {};
 }
 

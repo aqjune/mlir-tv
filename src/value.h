@@ -191,6 +191,7 @@ public:
 
   std::pair<z3::expr, z3::expr> load(const std::vector<z3::expr> &indices);
   z3::expr store(const z3::expr &value, const std::vector<z3::expr> &indices);
+  z3::expr storeArray(const z3::expr &array, const z3::expr &startOffset, const z3::expr &size);
   z3::expr isInBounds() const;
   z3::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }

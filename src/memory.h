@@ -46,6 +46,9 @@ public:
   // Returns: store successful?
   virtual z3::expr store(
       const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx) = 0;
+  // Returns: store successful?
+  virtual z3::expr storeArray(
+      const z3::expr &arr, const z3::expr &bid, const z3::expr &offset, const z3::expr &size) = 0;
   // Returns: (loaded value, load successful?)
   virtual std::pair<z3::expr, z3::expr> load(
       const z3::expr &bid, const z3::expr &idx) const = 0;
@@ -70,6 +73,9 @@ public:
   z3::expr getWritable(const z3::expr &bid) const override;
   z3::expr store(
       const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx)
+      override;
+  z3::expr storeArray(
+      const z3::expr &arr, const z3::expr &bid, const z3::expr &offset, const z3::expr &size)
       override;
   std::pair<z3::expr, z3::expr> load(const z3::expr &bid, const z3::expr &idx)
       const override;
@@ -97,6 +103,9 @@ public:
 
   z3::expr store(
       const z3::expr &f32val, const z3::expr &bid, const z3::expr &idx)
+      override;
+  z3::expr storeArray(
+      const z3::expr &arr, const z3::expr &bid, const z3::expr &offset, const z3::expr &size)
       override;
   std::pair<z3::expr, z3::expr> load(const z3::expr &bid, const z3::expr &idx)
       const override;
