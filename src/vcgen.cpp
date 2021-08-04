@@ -446,11 +446,7 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto [mVal, success] = memref.load(idxs);
   memref.setWritable(false); // mutating result memref is undefined behavior
 
-  z3::expr_vector xs(ctx);
-  for (auto idx: idxs)
-    xs.push_back(idx);
-
-  st.wellDefined(z3::forall(xs, mVal == tVal));
+  st.wellDefined(z3::forall(toExprVector(idxs), mVal == tVal));
   st.regs.add(op.memref(), move(memref));
   return {};
 }
@@ -781,7 +777,7 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
       return "unsupported affine expr";
 
     z3::expr size = (z3::expr)viewSizes[idx];
-    z3::expr inbounds = z3::implies(size > 0, z3::ult(*ae, size));
+    z3::expr inbounds = z3::implies(z3::ugt(size, 0), z3::ult(*ae, size));
     st.wellDefined(inbounds);
   }
 
@@ -1279,9 +1275,10 @@ static Results checkRefinement(
       llvm_unreachable("unexpected result");
     }
   };
+  auto logic = (st_src.hasQuantifier || st_src.hasQuantifier) ? "UFBV" : "QF_UFBV";
 
   { // 1. Check UB
-    auto s = z3::solver(ctx, "QF_UFBV");
+    auto s = z3::solver(ctx, logic);
     auto not_refines =
         (st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
     auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".1.ub");
@@ -1293,7 +1290,7 @@ static Results checkRefinement(
   }
 
   { // 2. Check whether src is always UB
-    auto s = z3::solver(ctx, "QF_UFBV");
+    auto s = z3::solver(ctx, logic);
     auto not_ub = st_src.isWellDefined.simplify();
     auto res = solve(s, not_ub, vinput.dumpSMTPath, fnname + ".2.notub");
     elapsedMillisec += res.second;
@@ -1304,7 +1301,7 @@ static Results checkRefinement(
   }
 
   if (st_src.retValue) { // 3. Check the return values
-    auto s = z3::solver(ctx, "QF_UFBV");
+    auto s = z3::solver(ctx, logic);
 
     z3::expr refines(ctx);
     vector<z3::expr> params;
@@ -1325,7 +1322,7 @@ static Results checkRefinement(
 
   if (st_src.m->getNumBlocks() > 0 ||
       st_tgt.m->getNumBlocks() > 0) { // 4. Check memory refinement
-    auto s = z3::solver(ctx, "QF_UFBV");
+    auto s = z3::solver(ctx, logic);
     auto [refines, params] = st_src.m->refines(*st_tgt.m);
     auto not_refines =
       (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();

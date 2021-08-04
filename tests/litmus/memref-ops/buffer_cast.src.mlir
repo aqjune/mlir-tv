@@ -1,3 +1,5 @@
+// VERIFY
+
 func @buffer_cast(%arg : tensor<2x3xf32>) -> f32
 {
   %c0 = constant 0 : index

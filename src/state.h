@@ -68,12 +68,16 @@ public:
   // We'll need to implement our own version of peephole optimizations on Z3
   // expr some day (or simply use Alive2's one), and this form will be helpful
   // then.
+  bool hasQuantifier;
   z3::expr isWellDefined;
   std::shared_ptr<Memory> m;
 
   State(unsigned int numBlocks, MemEncoding encoding);
 
-  void wellDefined(const z3::expr &e) { isWellDefined = isWellDefined && e; };
+  void wellDefined(const z3::expr &e) {
+    isWellDefined = isWellDefined && e;
+    hasQuantifier = hasQuantifier || e.is_quantifier();
+  };
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };
