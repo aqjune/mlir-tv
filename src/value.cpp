@@ -500,12 +500,24 @@ MemRef::getDimsAndLayoutAndElemTy(
 
 pair<z3::expr, z3::expr> MemRef::load(const vector<z3::expr> &indices) {
   z3::expr idx = to1DIdxWithLayout(indices);
-  return m->load(bid, offset + idx);
+  auto [expr, success] = m->load(bid, offset + idx);
+
+  // check whether indices are  inbound.
+  for (int i = 0; i < indices.size(); i ++)
+    success = success && z3::ult(indices[i], getDim(i));
+
+  return {expr, success.simplify()};
 }
 
 z3::expr MemRef::store(const z3::expr &value, const std::vector<z3::expr> &indices) {
   z3::expr idx = to1DIdxWithLayout(indices);
-  return m->store(value, bid, offset + idx);
+  auto success = m->store(value, bid, offset + idx);
+
+  // check whether indices are  inbound.
+  for (int i = 0; i < indices.size(); i ++)
+    success = success && z3::ult(indices[i], getDim(i));
+
+  return success.simplify();
 }
 
 z3::expr MemRef::storeArray(const z3::expr &array,
