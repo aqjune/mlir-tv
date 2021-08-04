@@ -185,8 +185,9 @@ public:
 
   // If memRefTy is unsupported, return nullopt
   static std::optional<std::tuple<std::vector<z3::expr>, Layout, z3::sort>>
-      getDimsAndLayoutAndElemTy(mlir::MemRefType memRefTy,
-                       bool freshVarForUnknownSize = true);
+    getDimsAndLayoutAndElemTy(mlir::MemRefType memRefTy,
+      std::optional<std::vector<z3::expr>> predefinedDims = {},
+      bool freshVarForUnknownSize = true);
 
   std::pair<z3::expr, z3::expr> load(const std::vector<z3::expr> &indices);
   z3::expr store(const z3::expr &value, const std::vector<z3::expr> &indices);

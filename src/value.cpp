@@ -473,7 +473,9 @@ z3::expr MemRef::getWellDefined() const {
 
 optional<tuple<vector<z3::expr>, MemRef::Layout, z3::sort>>
 MemRef::getDimsAndLayoutAndElemTy(
-    mlir::MemRefType memRefTy, bool freshVarForUnknownSize) {
+    mlir::MemRefType memRefTy,
+    optional<vector<z3::expr>> predefinedDims,
+    bool freshVarForUnknownSize) {
   // Step1. check element type
   auto elemty = memRefTy.getElementType();
   z3::sort elemty2(ctx);
@@ -487,7 +489,7 @@ MemRef::getDimsAndLayoutAndElemTy(
 
   // Step2. check affine map
   if (mlir::isStrided(memRefTy)) {
-    auto dims = ::getDims(memRefTy, freshVarForUnknownSize);
+    auto dims = predefinedDims.value_or(::getDims(memRefTy, freshVarForUnknownSize));
     auto layout = ::getLayout(memRefTy, dims);
     return {{dims, layout, elemty2}};
   } else {

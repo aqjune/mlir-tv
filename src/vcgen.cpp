@@ -419,7 +419,9 @@ template<>
 optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto tensor = st.regs.get<Tensor>(op.getOperand());
   auto memrefTy = op.memref().getType().cast<mlir::MemRefType>();
-  auto dimsAndLayoutAndElemTy = MemRef::getDimsAndLayoutAndElemTy(memrefTy);
+  auto predefinedDims = tensor.getDims();
+  auto dimsAndLayoutAndElemTy = MemRef::
+    getDimsAndLayoutAndElemTy(memrefTy, predefinedDims);
   if (!dimsAndLayoutAndElemTy)
     return "unsupported type";
 
