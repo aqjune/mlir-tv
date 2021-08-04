@@ -1380,7 +1380,7 @@ static Results validate(ValidationInput vinput) {
     return res;
 
   auto usedOps = aop::getUsedAbstractOps();
-  if (usedOps.dot && usedOps.sum)
+  if (usedOps.dot && usedOps.sum && usedOps.mul)
     // dot = mul + sum
     aop::setAbstractionLevel(aop::SUM_MUL);
   else
