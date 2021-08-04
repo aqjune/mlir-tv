@@ -436,11 +436,7 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto [mVal, success] = memref.load(idxs);
   memref.setWritable(false); // mutating result memref is undefined behavior
 
-  z3::expr_vector xs(ctx);
-  for (auto idx: idxs)
-    xs.push_back(idx);
-
-  st.wellDefined(z3::forall(xs, mVal == tVal));
+  st.wellDefined(z3::forall(toExprVector(idxs), mVal == tVal));
   st.regs.add(op.memref(), move(memref));
   return {};
 }
