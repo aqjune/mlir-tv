@@ -1,4 +1,7 @@
-// VERIFY
+// EXPECT: "Memory mismatch"
+
+// Although this conversion is correct, currently we don't fully support local block memory refinement.
+// So this test just checks whether return value mismatch.
 
 func @buffer_cast(%arg : tensor<2x3xf32>) -> f32
 {
