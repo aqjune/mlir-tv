@@ -1269,9 +1269,10 @@ static Results checkRefinement(
       llvm_unreachable("unexpected result");
     }
   };
+  auto logic = (st_src.hasQuantifier || st_src.hasQuantifier) ? "UFBV" : "QF_UFBV";
 
   { // 1. Check UB
-    auto s = z3::solver(ctx, "QF_UFBV");
+    auto s = z3::solver(ctx, logic);
     auto not_refines =
         (st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
     auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".1.ub");
@@ -1283,7 +1284,7 @@ static Results checkRefinement(
   }
 
   { // 2. Check whether src is always UB
-    auto s = z3::solver(ctx, "QF_UFBV");
+    auto s = z3::solver(ctx, logic);
     auto not_ub = st_src.isWellDefined.simplify();
     auto res = solve(s, not_ub, vinput.dumpSMTPath, fnname + ".2.notub");
     elapsedMillisec += res.second;
@@ -1294,7 +1295,7 @@ static Results checkRefinement(
   }
 
   if (st_src.retValue) { // 3. Check the return values
-    auto s = z3::solver(ctx, "QF_UFBV");
+    auto s = z3::solver(ctx, logic);
 
     z3::expr refines(ctx);
     vector<z3::expr> params;
@@ -1315,7 +1316,7 @@ static Results checkRefinement(
 
   if (st_src.m->getNumBlocks() > 0 ||
       st_tgt.m->getNumBlocks() > 0) { // 4. Check memory refinement
-    auto s = z3::solver(ctx, "QF_UFBV");
+    auto s = z3::solver(ctx, logic);
     auto [refines, params] = st_src.m->refines(*st_tgt.m);
     auto not_refines =
       (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
