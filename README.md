@@ -7,6 +7,8 @@ Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
 [Z3-solver](https://github.com/Z3Prover/z3),
 [Python3](https://www.python.org/downloads/)(>=3.9)
 
+- Installation of MLIR: please follow [this instruction](https://llvm.org/docs/GettingStarted.html#getting-the-source-code-and-building-llvm) & run `cmake --build . --target install`
+
 ```bash
 mkdir build
 cd build
