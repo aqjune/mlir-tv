@@ -76,7 +76,7 @@ public:
 
   void wellDefined(const z3::expr &e) {
     isWellDefined = isWellDefined && e;
-  };
+  }
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };

@@ -62,6 +62,14 @@ enum VerificationStep {
 };
 };
 
+static vector<z3::expr> createIndexVars(unsigned n) {
+  vector<z3::expr> idxs;
+  for (unsigned i = 0; i < n; i ++) {
+    idxs.push_back(Index("i" + std::to_string(i), true));
+  }
+  return idxs;
+}
+
 static optional<string> checkFunctionSignatures(mlir::FuncOp src, mlir::FuncOp tgt) {
   if (src.getNumArguments() != tgt.getNumArguments())
     RET_STR("The source and target program has different number of arguments.");
@@ -424,17 +432,14 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
     return "unsupported type";
 
   auto memref = MemRef(st.m.get(), "memref",
-    get<0>(*dimsAndLayoutAndElemTy),
-    get<1>(*dimsAndLayoutAndElemTy),
-    get<2>(*dimsAndLayoutAndElemTy));
+      get<0>(*dimsAndLayoutAndElemTy),
+      get<1>(*dimsAndLayoutAndElemTy),
+      get<2>(*dimsAndLayoutAndElemTy));
 
-  vector<z3::expr> idxs;
-  for (int i = 0; i < memrefTy.getRank(); i ++)
-    idxs.push_back(Index("Index", true));
-
+  vector<z3::expr> idxs = createIndexVars(memrefTy.getRank());
   auto tVal = tensor.get(idxs);
   auto [mVal, success] = memref.load(idxs);
-  memref.setWritable(false); // mutating result memref is undefined behavior
+  memref.setWritable(false);
 
   st.wellDefined(z3::forall(toExprVector(idxs), mVal == tVal));
   st.hasQuantifier = true;
@@ -445,20 +450,16 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
-  // step1. MemBlock which contains source memref marks as not writable.
+  // Step 1. Mark the MemBlock pointed by the memref as read-only.
   auto &memory = *(st.m);
   memory.setWritable(m.getBID(), false);
 
-  // step2. create new Tensor that alias origin memref using Tensor::mkLambda
+  // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
-  vector<z3::expr> idxs;
-  for (int i = 0; i < dims.size(); i ++) {
-    idxs.push_back(Index("Index_" + std::to_string(i)));
-  }
+  vector<z3::expr> idxs = createIndexVars(dims.size());
   auto [expr, success] = m.load(idxs);
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
-  // step3. add result tensor to register
   st.regs.add(op.getResult(), t_res);
   st.wellDefined(m.isInBounds());
 
