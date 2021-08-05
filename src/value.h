@@ -167,9 +167,10 @@ public:
   public:
     std::vector<z3::expr> indVars;
     z3::expr expr;
+    z3::expr inbounds;
 
-    Layout(const std::vector<z3::expr> &indVars, const z3::expr &expr):
-      indVars(indVars), expr(expr) {}
+    Layout(const std::vector<z3::expr> &indVars, const z3::expr &expr, const z3::expr &inbounds):
+      indVars(indVars), expr(expr), inbounds(inbounds) {}
   };
 
   MemRef(Memory *m);
@@ -218,5 +219,6 @@ public:
   z3::expr to1DArrayWithOfs(
     const std::vector<z3::expr> &offbegins,
     const std::vector<z3::expr> &sizes) const;
-  z3::expr to1DIdxWithLayout(const std::vector<z3::expr> &idxs);
+  // Returns {1DIdx, inbounds condition}
+  std::pair<z3::expr, z3::expr> to1DIdxWithLayout(const std::vector<z3::expr> &idxs);
 };
