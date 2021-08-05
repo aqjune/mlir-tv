@@ -451,26 +451,50 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   return {};
 }
 
+vector<z3::expr> getSizes(const State &st, mlir::memref::SubViewOp op) {
+  vector<z3::expr> sizes;
+  for (unsigned i = 0; i < op.getSourceType().getRank(); i ++) {
+    if (op.isDynamicSize(i)) {
+      sizes.push_back(st.regs.get<Index>(op.getDynamicSize(i)));
+    } else {
+      sizes.push_back(Index(op.getStaticSize(i)));
+    }
+  }
+  return sizes;
+}
+
+vector<z3::expr> getOffsets(const State &st, mlir::memref::SubViewOp op) {
+  vector<z3::expr> offsets;
+  for (unsigned i = 0; i < op.getSourceType().getRank(); i ++) {
+    if (op.isDynamicOffset(i)) {
+      offsets.push_back(st.regs.get<Index>(op.getDynamicOffset(i)));
+    } else {
+      offsets.push_back(Index(op.getStaticOffset(i)));
+    }
+  }
+  return offsets;
+}
+
+vector<z3::expr> getStrides(const State &st, mlir::memref::SubViewOp op) {
+  vector<z3::expr> strides;
+  for (unsigned i = 0; i < op.getSourceType().getRank(); i ++) {
+    if (op.isDynamicStride(i)) {
+      strides.push_back(st.regs.get<Index>(op.getDynamicStride(i)));
+    } else {
+      strides.push_back(Index(op.getStaticStride(i)));
+    }
+  }
+  return strides;
+}
+
 template<>
 optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
-  auto sz1 = st.regs.get<Index>(op.getDynamicSize(0));
-  auto sz2 = st.regs.get<Index>(op.getDynamicSize(1));
-  auto offset1 = st.regs.get<Index>(op.getDynamicOffset(0));
-  auto offset2 = st.regs.get<Index>(op.getDynamicOffset(1));
+  auto sizes = getSizes(st, op);
+  auto offsets = getOffsets(st, op);
+  auto strides = getStrides(st, op);
   auto src = st.regs.get<MemRef>(op.source());
-
-  vector<z3::expr> offsets = {offset1, offset2};
-  vector<z3::expr> strides = {ctx.bv_val(1, 32), ctx.bv_val(1, 32)};
   auto layout = src.toSubViewLayout(offsets, strides);
-
-  // llvm::outs() << "indVars: " << layout.indVars << "\n";
-  // llvm::outs() << "expr: " << layout.expr << "\n";
-
-  auto memref = MemRef(st.m.get(), "memref",
-    {sz1, sz2},
-    layout,
-    Float::sort());
-
+  auto memref = MemRef(st.m.get(), "memref_subview", sizes, layout, Float::sort());
   st.regs.add(op.getResult(), move(memref));
   return {};
 }
