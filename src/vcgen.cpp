@@ -9,6 +9,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
+#include "mlir/Dialect/StandardOps/Utils/Utils.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Matchers.h"
 #include "z3++.h"
@@ -494,8 +495,37 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
   auto strides = getStrides(st, op);
   auto src = st.regs.get<MemRef>(op.source());
   auto layout = src.toSubViewLayout(offsets, strides);
-  auto memref = MemRef(st.m.get(), "memref_subview", sizes, layout, Float::sort());
-  st.regs.add(op.getResult(), move(memref));
+
+  int rankDiff = op.getSourceType().getRank() - op.getType().getRank();
+  assert(rankDiff >= 0); // only reducing rank is allowed
+
+  if (rankDiff > 0) {
+    vector<z3::expr> reducedSizes, reducedOffsets, reducedStrides;
+    vector<z3::expr> reducedIndVars, substIndVars, substConsts;
+    for (unsigned i = 0; i < sizes.size(); i++) {
+      if (rankDiff > 0 && sizes[i].is_numeral() && sizes[i].as_uint64() == 1) { //statically known to be of size 1
+        substIndVars.push_back(layout.indVars[i]);
+        substConsts.push_back(Index::zero());
+        rankDiff --;
+      } else {
+        reducedSizes.push_back(sizes[i]);
+        reducedOffsets.push_back(offsets[i]);
+        reducedStrides.push_back(strides[i]);
+        reducedIndVars.push_back(layout.indVars[i]);
+      }
+    }
+    z3::expr reducedExpr = layout.expr
+      .substitute(toExprVector(substIndVars), toExprVector(substConsts));
+    z3::expr reducedInbounds = layout.inbounds
+      .substitute(toExprVector(substIndVars), toExprVector(substConsts));
+    auto reducedLayout = MemRef::Layout(reducedIndVars, reducedExpr, reducedInbounds);
+    auto memref = MemRef(st.m.get(), "memref", reducedSizes, reducedLayout, Float::sort());
+    st.regs.add(op.getResult(), move(memref));
+
+  } else {
+    auto memref = MemRef(st.m.get(), "memref",  sizes, layout, Float::sort());
+    st.regs.add(op.getResult(), move(memref));
+  }
   return {};
 }
 
