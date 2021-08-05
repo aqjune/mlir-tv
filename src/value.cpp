@@ -48,9 +48,8 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<z3::expr> &dims) {
     z3::expr inbounds = ctx.bool_val(true);
 
     for (int i = 0; i < dims.size(); i ++) {
-      auto idx = Index("idx" + to_string(i));
-      indVars.push_back(idx);
-      inbounds = inbounds && z3::ult(idx, dims[i]);
+      indVars.push_back(Index("idx" + to_string(i)));
+      inbounds = inbounds && z3::ult(indVars[i], dims[i]);
     }
 
     for (int i = dims.size() - 1; i >= 0; i --) {
@@ -68,10 +67,9 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<z3::expr> &dims) {
     vector<z3::expr> indVars;
     z3::expr inbounds = ctx.bool_val(true);
     for (int i = 0; i < strides.size(); i ++) {
-      auto idx = Index("idx" + to_string(i));
-      indVars.push_back(idx);
-      layout = layout + getConstOrVal(strides[i], "strides") * idx;
-      inbounds = inbounds && z3::ult(idx, dims[i]);
+      indVars.push_back(Index("idx" + to_string(i)));
+      layout = layout + getConstOrVal(strides[i], "strides") * indVars[i];
+      inbounds = inbounds && z3::ult(indVars[i], dims[i]);
     }
 
     return MemRef::Layout(indVars, layout, inbounds);

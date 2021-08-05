@@ -459,12 +459,8 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
   auto offset2 = st.regs.get<Index>(op.getDynamicOffset(1));
   auto src = st.regs.get<MemRef>(op.source());
 
-  // llvm::outs() << offset1 << "\n";
-  // llvm::outs() << offset2 << "\n";
-  // 일단 2차원만 가정해보자 
   vector<z3::expr> offsets = {offset1, offset2};
   vector<z3::expr> strides = {ctx.bv_val(1, 32), ctx.bv_val(1, 32)};
-  // auto layout = MemRef::Layout(src.getLayout().indVars, src.getLayout().update(offsets, strides));
   auto layout = src.toSubViewLayout(offsets, strides);
 
   // llvm::outs() << "indVars: " << layout.indVars << "\n";
@@ -474,12 +470,7 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
     {sz1, sz2},
     layout,
     Float::sort());
-  llvm::outs() << "Memref: " << memref << "\n";
-  st.wellDefined(z3::ule(sz1, src.getDim(0)) && z3::ule(sz2, src.getDim(1))); // size 는 원래 크기보다 커질수 없다.
-  st.wellDefined(z3::ule(offset1, src.getDim(0)) && z3::ule(offset2, src.getDim(1))); 
-  // st.wellDefined((z3::expr)Index("arg1") == 0 && (z3::expr)Index("arg2") == 0);// 현재는 offset 을 0 으로 고정시키자.. 나중에는 offest 에 대한 bound 도 추가해야할듯?
-  // 흠.. 문서를 봤을땐 subview 가 inbounds 를 벗어날 순 있고 그걸 체크하는건 client 에서 알아서 해야된다.
-  // 즉 subview 자체가 inbounds 를 벗어나는건 허용하돼, 접근하는 순간 UB 를 일으켜야한다..
+
   st.regs.add(op.getResult(), move(memref));
   return {};
 }
@@ -1318,7 +1309,6 @@ static Results checkRefinement(
     auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".1.ub");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
-      llvm::outs() << "Models: " << s.get_model().to_string() << "\n";
       printErrorMsg(s, res.first, "Source is more defined than target", {}, VerificationStep::UB);
       return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
     }
