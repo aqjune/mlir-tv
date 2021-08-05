@@ -502,9 +502,16 @@ pair<z3::expr, z3::expr> MemRef::load(const vector<z3::expr> &indices) {
   z3::expr idx = to1DIdxWithLayout(indices);
   auto [expr, success] = m->load(bid, offset + idx);
 
+  z3::expr inbounds = ctx.bool_val(true);
   // check whether indices are  inbound.
-  for (int i = 0; i < indices.size(); i ++)
+  for (int i = 0; i < indices.size(); i ++) {
     success = success && z3::ult(indices[i], getDim(i));
+    llvm::outs() << "dim Check : " << z3::ult(indices[i], getDim(i)) << "\n";
+  }
+
+  success = success && z3::ult(idx, 64*64);
+  llvm::outs() << "Check: " <<  z3::ult(idx, 64*64) << "\n";
+  llvm::outs() << "Check(simplify): " <<  z3::ult(idx, 64*64).simplify() << "\n";
 
   return {expr, success.simplify()};
 }
@@ -538,6 +545,22 @@ Index MemRef::getDim(uint64_t idx) const {
 
 void MemRef::setWritable(bool writable) {
   m->setWritable(bid, writable);
+}
+
+MemRef::Layout MemRef::toSubViewLayout(
+  const vector<z3::expr> &offsets,
+  const vector<z3::expr> &strides) {
+  // Before : <(d0, d1) -> (d0 * s0 + d1)>,
+  // After: <(d0, d1) -> ((d0 + offsets[0]) * strides[0] * s0 + (d1 + offsets[1]) * strides[1])>
+  assert(layout.indVars.size() == offsets.size());
+  assert(layout.indVars.size() == strides.size());
+
+  vector<z3::expr> idxs;
+  for (unsigned i = 0; i < layout.indVars.size(); i ++)
+    idxs.push_back((layout.indVars[i] + offsets[i]) * strides[i]);
+
+  auto transformed = layout.expr.substitute(toExprVector(layout.indVars), toExprVector(idxs));
+  return Layout(layout.indVars, transformed);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
