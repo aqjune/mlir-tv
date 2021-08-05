@@ -103,7 +103,7 @@ public:
   //   useAsFloat(Float(v)) // valid only if tensor had float elems
   z3::expr get(const std::vector<z3::expr> &indices) const;
 
-  z3::expr get1DSize() const { return ::get1DSize(dims); }
+  z3::expr get1DSize() const { return smt::get1DSize(dims); }
 
   Index getDim(uint64_t idx) const;
   std::vector<z3::expr> getDims() const { return dims; }
@@ -193,7 +193,7 @@ public:
   z3::expr isInBounds() const;
   z3::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
-  z3::expr get1DSize() const { return ::get1DSize(dims); }
+  z3::expr get1DSize() const { return smt::get1DSize(dims); }
   Index getDim(uint64_t idx) const;
   std::vector<z3::expr> getDims() const { return dims; }
   void setWritable(bool writable);

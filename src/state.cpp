@@ -1,6 +1,7 @@
 #include "smt.h"
 #include "state.h"
 
+using namespace smt;
 using namespace std;
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream &os, const ValueTy &v) {

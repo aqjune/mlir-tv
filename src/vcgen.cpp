@@ -20,6 +20,7 @@
 #include <variant>
 #include <vector>
 
+using namespace smt;
 using namespace std;
 
 #define RET_STR(V) { \

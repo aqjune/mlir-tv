@@ -2,6 +2,8 @@
 #include "smt.h"
 #include "value.h"
 
+using namespace smt;
+
 namespace aop {
 
 static AbsLevelDot alDot;

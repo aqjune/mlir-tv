@@ -3,6 +3,7 @@
 #include "value.h"
 #include <string>
 
+using namespace smt;
 using namespace std;
 
 static unsigned int ulog2(unsigned int numBlocks) {

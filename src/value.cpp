@@ -3,6 +3,7 @@
 #include "smt.h"
 #include "memory.h"
 
+using namespace smt;
 using namespace std;
 
 static vector<z3::expr> getDims(
