@@ -5,22 +5,24 @@
 #include <vector>
 
 namespace smt {
+using expr = z3::expr;
+
 extern z3::context ctx;
 
-z3::expr get1DSize(const std::vector<z3::expr> &dims);
-std::vector<z3::expr> from1DIdx(
-    z3::expr idx1d, const std::vector<z3::expr> &dims);
-std::vector<z3::expr> simplifyList(const std::vector<z3::expr> &exprs);
+expr get1DSize(const std::vector<expr> &dims);
+std::vector<expr> from1DIdx(
+    expr idx1d, const std::vector<expr> &dims);
+std::vector<expr> simplifyList(const std::vector<expr> &exprs);
 
-z3::expr to1DIdx(const std::vector<z3::expr> &idxs,
-                 const std::vector<z3::expr> &dims);
-z3::expr to1DIdxWithLayout(const std::vector<z3::expr> &idxs, z3::expr layout);
-z3::expr fitsInDims(const std::vector<z3::expr> &idxs,
-                    const std::vector<z3::expr> &sizes);
-z3::expr_vector toExprVector(const std::vector<z3::expr> &vec);
-std::string or_omit(const z3::expr &e);
+expr to1DIdx(const std::vector<expr> &idxs,
+                 const std::vector<expr> &dims);
+expr to1DIdxWithLayout(const std::vector<expr> &idxs, expr layout);
+expr fitsInDims(const std::vector<expr> &idxs,
+                    const std::vector<expr> &sizes);
+z3::expr_vector toExprVector(const std::vector<expr> &vec);
+std::string or_omit(const expr &e);
 };
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const z3::expr &e);
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e);
 llvm::raw_ostream& operator<<(
-    llvm::raw_ostream& os, const std::vector<z3::expr> &es);
+    llvm::raw_ostream& os, const std::vector<smt::expr> &es);

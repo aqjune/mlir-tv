@@ -27,7 +27,7 @@ void RegFile::add(mlir::Value v, ValueTy &&t) {
   m.insert({v, std::move(t)});
 }
 
-void RegFile::add(mlir::Value v, const z3::expr &e, mlir::Type ty) {
+void RegFile::add(mlir::Value v, const expr &e, mlir::Type ty) {
   assert(!contains(v));
   if (ty.isa<mlir::Float32Type>())
     m.insert({v, Float(e)});
@@ -44,11 +44,11 @@ bool RegFile::contains(mlir::Value v) const {
   return (bool)m.count(v);
 }
 
-z3::expr RegFile::getZ3Expr(mlir::Value v) const {
+expr RegFile::getZ3Expr(mlir::Value v) const {
   auto var = findOrCrash(v);
-  z3::expr e(ctx);
+  expr e(ctx);
   visit([&](auto &&itm) {
-    e = (z3::expr)itm;
+    e = (expr)itm;
   }, var);
   return e;
 }

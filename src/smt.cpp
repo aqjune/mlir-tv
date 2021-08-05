@@ -6,11 +6,11 @@ using namespace std;
 namespace smt {
 z3::context ctx;
 
-vector<z3::expr> from1DIdx(
-    z3::expr idx1d,
-    const vector<z3::expr> &dims) {
+vector<expr> from1DIdx(
+    expr idx1d,
+    const vector<expr> &dims) {
   assert(dims.size() > 0);
-  vector<z3::expr> idxs;
+  vector<expr> idxs;
 
   for (size_t ii = dims.size(); ii > 0; --ii) {
     size_t i = ii - 1;
@@ -24,25 +24,25 @@ vector<z3::expr> from1DIdx(
   return idxs;
 }
 
-z3::expr get1DSize(const vector<z3::expr> &dims) {
-  z3::expr szaccml = Index::one();
+expr get1DSize(const vector<expr> &dims) {
+  expr szaccml = Index::one();
   for (auto &d: dims)
     szaccml = szaccml * d;
   szaccml = szaccml.simplify();
   return szaccml;
 }
 
-vector<z3::expr> simplifyList(const vector<z3::expr> &exprs) {
-  vector<z3::expr> v;
+vector<expr> simplifyList(const vector<expr> &exprs) {
+  vector<expr> v;
   v.reserve(exprs.size());
   for (auto &e: exprs)
     v.push_back(std::move(e.simplify()));
   return v;
 }
 
-z3::expr to1DIdx(
-    const vector<z3::expr> &idxs,
-    const vector<z3::expr> &dims) {
+expr to1DIdx(
+    const vector<expr> &idxs,
+    const vector<expr> &dims) {
   assert(idxs.size() == dims.size());
   auto idx = idxs[0];
 
@@ -53,33 +53,33 @@ z3::expr to1DIdx(
   return idx;
 }
 
-z3::expr to1DIdxWithLayout(const vector<z3::expr> &idxs, z3::expr layout) {
-  vector<z3::expr> indices;
+expr to1DIdxWithLayout(const vector<expr> &idxs, expr layout) {
+  vector<expr> indices;
   for (unsigned i = 0; i < idxs.size(); i ++)
     indices.push_back(Index("idx" + to_string(i)));
 
   return layout.substitute(toExprVector(indices), toExprVector(idxs));
 }
 
-z3::expr fitsInDims(
-    const vector<z3::expr> &idxs,
-    const vector<z3::expr> &sizes) {
+expr fitsInDims(
+    const vector<expr> &idxs,
+    const vector<expr> &sizes) {
   assert(idxs.size() == sizes.size());
 
-  z3::expr cond = ctx.bool_val(true);
+  expr cond = ctx.bool_val(true);
   for (size_t i = 0; i < idxs.size(); ++i)
     cond = cond && (z3::ult(idxs[i], sizes[i]));
   return cond;
 }
 
-z3::expr_vector toExprVector(const vector<z3::expr> &vec) {
+z3::expr_vector toExprVector(const vector<expr> &vec) {
   z3::expr_vector ev(ctx);
   for (auto &e: vec)
     ev.push_back(e);
   return ev;
 }
 
-string or_omit(const z3::expr &e) {
+string or_omit(const expr &e) {
   string s;
   llvm::raw_string_ostream rso(s);
   rso << e.simplify();
@@ -92,7 +92,7 @@ string or_omit(const z3::expr &e) {
 
 };
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const z3::expr &e) {
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e) {
   std::stringstream ss;
   ss << e;
   os << ss.str();
@@ -101,7 +101,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const z3::expr &e) {
 
 
 llvm::raw_ostream& operator<<(
-    llvm::raw_ostream& os, const std::vector<z3::expr> &es) {
+    llvm::raw_ostream& os, const std::vector<smt::expr> &es) {
   os << "(";
   if (es.size() != 0) {
     os << es[0];
