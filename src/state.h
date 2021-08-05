@@ -76,7 +76,6 @@ public:
 
   void wellDefined(const z3::expr &e) {
     isWellDefined = isWellDefined && e;
-    hasQuantifier = hasQuantifier || e.is_quantifier();
   };
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
