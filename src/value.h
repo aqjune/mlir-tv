@@ -1,7 +1,6 @@
 #pragma once
 
 #include "smt.h"
-#include "z3++.h"
 #include "llvm/ADT/APFloat.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include <string>
@@ -10,7 +9,7 @@
 class Memory;
 
 class Index {
-  z3::expr e;
+  smt::expr e;
 
 public:
   static const unsigned BITS = 32;
@@ -18,9 +17,9 @@ public:
   Index();
   Index(unsigned);
   Index(const std::string &name, bool freshvar = false);
-  Index(const z3::expr &e);
+  Index(const smt::expr &e);
 
-  operator z3::expr() const { return e; }
+  operator smt::expr() const { return e; }
   Index ofs(int i) const {
     uint64_t v;
     if (e.is_numeral_u64(v))
@@ -33,22 +32,23 @@ public:
   static Index zero();
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const Index &other) const;
+  std::pair<smt::expr, std::vector<smt::expr>> refines(
+      const Index &other) const;
   Index eval(z3::model m) const;
 };
 
 class Float {
-  z3::expr e;
+  smt::expr e;
 
 public:
   static const unsigned BITS = 4;
 
   Float(const std::string &name);
-  Float(const z3::expr &e): e(e) {}
+  Float(const smt::expr &e): e(e) {}
   Float(const llvm::APFloat &apf);
   Float(double f);
 
-  operator z3::expr() const { return e; }
+  operator smt::expr() const { return e; }
 
   static z3::sort sort();
 
@@ -56,30 +56,32 @@ public:
   Float mul(const Float &b) const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const Float &other) const;
+  std::pair<smt::expr, std::vector<smt::expr>> refines(
+      const Float &other) const;
   Float eval(z3::model m) const;
 };
 
 class Integer {
-  z3::expr e;
+  smt::expr e;
 
 public:
   Integer(const std::string &name, unsigned bw);
-  Integer(const z3::expr &e): e(e) {}
+  Integer(const smt::expr &e): e(e) {}
   Integer(int64_t i, unsigned bw);
 
-  operator z3::expr() const { return e; }
+  operator smt::expr() const { return e; }
 
   static z3::sort sort(unsigned bw);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const Integer &other) const;
+  std::pair<smt::expr, std::vector<smt::expr>> refines(const Integer &other)
+      const;
   Integer eval(z3::model m) const;
 };
 
 class Tensor {
-  std::vector<z3::expr> dims;
-  z3::expr arr;
+  std::vector<smt::expr> dims;
+  smt::expr arr;
 
 public:
   // This may be parameterized later..
@@ -88,34 +90,34 @@ public:
 
   Tensor();
   // A splat tensor.
-  Tensor(const z3::expr &splat_elem, const std::vector<z3::expr> &dims);
-  Tensor(const std::vector<z3::expr> &elems1d);
-  Tensor(const std::string &name, const std::vector<z3::expr> &dims,
+  Tensor(const smt::expr &splat_elem, const std::vector<smt::expr> &dims);
+  Tensor(const std::vector<smt::expr> &elems1d);
+  Tensor(const std::string &name, const std::vector<smt::expr> &dims,
          const z3::sort &elemty);
 
-  z3::expr asArray() const { return arr; }
+  smt::expr asArray() const { return arr; }
 
-  z3::expr getWellDefined() const;
+  smt::expr getWellDefined() const;
 
   // Return the element at indices.
-  //   z3::expr v = tensor.get(indices)
+  //   expr v = tensor.get(indices)
   //   useAsInt(Integer(v)) // valid only if tensor had integer elems
   //   useAsFloat(Float(v)) // valid only if tensor had float elems
-  z3::expr get(const std::vector<z3::expr> &indices) const;
+  smt::expr get(const std::vector<smt::expr> &indices) const;
 
-  z3::expr get1DSize() const { return ::get1DSize(dims); }
+  smt::expr get1DSize() const { return smt::get1DSize(dims); }
 
   Index getDim(uint64_t idx) const;
-  std::vector<z3::expr> getDims() const { return dims; }
+  std::vector<smt::expr> getDims() const { return dims; }
 
   // Return a new tensor T2 s.t.
   //   T2[newidxvars] = this[srcidxs]
   // For example, if newidxvars = [x, y, z] and srcidxs = [x, y + z],
   //   T2[x][y][z] = this[x][y + z]
   Tensor affine(
-      const std::vector<z3::expr> &newidxvars,
-      std::vector<z3::expr> srcidxs,
-      const std::vector<z3::expr> &newsizes) const;
+      const std::vector<smt::expr> &newidxvars,
+      std::vector<smt::expr> srcidxs,
+      const std::vector<smt::expr> &newsizes) const;
 
   // Return a new tensor T2 s.t.
   //   T2[i1][i2]..[iN] = this[i2]..[iN][i1]
@@ -124,37 +126,38 @@ public:
   // Return a new tensor which is convolution of this tensor and filter.
   Tensor conv(const Tensor &filter) const;
 
-  Tensor reshape(const std::vector<z3::expr> &ns2) const;
+  Tensor reshape(const std::vector<smt::expr> &ns2) const;
 
   Tensor transpose() const;
 
   Tensor matmul(const Tensor &b) const;
 
-  z3::expr dot(const Tensor &b) const;
-  z3::expr sum() const;
+  smt::expr dot(const Tensor &b) const;
+  smt::expr sum() const;
 
-  operator z3::expr() const { return arr; }
+  operator smt::expr() const { return arr; }
 
   // If tensorTy is unsupported, return nullopt
-  static std::optional<std::pair<std::vector<z3::expr>, z3::sort>>
+  static std::optional<std::pair<std::vector<smt::expr>, z3::sort>>
       getDimsAndElemTy(mlir::TensorType tensorTy,
                        bool freshVarForUnknownSize = true);
 
   static std::optional<z3::sort> getElemTy(mlir::TensorType tensorTy);
 
   static Tensor mkLambda(
-      std::vector<z3::expr> &&newdims,
-      std::vector<z3::expr> &&indexvars, z3::expr body);
+      std::vector<smt::expr> &&newdims,
+      std::vector<smt::expr> &&indexvars, smt::expr body);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
   // Returns (arr[idx] == src.arr[idx], idx var)
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const Tensor &other) const;
+  std::pair<smt::expr, std::vector<smt::expr>> refines(
+      const Tensor &other) const;
   Tensor eval(z3::model m) const;
 
 private:
-  z3::expr to1DArrayWithOfs(
-      const std::vector<z3::expr> &offbegins,
-      const std::vector<z3::expr> &sizes) const;
+  smt::expr to1DArrayWithOfs(
+      const std::vector<smt::expr> &offbegins,
+      const std::vector<smt::expr> &sizes) const;
 };
 
 class MemRef {
@@ -165,55 +168,56 @@ public:
 
   class Layout {
   public:
-    std::vector<z3::expr> indVars;
-    z3::expr expr;
+    std::vector<smt::expr> indVars;
+    smt::expr expr;
 
-    Layout(const std::vector<z3::expr> &indVars, const z3::expr &expr):
+    Layout(const std::vector<smt::expr> &indVars, const smt::expr &expr):
       indVars(indVars), expr(expr) {}
   };
 
   MemRef(Memory *m);
   MemRef(Memory *m,
     const std::string &name,
-    const std::vector<z3::expr> &dims,
+    const std::vector<smt::expr> &dims,
     const Layout &layout,
     const z3::sort &elemty);
 
-  operator z3::expr() const { return bid && offset; }
+  operator smt::expr() const { return bid && offset; }
 
-  z3::expr getWellDefined() const;
+  smt::expr getWellDefined() const;
 
   // If memRefTy is unsupported, return nullopt
-  static std::optional<std::tuple<std::vector<z3::expr>, Layout, z3::sort>>
+  static std::optional<std::tuple<std::vector<smt::expr>, Layout, z3::sort>>
     getDimsAndLayoutAndElemTy(mlir::MemRefType memRefTy,
       std::optional<std::vector<z3::expr>> predefinedDims = {},
       bool freshVarForUnknownSize = true);
 
-  std::pair<z3::expr, z3::expr> load(const std::vector<z3::expr> &indices);
-  z3::expr store(const z3::expr &value, const std::vector<z3::expr> &indices);
-  z3::expr storeArray(const z3::expr &array, const z3::expr &startOffset, const z3::expr &size);
-  z3::expr isInBounds() const;
-  z3::expr getBID() const { return bid; }
+  std::pair<smt::expr, smt::expr> load(const std::vector<smt::expr> &indices);
+  smt::expr store(const smt::expr &value, const std::vector<smt::expr> &indices);
+  smt::expr storeArray(const smt::expr &array, const smt::expr &startOffset, const smt::expr &size);
+  smt::expr isInBounds() const;
+  smt::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
-  z3::expr get1DSize() const { return ::get1DSize(dims); }
+  smt::expr get1DSize() const { return smt::get1DSize(dims); }
   Index getDim(uint64_t idx) const;
-  std::vector<z3::expr> getDims() const { return dims; }
+  std::vector<smt::expr> getDims() const { return dims; }
   void setWritable(bool writable);
   void setMemory(Memory *m) { this->m = m; }
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
-  std::pair<z3::expr, std::vector<z3::expr>> refines(const MemRef &other) const;
+  std::pair<smt::expr, std::vector<smt::expr>> refines(
+      const MemRef &other) const;
   MemRef eval(z3::model m) const;
 
   private:
   Memory *m;
-  z3::expr bid; // blockID
+  smt::expr bid; // blockID
   Index offset; // offset
-  std::vector<z3::expr> dims;
+  std::vector<smt::expr> dims;
   Layout layout; // memory layout defined by affine_map (ex. s0 * idx0 + s1 * idx1 + ... + offset)
 
-  z3::expr to1DArrayWithOfs(
-    const std::vector<z3::expr> &offbegins,
-    const std::vector<z3::expr> &sizes) const;
-  z3::expr to1DIdxWithLayout(const std::vector<z3::expr> &idxs);
+  smt::expr to1DArrayWithOfs(
+      const std::vector<smt::expr> &offbegins,
+      const std::vector<smt::expr> &sizes) const;
+  smt::expr to1DIdxWithLayout(const std::vector<smt::expr> &idxs);
 };

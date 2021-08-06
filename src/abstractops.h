@@ -1,6 +1,6 @@
 #pragma once
 
-#include "z3++.h"
+#include "smt.h"
 
 namespace aop {
 
@@ -20,10 +20,10 @@ enum AbsLevelDot {
 // This resets the used abstract ops record.
 void setAbstractionLevel(AbsLevelDot);
 
-z3::expr mkZeroElemFromArr(const z3::expr &arr);
-z3::expr fp_add(const z3::expr &f1, const z3::expr &f2);
-z3::expr fp_mul(const z3::expr &f1, const z3::expr &f2);
-z3::expr sum(const z3::expr &arr, const z3::expr &n);
-z3::expr dot(const z3::expr &arr1, const z3::expr &arr2, const z3::expr &n);
+smt::expr mkZeroElemFromArr(const smt::expr &arr);
+smt::expr fp_add(const smt::expr &f1, const smt::expr &f2);
+smt::expr fp_mul(const smt::expr &f1, const smt::expr &f2);
+smt::expr sum(const smt::expr &arr, const smt::expr &n);
+smt::expr dot(const smt::expr &arr1, const smt::expr &arr2, const smt::expr &n);
 
 };
