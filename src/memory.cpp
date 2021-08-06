@@ -53,7 +53,7 @@ SingleArrayMemory::refines(const Memory &other) const {
 }
 
 SingleArrayMemory::SingleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks):
-  Memory(globalBlocks, localBlocks, ulog2(globalBlocks) + ulog2(localBlocks)),
+  Memory(globalBlocks, localBlocks, ulog2(globalBlocks + localBlocks)),
   arrayMaps(ctx.constant("arrayMaps",
     ctx.array_sort(ctx.bv_sort(bidBits), ctx.array_sort(Index::sort(), Float::sort())))),
   writableMaps(ctx.constant("writableMaps",
@@ -91,7 +91,7 @@ std::pair<expr, expr> SingleArrayMemory::load(
 
 
 MultipleArrayMemory::MultipleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks):
-    Memory(globalBlocks, localBlocks, ulog2(globalBlocks) + ulog2(localBlocks)) {
+    Memory(globalBlocks, localBlocks, ulog2(globalBlocks + localBlocks)) {
   for (unsigned i = 0; i < getNumBlocks(); ++i) {
     auto suffix = [&](const string &s) {
       return s + to_string(i);
