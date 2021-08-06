@@ -29,12 +29,11 @@ Memory* Memory::create(
   }
 }
 
-
-smt::expr Memory::isGlobalBlock(smt::expr &bid) const {
+expr Memory::isGlobalBlock(const expr &bid) const {
   return z3::ult(bid, globalBlocks);
 }
 
-smt::expr Memory::isLocalBlock(smt::expr &bid) const {
+expr Memory::isLocalBlock(const expr &bid) const {
   return !isGlobalBlock(bid);
 }
 
@@ -114,15 +113,16 @@ expr MultipleArrayMemory::itebid(
     return fn(const_bid);
 
   const unsigned bits = bid.get_sort().bv_size();
-  unsigned curbid = getNumBlocks() - 1;
-  expr val = fn(curbid);
 
-  while (curbid) {
-    curbid--;
-    val = z3::ite(bid == ctx.bv_val(curbid, bits), fn(curbid), val);
-  }
+  expr globalExpr = fn(0);
+  for (unsigned i = 1; i < globalBlocks; i ++)
+    globalExpr = z3::ite(bid == ctx.bv_val(i, bits), fn(i), globalExpr);
 
-  return val;
+  expr localExpr = fn(globalBlocks);
+  for (unsigned i = globalBlocks; i < getNumBlocks(); i ++)
+    localExpr = z3::ite(bid == ctx.bv_val(i, bits), fn(i), localExpr);
+
+  return z3::ite(isGlobalBlock(bid), globalExpr, localExpr);
 }
 
 void MultipleArrayMemory::update(

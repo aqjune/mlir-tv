@@ -44,8 +44,8 @@ public:
   unsigned int getBIDBits() const { return bidBits; }
   unsigned int getNumBlocks() const { return globalBlocks + localBlocks; }
 
-  smt::expr isGlobalBlock(smt::expr &bid) const;
-  smt::expr isLocalBlock(smt::expr &bid) const;
+  smt::expr isGlobalBlock(const smt::expr &bid) const;
+  smt::expr isLocalBlock(const smt::expr &bid) const;
 
   virtual smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const = 0;
   // Mark memblock's writable flag to `writable`
