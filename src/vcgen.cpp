@@ -444,7 +444,7 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto [mVal, success] = memref.load(idxs);
   memref.setWritable(false);
 
-  st.wellDefined(z3::forall(toExprVector(idxs), mVal == tVal));
+  st.wellDefined(z3::forall(toExprVector(idxs), z3::implies(success, mVal == tVal)));
   st.hasQuantifier = true;
   st.regs.add(op.memref(), move(memref));
   return {};
