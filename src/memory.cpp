@@ -70,8 +70,11 @@ MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
 }
 
 expr SingleArrayMemory::addLocalMemBlock(const expr &numelem) {
-  // TODO (seongwon)
-  return ctx;
+  auto bid = ctx.bv_val(numGlobalBlocks + currLocalBlocks, bidBits);
+  numelemMaps = z3::store(numelemMaps, bid, numelem);
+  currLocalBlocks ++;
+
+  return bid;
 }
 
 void SingleArrayMemory::setWritable(const expr &bid, bool writable) {
