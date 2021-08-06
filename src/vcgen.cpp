@@ -21,6 +21,7 @@
 #include <variant>
 #include <vector>
 
+using namespace smt;
 using namespace std;
 
 #define RET_STR(V) { \
@@ -62,6 +63,14 @@ enum VerificationStep {
   Memory
 };
 };
+
+static vector<expr> createIndexVars(unsigned n) {
+  vector<expr> idxs;
+  for (unsigned i = 0; i < n; i ++) {
+    idxs.push_back(Index("i" + std::to_string(i), true));
+  }
+  return idxs;
+}
 
 static optional<string> checkFunctionSignatures(mlir::FuncOp src, mlir::FuncOp tgt) {
   if (src.getNumArguments() != tgt.getNumArguments())
@@ -140,7 +149,7 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
 
 
 template<class T>
-optional<z3::expr> encodeAffineExpr(
+optional<expr> encodeAffineExpr(
     mlir::AffineExpr ae, const vector<T> &dimvars, const vector<T> &symbolvars
 ) {
   switch (ae.getKind()) {
@@ -230,7 +239,7 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   auto ty = res.getType().dyn_cast<mlir::TensorType>();
   assert(ty);
 
-  vector<z3::expr> sizes;
+  vector<expr> sizes;
   if (ty.getRank() == 0) {
     sizes.push_back(Index(1));
   } else {
@@ -278,7 +287,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
   unsigned i = 0;
   for (unsigned srci = 0; srci < indices.size(); ++srci) {
     auto &ids = indices[srci];
-    auto orgdim = (z3::expr)t.getDim(srci);
+    auto orgdim = (expr)t.getDim(srci);
 
     // Allow one '?' only.
     int unknown_dim = -1;
@@ -355,7 +364,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
   // out-of-bounds. It is currently encoded as UB.
 
   auto t = st.regs.get<Tensor>(op.getOperand(0));
-  vector<z3::expr> indices;
+  vector<expr> indices;
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
@@ -379,7 +388,7 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
   auto m = st.regs.get<MemRef>(op.getOperand(0));
-  vector<z3::expr> indices;
+  vector<expr> indices;
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
@@ -400,7 +409,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
   auto m = st.regs.get<MemRef>(op.getOperand(1));
-  vector<z3::expr> indices;
+  vector<expr> indices;
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
@@ -438,16 +447,13 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
     return {};
   }
 
-  // memref with affine maps
-  vector<z3::expr> idxs;
-  for (int i = 0; i < memrefTy.getRank(); i ++)
-    idxs.push_back(Index("Index", true));
-
+  vector<expr> idxs = createIndexVars(memrefTy.getRank());
   auto tVal = tensor.get(idxs);
   auto [mVal, success] = memref.load(idxs);
-  memref.setWritable(false); // mutating result memref is undefined behavior
+  memref.setWritable(false);
 
   st.wellDefined(z3::forall(toExprVector(idxs), mVal == tVal));
+  st.hasQuantifier = true;
   st.regs.add(op.memref(), move(memref));
   return {};
 }
@@ -532,20 +538,16 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   auto m = st.regs.get<MemRef>(op.getOperand());
-  // step1. MemBlock which contains source memref marks as not writable.
+  // Step 1. Mark the MemBlock pointed by the memref as read-only.
   auto &memory = *(st.m);
   memory.setWritable(m.getBID(), false);
 
-  // step2. create new Tensor that alias origin memref using Tensor::mkLambda
+  // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
-  vector<z3::expr> idxs;
-  for (int i = 0; i < dims.size(); i ++) {
-    idxs.push_back(Index("Index_" + std::to_string(i)));
-  }
+  vector<expr> idxs = createIndexVars(dims.size());
   auto [expr, success] = m.load(idxs);
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
-  // step3. add result tensor to register
   st.regs.add(op.getResult(), t_res);
   st.wellDefined(m.isInBounds());
 
@@ -556,7 +558,7 @@ template<>
 optional<string> encodeOp(State &st, mlir::linalg::IndexOp op) {
   uint64_t i = op.dim();
   assert(i < st.linalgGenericScopes.top().indVars.size());
-  z3::expr idxvar = st.linalgGenericScopes.top().indVars[i];
+  expr idxvar = st.linalgGenericScopes.top().indVars[i];
   st.regs.add(op, Index(idxvar));
   return {};
 }
@@ -618,7 +620,7 @@ optional<string> encodeOp(State &st, mlir::MulFOp op) {
 }
 
 static void addIntOrIndex(
-    State &st, mlir::Value res, const z3::expr &e, bool isIndex) {
+    State &st, mlir::Value res, const expr &e, bool isIndex) {
   if (isIndex)
     st.regs.add(res, Index(e));
   else
@@ -663,7 +665,7 @@ optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
     destWidth = Index::BITS;
   }
 
-  z3::expr casted = src;
+  expr casted = src;
   if (srcWidth > destWidth)
     casted = src.extract(destWidth - 1, 0);
   else if (srcWidth < destWidth)
@@ -854,8 +856,8 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
     if (!ae)
       return "unsupported affine expr";
 
-    z3::expr size = (z3::expr)viewSizes[idx];
-    z3::expr inbounds = z3::implies(z3::ugt(size, 0), z3::ult(*ae, size));
+    expr size = (expr)viewSizes[idx];
+    expr inbounds = z3::implies(z3::ugt(size, 0), z3::ult(*ae, size));
     st.wellDefined(inbounds);
   }
 
@@ -868,7 +870,7 @@ static optional<string> initInputStateForLoopBody(
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
   auto &block = *op.region().begin();
 
-  const vector<z3::expr> &inductionVars = st.linalgGenericScopes.top().indVars;
+  const vector<expr> &inductionVars = st.linalgGenericScopes.top().indVars;
 
   // Fill in args
   assert(op.getInputOperands().size() + op.getNumOutputs() ==
@@ -895,7 +897,7 @@ static optional<string> initInputStateForLoopBody(
         st.regs.add(block.getArgument(arg_i), t_input.get({Index::zero()}),
                     elemty);
       } else {
-        vector<z3::expr> affine_exprs;
+        vector<expr> affine_exprs;
         for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
           auto ae_res = encodeAffineExpr(inputMap.getResult(i), inductionVars, {});
           if (!ae_res)
@@ -919,12 +921,12 @@ static optional<string> initInputStateForLoopBody(
 // map := (i, j, k) -> (j, k, i)
 // input := [a, b, c]
 // output := [b, c, a]
-static vector<z3::expr> doMap(
-    const vector<z3::expr> &input, const mlir::AffineMap &map) {
+static vector<expr> doMap(
+    const vector<expr> &input, const mlir::AffineMap &map) {
   if (map.isIdentity())
     return input;
 
-  vector<z3::expr> output;
+  vector<expr> output;
   for (unsigned i = 0; i < map.getNumResults(); ++i) {
     auto ade = map.getResult(i).dyn_cast<mlir::AffineDimExpr>();
     output.push_back(input[ade.getPosition()]);
@@ -932,7 +934,7 @@ static vector<z3::expr> doMap(
   return output;
 }
 
-static vector<z3::expr> addOne(vector<z3::expr> &&vec) {
+static vector<expr> addOne(vector<expr> &&vec) {
   for (unsigned i = 0; i < vec.size(); ++i) {
     uint64_t v;
     if (vec[i].is_bv() && vec[i].is_numeral_u64(v))
@@ -1035,7 +1037,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
-    vector<z3::expr> tensorSz(1, Index(1));
+    vector<expr> tensorSz(1, Index(1));
     for (unsigned i = 1; i < outputType.getRank(); ++i)
       tensorSz.push_back(Index(1));
     t_res = Tensor(t_v.sum(), tensorSz);
@@ -1059,8 +1061,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
       }
     }
 
-    vector<z3::expr> boundsForRes;
-    vector<z3::expr> indVarsForRes;
+    vector<expr> boundsForRes;
+    vector<expr> indVarsForRes;
     for (unsigned j = 0; j < isInputIdxUsed.size(); ++j) {
       if (!isInputIdxUsed[j]) {
         boundsForRes.push_back(linalgInfo.indVarUpperBounds[j]);
@@ -1205,11 +1207,11 @@ static optional<string> encode(State &st, mlir::FuncOp &fn, bool printOps) {
 
 
 static void printCounterEx(
-    z3::solver &solver, const vector<z3::expr> &params, mlir::FuncOp src,
+    z3::solver &solver, const vector<expr> &params, mlir::FuncOp src,
     mlir::FuncOp tgt, const State &st_src, const State &st_tgt,
     VerificationStep step) {
   auto m = solver.get_model();
-  auto or_omit_z3 = [&](const z3::expr &e) -> string {
+  auto or_omit_z3 = [&](const expr &e) -> string {
     string s;
     llvm::raw_string_ostream rso(s);
     rso << e;
@@ -1316,7 +1318,7 @@ static void printCounterEx(
 
 
 static pair<z3::check_result, int64_t> solve(
-    z3::solver &solver, const z3::expr &refinement_negated,
+    z3::solver &solver, const expr &refinement_negated,
     const string &dumpSMTPath, const string &dump_string_to_suffix) {
   solver.reset();
   solver.add(refinement_negated);
@@ -1344,7 +1346,7 @@ static Results checkRefinement(
   auto fnname = src.getName().str();
 
   auto printErrorMsg = [&](z3::solver &s, z3::check_result res, const char *msg,
-                           vector<z3::expr> &&params, VerificationStep step){
+                           vector<expr> &&params, VerificationStep step){
     if (res == z3::unknown) {
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res == z3::sat) {
@@ -1382,8 +1384,8 @@ static Results checkRefinement(
   if (st_src.retValue) { // 3. Check the return values
     auto s = z3::solver(ctx, logic);
 
-    z3::expr refines(ctx);
-    vector<z3::expr> params;
+    expr refines(ctx);
+    vector<expr> params;
     visit([&](auto &&src, auto &&tgt) {
       auto typedTarget = (decltype(src)) tgt;
       tie(refines, params) = src.refines(typedTarget);
@@ -1469,7 +1471,7 @@ static Results validate(ValidationInput vinput) {
     return res;
 
   auto usedOps = aop::getUsedAbstractOps();
-  if (usedOps.dot && usedOps.sum)
+  if (usedOps.dot && usedOps.sum && usedOps.mul)
     // dot = mul + sum
     aop::setAbstractionLevel(aop::SUM_MUL);
   else

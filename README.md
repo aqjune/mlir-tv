@@ -1,20 +1,22 @@
 # MLIR-TV project
 
+MLIR-TV is an SMT-based translation validation framework for MLIR.
+Currently this is in an experimental stage.
+
 ## How to build MLIR-TV
 
-We take the path of a user's local IREE repo to detect MLIR's src and build directory.
-
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
-[IREE](https://github.com/google/iree),
+[MLIR](https://github.com/llvm/llvm-project),
 [Z3-solver](https://github.com/Z3Prover/z3),
 [Python3](https://www.python.org/downloads/)(>=3.9)
+
+- Installation of MLIR: please follow [this instruction](https://llvm.org/docs/GettingStarted.html#getting-the-source-code-and-building-llvm) & run `cmake --build . --target install`
 
 ```bash
 mkdir build
 cd build
 # If you want to build a release version, please add -DCMAKE_BUILD_TYPE=RELEASE
-cmake -DIREE_DIR=<dir/to/iree> \
-      -DIREE_BUILD_DIR=<dir/to/iree-build> \
+cmake -DMLIR_DIR=<dir/to/mlir-install> \
       -DZ3_DIR=<dir/to/z3-install> \
       ..
 cmake --build .
