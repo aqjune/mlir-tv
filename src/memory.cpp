@@ -12,12 +12,18 @@ static unsigned int ulog2(unsigned int numBlocks) {
   return (unsigned int) ceil(log2(std::max(numBlocks, (unsigned int) 2)));
 }
 
-Memory* Memory::create(unsigned int numBlocks, MemEncoding encoding) {
+static unsigned int norm2(unsigned int number) {
+  return (unsigned int) pow(2, ulog2(number));
+}
+
+Memory* Memory::create(
+    unsigned int globalBlocks, unsigned int localBlocks,
+    MemEncoding encoding) {
   switch(encoding) {
   case MemEncoding::SINGLE_ARRAY:
-    return new SingleArrayMemory(numBlocks);
+    return new SingleArrayMemory(norm2(globalBlocks), norm2(localBlocks));
   case MemEncoding::MULTIPLE_ARRAY:
-    return new MultipleArrayMemory(numBlocks);
+    return new MultipleArrayMemory(norm2(globalBlocks), norm2(localBlocks));
   default:
     llvm_unreachable("Unknown memory encoding");
   }
@@ -38,8 +44,8 @@ SingleArrayMemory::refines(const Memory &other) const {
   return {refinement, {bid, offset}};
 }
 
-SingleArrayMemory::SingleArrayMemory(unsigned int numBlocks):
-  Memory(ulog2(numBlocks), numBlocks),
+SingleArrayMemory::SingleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks):
+  Memory(globalBlocks, localBlocks, ulog2(globalBlocks) + ulog2(localBlocks)),
   arrayMaps(ctx.constant("arrayMaps",
     ctx.array_sort(ctx.bv_sort(bidBits), ctx.array_sort(Index::sort(), Float::sort())))),
   writableMaps(ctx.constant("writableMaps",
@@ -76,9 +82,9 @@ std::pair<expr, expr> SingleArrayMemory::load(
 }
 
 
-MultipleArrayMemory::MultipleArrayMemory(unsigned int numBlocks):
-    Memory(ulog2(numBlocks), numBlocks) {
-  for (unsigned i = 0; i < numBlocks; ++i) {
+MultipleArrayMemory::MultipleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks):
+    Memory(globalBlocks, localBlocks, ulog2(globalBlocks) + ulog2(localBlocks)) {
+  for (unsigned i = 0; i < getNumBlocks(); ++i) {
     auto suffix = [&](const string &s) {
       return s + to_string(i);
     };
@@ -91,7 +97,7 @@ MultipleArrayMemory::MultipleArrayMemory(unsigned int numBlocks):
 
 expr MultipleArrayMemory::itebid(
     const expr &bid, function<expr(unsigned)> fn) const {
-  assert(numBlocks > 0);
+  assert(getNumBlocks() > 0);
   assert(bid.get_sort().is_bv() && bid.get_sort().bv_size() == getBIDBits());
 
   uint64_t const_bid;
@@ -99,7 +105,7 @@ expr MultipleArrayMemory::itebid(
     return fn(const_bid);
 
   const unsigned bits = bid.get_sort().bv_size();
-  unsigned curbid = numBlocks - 1;
+  unsigned curbid = getNumBlocks() - 1;
   expr val = fn(curbid);
 
   while (curbid) {
@@ -113,7 +119,7 @@ expr MultipleArrayMemory::itebid(
 void MultipleArrayMemory::update(
     const expr &bid, function<expr*(unsigned)> getExprToUpdate,
     function<expr(unsigned)> getUpdatedValue) const {
-  assert(numBlocks > 0);
+  assert(getNumBlocks() > 0);
   assert(bid.get_sort().is_bv() && bid.get_sort().bv_size() == getBIDBits());
 
   uint64_t const_bid;
@@ -123,7 +129,7 @@ void MultipleArrayMemory::update(
   }
 
   const unsigned bits = getBIDBits();
-  for (unsigned i = 0; i < numBlocks; ++i) {
+  for (unsigned i = 0; i < getNumBlocks(); ++i) {
     expr *expr = getExprToUpdate(i);
     assert(expr);
     *expr = z3::ite(bid == ctx.bv_val(i, bits), getUpdatedValue(i), *expr);
@@ -154,7 +160,7 @@ expr MultipleArrayMemory::store(const expr &f32val,
 
 std::pair<expr, expr> MultipleArrayMemory::load(
     unsigned ubid, const expr &idx) const {
-  assert(ubid < numBlocks);
+  assert(ubid < getNumBlocks());
 
   expr success = z3::ult(idx, getNumElementsOfMemBlock(ubid));
   return {z3::select(arrays[ubid], idx), success};
@@ -175,7 +181,7 @@ MultipleArrayMemory::refines(const Memory &other0) const {
   // a plain LLVM.
   const MultipleArrayMemory &other =
       *static_cast<const MultipleArrayMemory *>(&other0);
-  assert(other.numBlocks == numBlocks);
+  assert(other.getNumBlocks() == getNumBlocks());
 
   auto bid = ctx.bv_const("bid", bidBits);
   auto offset = Index("offset", true);
