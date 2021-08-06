@@ -1,5 +1,8 @@
 # MLIR-TV project
 
+MLIR-TV is an SMT-based translation validation framework for MLIR.
+Currently this is in an experimental stage.
+
 ## How to build MLIR-TV
 
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
