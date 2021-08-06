@@ -450,15 +450,37 @@ expr Tensor::to1DArrayWithOfs(
 MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx), layout(Layout({}, ctx)) {}
 
 MemRef::MemRef(Memory *m,
+    const std::vector<expr> &dims,
+    const Layout &layout,
+    const z3::sort &elemty,
+    bool freshBlock): m(m), bid(ctx), offset(ctx), dims(dims), layout(layout) {
+  if (freshBlock) {
+    bid = m->addLocalMemBlock(get1DSize());
+    offset = Index::zero();
+  } else {
+    static int count = 0;
+    string freshName =  + "memref" + to_string(count ++);
+    bid = ctx.bv_const((freshName + "_bid").c_str(), m->getBIDBits());
+    offset = Index((freshName + "_offset").c_str());
+  }
+}
+
+MemRef::MemRef(Memory *m,
   const std::string &name,
   const std::vector<expr> &dims,
   const Layout &layout,
-  const z3::sort &elemty):
+  const z3::sort &elemty,
+  bool freshBlock):
     m(m),
     bid(ctx.bv_const((name + "_bid").c_str(), m->getBIDBits())),
     offset(Index((name + "_offset").c_str())),
     dims(dims),
-    layout(layout) {}
+    layout(layout) {
+  if (freshBlock) {
+    bid = m->addLocalMemBlock(get1DSize());
+    offset = Index::zero();
+  }
+}
 
 expr MemRef::getWellDefined() const {
   expr size = get1DSize();
@@ -511,6 +533,14 @@ expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(bid);
   auto memrefSize = get1DSize();
   return z3::uge(numelem, memrefSize) && z3::ult(offset, numelem - memrefSize);
+}
+
+expr MemRef::isGlobalBlock() const {
+  return m->isGlobalBlock(bid);
+}
+
+expr MemRef::isLocalBlock() const {
+  return m->isLocalBlock(bid);
 }
 
 Index MemRef::getDim(uint64_t idx) const {

@@ -69,6 +69,11 @@ MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
   return MemBlock(array, writable, numelem);
 }
 
+expr SingleArrayMemory::addLocalMemBlock(const expr &numelem) {
+  // TODO (seongwon)
+  return ctx;
+}
+
 void SingleArrayMemory::setWritable(const expr &bid, bool writable) {
   writableMaps = z3::store(writableMaps, bid, ctx.bool_val(writable));
 }
@@ -150,6 +155,18 @@ void MultipleArrayMemory::update(
   }
 }
 
+expr MultipleArrayMemory::addLocalMemBlock(const expr &numelem) {
+  auto bid = numGlobalBlocks + currLocalBlocks;
+  auto suffix = [&](const string &s) { return s + to_string(bid); };
+  arrays.push_back(ctx.constant(suffix("array").c_str(),
+        ctx.array_sort(Index::sort(), Float::sort())));
+  writables.push_back(ctx.bool_const(suffix("writable").c_str()));
+  numelems.push_back(numelem);
+  currLocalBlocks ++;
+
+  return ctx.bv_val(bid, bidBits);
+}
+
 expr MultipleArrayMemory::getNumElementsOfMemBlock(
     const expr &bid) const {
   return itebid(bid, [&](auto ubid) { return numelems[ubid]; });
@@ -195,7 +212,7 @@ MultipleArrayMemory::refines(const Memory &other0) const {
   // a plain LLVM.
   const MultipleArrayMemory &other =
       *static_cast<const MultipleArrayMemory *>(&other0);
-  assert(other.getNumBlocks() == getNumBlocks());
+  assert(other.numGlobalBlocks == numGlobalBlocks);
 
   auto bid = ctx.bv_const("bid", bidBits);
   auto offset = Index("offset", true);
@@ -211,5 +228,9 @@ MultipleArrayMemory::refines(const Memory &other0) const {
     return z3::implies(tgtSuccess, srcSuccess && wRefinement && vRefinement);
   };
 
-  return {z3::implies(isGlobalBlock(bid), itebid(bid, refines)), {bid, offset}};
+  expr refinement = refines(0);
+  for (unsigned i = 1; i < numGlobalBlocks; i ++)
+    refinement = z3::ite(bid == ctx.bv_val(i, bidBits), refines(i), refinement);
+
+  return {refinement, {bid, offset}};
 }

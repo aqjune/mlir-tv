@@ -129,7 +129,8 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
         get<0>(*dimsAndLayoutAndElemTy),
         get<1>(*dimsAndLayoutAndElemTy),
         get<2>(*dimsAndLayoutAndElemTy));
-      s.wellDefined(memref.getWellDefined());
+      // memref from function argument must point global memblock.
+      s.wellDefined(memref.isGlobalBlock() && memref.getWellDefined());
       s.regs.add(arg, move(memref));
 
     } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
@@ -432,10 +433,11 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   if (!dimsAndLayoutAndElemTy)
     return "unsupported type";
 
-  auto memref = MemRef(st.m.get(), "memref",
+  auto memref = MemRef(st.m.get(),
       get<0>(*dimsAndLayoutAndElemTy),
       get<1>(*dimsAndLayoutAndElemTy),
-      get<2>(*dimsAndLayoutAndElemTy));
+      get<2>(*dimsAndLayoutAndElemTy),
+      true);
 
   vector<expr> idxs = createIndexVars(memrefTy.getRank());
   auto tVal = tensor.get(idxs);
