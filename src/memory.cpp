@@ -17,24 +17,24 @@ static unsigned int norm2(unsigned int number) {
 }
 
 Memory* Memory::create(
-    unsigned int globalBlocks, unsigned int localBlocks,
+    unsigned int numGlobalBlocks, unsigned int numLocalBlocks,
     MemEncoding encoding) {
   switch(encoding) {
   case MemEncoding::SINGLE_ARRAY:
-    return new SingleArrayMemory(norm2(globalBlocks), norm2(localBlocks));
+    return new SingleArrayMemory(norm2(numGlobalBlocks), norm2(numLocalBlocks));
   case MemEncoding::MULTIPLE_ARRAY:
-    return new MultipleArrayMemory(norm2(globalBlocks), norm2(localBlocks));
+    return new MultipleArrayMemory(norm2(numGlobalBlocks), norm2(numLocalBlocks));
   default:
     llvm_unreachable("Unknown memory encoding");
   }
 }
 
 expr Memory::isGlobalBlock(const expr &bid) const {
-  return z3::ult(bid, globalBlocks);
+  return z3::ult(bid, numGlobalBlocks);
 }
 
 expr Memory::isLocalBlock(const expr &bid) const {
-  return !isGlobalBlock(bid);
+  return z3::ule(numGlobalBlocks, bid) && z3::ult(bid, numGlobalBlocks + currLocalBlocks);
 }
 
 pair<expr, std::vector<expr>>
@@ -52,8 +52,9 @@ SingleArrayMemory::refines(const Memory &other) const {
   return {z3::implies(isGlobalBlock(bid), refinement), {bid, offset}};
 }
 
-SingleArrayMemory::SingleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks):
-  Memory(globalBlocks, localBlocks, ulog2(globalBlocks + localBlocks)),
+SingleArrayMemory::SingleArrayMemory(
+    unsigned int numGlobalBlocks, unsigned int nunLocalBlocks):
+  Memory(numGlobalBlocks, nunLocalBlocks, ulog2(numGlobalBlocks + nunLocalBlocks)),
   arrayMaps(ctx.constant("arrayMaps",
     ctx.array_sort(ctx.bv_sort(bidBits), ctx.array_sort(Index::sort(), Float::sort())))),
   writableMaps(ctx.constant("writableMaps",
@@ -90,8 +91,9 @@ std::pair<expr, expr> SingleArrayMemory::load(
 }
 
 
-MultipleArrayMemory::MultipleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks):
-    Memory(globalBlocks, localBlocks, ulog2(globalBlocks + localBlocks)) {
+MultipleArrayMemory::MultipleArrayMemory(
+    unsigned int numGlobalBlocks, unsigned int nunLocalBlocks):
+  Memory(numGlobalBlocks, nunLocalBlocks, ulog2(numGlobalBlocks + nunLocalBlocks)) {
   for (unsigned i = 0; i < getNumBlocks(); ++i) {
     auto suffix = [&](const string &s) {
       return s + to_string(i);
@@ -115,11 +117,14 @@ expr MultipleArrayMemory::itebid(
   const unsigned bits = bid.get_sort().bv_size();
 
   expr globalExpr = fn(0);
-  for (unsigned i = 1; i < globalBlocks; i ++)
+  for (unsigned i = 1; i < numGlobalBlocks; i ++)
     globalExpr = z3::ite(bid == ctx.bv_val(i, bits), fn(i), globalExpr);
 
-  expr localExpr = fn(globalBlocks);
-  for (unsigned i = globalBlocks; i < getNumBlocks(); i ++)
+  if (currLocalBlocks == 0)
+    return globalExpr;
+
+  expr localExpr = fn(numGlobalBlocks);
+  for (unsigned i = numGlobalBlocks + 1; i < getNumBlocks(); i ++)
     localExpr = z3::ite(bid == ctx.bv_val(i, bits), fn(i), localExpr);
 
   return z3::ite(isGlobalBlock(bid), globalExpr, localExpr);

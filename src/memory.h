@@ -22,27 +22,29 @@ public:
 
 class Memory {
 protected:
-  const unsigned int globalBlocks;
-  const unsigned int localBlocks;
+  const unsigned int numGlobalBlocks;
+  const unsigned int numLocalBlocks;
   const unsigned int bidBits;
+  unsigned int currLocalBlocks;
 
 public:
   static Memory * create(
-      unsigned int globalBlocks, unsigned int localBlocks,
+      unsigned int numGlobalBlocks, unsigned int numLocalBlocks,
       MemEncoding encoding);
   // Here we would like to use lower half of the memory blocks as global MemBlock
   // and upper half of the memory blocks as local MemBlock.
   // Memory refinement is defined only using global MemBlocks.
-  Memory(unsigned int globalBlocks, unsigned int localBlocks, unsigned int bidBits):
-      globalBlocks(globalBlocks), localBlocks(localBlocks), bidBits(bidBits) {}
+  Memory(unsigned int numGlobalBlocks,
+      unsigned int numLocalBlocks,
+      unsigned int bidBits):
+    numGlobalBlocks(numGlobalBlocks),
+    numLocalBlocks(numLocalBlocks),
+    bidBits(bidBits),
+    currLocalBlocks(0) {}
   virtual ~Memory() {}
 
-  // Encode the refinement relation between src (other) and tgt (this) memory
-  virtual std::pair<smt::expr, std::vector<smt::expr>>
-    refines(const Memory &other) const = 0;
-
   unsigned int getBIDBits() const { return bidBits; }
-  unsigned int getNumBlocks() const { return globalBlocks + localBlocks; }
+  unsigned int getNumBlocks() const { return numGlobalBlocks + currLocalBlocks; }
 
   smt::expr isGlobalBlock(const smt::expr &bid) const;
   smt::expr isLocalBlock(const smt::expr &bid) const;
@@ -59,6 +61,10 @@ public:
   // Returns: (loaded value, load successful?)
   virtual std::pair<smt::expr, smt::expr> load(
       const smt::expr &bid, const smt::expr &idx) const = 0;
+
+  // Encode the refinement relation between src (other) and tgt (this) memory
+  virtual std::pair<smt::expr, std::vector<smt::expr>>
+    refines(const Memory &other) const = 0;
 };
 
 class SingleArrayMemory: public Memory {
