@@ -29,6 +29,15 @@ Memory* Memory::create(
   }
 }
 
+
+smt::expr Memory::isGlobalBlock(smt::expr &bid) const {
+  return z3::ult(bid, globalBlocks);
+}
+
+smt::expr Memory::isLocalBlock(smt::expr &bid) const {
+  return !isGlobalBlock(bid);
+}
+
 pair<expr, std::vector<expr>>
 SingleArrayMemory::refines(const Memory &other) const {
   auto bid = ctx.bv_const("bid", bidBits);
@@ -41,7 +50,7 @@ SingleArrayMemory::refines(const Memory &other) const {
   auto wRefinement = z3::implies(srcWritable, tgtWritable);
   auto vRefinement = (tgtValue == srcValue);
   auto refinement = z3::implies(tgtSuccess, srcSuccess && wRefinement && vRefinement);
-  return {refinement, {bid, offset}};
+  return {z3::implies(isGlobalBlock(bid), refinement), {bid, offset}};
 }
 
 SingleArrayMemory::SingleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks):
@@ -197,5 +206,5 @@ MultipleArrayMemory::refines(const Memory &other0) const {
     return z3::implies(tgtSuccess, srcSuccess && wRefinement && vRefinement);
   };
 
-  return { itebid(bid, refines), {bid, offset}};
+  return {z3::implies(isGlobalBlock(bid), itebid(bid, refines)), {bid, offset}};
 }
