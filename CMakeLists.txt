@@ -16,7 +16,7 @@ link_directories(${Z3_LIB_DIR})
 link_libraries(
     MLIRViewLikeInterface MLIRInferTypeOpInterface
     MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRViewLikeInterface MLIRAffine MLIRMemRef MLIRShape MLIRMath
-    MLIRControlFlowInterfaces MLIRStandard MLIRSideEffectInterfaces MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport MLIRInferTypeOpInterface
+    MLIRControlFlowInterfaces MLIRStandard MLIRSideEffectInterfaces MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport
     LLVMSupport LLVMDemangle z3 pthread m curses)
 
 add_executable(${PROJECT_NAME}
