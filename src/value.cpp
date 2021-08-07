@@ -483,15 +483,16 @@ MemRef::MemRef(Memory *m,
 }
 
 expr MemRef::getWellDefined() const {
+  expr wellDefined = z3::ult(bid, m->getNumBlocks()); // memref points currently issued memblock.
   expr size = get1DSize();
   if (size.is_numeral())
-    return ctx.bool_val(true);
-  auto expr = z3::ule(size, MAX_MEMREF_SIZE);
+    return wellDefined;
+  wellDefined = wellDefined && z3::ule(size, MAX_MEMREF_SIZE);
   for (auto dim: dims) {
     if (dim.is_numeral()) continue;
-    expr = expr && z3::ule(dim, MAX_DIM_SIZE);
+    wellDefined = wellDefined && z3::ule(dim, MAX_DIM_SIZE);
   }
-  return expr.simplify();
+  return wellDefined.simplify();
 }
 
 optional<tuple<vector<expr>, MemRef::Layout, z3::sort>>
