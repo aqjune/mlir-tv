@@ -5,7 +5,7 @@ set (CMAKE_CXX_STANDARD 17)
 set(MLIR_DIR "")
 set(Z3_DIR "")
 set(CVC5_DIR "")
-set(USE_LIBC ON)
+set(USE_LIBC OFF)
 
 set(MLIR_INC_DIR "${MLIR_DIR}/include")
 set(MLIR_LIB_DIR "${MLIR_DIR}/lib")
