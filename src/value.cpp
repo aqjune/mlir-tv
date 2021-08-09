@@ -72,6 +72,11 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
   }
 }
 
+static string freshName(string prefix) {
+  static int count = 0;
+  return prefix + to_string(count ++);
+}
+
 Index::Index(): e(ctx) {}
 
 Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {}
@@ -450,22 +455,6 @@ expr Tensor::to1DArrayWithOfs(
 MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx), layout(Layout({}, ctx)) {}
 
 MemRef::MemRef(Memory *m,
-    const std::vector<expr> &dims,
-    const Layout &layout,
-    const z3::sort &elemty,
-    bool freshBlock): m(m), bid(ctx), offset(ctx), dims(dims), layout(layout) {
-  if (freshBlock) {
-    bid = m->addLocalBlock(get1DSize());
-    offset = Index::zero();
-  } else {
-    static int count = 0;
-    string freshName =  + "memref" + to_string(count ++);
-    bid = ctx.bv_const((freshName + "_bid").c_str(), m->getBIDBits());
-    offset = Index((freshName + "_offset").c_str());
-  }
-}
-
-MemRef::MemRef(Memory *m,
   const std::string &name,
   const std::vector<expr> &dims,
   const Layout &layout,
@@ -481,6 +470,12 @@ MemRef::MemRef(Memory *m,
     offset = Index::zero();
   }
 }
+
+MemRef::MemRef(Memory *m,
+    const std::vector<expr> &dims,
+    const Layout &layout,
+    const z3::sort &elemty,
+    bool freshBlock) : MemRef(m, freshName("memref"), dims, layout, elemty, freshBlock) {}
 
 expr MemRef::getWellDefined() const {
   expr wellDefined = z3::ult(bid, m->getNumBlocks()); // memref points currently issued memblock.

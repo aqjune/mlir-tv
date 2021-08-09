@@ -177,12 +177,12 @@ public:
 
   MemRef(Memory *m);
   MemRef(Memory *m,
+    const std::string &name,
     const std::vector<smt::expr> &dims,
     const Layout &layout,
     const z3::sort &elemty,
     bool freshBlock = false);
   MemRef(Memory *m,
-    const std::string &name,
     const std::vector<smt::expr> &dims,
     const Layout &layout,
     const z3::sort &elemty,
