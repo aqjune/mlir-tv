@@ -104,7 +104,7 @@ expr SingleArrayMemory::storeArray(
   arrayMaps = z3::store(arrayMaps, bid, stored);
 
   return z3::ule(low, high) && // low <= high (to prevent overflow)
-    z3::ule(high, block.numelem) && // high <= block.numelem
+    z3::ult(high, block.numelem) && // high < block.numelem
     block.writable;
 }
 
@@ -217,7 +217,7 @@ expr MultipleArrayMemory::storeArray(
     });
 
   return z3::ult(low, high) && // low <= high (to prevent overflow)
-    z3::ule(high, getNumElementsOfMemBlock(bid)) && // high <= block.numelem
+    z3::ult(high, getNumElementsOfMemBlock(bid)) && // high < block.numelem
     getWritable(bid);
 }
 
