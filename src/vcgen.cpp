@@ -20,6 +20,7 @@
 #include <sstream>
 #include <variant>
 #include <vector>
+#include <optional>
 
 using namespace smt;
 using namespace std;
@@ -130,7 +131,8 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
         get<0>(*dimsAndLayoutAndElemTy),
         get<1>(*dimsAndLayoutAndElemTy),
         get<2>(*dimsAndLayoutAndElemTy));
-      s.wellDefined(memref.getWellDefined());
+      // memref from function argument must point global memblock.
+      s.wellDefined(memref.isGlobalBlock() && memref.getWellDefined());
       s.regs.add(arg, move(memref));
 
     } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
@@ -431,13 +433,15 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto memrefTy = op.memref().getType().cast<mlir::MemRefType>();
   auto predefinedDims = tensor.getDims();
   auto dimsAndLayoutAndElemTy = MemRef::
-    getDimsAndLayoutAndElemTy(memrefTy, predefinedDims);
+    getDimsAndLayoutAndElemTy(memrefTy, move(predefinedDims));
   if (!dimsAndLayoutAndElemTy)
     return "unsupported type";
-  auto memref = MemRef(st.m.get(), "memref",
-    get<0>(*dimsAndLayoutAndElemTy),
-    get<1>(*dimsAndLayoutAndElemTy),
-    get<2>(*dimsAndLayoutAndElemTy));
+
+  auto memref = MemRef(st.m.get(),
+      get<0>(*dimsAndLayoutAndElemTy),
+      get<1>(*dimsAndLayoutAndElemTy),
+      get<2>(*dimsAndLayoutAndElemTy),
+      true);
 
   if (memrefTy.getAffineMaps().empty()) {
     // memref with identity map
@@ -452,7 +456,7 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto [mVal, success] = memref.load(idxs);
   memref.setWritable(false);
 
-  st.wellDefined(z3::forall(toExprVector(idxs), mVal == tVal));
+  st.wellDefined(z3::forall(toExprVector(idxs), z3::implies(success, mVal == tVal)));
   st.hasQuantifier = true;
   st.regs.add(op.memref(), move(memref));
   return {};
