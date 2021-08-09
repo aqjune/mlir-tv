@@ -455,7 +455,7 @@ MemRef::MemRef(Memory *m,
     const z3::sort &elemty,
     bool freshBlock): m(m), bid(ctx), offset(ctx), dims(dims), layout(layout) {
   if (freshBlock) {
-    bid = m->addLocalMemBlock(get1DSize());
+    bid = m->addLocalBlock(get1DSize());
     offset = Index::zero();
   } else {
     static int count = 0;
@@ -477,7 +477,7 @@ MemRef::MemRef(Memory *m,
     dims(dims),
     layout(layout) {
   if (freshBlock) {
-    bid = m->addLocalMemBlock(get1DSize());
+    bid = m->addLocalBlock(get1DSize());
     offset = Index::zero();
   }
 }

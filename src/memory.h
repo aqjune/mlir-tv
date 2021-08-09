@@ -16,7 +16,8 @@ public:
   smt::expr writable; // bool::sort()
   smt::expr numelem;  // Index::sort()
 
-  MemBlock(const smt::expr &array, const smt::expr &writable, const smt::expr &numelem):
+  MemBlock(const smt::expr &array, const smt::expr &writable,
+           const smt::expr &numelem):
     array(array), writable(writable), numelem(numelem) {}
 };
 
@@ -52,7 +53,7 @@ public:
   smt::expr isLocalBlock(const smt::expr &bid) const;
 
   // Returns: (newly created block id)
-  virtual smt::expr addLocalMemBlock(const smt::expr &numelem) = 0;
+  virtual smt::expr addLocalBlock(const smt::expr &numelem) = 0;
 
   virtual smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const = 0;
   // Mark memblock's writable flag to `writable`
@@ -83,7 +84,7 @@ private:
 public:
   SingleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
 
-  smt::expr addLocalMemBlock(const smt::expr &numelem) override;
+  smt::expr addLocalBlock(const smt::expr &numelem) override;
 
   smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const override {
     return getMemBlock(bid).numelem;
@@ -112,7 +113,7 @@ class MultipleArrayMemory: public Memory {
 public:
   MultipleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
 
-  smt::expr addLocalMemBlock(const smt::expr &numelem) override;
+  smt::expr addLocalBlock(const smt::expr &numelem) override;
 
   smt::expr getNumElementsOfMemBlock(unsigned ubid) const
   { assert(ubid < getNumBlocks()); return numelems[ubid]; }
