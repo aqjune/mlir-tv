@@ -23,28 +23,28 @@ public:
 class Memory {
 protected:
   const unsigned int numGlobalBlocks;
-  const unsigned int numLocalBlocks;
+  const unsigned int maxLocalBlocks;
   const unsigned int bidBits;
-  unsigned int currLocalBlocks;
+  unsigned int numLocalBlocks;
 
 public:
   static Memory * create(
-      unsigned int numGlobalBlocks, unsigned int numLocalBlocks,
+      unsigned int numGlobalBlocks, unsigned int maxLocalBlocks,
       MemEncoding encoding);
   // Here we would like to use lower half of the memory blocks as global MemBlock
   // and upper half of the memory blocks as local MemBlock.
   // Memory refinement is defined only using global MemBlocks.
   Memory(unsigned int numGlobalBlocks,
-      unsigned int numLocalBlocks,
+      unsigned int maxLocalBlocks,
       unsigned int bidBits):
     numGlobalBlocks(numGlobalBlocks),
-    numLocalBlocks(numLocalBlocks),
+    maxLocalBlocks(maxLocalBlocks),
     bidBits(bidBits),
-    currLocalBlocks(0) {}
+    numLocalBlocks(0) {}
   virtual ~Memory() {}
 
   unsigned int getBIDBits() const { return bidBits; }
-  unsigned int getNumBlocks() const { return numGlobalBlocks + currLocalBlocks; }
+  unsigned int getNumBlocks() const { return numGlobalBlocks + numLocalBlocks; }
 
   virtual smt::expr isGlobalBlock(const smt::expr &bid) const = 0;
   virtual smt::expr isLocalBlock(const smt::expr &bid) const = 0;

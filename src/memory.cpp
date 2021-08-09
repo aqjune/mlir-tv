@@ -13,13 +13,13 @@ static unsigned int ulog2(unsigned int numBlocks) {
 }
 
 Memory* Memory::create(
-    unsigned int numGlobalBlocks, unsigned int numLocalBlocks,
+    unsigned int numGlobalBlocks, unsigned int maxLocalBlocks,
     MemEncoding encoding) {
   switch(encoding) {
   case MemEncoding::SINGLE_ARRAY:
-    return new SingleArrayMemory(numGlobalBlocks, numLocalBlocks);
+    return new SingleArrayMemory(numGlobalBlocks, maxLocalBlocks);
   case MemEncoding::MULTIPLE_ARRAY:
-    return new MultipleArrayMemory(numGlobalBlocks, numLocalBlocks);
+    return new MultipleArrayMemory(numGlobalBlocks, maxLocalBlocks);
   default:
     llvm_unreachable("Unknown memory encoding");
   }
@@ -70,9 +70,9 @@ expr SingleArrayMemory::isLocalBlock(const expr &bid) const {
 }
 
 expr SingleArrayMemory::addLocalMemBlock(const expr &numelem) {
-  auto bid = ctx.bv_val(numGlobalBlocks + currLocalBlocks, bidBits);
+  auto bid = ctx.bv_val(numGlobalBlocks + numLocalBlocks, bidBits);
   numelemMaps = z3::store(numelemMaps, bid, numelem);
-  currLocalBlocks ++;
+  numLocalBlocks ++;
 
   return bid;
 }
@@ -161,13 +161,13 @@ expr MultipleArrayMemory::isLocalBlock(const expr &bid) const {
 }
 
 expr MultipleArrayMemory::addLocalMemBlock(const expr &numelem) {
-  auto bid = numGlobalBlocks + currLocalBlocks;
+  auto bid = numGlobalBlocks + numLocalBlocks;
   auto suffix = [&](const string &s) { return s + to_string(bid); };
   arrays.push_back(ctx.constant(suffix("array").c_str(),
         ctx.array_sort(Index::sort(), Float::sort())));
   writables.push_back(ctx.bool_const(suffix("writable").c_str()));
   numelems.push_back(numelem);
-  currLocalBlocks ++;
+  numLocalBlocks ++;
 
   return ctx.bv_val(bid, bidBits);
 }
