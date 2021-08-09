@@ -466,7 +466,7 @@ MemRef::MemRef(Memory *m,
     dims(dims),
     layout(layout) {
   if (freshBlock) {
-    bid = m->addLocalBlock(get1DSize());
+    bid = m->addLocalBlock(get1DSize(), ctx.bool_val(false));
     offset = Index::zero();
   }
 }

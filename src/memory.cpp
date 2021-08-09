@@ -66,7 +66,7 @@ MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
   return MemBlock(array, writable, numelem);
 }
 
-expr SingleArrayMemory::addLocalBlock(const expr &numelem) {
+expr SingleArrayMemory::addLocalBlock(const expr &numelem, const expr &writable) {
   assert(numLocalBlocks <= maxLocalBlocks);
   auto bid = ctx.bv_val(numGlobalBlocks + numLocalBlocks, bidBits);
   numelemMaps = z3::store(numelemMaps, bid, numelem);
@@ -149,7 +149,7 @@ void MultipleArrayMemory::update(
   }
 }
 
-expr MultipleArrayMemory::addLocalBlock(const expr &numelem) {
+expr MultipleArrayMemory::addLocalBlock(const expr &numelem, const expr &writable) {
   auto bid = numGlobalBlocks + numLocalBlocks;
   auto suffix = [&](const string &s) { return s + to_string(bid); };
   arrays.push_back(ctx.constant(suffix("array").c_str(),
