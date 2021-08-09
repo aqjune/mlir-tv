@@ -435,11 +435,12 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
     getDimsAndLayoutAndElemTy(memrefTy, predefinedDims);
   if (!dimsAndLayoutAndElemTy)
     return "unsupported type";
+
   auto memref = MemRef(st.m.get(),
-    get<0>(*dimsAndLayoutAndElemTy),
-    get<1>(*dimsAndLayoutAndElemTy),
-    get<2>(*dimsAndLayoutAndElemTy),
-    true);
+      get<0>(*dimsAndLayoutAndElemTy),
+      get<1>(*dimsAndLayoutAndElemTy),
+      get<2>(*dimsAndLayoutAndElemTy),
+      true);
 
   if (memrefTy.getAffineMaps().empty()) {
     // memref with identity map
