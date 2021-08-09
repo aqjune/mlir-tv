@@ -461,6 +461,13 @@ MemRef::MemRef(Memory *m):
   m(m), bid(ctx), offset(ctx), layout(Layout({}, ctx, ctx.bool_val(true))) {}
 
 MemRef::MemRef(Memory *m,
+  const smt::expr &bid,
+  const smt::expr &offset,
+  const std::vector<smt::expr> &dims,
+  const Layout &layout,
+  const z3::sort &elemty) : m(m), bid(bid), offset(offset), dims(dims), layout(layout) {}
+
+MemRef::MemRef(Memory *m,
   const std::string &name,
   const std::vector<expr> &dims,
   const Layout &layout,

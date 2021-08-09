@@ -181,6 +181,12 @@ public:
 
   MemRef(Memory *m);
   MemRef(Memory *m,
+    const smt::expr &bid,
+    const smt::expr &offset,
+    const std::vector<smt::expr> &dims,
+    const Layout &layout,
+    const z3::sort &elemty);
+  MemRef(Memory *m,
     const std::string &name,
     const std::vector<smt::expr> &dims,
     const Layout &layout,

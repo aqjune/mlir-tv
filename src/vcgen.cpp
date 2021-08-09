@@ -529,11 +529,12 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
     z3::expr reducedInbounds = layout.inbounds
       .substitute(toExprVector(substIndVars), toExprVector(substConsts));
     auto reducedLayout = MemRef::Layout(reducedIndVars, reducedExpr, reducedInbounds);
-    auto memref = MemRef(st.m.get(), "memref", reducedSizes, reducedLayout, Float::sort());
+    auto memref = MemRef(st.m.get(), src.getBID(), src.getOffset(),
+      reducedSizes, reducedLayout, Float::sort());
     st.regs.add(op.getResult(), move(memref));
 
   } else {
-    auto memref = MemRef(st.m.get(), "memref",  sizes, layout, Float::sort());
+    auto memref = MemRef(st.m.get(), src.getBID(), src.getOffset(),  sizes, layout, Float::sort());
     st.regs.add(op.getResult(), move(memref));
   }
   return {};
