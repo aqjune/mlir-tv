@@ -39,8 +39,8 @@ llvm::cl::opt<bool> split_input_file("split-input-file",
   llvm::cl::init(false));
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
-  llvm::cl::desc("Number of memory blocks required to verify translation (default=16)"),
-  llvm::cl::init(16), llvm::cl::value_desc("number"));
+  llvm::cl::desc("Number of memory blocks required to verify translation (default=8)"),
+  llvm::cl::init(8), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
   llvm::cl::desc("Type of memref memory model (default=MULTIPLE)"),

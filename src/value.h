@@ -4,6 +4,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include <string>
+#include <optional>
 #include <vector>
 
 class Memory;
@@ -180,7 +181,13 @@ public:
     const std::string &name,
     const std::vector<smt::expr> &dims,
     const Layout &layout,
-    const z3::sort &elemty);
+    const z3::sort &elemty,
+    bool freshBlock = false);
+  MemRef(Memory *m,
+    const std::vector<smt::expr> &dims,
+    const Layout &layout,
+    const z3::sort &elemty,
+    bool freshBlock = false);
 
   operator smt::expr() const { return bid && offset; }
 
@@ -196,6 +203,8 @@ public:
   smt::expr store(const smt::expr &value, const std::vector<smt::expr> &indices);
   smt::expr storeArray(const smt::expr &array, const smt::expr &startOffset, const smt::expr &size);
   smt::expr isInBounds() const;
+  smt::expr isGlobalBlock() const;
+  smt::expr isLocalBlock() const;
   smt::expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
   smt::expr get1DSize() const { return smt::get1DSize(dims); }

@@ -76,4 +76,4 @@ State::LinalgGenericScope::LinalgGenericScope(
 State::State(unsigned int numBlocks, MemEncoding encoding):
   hasQuantifier(false),
   isWellDefined(ctx),
-  m(Memory::create(numBlocks, encoding)) {}
+  m(Memory::create(numBlocks, numBlocks, encoding)) {}

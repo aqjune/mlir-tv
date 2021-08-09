@@ -72,6 +72,11 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
   }
 }
 
+static string freshName(string prefix) {
+  static int count = 0;
+  return prefix + to_string(count ++);
+}
+
 Index::Index(): e(ctx) {}
 
 Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {}
@@ -453,12 +458,24 @@ MemRef::MemRef(Memory *m,
   const std::string &name,
   const std::vector<expr> &dims,
   const Layout &layout,
-  const z3::sort &elemty):
+  const z3::sort &elemty,
+  bool freshBlock):
     m(m),
     bid(ctx.bv_const((name + "_bid").c_str(), m->getBIDBits())),
     offset(Index((name + "_offset").c_str())),
     dims(dims),
-    layout(layout) {}
+    layout(layout) {
+  if (freshBlock) {
+    bid = m->addLocalBlock(get1DSize(), ctx.bool_val(false));
+    offset = Index::zero();
+  }
+}
+
+MemRef::MemRef(Memory *m,
+    const std::vector<expr> &dims,
+    const Layout &layout,
+    const z3::sort &elemty,
+    bool freshBlock) : MemRef(m, freshName("memref"), dims, layout, elemty, freshBlock) {}
 
 expr MemRef::getWellDefined() const {
   expr size = get1DSize();
@@ -529,6 +546,14 @@ expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(bid);
   auto memrefSize = get1DSize();
   return z3::uge(numelem, memrefSize) && z3::ult(offset, numelem - memrefSize);
+}
+
+expr MemRef::isGlobalBlock() const {
+  return m->isGlobalBlock(bid);
+}
+
+expr MemRef::isLocalBlock() const {
+  return m->isLocalBlock(bid);
 }
 
 Index MemRef::getDim(uint64_t idx) const {
