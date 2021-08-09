@@ -12,15 +12,26 @@ static unsigned int ulog2(unsigned int numBlocks) {
   return (unsigned int) ceil(log2(std::max(numBlocks, (unsigned int) 2)));
 }
 
-Memory* Memory::create(unsigned int numBlocks, MemEncoding encoding) {
+Memory* Memory::create(
+    unsigned int numGlobalBlocks,
+    unsigned int maxLocalBlocks,
+    MemEncoding encoding) {
   switch(encoding) {
   case MemEncoding::SINGLE_ARRAY:
-    return new SingleArrayMemory(numBlocks);
+    return new SingleArrayMemory(numGlobalBlocks, maxLocalBlocks);
   case MemEncoding::MULTIPLE_ARRAY:
-    return new MultipleArrayMemory(numBlocks);
+    return new MultipleArrayMemory(numGlobalBlocks, maxLocalBlocks);
   default:
     llvm_unreachable("Unknown memory encoding");
   }
+}
+
+expr Memory::isGlobalBlock(const expr &bid) const {
+  return z3::ult(bid, numGlobalBlocks);
+}
+
+expr Memory::isLocalBlock(const expr &bid) const {
+  return !isGlobalBlock(bid);
 }
 
 pair<expr, std::vector<expr>>
@@ -35,11 +46,12 @@ SingleArrayMemory::refines(const Memory &other) const {
   auto wRefinement = z3::implies(srcWritable, tgtWritable);
   auto vRefinement = (tgtValue == srcValue);
   auto refinement = z3::implies(tgtSuccess, srcSuccess && wRefinement && vRefinement);
-  return {refinement, {bid, offset}};
+  return {z3::implies(isGlobalBlock(bid), refinement), {bid, offset}};
 }
 
-SingleArrayMemory::SingleArrayMemory(unsigned int numBlocks):
-  Memory(ulog2(numBlocks), numBlocks),
+SingleArrayMemory::SingleArrayMemory(
+    unsigned int numGlobalBlocks, unsigned int maxLocalBlocks):
+  Memory(numGlobalBlocks, maxLocalBlocks, ulog2(numGlobalBlocks + maxLocalBlocks)),
   arrayMaps(ctx.constant("arrayMaps",
     ctx.array_sort(ctx.bv_sort(bidBits), ctx.array_sort(Index::sort(), Float::sort())))),
   writableMaps(ctx.constant("writableMaps",
@@ -52,6 +64,15 @@ MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
   expr writable = z3::select(writableMaps, bid);
   expr numelem = z3::select(numelemMaps, bid);
   return MemBlock(array, writable, numelem);
+}
+
+expr SingleArrayMemory::addLocalBlock(const expr &numelem, const expr &writable) {
+  assert(numLocalBlocks < maxLocalBlocks);
+
+  auto bid = ctx.bv_val(numGlobalBlocks + numLocalBlocks, bidBits);
+  numelemMaps = z3::store(numelemMaps, bid, numelem);
+  numLocalBlocks ++;
+  return bid;
 }
 
 void SingleArrayMemory::setWritable(const expr &bid, bool writable) {
@@ -76,9 +97,10 @@ std::pair<expr, expr> SingleArrayMemory::load(
 }
 
 
-MultipleArrayMemory::MultipleArrayMemory(unsigned int numBlocks):
-    Memory(ulog2(numBlocks), numBlocks) {
-  for (unsigned i = 0; i < numBlocks; ++i) {
+MultipleArrayMemory::MultipleArrayMemory(
+    unsigned int numGlobalBlocks, unsigned int maxLocalBlocks):
+  Memory(numGlobalBlocks, maxLocalBlocks, ulog2(numGlobalBlocks + maxLocalBlocks)) {
+  for (unsigned i = 0; i < getNumBlocks(); ++i) {
     auto suffix = [&](const string &s) {
       return s + to_string(i);
     };
@@ -91,7 +113,7 @@ MultipleArrayMemory::MultipleArrayMemory(unsigned int numBlocks):
 
 expr MultipleArrayMemory::itebid(
     const expr &bid, function<expr(unsigned)> fn) const {
-  assert(numBlocks > 0);
+  assert(getNumBlocks() > 0);
   assert(bid.get_sort().is_bv() && bid.get_sort().bv_size() == getBIDBits());
 
   uint64_t const_bid;
@@ -99,21 +121,18 @@ expr MultipleArrayMemory::itebid(
     return fn(const_bid);
 
   const unsigned bits = bid.get_sort().bv_size();
-  unsigned curbid = numBlocks - 1;
-  expr val = fn(curbid);
 
-  while (curbid) {
-    curbid--;
-    val = z3::ite(bid == ctx.bv_val(curbid, bits), fn(curbid), val);
-  }
+  expr expr = fn(0);
+  for (unsigned i = 1; i < getNumBlocks(); i ++)
+    expr = z3::ite(bid == ctx.bv_val(i, bits), fn(i), expr);
 
-  return val;
+  return expr;
 }
 
 void MultipleArrayMemory::update(
     const expr &bid, function<expr*(unsigned)> getExprToUpdate,
     function<expr(unsigned)> getUpdatedValue) const {
-  assert(numBlocks > 0);
+  assert(getNumBlocks() > 0);
   assert(bid.get_sort().is_bv() && bid.get_sort().bv_size() == getBIDBits());
 
   uint64_t const_bid;
@@ -123,11 +142,24 @@ void MultipleArrayMemory::update(
   }
 
   const unsigned bits = getBIDBits();
-  for (unsigned i = 0; i < numBlocks; ++i) {
+  for (unsigned i = 0; i < getNumBlocks(); ++i) {
     expr *expr = getExprToUpdate(i);
     assert(expr);
     *expr = z3::ite(bid == ctx.bv_val(i, bits), getUpdatedValue(i), *expr);
   }
+}
+
+expr MultipleArrayMemory::addLocalBlock(const expr &numelem, const expr &writable) {
+  assert(numLocalBlocks < maxLocalBlocks);
+
+  auto bid = numGlobalBlocks + numLocalBlocks;
+  auto suffix = [&](const string &s) { return s + to_string(bid); };
+  arrays.push_back(ctx.constant(suffix("array").c_str(),
+        ctx.array_sort(Index::sort(), Float::sort())));
+  writables.push_back(ctx.bool_const(suffix("writable").c_str()));
+  numelems.push_back(numelem);
+  numLocalBlocks ++;
+  return ctx.bv_val(bid, bidBits);
 }
 
 expr MultipleArrayMemory::getNumElementsOfMemBlock(
@@ -154,7 +186,7 @@ expr MultipleArrayMemory::store(const expr &f32val,
 
 std::pair<expr, expr> MultipleArrayMemory::load(
     unsigned ubid, const expr &idx) const {
-  assert(ubid < numBlocks);
+  assert(ubid < getNumBlocks());
 
   expr success = z3::ult(idx, getNumElementsOfMemBlock(ubid));
   return {z3::select(arrays[ubid], idx), success};
@@ -175,7 +207,7 @@ MultipleArrayMemory::refines(const Memory &other0) const {
   // a plain LLVM.
   const MultipleArrayMemory &other =
       *static_cast<const MultipleArrayMemory *>(&other0);
-  assert(other.numBlocks == numBlocks);
+  assert(other.numGlobalBlocks == numGlobalBlocks);
 
   auto bid = ctx.bv_const("bid", bidBits);
   auto offset = Index("offset", true);
@@ -191,5 +223,9 @@ MultipleArrayMemory::refines(const Memory &other0) const {
     return z3::implies(tgtSuccess, srcSuccess && wRefinement && vRefinement);
   };
 
-  return { itebid(bid, refines), {bid, offset}};
+  expr refinement = refines(0);
+  for (unsigned i = 1; i < numGlobalBlocks; i ++)
+    refinement = z3::ite(bid == ctx.bv_val(i, bidBits), refines(i), refinement);
+
+  return {refinement, {bid, offset}};
 }

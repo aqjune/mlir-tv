@@ -23,21 +23,37 @@ public:
 
 class Memory {
 protected:
+  const unsigned int numGlobalBlocks;
+  const unsigned int maxLocalBlocks;
   const unsigned int bidBits;
-  const unsigned int numBlocks;
+  unsigned int numLocalBlocks;
 
 public:
-  static Memory * create(unsigned int numBlocks, MemEncoding encoding);
-  Memory(unsigned int bidBits, unsigned int numBlocks):
-      bidBits(bidBits), numBlocks(numBlocks) {}
+  static Memory * create(
+      unsigned int numGlobalBlocks, unsigned int maxLocalBlocks,
+      MemEncoding encoding);
+  // Here we would like to use lower half of the memory blocks as global MemBlock
+  // and upper half of the memory blocks as local MemBlock.
+  // Memory refinement is defined only using global MemBlocks.
+  Memory(unsigned int numGlobalBlocks,
+      unsigned int maxLocalBlocks,
+      unsigned int bidBits):
+    numGlobalBlocks(numGlobalBlocks),
+    maxLocalBlocks(maxLocalBlocks),
+    bidBits(bidBits),
+    numLocalBlocks(0) {}
   virtual ~Memory() {}
 
-  // Encode the refinement relation between src (other) and tgt (this) memory
-  virtual std::pair<smt::expr, std::vector<smt::expr>>
-    refines(const Memory &other) const = 0;
-
   unsigned int getBIDBits() const { return bidBits; }
-  unsigned int getNumBlocks() const { return numBlocks; }
+  unsigned int getNumBlocks() const { return numGlobalBlocks + numLocalBlocks; }
+
+  // Bids smaller than numGlobalBlocks are global (0 ~ numGlobalBlocks - 1)
+  smt::expr isGlobalBlock(const smt::expr &bid) const;
+  // Bids bigger than and equal to numGlobalBlocks are local blocks (numGlobalBlocks ~ numGlobalBlocks + numGlobalBlocks)
+  smt::expr isLocalBlock(const smt::expr &bid) const;
+
+  // Returns: (newly created block id)
+  virtual smt::expr addLocalBlock(const smt::expr &numelem, const smt::expr &writable) = 0;
 
   virtual smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const = 0;
   // Mark memblock's writable flag to `writable`
@@ -51,6 +67,10 @@ public:
   // Returns: (loaded value, load successful?)
   virtual std::pair<smt::expr, smt::expr> load(
       const smt::expr &bid, const smt::expr &idx) const = 0;
+
+  // Encode the refinement relation between src (other) and tgt (this) memory
+  virtual std::pair<smt::expr, std::vector<smt::expr>>
+    refines(const Memory &other) const = 0;
 };
 
 class SingleArrayMemory: public Memory {
@@ -62,7 +82,9 @@ private:
   MemBlock getMemBlock(const smt::expr &bid) const;
 
 public:
-  SingleArrayMemory(unsigned int numBlocks);
+  SingleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
+
+  smt::expr addLocalBlock(const smt::expr &numelem, const smt::expr &writable) override;
 
   smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const override {
     return getMemBlock(bid).numelem;
@@ -89,16 +111,18 @@ class MultipleArrayMemory: public Memory {
   std::vector<smt::expr> numelems;  // vector<Index::sort>
 
 public:
-  MultipleArrayMemory(unsigned int numBlocks);
+  MultipleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
+
+  smt::expr addLocalBlock(const smt::expr &numelem, const smt::expr &writable) override;
 
   smt::expr getNumElementsOfMemBlock(unsigned ubid) const
-  { assert(ubid < numBlocks); return numelems[ubid]; }
+  { assert(ubid < getNumBlocks()); return numelems[ubid]; }
   smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const override;
 
   void setWritable(const smt::expr &bid, bool writable) override;
   smt::expr getWritable(const smt::expr &bid) const override;
   smt::expr getWritable(unsigned ubid) const
-  { assert(ubid < numBlocks); return writables[ubid]; }
+  { assert(ubid < getNumBlocks()); return writables[ubid]; }
 
   smt::expr store(
       const smt::expr &f32val, const smt::expr &bid, const smt::expr &idx)
