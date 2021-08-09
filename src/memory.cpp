@@ -51,8 +51,7 @@ SingleArrayMemory::SingleArrayMemory(
     ctx.array_sort(ctx.bv_sort(bidBits), Index::sort()))),
   isGlobalMaps(ctx) {
   auto bid = ctx.bv_const("bid", bidBits);
-  isGlobalMaps = z3::lambda(bid,
-    z3::ite(z3::ult(bid, numGlobalBlocks), ctx.bool_val(true), ctx.bool_val(false)));
+  isGlobalMaps = z3::lambda(bid, z3::ult(bid, numGlobalBlocks));
 }
 
 MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
@@ -126,18 +125,11 @@ expr MultipleArrayMemory::itebid(
 
   const unsigned bits = bid.get_sort().bv_size();
 
-  expr globalExpr = fn(0);
-  for (unsigned i = 1; i < numGlobalBlocks; i ++)
-    globalExpr = z3::ite(bid == ctx.bv_val(i, bits), fn(i), globalExpr);
+  expr expr = fn(0);
+  for (unsigned i = 1; i < getNumBlocks(); i ++)
+    expr = z3::ite(bid == ctx.bv_val(i, bits), fn(i), expr);
 
-  if (currLocalBlocks == 0)
-    return globalExpr;
-
-  expr localExpr = fn(numGlobalBlocks);
-  for (unsigned i = numGlobalBlocks + 1; i < getNumBlocks(); i ++)
-    localExpr = z3::ite(bid == ctx.bv_val(i, bits), fn(i), localExpr);
-
-  return z3::ite(isGlobalBlock(bid), globalExpr, localExpr);
+  return expr;
 }
 
 void MultipleArrayMemory::update(

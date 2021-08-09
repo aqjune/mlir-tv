@@ -109,7 +109,7 @@ class MultipleArrayMemory: public Memory {
   std::vector<smt::expr> arrays;  // vector<(Index::sort() -> Float::sort())>
   std::vector<smt::expr> writables; // vector<Bool::sort()>
   std::vector<smt::expr> numelems;  // vector<Index::sort>
-  std::vector<smt::expr> isGlobals; // vector<Bool::sort()>
+  std::vector<smt::expr> isGlobals; // vector<Bool::sort()>, Bids smaller than numGlobalBlocks are global
 
 public:
   MultipleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
