@@ -64,6 +64,10 @@ public:
   virtual smt::expr store(
       const smt::expr &f32val, const smt::expr &bid,
       const smt::expr &idx) = 0;
+  // Returns: store successful?
+  virtual smt::expr storeArray(
+      const smt::expr &arr, const smt::expr &bid,
+      const smt::expr &offset, const smt::expr &size) = 0;
   // Returns: (loaded value, load successful?)
   virtual std::pair<smt::expr, smt::expr> load(
       const smt::expr &bid, const smt::expr &idx) const = 0;
@@ -94,6 +98,9 @@ public:
   smt::expr getWritable(const smt::expr &bid) const override;
   smt::expr store(
       const smt::expr &f32val, const smt::expr &bid, const smt::expr &idx)
+      override;
+  smt::expr storeArray(
+      const smt::expr &arr, const smt::expr &bid, const smt::expr &offset, const smt::expr &size)
       override;
   std::pair<smt::expr, smt::expr> load(
       const smt::expr &bid, const smt::expr &idx) const override;
@@ -126,6 +133,9 @@ public:
 
   smt::expr store(
       const smt::expr &f32val, const smt::expr &bid, const smt::expr &idx)
+      override;
+  smt::expr storeArray(
+      const smt::expr &arr, const smt::expr &bid, const smt::expr &offset, const smt::expr &size)
       override;
   std::pair<smt::expr, smt::expr> load(
       const smt::expr &bid, const smt::expr &idx) const override;

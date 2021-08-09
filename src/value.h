@@ -195,12 +195,13 @@ public:
 
   // If memRefTy is unsupported, return nullopt
   static std::optional<std::tuple<std::vector<smt::expr>, Layout, z3::sort>>
-      getDimsAndLayoutAndElemTy(mlir::MemRefType memRefTy,
-                       bool freshVarForUnknownSize = true);
+    getDimsAndLayoutAndElemTy(mlir::MemRefType memRefTy,
+      std::optional<std::vector<z3::expr>> predefinedDims = {},
+      bool freshVarForUnknownSize = true);
 
   std::pair<smt::expr, smt::expr> load(const std::vector<smt::expr> &indices);
-  smt::expr store(
-      const smt::expr &value, const std::vector<smt::expr> &indices);
+  smt::expr store(const smt::expr &value, const std::vector<smt::expr> &indices);
+  smt::expr storeArray(const smt::expr &array, const smt::expr &startOffset, const smt::expr &size);
   smt::expr isInBounds() const;
   smt::expr isGlobalBlock() const;
   smt::expr isLocalBlock() const;
