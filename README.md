@@ -7,17 +7,19 @@ Currently this is in an experimental stage.
 
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
 [MLIR](https://github.com/llvm/llvm-project),
-[Z3-solver](https://github.com/Z3Prover/z3),
-[Python3](https://www.python.org/downloads/)(>=3.9)
+[Python3](https://www.python.org/downloads/)(>=3.9)  
+Solvers (at least one of them must be used): [Z3-solver](https://github.com/Z3Prover/z3)
 
 - Installation of MLIR: please follow [this instruction](https://llvm.org/docs/GettingStarted.html#getting-the-source-code-and-building-llvm) & run `cmake --build . --target install`
 
 ```bash
 mkdir build
 cd build
-# If you want to build a release version, please add -DCMAKE_BUILD_TYPE=RELEASE
+# -DUSE_LIBC is OFF by default. Set it to ON iff the MLIR is built using libc++
 cmake -DMLIR_DIR=<dir/to/mlir-install> \
       -DZ3_DIR=<dir/to/z3-install> \
+      [-DUSE_LIBC=ON|OFF] \
+      [-DCMAKE_BUILD_TYPE=DEBUG|RELEASE] \
       ..
 cmake --build .
 ```
