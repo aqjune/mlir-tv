@@ -46,7 +46,9 @@ public:
   unsigned int getBIDBits() const { return bidBits; }
   unsigned int getNumBlocks() const { return numGlobalBlocks + numLocalBlocks; }
 
+  // Bids smaller than numGlobalBlocks are global (0 ~ numGlobalBlocks - 1)
   virtual smt::expr isGlobalBlock(const smt::expr &bid) const = 0;
+  // Bids bigger than and equal to numGlobalBlocks are local blocks (numGlobalBlocks ~ numGlobalBlocks + numGlobalBlocks)
   virtual smt::expr isLocalBlock(const smt::expr &bid) const = 0;
 
   // Returns: (newly issued block id)
@@ -109,7 +111,7 @@ class MultipleArrayMemory: public Memory {
   std::vector<smt::expr> arrays;  // vector<(Index::sort() -> Float::sort())>
   std::vector<smt::expr> writables; // vector<Bool::sort()>
   std::vector<smt::expr> numelems;  // vector<Index::sort>
-  std::vector<smt::expr> isGlobals; // vector<Bool::sort()>, Bids smaller than numGlobalBlocks are global
+  std::vector<smt::expr> isGlobals; // vector<Bool::sort()>
 
 public:
   MultipleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
