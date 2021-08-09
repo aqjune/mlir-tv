@@ -92,19 +92,19 @@ expr SingleArrayMemory::store(const expr &f32val,
 
 expr SingleArrayMemory::storeArray(
   const expr &arr, const expr &bid, const expr &offset, const expr &size) {
-  auto lhs = offset;
-  auto rhs = offset + size;
+  auto low = offset;
+  auto high = offset + size - 1;
   auto idx = Index("idx");
-  auto arrayVal = z3::select(arr, idx - lhs);
+  auto arrayVal = z3::select(arr, idx - low);
 
   auto block = getMemBlock(bid);
   auto currentVal = z3::select(block.array, idx);
-  auto cond = z3::ule(lhs, idx) && z3::ult(idx, rhs);
+  auto cond = z3::ule(low, idx) && z3::ule(idx, high);
   auto stored = z3::lambda(idx, z3::ite(cond, arrayVal, currentVal));
   arrayMaps = z3::store(arrayMaps, bid, stored);
 
-  return z3::ule(lhs, rhs) && // lhs < rhs (to prevent overflow)
-    z3::ult(rhs, block.numelem) &&
+  return z3::ule(low, high) && // low <= high (to prevent overflow)
+    z3::ule(high, block.numelem) && // high <= block.numelem
     block.writable;
 }
 
@@ -204,20 +204,20 @@ expr MultipleArrayMemory::store(const expr &f32val,
 
 expr MultipleArrayMemory::storeArray(
   const expr &arr, const expr &bid, const expr &offset, const expr &size) {
-  auto lhs = offset;
-  auto rhs = offset + size;
+  auto low = offset;
+  auto high = offset + size - 1;
   auto idx = Index("idx");
-  auto arrayVal = z3::select(arr, idx - lhs);
+  auto arrayVal = z3::select(arr, idx - low);
 
   update(bid, [&](auto ubid) { return &arrays[ubid]; },
     [&](auto ubid) {
       auto currentVal = z3::select(arrays[ubid], idx);
-      z3::expr cond = z3::ule(lhs, idx) && z3::ult(idx, rhs);
+      z3::expr cond = z3::ule(low, idx) && z3::ule(idx, high);
       return z3::lambda(idx, z3::ite(cond, arrayVal, currentVal));
     });
 
-  return z3::ule(lhs, rhs) && // lhs < rhs (to prevent overflow)
-    z3::ult(rhs, getNumElementsOfMemBlock(bid)) &&
+  return z3::ult(low, high) && // low <= high (to prevent overflow)
+    z3::ule(high, getNumElementsOfMemBlock(bid)) && // high <= block.numelem
     getWritable(bid);
 }
 

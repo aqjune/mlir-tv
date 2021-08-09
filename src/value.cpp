@@ -520,7 +520,7 @@ pair<expr, expr> MemRef::load(const vector<expr> &indices) {
   expr idx = to1DIdxWithLayout(indices);
   auto [expr, success] = m->load(bid, offset + idx);
 
-  // check whether indices are  inbound.
+  // check whether indices are inbound.
   for (int i = 0; i < indices.size(); i ++)
     success = success && z3::ult(indices[i], getDim(i));
 
@@ -531,7 +531,7 @@ expr MemRef::store(const expr &value, const std::vector<expr> &indices) {
   expr idx = to1DIdxWithLayout(indices);
   auto success = m->store(value, bid, offset + idx);
 
-  // check whether indices are  inbound.
+  // check whether indices are inbound.
   for (int i = 0; i < indices.size(); i ++)
     success = success && z3::ult(indices[i], getDim(i));
 
