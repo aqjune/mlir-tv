@@ -4,6 +4,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include <string>
+#include <optional>
 #include <vector>
 
 class Memory;

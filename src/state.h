@@ -5,6 +5,7 @@
 #include "value.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include <stack>
+#include <optional>
 #include <variant>
 #include "mlir/Support/LLVM.h"
 

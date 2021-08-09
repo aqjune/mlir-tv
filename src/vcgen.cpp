@@ -19,6 +19,7 @@
 #include <sstream>
 #include <variant>
 #include <vector>
+#include <optional>
 
 using namespace smt;
 using namespace std;
