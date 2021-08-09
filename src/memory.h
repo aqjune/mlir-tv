@@ -47,11 +47,11 @@ public:
   unsigned int getNumBlocks() const { return numGlobalBlocks + numLocalBlocks; }
 
   // Bids smaller than numGlobalBlocks are global (0 ~ numGlobalBlocks - 1)
-  virtual smt::expr isGlobalBlock(const smt::expr &bid) const = 0;
+  smt::expr isGlobalBlock(const smt::expr &bid) const;
   // Bids bigger than and equal to numGlobalBlocks are local blocks (numGlobalBlocks ~ numGlobalBlocks + numGlobalBlocks)
-  virtual smt::expr isLocalBlock(const smt::expr &bid) const = 0;
+  smt::expr isLocalBlock(const smt::expr &bid) const;
 
-  // Returns: (newly issued block id)
+  // Returns: (newly created block id)
   virtual smt::expr addLocalMemBlock(const smt::expr &numelem) = 0;
 
   virtual smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const = 0;
@@ -76,7 +76,6 @@ class SingleArrayMemory: public Memory {
   smt::expr arrayMaps; // bv(bits)::sort() -> (Index::sort() -> Float::sort())
   smt::expr writableMaps; // bv(bits)::sort() -> bool::sort()
   smt::expr numelemMaps; // bv(bits)::sort() -> Index::sort()
-  smt::expr isGlobalMaps; // bv(bits)::sort() -> bool::sort()
 
 private:
   MemBlock getMemBlock(const smt::expr &bid) const;
@@ -84,8 +83,6 @@ private:
 public:
   SingleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
 
-  smt::expr isGlobalBlock(const smt::expr &bid) const override;
-  smt::expr isLocalBlock(const smt::expr &bid) const override;
   smt::expr addLocalMemBlock(const smt::expr &numelem) override;
 
   smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const override {
@@ -111,13 +108,10 @@ class MultipleArrayMemory: public Memory {
   std::vector<smt::expr> arrays;  // vector<(Index::sort() -> Float::sort())>
   std::vector<smt::expr> writables; // vector<Bool::sort()>
   std::vector<smt::expr> numelems;  // vector<Index::sort>
-  std::vector<smt::expr> isGlobals; // vector<Bool::sort()>
 
 public:
   MultipleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
 
-  smt::expr isGlobalBlock(const smt::expr &bid) const override;
-  smt::expr isLocalBlock(const smt::expr &bid) const override;
   smt::expr addLocalMemBlock(const smt::expr &numelem) override;
 
   smt::expr getNumElementsOfMemBlock(unsigned ubid) const

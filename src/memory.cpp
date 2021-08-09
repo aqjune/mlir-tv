@@ -13,7 +13,8 @@ static unsigned int ulog2(unsigned int numBlocks) {
 }
 
 Memory* Memory::create(
-    unsigned int numGlobalBlocks, unsigned int maxLocalBlocks,
+    unsigned int numGlobalBlocks,
+    unsigned int maxLocalBlocks,
     MemEncoding encoding) {
   switch(encoding) {
   case MemEncoding::SINGLE_ARRAY:
@@ -23,6 +24,14 @@ Memory* Memory::create(
   default:
     llvm_unreachable("Unknown memory encoding");
   }
+}
+
+expr Memory::isGlobalBlock(const expr &bid) const {
+  return z3::ult(bid, numGlobalBlocks);
+}
+
+expr Memory::isLocalBlock(const expr &bid) const {
+  return !isGlobalBlock(bid);
 }
 
 pair<expr, std::vector<expr>>
@@ -41,18 +50,14 @@ SingleArrayMemory::refines(const Memory &other) const {
 }
 
 SingleArrayMemory::SingleArrayMemory(
-    unsigned int numGlobalBlocks, unsigned int nunLocalBlocks):
-  Memory(numGlobalBlocks, nunLocalBlocks, ulog2(numGlobalBlocks + nunLocalBlocks)),
+    unsigned int numGlobalBlocks, unsigned int maxLocalBlocks):
+  Memory(numGlobalBlocks, maxLocalBlocks, ulog2(numGlobalBlocks + maxLocalBlocks)),
   arrayMaps(ctx.constant("arrayMaps",
     ctx.array_sort(ctx.bv_sort(bidBits), ctx.array_sort(Index::sort(), Float::sort())))),
   writableMaps(ctx.constant("writableMaps",
     ctx.array_sort(ctx.bv_sort(bidBits), ctx.bool_sort()))),
   numelemMaps(ctx.constant("numelemMaps",
-    ctx.array_sort(ctx.bv_sort(bidBits), Index::sort()))),
-  isGlobalMaps(ctx) {
-  auto bid = ctx.bv_const("bid", bidBits);
-  isGlobalMaps = z3::lambda(bid, z3::ult(bid, numGlobalBlocks));
-}
+    ctx.array_sort(ctx.bv_sort(bidBits), Index::sort()))) {}
 
 MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
   expr array = z3::select(arrayMaps, bid);
@@ -61,15 +66,8 @@ MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
   return MemBlock(array, writable, numelem);
 }
 
-expr SingleArrayMemory::isGlobalBlock(const expr &bid) const {
-  return z3::select(isGlobalMaps, bid);
-}
-
-expr SingleArrayMemory::isLocalBlock(const expr &bid) const {
-  return !z3::select(isGlobalMaps, bid);
-}
-
 expr SingleArrayMemory::addLocalMemBlock(const expr &numelem) {
+  assert(numLocalBlocks <= maxLocalBlocks);
   auto bid = ctx.bv_val(numGlobalBlocks + numLocalBlocks, bidBits);
   numelemMaps = z3::store(numelemMaps, bid, numelem);
   numLocalBlocks ++;
@@ -100,8 +98,8 @@ std::pair<expr, expr> SingleArrayMemory::load(
 
 
 MultipleArrayMemory::MultipleArrayMemory(
-    unsigned int numGlobalBlocks, unsigned int nunLocalBlocks):
-  Memory(numGlobalBlocks, nunLocalBlocks, ulog2(numGlobalBlocks + nunLocalBlocks)) {
+    unsigned int numGlobalBlocks, unsigned int maxLocalBlocks):
+  Memory(numGlobalBlocks, maxLocalBlocks, ulog2(numGlobalBlocks + maxLocalBlocks)) {
   for (unsigned i = 0; i < getNumBlocks(); ++i) {
     auto suffix = [&](const string &s) {
       return s + to_string(i);
@@ -110,7 +108,6 @@ MultipleArrayMemory::MultipleArrayMemory(
         ctx.array_sort(Index::sort(), Float::sort())));
     writables.push_back(ctx.bool_const(suffix("writable").c_str()));
     numelems.push_back(ctx.bv_const(suffix("numelems").c_str(), Index::BITS));
-    isGlobals.push_back(ctx.bool_val(i < numGlobalBlocks));
   }
 }
 
@@ -150,14 +147,6 @@ void MultipleArrayMemory::update(
     assert(expr);
     *expr = z3::ite(bid == ctx.bv_val(i, bits), getUpdatedValue(i), *expr);
   }
-}
-
-expr MultipleArrayMemory::isGlobalBlock(const expr &bid) const {
-  return itebid(bid, [&](auto ubid) { return isGlobals[ubid]; });
-}
-
-expr MultipleArrayMemory::isLocalBlock(const expr &bid) const {
-  return itebid(bid, [&](auto ubid) { return !isGlobals[ubid]; });
 }
 
 expr MultipleArrayMemory::addLocalMemBlock(const expr &numelem) {
