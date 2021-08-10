@@ -445,7 +445,7 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
   auto src = st.regs.get<MemRef>(op.source());
   auto memref = src.subview(offsets, sizes, strides);
   st.regs.add(op.getResult(), move(memref));
-  return "Unsupported yet..";
+  return {};
 }
 
 template<>
