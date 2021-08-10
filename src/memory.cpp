@@ -103,7 +103,7 @@ expr SingleArrayMemory::storeArray(
   auto stored = z3::lambda(idx, z3::ite(cond, arrayVal, currentVal));
   arrayMaps = z3::store(arrayMaps, bid, stored);
 
-  return z3::ule(low, high) && // low <= high (to prevent overflow)
+  return z3::bvadd_no_overflow(offset, size - 1, false) && // to prevent overflow
     z3::ult(high, block.numelem) && // high < block.numelem
     block.writable;
 }
@@ -216,7 +216,7 @@ expr MultipleArrayMemory::storeArray(
       return z3::lambda(idx, z3::ite(cond, arrayVal, currentVal));
     });
 
-  return z3::ult(low, high) && // low <= high (to prevent overflow)
+  return z3::bvadd_no_overflow(offset, size - 1, false) && // to prevent overflow
     z3::ult(high, getNumElementsOfMemBlock(bid)) && // high < block.numelem
     getWritable(bid);
 }

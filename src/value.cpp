@@ -547,6 +547,10 @@ expr MemRef::storeArray(const expr &array, const expr &startOffset, const expr &
   return m->storeArray(array, bid, offset + startOffset, size);
 }
 
+expr MemRef::storeArray(const expr &array, const expr &startOffset, const expr &size) {
+  return m->storeArray(array, bid, offset + startOffset, size);
+}
+
 expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(bid);
   auto memrefSize = get1DSize();
