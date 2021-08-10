@@ -426,6 +426,55 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   return {};
 }
 
+vector<z3::expr> getSizes(const State &st, mlir::memref::SubViewOp op) {
+   vector<z3::expr> sizes;
+   for (unsigned i = 0; i < op.getSourceType().getRank(); i ++) {
+     if (op.isDynamicSize(i)) {
+       sizes.push_back(st.regs.get<Index>(op.getDynamicSize(i)));
+     } else {
+       sizes.push_back(Index(op.getStaticSize(i)));
+     }
+   }
+   return sizes;
+ }
+
+ vector<z3::expr> getOffsets(const State &st, mlir::memref::SubViewOp op) {
+   vector<z3::expr> offsets;
+   for (unsigned i = 0; i < op.getSourceType().getRank(); i ++) {
+     if (op.isDynamicOffset(i)) {
+       offsets.push_back(st.regs.get<Index>(op.getDynamicOffset(i)));
+     } else {
+       offsets.push_back(Index(op.getStaticOffset(i)));
+     }
+   }
+   return offsets;
+ }
+
+ vector<z3::expr> getStrides(const State &st, mlir::memref::SubViewOp op) {
+   vector<z3::expr> strides;
+   for (unsigned i = 0; i < op.getSourceType().getRank(); i ++) {
+     if (op.isDynamicStride(i)) {
+       strides.push_back(st.regs.get<Index>(op.getDynamicStride(i)));
+     } else {
+       strides.push_back(Index(op.getStaticStride(i)));
+     }
+   }
+   return strides;
+ }
+
+template<>
+optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
+  auto sizes = getSizes(st, op);
+  auto offsets = getOffsets(st, op);
+  auto strides = getStrides(st, op);
+  auto src = st.regs.get<MemRef>(op.source());
+  auto layout = src.toSubViewLayout(offsets, strides);
+
+  auto memref = MemRef(st.m.get(), src.getBID(), src.getOffset(),  sizes, layout, Float::sort());
+  st.regs.add(op.getResult(), move(memref));
+  return "Unsupported yet..";
+}
+
 template<>
 optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto tensor = st.regs.get<Tensor>(op.getOperand());
@@ -1105,6 +1154,7 @@ static optional<string> encodeRegion(
 
     ENCODE(st, op, mlir::memref::LoadOp);
     ENCODE(st, op, mlir::memref::StoreOp);
+    ENCODE(st, op, mlir::memref::SubViewOp);
     ENCODE(st, op, mlir::memref::BufferCastOp);
     ENCODE(st, op, mlir::memref::TensorLoadOp);
 
