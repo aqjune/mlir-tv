@@ -90,7 +90,82 @@ string or_omit(const expr &e) {
   return s;
 }
 
-};
+Expr::Expr() {
+  this->z3_expr = {};
+}
+
+Expr::Expr(const Expr& from) {
+  this->z3_expr = from.z3_expr;
+}
+
+Expr::Expr(Expr&& from) {
+  this->z3_expr = std::move(from.z3_expr);
+}
+
+void Expr::applyZ3Operation(std::function<z3::expr(z3::expr const&)>&& op, const Expr& arg0) {
+  if (arg0.z3_expr.has_value()) {
+    this->z3_expr = op(arg0.z3_expr.value());
+  }
+}
+
+void Expr::applyZ3Operation(std::function<z3::expr(z3::expr const&, z3::expr const&)>&& op, const Expr& arg0, const Expr& arg1) {
+  if (arg0.z3_expr.has_value() && arg1.z3_expr.has_value()) {
+    this->z3_expr = op(arg0.z3_expr.value(), arg1.z3_expr.value());
+  }
+}
+
+Expr Expr::clone() const {
+  return Expr(*this);
+}
+
+Expr& Expr::operator=(Expr&& from) {
+  this->z3_expr = std::move(from.z3_expr);
+  return *this;
+}
+
+std::optional<z3::expr> Expr::replaceExpr(z3::expr&& z3_expr) {
+  auto prev_z3_expr = std::move(this->z3_expr);
+  this->z3_expr = z3_expr;
+  return prev_z3_expr;
+}
+
+std::vector<Expr> Expr::toElements(const std::vector<Expr>& dims) const {
+  assert(dims.size() > 0);
+
+  std::vector<Expr> expanded_exprs;
+  expanded_exprs.reserve(dims.size());
+
+  Expr idx_1d = this->clone();
+  std::transform(dims.crbegin(), dims.crend(), expanded_exprs.begin(), 
+    [idx_1d](const Expr &dim) mutable { 
+      auto e = urem(idx_1d, dim);
+      idx_1d = udiv(idx_1d, dim);
+      return e;
+    });
+  
+  std::reverse(expanded_exprs.begin(), expanded_exprs.end());
+  return expanded_exprs;
+}
+
+Expr urem(const Expr& lhs, const Expr& rhs) {
+  Expr urem_expr;
+
+  auto z3_urem = static_cast<z3::expr(*)(const z3::expr&, const z3::expr&)>(&z3::urem);
+  urem_expr.applyZ3Operation(z3_urem, lhs, rhs);
+
+  return urem_expr;
+}
+
+Expr udiv(const Expr& lhs, const Expr& rhs) {
+  Expr udiv_expr;
+
+  auto z3_udiv = static_cast<z3::expr(*)(const z3::expr&, const z3::expr&)>(&z3::udiv);
+  udiv_expr.applyZ3Operation(z3_udiv, lhs, rhs);
+
+  return udiv_expr;
+}
+
+} // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e) {
   std::stringstream ss;
