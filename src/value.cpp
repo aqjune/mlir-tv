@@ -564,6 +564,23 @@ void MemRef::setWritable(bool writable) {
   m->setWritable(bid, writable);
 }
 
+MemRef::Layout MemRef::toSubViewLayout(
+   const vector<z3::expr> &offsets,
+   const vector<z3::expr> &strides) {
+   // Before : <(d0, d1) -> (d0 * s0 + d1)>,
+   // After: <(d0, d1) -> ((d0 + offsets[0]) * strides[0] * s0 + (d1 + offsets[1]) * strides[1])>
+   assert(layout.indVars.size() == offsets.size());
+   assert(layout.indVars.size() == strides.size());
+
+   vector<z3::expr> idxs;
+   for (unsigned i = 0; i < layout.indVars.size(); i ++)
+     idxs.push_back((layout.indVars[i] + offsets[i]) * strides[i]);
+
+   auto transformed = layout.expr
+     .substitute(toExprVector(layout.indVars), toExprVector(idxs));
+   return Layout(layout.indVars, transformed);
+ }
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   assert(m.dims.size() > 0);
   os << "(bid: " << or_omit(m.bid)

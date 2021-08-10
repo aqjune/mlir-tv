@@ -217,6 +217,9 @@ public:
   void setWritable(bool writable);
   void setMemory(Memory *m) { this->m = m; }
 
+  MemRef::Layout toSubViewLayout(const std::vector<z3::expr> &offsets,
+     const std::vector<z3::expr> &strides);
+
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
   std::pair<smt::expr, std::vector<smt::expr>> refines(
       const MemRef &other) const;
