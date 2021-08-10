@@ -223,7 +223,8 @@ public:
   // Return a new memerf which is subview of source memref.
   MemRef subview(const std::vector<smt::expr> &offsets,
       const std::vector<smt::expr> &sizes,
-      const std::vector<smt::expr> &strides);
+      const std::vector<smt::expr> &strides,
+      int rankDiff = 0);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
   std::pair<smt::expr, std::vector<smt::expr>> refines(
@@ -242,6 +243,7 @@ public:
       const std::vector<smt::expr> &sizes) const;
   std::pair<smt::expr, smt::expr> to1DIdxWithLayout(const std::vector<smt::expr> &idxs);
 
-  MemRef::Layout createSubViewLayout(const std::vector<smt::expr> &offsets,
-     const std::vector<smt::expr> &strides);
+  MemRef::Layout createSubViewLayout(const std::vector<smt::expr> &indVars,
+      const std::vector<smt::expr> &offsets,
+      const std::vector<smt::expr> &strides);
 };

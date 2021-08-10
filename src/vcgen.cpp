@@ -441,9 +441,10 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
     ADD(strides, Stride);
 #undef ADD
   }
-
   auto src = st.regs.get<MemRef>(op.source());
-  auto memref = src.subview(offsets, sizes, strides);
+  int rankDiff = op.getSourceType().getRank() - op.getType().getRank();
+  assert(rankDiff >= 0); // only reducing rank is allowed
+  auto memref = src.subview(offsets, sizes, strides, rankDiff);
   st.regs.add(op.getResult(), move(memref));
   return {};
 }
