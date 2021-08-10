@@ -171,9 +171,12 @@ public:
   public:
     std::vector<smt::expr> indVars;
     smt::expr expr;
+    smt::expr inbounds;
 
-    Layout(const std::vector<smt::expr> &indVars, const smt::expr &expr):
-      indVars(indVars), expr(expr) {}
+    Layout(const std::vector<smt::expr> &indVars,
+      const smt::expr &expr,
+      const smt::expr &inbounds):
+      indVars(indVars), expr(expr), inbounds(inbounds) {}
   };
 
   MemRef(Memory *m);
@@ -237,7 +240,7 @@ public:
   smt::expr to1DArrayWithOfs(
       const std::vector<smt::expr> &offbegins,
       const std::vector<smt::expr> &sizes) const;
-  smt::expr to1DIdxWithLayout(const std::vector<smt::expr> &idxs);
+  std::pair<smt::expr, smt::expr> to1DIdxWithLayout(const std::vector<smt::expr> &idxs);
 
   MemRef::Layout createSubViewLayout(const std::vector<smt::expr> &offsets,
      const std::vector<smt::expr> &strides);

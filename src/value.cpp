@@ -46,16 +46,19 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
     expr layout = Index::zero();
     expr stride = Index::one();
     vector<expr> indVars;
+    expr inbounds = ctx.bool_val(true);
 
-    for (int i = 0; i < dims.size(); i ++)
+    for (int i = 0; i < dims.size(); i ++) {
       indVars.push_back(Index("idx" + to_string(i)));
+      inbounds = inbounds && z3::ult(indVars[i], dims[i]);
+    }
 
     for (int i = dims.size() - 1; i >= 0; i --) {
       layout = layout + stride * indVars[i];
       stride = stride * dims[i];
     }
 
-    return MemRef::Layout(indVars, layout);
+    return MemRef::Layout(indVars, layout, inbounds);
   } else {
     int64_t offset;
     llvm::SmallVector<int64_t, 4> strides;
@@ -63,12 +66,14 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
     assert(succeeded(success) && "unexpected non-strided memref");
     expr layout = getConstOrVal(offset, "offset");
     vector<expr> indVars;
+    expr inbounds = ctx.bool_val(true);
     for (int i = 0; i < strides.size(); i ++) {
       indVars.push_back(Index("idx" + to_string(i)));
       layout = layout + getConstOrVal(strides[i], "strides") * indVars[i];
+      inbounds = inbounds && z3::ult(indVars[i], dims[i]);
     }
 
-    return MemRef::Layout(indVars, layout);
+    return MemRef::Layout(indVars, layout, inbounds);
   }
 }
 
@@ -452,7 +457,7 @@ expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::MemRef(Memory *m) : m(m), bid(ctx), offset(ctx), layout(Layout({}, ctx)) {}
+MemRef::MemRef(Memory *m) : m(m), bid(ctx), offset(ctx), layout(Layout({}, ctx, ctx)) {}
 
 MemRef::MemRef(Memory *m,
   const smt::expr &bid,
@@ -517,25 +522,17 @@ MemRef::getDimsAndLayoutAndElemTy(
 }
 
 pair<expr, expr> MemRef::load(const vector<expr> &indices) {
-  expr idx = to1DIdxWithLayout(indices);
+  auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto [expr, success] = m->load(bid, offset + idx);
 
-  // check whether indices are inbound.
-  for (int i = 0; i < indices.size(); i ++)
-    success = success && z3::ult(indices[i], getDim(i));
-
-  return {expr, success.simplify()};
+  return {expr, (success && inbounds).simplify()};
 }
 
 expr MemRef::store(const expr &value, const std::vector<expr> &indices) {
-  expr idx = to1DIdxWithLayout(indices);
+  auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto success = m->store(value, bid, offset + idx);
 
-  // check whether indices are inbound.
-  for (int i = 0; i < indices.size(); i ++)
-    success = success && z3::ult(indices[i], getDim(i));
-
-  return success.simplify();
+  return (success && inbounds).simplify();
 }
 
 expr MemRef::storeArray(const expr &array, const expr &startOffset, const expr &size) {
@@ -596,11 +593,16 @@ MemRef MemRef::eval(z3::model m) const {
   }
   m2.bid = m.eval(bid, true).simplify();
   m2.offset = m.eval(offset, true).simplify();
+  m2.layout.indVars = layout.indVars;
+  m2.layout.expr = m.eval(layout.expr, true).simplify();
+  m2.layout.inbounds = m.eval(layout.inbounds, true).simplify();
   return m2;
 }
 
-expr MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
-  return layout.expr.substitute(toExprVector(layout.indVars), toExprVector(idxs));
+pair<expr, expr> MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
+  auto expr = layout.expr.substitute(toExprVector(layout.indVars), toExprVector(idxs));
+  auto inbounds = layout.inbounds.substitute(toExprVector(layout.indVars), toExprVector(idxs));
+  return {expr, inbounds};
 }
 
 MemRef::Layout MemRef::createSubViewLayout(
@@ -617,5 +619,7 @@ MemRef::Layout MemRef::createSubViewLayout(
 
    auto transformed = layout.expr
      .substitute(toExprVector(layout.indVars), toExprVector(idxs));
-   return Layout(layout.indVars, transformed);
+   auto transformedInbounds = layout.inbounds
+     .substitute(toExprVector(layout.indVars), toExprVector(idxs));  
+   return Layout(layout.indVars, transformed, transformedInbounds);
  }
