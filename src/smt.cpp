@@ -100,6 +100,7 @@ Expr::Expr(const Expr& from) {
 
 Expr::Expr(Expr&& from) {
   this->z3_expr = std::move(from.z3_expr);
+  from.z3_expr = {}; // moving option do not set 'moved' option to none
 }
 
 void Expr::applyZ3Operation(std::function<z3::expr(z3::expr const&)>&& op, const Expr& arg0) {
@@ -120,6 +121,7 @@ Expr Expr::clone() const {
 
 Expr& Expr::operator=(Expr&& from) {
   this->z3_expr = std::move(from.z3_expr);
+  from.z3_expr = {}; // moving option do not set 'moved' option to none
   return *this;
 }
 
@@ -149,22 +151,29 @@ std::vector<Expr> Expr::toElements(const std::vector<Expr>& dims) const {
 
 Expr urem(const Expr& lhs, const Expr& rhs) {
   Expr urem_expr;
-
-  auto z3_urem = static_cast<z3::expr(*)(const z3::expr&, const z3::expr&)>(&z3::urem);
-  urem_expr.applyZ3Operation(z3_urem, lhs, rhs);
+  urem_expr.applyZ3Operation(
+    [](const z3::expr &lhs, const z3::expr &rhs) { return z3::urem(lhs, rhs); },
+    lhs, rhs);
 
   return urem_expr;
 }
 
 Expr udiv(const Expr& lhs, const Expr& rhs) {
   Expr udiv_expr;
-
-  auto z3_udiv = static_cast<z3::expr(*)(const z3::expr&, const z3::expr&)>(&z3::udiv);
-  udiv_expr.applyZ3Operation(z3_udiv, lhs, rhs);
+  udiv_expr.applyZ3Operation(
+    [](const z3::expr &lhs, const z3::expr &rhs) { return z3::udiv(lhs, rhs); },
+    lhs, rhs);
 
   return udiv_expr;
 }
 
+Expr Expr::simplify() const {
+  Expr simplified_expr;
+  simplified_expr.applyZ3Operation(
+    [](const z3::expr &e) { return e.simplify(); }, *this);
+
+  return simplified_expr;
+}
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e) {
