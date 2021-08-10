@@ -436,10 +436,14 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   if (!dimsAndLayoutAndElemTy)
     return "unsupported type";
 
-  auto memref = MemRef(st.m.get(),
-      get<0>(*dimsAndLayoutAndElemTy),
-      get<1>(*dimsAndLayoutAndElemTy),
-      get<2>(*dimsAndLayoutAndElemTy));
+  auto dims = get<0>(*dimsAndLayoutAndElemTy);
+  auto layout = get<1>(*dimsAndLayoutAndElemTy);
+  auto elemty = get<2>(*dimsAndLayoutAndElemTy);
+  // Add new local block
+  auto bid = st.m->addLocalBlock(smt::get1DSize(dims), ctx.bool_val(false));
+  auto offset = Index::zero();
+  // Create MemRef which points newly created block id
+  auto memref = MemRef(st.m.get(), bid, offset, dims, layout, elemty);
 
   if (memrefTy.getAffineMaps().empty()) {
     // memref with identity map
