@@ -439,8 +439,7 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto memref = MemRef(st.m.get(),
       get<0>(*dimsAndLayoutAndElemTy),
       get<1>(*dimsAndLayoutAndElemTy),
-      get<2>(*dimsAndLayoutAndElemTy),
-      true);
+      get<2>(*dimsAndLayoutAndElemTy));
 
   if (memrefTy.getAffineMaps().empty()) {
     // memref with identity map

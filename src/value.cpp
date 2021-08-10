@@ -452,30 +452,30 @@ expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::MemRef(Memory *m): m(m), bid(ctx), offset(ctx), layout(Layout({}, ctx)) {}
+MemRef::MemRef(Memory *m) : m(m), bid(ctx), offset(ctx), layout(Layout({}, ctx)) {}
+
+MemRef::MemRef(Memory *m,
+  const smt::expr &bid,
+  const smt::expr &offset,
+  const std::vector<smt::expr> &dims,
+  const Layout &layout,
+  const z3::sort &elemty) : m(m), bid(bid), offset(offset), dims(dims), layout(layout) {}
 
 MemRef::MemRef(Memory *m,
   const std::string &name,
   const std::vector<expr> &dims,
   const Layout &layout,
-  const z3::sort &elemty,
-  bool freshBlock):
+  const z3::sort &elemty):
     m(m),
     bid(ctx.bv_const((name + "_bid").c_str(), m->getBIDBits())),
     offset(Index((name + "_offset").c_str())),
     dims(dims),
-    layout(layout) {
-  if (freshBlock) {
-    bid = m->addLocalBlock(get1DSize(), ctx.bool_val(false));
-    offset = Index::zero();
-  }
-}
+    layout(layout) {}
 
 MemRef::MemRef(Memory *m,
     const std::vector<expr> &dims,
     const Layout &layout,
-    const z3::sort &elemty,
-    bool freshBlock) : MemRef(m, freshName("memref"), dims, layout, elemty, freshBlock) {}
+    const z3::sort &elemty) : MemRef(m, freshName("memref"), dims, layout, elemty) {}
 
 expr MemRef::getWellDefined() const {
   expr size = get1DSize();
