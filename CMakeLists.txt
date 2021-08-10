@@ -2,8 +2,9 @@ cmake_minimum_required(VERSION 3.15.0)
 project(mlir-tv VERSION 0.1.0)
 set (CMAKE_CXX_STANDARD 17)
 
-set(MLIR_DIR "")
-set(Z3_DIR "")
+set(MLIR_DIR CACHE PATH "MLIR installation top-level directory")
+set(Z3_DIR CACHE PATH "Z3 installation top-level directory")
+option(USE_LIBC "Use libc++ in case the MLIR is linked against libc++")
 
 set(MLIR_INC_DIR "${MLIR_DIR}/include")
 set(MLIR_LIB_DIR "${MLIR_DIR}/lib")
