@@ -1162,17 +1162,23 @@ static void printCounterEx(
   }
 
   llvm::outs() << "\n<Source's instructions>\n";
-  for (auto &[v, e]: st_src.regs) {
-    if (args_src.contains(v))
-      continue;
-    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << e << "\n";
+  for (auto &op: src.getRegion().front()) {
+    if (op.getNumResults() > 0 && st_src.regs.contains(op.getResult(0))) {
+      auto value =  st_src.regs.findOrCrash(op.getResult(0));
+      llvm::outs() << "\t'" << op.getResult(0) << "'\n\t\tValue: " << value << "\n";
+    } else {
+      llvm::outs() << "\t" << op << "\n";
+    }
   }
 
   llvm::outs() << "\n<Target's instructions>\n";
-  for (auto &[v, e]: st_tgt.regs) {
-    if (args_tgt.contains(v))
-      continue;
-    llvm::outs() << "\t'" << v << "'\n\t\tValue: " << e << "\n";
+  for (auto &op: tgt.getRegion().front()) {
+    if (op.getNumResults() > 0 && st_tgt.regs.contains(op.getResult(0))) {
+      auto value =  st_tgt.regs.findOrCrash(op.getResult(0));
+      llvm::outs() << "\t'" << op.getResult(0) << "'\n\t\tValue: " << value << "\n";
+    } else {
+      llvm::outs() << "\t" << op << "\n";
+    }
   }
 
   if (st_src.retValue && step == VerificationStep::RetValue) {
