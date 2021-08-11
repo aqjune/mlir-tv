@@ -138,16 +138,15 @@ std::vector<Expr> Expr::toElements(const std::vector<Expr>& dims) const {
   std::vector<Expr> exprs;
   exprs.reserve(dims.size());
 
-  auto acc = std::accumulate(dims.crbegin(), dims.crend(), 
+  auto expanded_exprs = std::accumulate(dims.crbegin(), dims.crend(), 
     std::make_pair(this->clone(), std::move(exprs)),
     [](std::pair<Expr, std::vector<Expr>>& acc, const Expr& dim) {
       auto [idx_1d, expanded_exprs] = std::move(acc);
       expanded_exprs.push_back(urem(idx_1d, dim));
       idx_1d = udiv(idx_1d, dim);
       return std::make_pair(std::move(idx_1d), std::move(expanded_exprs));
-    });
-  
-  auto expanded_exprs = std::move(acc.second);
+    })
+    .second;
   std::reverse(expanded_exprs.begin(), expanded_exprs.end());
   return expanded_exprs;
 }
