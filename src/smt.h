@@ -38,7 +38,7 @@ public:
   Expr urem(const Expr &rhs) const;
   Expr udiv(const Expr &rhs) const;
 };
-} // namespace smt
+};
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e);
 llvm::raw_ostream& operator<<(
