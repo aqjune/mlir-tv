@@ -1,5 +1,6 @@
 #include "smt.h"
 #include "value.h"
+#include <numeric>
 
 using namespace std;
 
@@ -100,7 +101,7 @@ Expr::Expr(const Expr& from) {
 
 Expr::Expr(Expr&& from) {
   this->z3_expr = std::move(from.z3_expr);
-  from.z3_expr = {}; // moving option do not set 'moved' option to none
+  from.z3_expr = {}; // moving optional do not set 'moved' optional to none
 }
 
 void Expr::applyZ3Operation(std::function<z3::expr(z3::expr const&)>&& op, const Expr& arg0) {
@@ -121,7 +122,7 @@ Expr Expr::clone() const {
 
 Expr& Expr::operator=(Expr&& from) {
   this->z3_expr = std::move(from.z3_expr);
-  from.z3_expr = {}; // moving option do not set 'moved' option to none
+  from.z3_expr = {}; // moving optional do not set 'moved' optional to none
   return *this;
 }
 
@@ -134,45 +135,47 @@ std::optional<z3::expr> Expr::replaceExpr(z3::expr&& z3_expr) {
 std::vector<Expr> Expr::toElements(const std::vector<Expr>& dims) const {
   assert(dims.size() > 0);
 
-  std::vector<Expr> expanded_exprs;
-  expanded_exprs.reserve(dims.size());
+  std::vector<Expr> exprs;
+  exprs.reserve(dims.size());
 
-  Expr idx_1d = this->clone();
-  std::transform(dims.crbegin(), dims.crend(), expanded_exprs.begin(), 
-    [idx_1d](const Expr &dim) mutable { 
-      auto e = urem(idx_1d, dim);
+  auto acc = std::accumulate(dims.crbegin(), dims.crend(), 
+    std::make_pair(this->clone(), std::move(exprs)),
+    [](std::pair<Expr, std::vector<Expr>>& acc, const Expr& dim) {
+      auto [idx_1d, expanded_exprs] = std::move(acc);
+      expanded_exprs.push_back(urem(idx_1d, dim));
       idx_1d = udiv(idx_1d, dim);
-      return e;
+      return std::make_pair(std::move(idx_1d), std::move(expanded_exprs));
     });
   
+  auto expanded_exprs = std::move(acc.second);
   std::reverse(expanded_exprs.begin(), expanded_exprs.end());
   return expanded_exprs;
 }
 
 Expr urem(const Expr& lhs, const Expr& rhs) {
-  Expr urem_expr;
-  urem_expr.applyZ3Operation(
+  Expr e;
+  e.applyZ3Operation(
     [](const z3::expr &lhs, const z3::expr &rhs) { return z3::urem(lhs, rhs); },
     lhs, rhs);
 
-  return urem_expr;
+  return e;
 }
 
 Expr udiv(const Expr& lhs, const Expr& rhs) {
-  Expr udiv_expr;
-  udiv_expr.applyZ3Operation(
+  Expr e;
+  e.applyZ3Operation(
     [](const z3::expr &lhs, const z3::expr &rhs) { return z3::udiv(lhs, rhs); },
     lhs, rhs);
 
-  return udiv_expr;
+  return e;
 }
 
 Expr Expr::simplify() const {
-  Expr simplified_expr;
-  simplified_expr.applyZ3Operation(
+  Expr e;
+  e.applyZ3Operation(
     [](const z3::expr &e) { return e.simplify(); }, *this);
 
-  return simplified_expr;
+  return e;
 }
 } // namespace smt
 
