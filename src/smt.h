@@ -28,40 +28,15 @@ std::string or_omit(const expr &e);
 
 class Expr {
 private:
-    std::optional<z3::expr> z3_expr;
+  std::optional<z3::expr> z3_expr;
 
-    bool checkZ3(const Expr& arg0) {
-        return arg0.z3_expr.has_value();
-    }
-
-    template<typename... Es>
-    bool checkZ3(const Expr& arg0, const Es&... args) {
-        return arg0.z3_expr.has_value() && checkZ3(args...);
-    }
-
-    template<typename F, typename... Ts>
-    void applyZ3Op(F&& op, const Expr& arg0, const Ts... args) {
-        if (checkZ3(arg0, args...)) {
-            this->replaceExpr(op(arg0.z3_expr.value(), args.z3_expr.value()...));
-        }
-    }
+  Expr(std::optional<z3::expr> z3_expr): z3_expr(z3_expr) {}
 
 public:
-    Expr() = default;
-    Expr(const Expr& from) = default;
-    Expr(Expr&& from) = default;
-    Expr& operator=(const Expr& from) = default;
-    Expr& operator=(Expr&& from) = default;
-    // simplify expressions
-    Expr simplify() const;
-    // equivalent to from1DIdx
-    std::vector<Expr> toElements(const std::vector<Expr>& dims) const;
+  Expr simplify() const;
 
-    // update internal z3::expr and get previous z3::expr
-    std::optional<z3::expr> replaceExpr(z3::expr&& z3_expr);
-
-    Expr urem(const Expr& rhs) const;
-    Expr udiv(const Expr& rhs) const;
+  Expr urem(const Expr &rhs) const;
+  Expr udiv(const Expr &rhs) const;
 };
 } // namespace smt
 

@@ -4,6 +4,21 @@
 
 using namespace std;
 
+namespace {
+
+// optional::map from
+// http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0798r0.html
+// Fn is simply declared because std::function with template arguments works
+// poorly. :(
+template<class T, class Fn>
+optional<T> fmap(const optional<T> &x, Fn fn) {
+  if (!x)
+    return std::nullopt;
+  return {fn(*x)};
+}
+
+}
+
 namespace smt {
 z3::context ctx;
 
@@ -91,56 +106,19 @@ string or_omit(const expr &e) {
   return s;
 }
 
-std::optional<z3::expr> Expr::replaceExpr(z3::expr&& z3_expr) {
-  auto prev_z3_expr = std::move(this->z3_expr);
-  this->z3_expr = z3_expr;
-  return prev_z3_expr;
-}
-
-std::vector<Expr> Expr::toElements(const std::vector<Expr>& dims) const {
-  assert(dims.size() > 0);
-
-  std::vector<Expr> exprs;
-  exprs.reserve(dims.size());
-
-  auto expanded_exprs = std::accumulate(dims.crbegin(), dims.crend(), 
-    std::make_pair(Expr(*this), std::move(exprs)),
-    [](std::pair<Expr, std::vector<Expr>>& acc, const Expr& dim) {
-      auto [idx_1d, expanded_exprs] = std::move(acc);
-      expanded_exprs.push_back(idx_1d.urem(dim));
-      idx_1d = idx_1d.urem(dim);
-      return std::make_pair(std::move(idx_1d), std::move(expanded_exprs));
-    })
-    .second;
-  std::reverse(expanded_exprs.begin(), expanded_exprs.end());
-  return expanded_exprs;
-}
 
 Expr Expr::urem(const Expr& rhs) const {
-  Expr e;
-  e.applyZ3Op(
-    [](const z3::expr &lhs, const z3::expr &rhs) { return z3::urem(lhs, rhs); },
-    *this, rhs);
-
-  return e;
+  return {fmap(z3_expr, [&](auto e) { return z3::urem(e, *rhs.z3_expr); })};
 }
 
 Expr Expr::udiv(const Expr& rhs) const {
-  Expr e;
-  e.applyZ3Op(
-    [](const z3::expr &lhs, const z3::expr &rhs) { return z3::udiv(lhs, rhs); },
-    *this, rhs);
-
-  return e;
+  return {fmap(z3_expr, [&](auto e) { return z3::udiv(e, *rhs.z3_expr); })};
 }
 
 Expr Expr::simplify() const {
-  Expr e;
-  e.applyZ3Op(
-    [](const z3::expr &e) { return e.simplify(); }, *this);
-
-  return e;
+  return {fmap(z3_expr, [](auto e) { return e.simplify(); })};
 }
+
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e) {
