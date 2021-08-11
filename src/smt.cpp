@@ -91,41 +91,6 @@ string or_omit(const expr &e) {
   return s;
 }
 
-Expr::Expr() {
-  this->z3_expr = {};
-}
-
-Expr::Expr(const Expr& from) {
-  this->z3_expr = from.z3_expr;
-}
-
-Expr::Expr(Expr&& from) {
-  this->z3_expr = std::move(from.z3_expr);
-  from.z3_expr = {}; // moving optional do not set 'moved' optional to none
-}
-
-void Expr::applyZ3Operation(std::function<z3::expr(z3::expr const&)>&& op, const Expr& arg0) {
-  if (arg0.z3_expr.has_value()) {
-    this->z3_expr = op(arg0.z3_expr.value());
-  }
-}
-
-void Expr::applyZ3Operation(std::function<z3::expr(z3::expr const&, z3::expr const&)>&& op, const Expr& arg0, const Expr& arg1) {
-  if (arg0.z3_expr.has_value() && arg1.z3_expr.has_value()) {
-    this->z3_expr = op(arg0.z3_expr.value(), arg1.z3_expr.value());
-  }
-}
-
-Expr Expr::clone() const {
-  return Expr(*this);
-}
-
-Expr& Expr::operator=(Expr&& from) {
-  this->z3_expr = std::move(from.z3_expr);
-  from.z3_expr = {}; // moving optional do not set 'moved' optional to none
-  return *this;
-}
-
 std::optional<z3::expr> Expr::replaceExpr(z3::expr&& z3_expr) {
   auto prev_z3_expr = std::move(this->z3_expr);
   this->z3_expr = z3_expr;
@@ -139,11 +104,11 @@ std::vector<Expr> Expr::toElements(const std::vector<Expr>& dims) const {
   exprs.reserve(dims.size());
 
   auto expanded_exprs = std::accumulate(dims.crbegin(), dims.crend(), 
-    std::make_pair(this->clone(), std::move(exprs)),
+    std::make_pair(Expr(*this), std::move(exprs)),
     [](std::pair<Expr, std::vector<Expr>>& acc, const Expr& dim) {
       auto [idx_1d, expanded_exprs] = std::move(acc);
-      expanded_exprs.push_back(urem(idx_1d, dim));
-      idx_1d = udiv(idx_1d, dim);
+      expanded_exprs.push_back(idx_1d.urem(dim));
+      idx_1d = idx_1d.urem(dim);
       return std::make_pair(std::move(idx_1d), std::move(expanded_exprs));
     })
     .second;
@@ -151,27 +116,27 @@ std::vector<Expr> Expr::toElements(const std::vector<Expr>& dims) const {
   return expanded_exprs;
 }
 
-Expr urem(const Expr& lhs, const Expr& rhs) {
+Expr Expr::urem(const Expr& rhs) const {
   Expr e;
-  e.applyZ3Operation(
+  e.applyZ3Op(
     [](const z3::expr &lhs, const z3::expr &rhs) { return z3::urem(lhs, rhs); },
-    lhs, rhs);
+    *this, rhs);
 
   return e;
 }
 
-Expr udiv(const Expr& lhs, const Expr& rhs) {
+Expr Expr::udiv(const Expr& rhs) const {
   Expr e;
-  e.applyZ3Operation(
+  e.applyZ3Op(
     [](const z3::expr &lhs, const z3::expr &rhs) { return z3::udiv(lhs, rhs); },
-    lhs, rhs);
+    *this, rhs);
 
   return e;
 }
 
 Expr Expr::simplify() const {
   Expr e;
-  e.applyZ3Operation(
+  e.applyZ3Op(
     [](const z3::expr &e) { return e.simplify(); }, *this);
 
   return e;

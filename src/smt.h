@@ -9,6 +9,8 @@
 namespace smt {
 using expr = z3::expr;
 
+class Expr;
+
 extern z3::context ctx;
 
 expr get1DSize(const std::vector<expr> &dims);
@@ -27,20 +29,29 @@ std::string or_omit(const expr &e);
 class Expr {
 private:
     std::optional<z3::expr> z3_expr;
-    Expr(const Expr& from);
 
-    void applyZ3Operation(std::function<z3::expr(z3::expr const&)>&& op, const Expr& arg0);
-    void applyZ3Operation(std::function<z3::expr(z3::expr const&, z3::expr const&)>&& op, const Expr& arg0, const Expr& arg1);
+    bool checkZ3(const Expr& arg0) {
+        return arg0.z3_expr.has_value();
+    }
+
+    template<typename... Es>
+    bool checkZ3(const Expr& arg0, const Es&... args) {
+        return arg0.z3_expr.has_value() && checkZ3(args...);
+    }
+
+    template<typename F, typename... Ts>
+    void applyZ3Op(F&& op, const Expr& arg0, const Ts... args) {
+        if (checkZ3(arg0, args...)) {
+            this->replaceExpr(op(arg0.z3_expr.value(), args.z3_expr.value()...));
+        }
+    }
 
 public:
-    // default constructor
-    Expr();
-    // move constructor
-    Expr(Expr&& from);
-    // explicit copy 
-    Expr clone() const;
-    // move assignment operator
-    Expr& operator=(Expr&& from);
+    Expr() = default;
+    Expr(const Expr& from) = default;
+    Expr(Expr&& from) = default;
+    Expr& operator=(const Expr& from) = default;
+    Expr& operator=(Expr&& from) = default;
     // simplify expressions
     Expr simplify() const;
     // equivalent to from1DIdx
@@ -49,8 +60,8 @@ public:
     // update internal z3::expr and get previous z3::expr
     std::optional<z3::expr> replaceExpr(z3::expr&& z3_expr);
 
-    friend Expr urem(const Expr& lhs, const Expr& rhs);
-    friend Expr udiv(const Expr& lhs, const Expr& rhs);
+    Expr urem(const Expr& rhs) const;
+    Expr udiv(const Expr& rhs) const;
 };
 } // namespace smt
 
