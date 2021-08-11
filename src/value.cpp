@@ -194,6 +194,14 @@ Tensor::Tensor(const string &name, const vector<expr> &dimvec,
   arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), elemty))),
   dims(dimvec) {}
 
+// Sparse
+Tensor::Tensor(const vector<expr> &elems1d, const vector<expr> &dimvec):
+    arr(z3::const_array(Index::sort(), elems1d[0])),
+    dims(dimvec) {
+  for (unsigned i = 1; i < elems1d.size(); ++i)
+    arr = z3::store(arr, i, elems1d[i]);
+}
+
 expr Tensor::getWellDefined() const {
   expr size = get1DSize();
   if (size.is_numeral())
