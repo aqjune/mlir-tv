@@ -1,6 +1,5 @@
 #include "smt.h"
 #include "value.h"
-#include <numeric>
 
 using namespace std;
 
