@@ -91,6 +91,34 @@ string or_omit(const expr &e) {
   return s;
 }
 
+Context::Context() {
+  Context::z3_ctx = nullptr;
+}
+
+void Context::useZ3() {
+  Context::z3_ctx = &ctx;
+}
+
+Expr Context::bvVal(const uint32_t val, const size_t sz) {
+  auto z3_expr = applyZ3Op(
+    [](z3::context* ctx, const uint32_t val, const size_t sz) { return ctx->bv_val(val, sz); },
+    this->z3_ctx, val, sz);
+  
+  return Expr(std::move(z3_expr));
+}
+
+Expr Context::bvConst(char* const name, const size_t sz) {
+  auto z3_expr = applyZ3Op(
+    [](z3::context* ctx, char* const name, const size_t sz) { return ctx->bv_const(name, sz); },
+    this->z3_ctx, name, sz);
+  
+  return Expr(std::move(z3_expr));
+}
+
+Expr::Expr(std::optional<z3::expr>&& z3_expr) {
+  this->z3_expr = z3_expr;
+}
+
 std::optional<z3::expr> Expr::replaceExpr(z3::expr&& z3_expr) {
   auto prev_z3_expr = std::move(this->z3_expr);
   this->z3_expr = z3_expr;
@@ -108,7 +136,7 @@ std::vector<Expr> Expr::toElements(const std::vector<Expr>& dims) const {
     [](std::pair<Expr, std::vector<Expr>>& acc, const Expr& dim) {
       auto [idx_1d, expanded_exprs] = std::move(acc);
       expanded_exprs.push_back(idx_1d.urem(dim));
-      idx_1d = idx_1d.urem(dim);
+      idx_1d = idx_1d.udiv(dim);
       return std::make_pair(std::move(idx_1d), std::move(expanded_exprs));
     })
     .second;
@@ -140,6 +168,41 @@ Expr Expr::simplify() const {
     [](const z3::expr &e) { return e.simplify(); }, *this);
 
   return e;
+}
+
+ExprVec::ExprVec(std::vector<Expr>&& exprs) {
+  this->exprs = std::move(exprs);
+}
+
+ExprVec::ExprVec(ExprVec&& from) {
+  this->exprs = std::move(from.exprs);
+}
+
+size_t ExprVec::size() const {
+  return this->exprs.size();
+}
+
+ExprVec ExprVec::simplify() const {
+  std::vector<Expr> simplified_exprs;
+  simplified_exprs.reserve(this->exprs.size());
+
+  std::transform(this->exprs.cbegin(), this->exprs.cend(), simplified_exprs.begin(), 
+    [](const Expr &expr) { return expr.simplify(); });
+  
+  return ExprVec(std::move(simplified_exprs));
+}
+
+std::vector<Expr>::const_iterator ExprVec::cbegin() const {
+  return this->exprs.cbegin();
+}
+std::vector<Expr>::const_iterator ExprVec::cend() const {
+  return this->exprs.cend();
+}
+std::vector<Expr>::const_reverse_iterator ExprVec::crbegin() const {
+  return this->exprs.crbegin();
+}
+std::vector<Expr>::const_reverse_iterator ExprVec::crend() const {
+  return this->exprs.crend();
 }
 } // namespace smt
 
