@@ -670,6 +670,28 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
 
     st.regs.add(op, Integer(i.getSExtValue(), bw));
     return {};
+  } else if(mlir::SparseElementsAttr sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
+    std::vector<z3::expr> sparse_values;
+    mlir::Type eltType = sparseAttr.getType().getElementType();
+    if(eltType.isa<mlir::FloatType>()) {
+      auto values = sparseAttr.getValues<mlir::FloatAttr>();
+      for(mlir::FloatAttr value : values) {
+        z3::expr float_value = Float(value.getValueAsDouble());
+        sparse_values.push_back(float_value);
+      }
+    } else if(eltType.isa<mlir::IntegerType>()) {
+      auto values = sparseAttr.getValues<mlir::IntegerAttr>();
+      for(mlir::IntegerAttr value : values) {
+        llvm::APInt i = value.getValue();
+        unsigned bw = i.getBitWidth();
+        z3::expr int_value = Integer(i.getSExtValue(), bw);
+        sparse_values.push_back(int_value);
+      }
+    }
+    else 
+      return "unsupported type";
+    st.regs.add(op, Tensor(sparse_values));
+    return {};
   }
   return "unsupported constant";
 }
