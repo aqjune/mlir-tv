@@ -10,6 +10,8 @@ namespace smt {
 using expr = z3::expr;
 
 class Expr;
+class ExprVec;
+class Context;
 
 extern z3::context ctx;
 
@@ -26,74 +28,81 @@ expr fitsInDims(const std::vector<expr> &idxs,
 z3::expr_vector toExprVector(const std::vector<expr> &vec);
 std::string or_omit(const expr &e);
 
+class ContextBuilder {
+  private:
+    bool use_z3;
+
+  public:
+    ContextBuilder();
+    ContextBuilder& useZ3();
+    std::optional<Context> build() const;
+};
+
 class Context {
+  friend ContextBuilder;
+
 private:
     z3::context* z3_ctx;
-
-    template<typename F, typename T, typename... Ts>
-    std::optional<z3::expr> applyZ3Op(const F&& op, const T arg0, const Ts... args) {
-        if (this->z3_ctx) {
-            return std::optional(op(arg0, args...));
-        } else {
-            return {};
-        }
-    }
+    Context();
+    Context(bool use_z3);
 
 public:
-    Context();
-    void useZ3();
-
     Expr bvVal(const uint32_t val, const size_t sz);
     Expr bvConst(char* const name, const size_t sz);
+    Expr boolVal(const bool val);
 };
 
 class Expr {
+  friend Context;
 private:
+  Context* ctx;
   std::optional<z3::expr> z3_expr;
-
-  Expr(std::optional<z3::expr> z3_expr): z3_expr(z3_expr) {}
+  
+  Expr(Context* const ctx) : ctx(ctx) {};
+  Expr(Context* const ctx, std::optional<z3::expr> &&z3_expr);
 
 public:
+  Expr(Expr&& from);
+  Expr& operator=(Expr &&from) = default;
+  Expr clone() const;
+
   Expr simplify() const;
+  ExprVec toNDIndices(const ExprVec &dims) const;
 
   Expr urem(const Expr &rhs) const;
   Expr udiv(const Expr &rhs) const;
+  Expr add(const Expr &rhs) const;
+  Expr sub(const Expr &rhs) const;
+  Expr mul(const Expr &rhs) const;
+  Expr ult(const Expr &rhs) const;
+  Expr ugt(const Expr &rhs) const;
+  Expr boolAnd(const Expr &rhs) const;
+  Expr boolOr(const Expr &rhs) const;
 };
 
 class ExprVec {
+  friend Context;
+  friend Expr;
+
 private:
-    std::vector<Expr> exprs;
-    ExprVec(std::vector<Expr>&& exprs);
-    ExprVec(ExprVec&& from);
+  Context* ctx;
+  std::vector<Expr> exprs;
+
+  ExprVec(Context* const ctx): ctx(ctx) {};
+  ExprVec(Context* const ctx, std::vector<Expr>&& exprs);
+
+  static ExprVec withCapacity(Context* ctx, size_t size);
 
 public:
-    size_t size() const;
-    std::vector<Expr>::const_iterator cbegin() const;
-    std::vector<Expr>::const_iterator cend() const;
-    std::vector<Expr>::const_reverse_iterator crbegin() const;
-    std::vector<Expr>::const_reverse_iterator crend() const;
+  ExprVec(ExprVec&& from);
+  ExprVec& operator=(ExprVec &&from) = default;
+  ExprVec clone() const;
 
-    ExprVec simplify() const;
-    Expr to1DSize() const;
-    Expr to1DIdx(ExprVec dims) const;
-    Expr to1DIdxWithLayout(Expr layout) const;
+  ExprVec simplify() const;
+  Expr to1DIndices(const ExprVec &dims) const;
+  Expr fitsInDims(const ExprVec &sizes) const;
 };
-
-class Sort {
-private:
-    z3::sort z3_sort;
-
-public:
-};
-
-class SortVec {
-private:
-    std::vector<Sort> sorts;
-
-public:
-
-};
-}; // namespace smt
+} // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e);
 llvm::raw_ostream& operator<<(
