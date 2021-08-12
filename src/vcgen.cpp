@@ -436,16 +436,14 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
       st.regs.get<Index>(op.getDynamic ## ee(i)) : \
       Index(op.getStatic ## ee(i))); \
 }
-    ADD(sizes, Size);
     ADD(offsets, Offset);
+    ADD(sizes, Size);
     ADD(strides, Stride);
 #undef ADD
   }
 
   auto src = st.regs.get<MemRef>(op.source());
-  auto layout = src.createSubViewLayout(offsets, strides);
-
-  auto memref = MemRef(st.m.get(), src.getBID(), src.getOffset(),  sizes, layout, Float::sort());
+  auto memref = src.subview(offsets, sizes, strides);
   st.regs.add(op.getResult(), move(memref));
   return "Unsupported yet..";
 }
