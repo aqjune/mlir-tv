@@ -1,6 +1,6 @@
 // VERIFY
 
-func @fold_extract(%arg0 : index) -> (f32, f32) {
+func @f(%arg0 : index) -> (f32, f32) {
   %const_0 = constant 0 : index
   %const_1 = constant 1 : index
   %const_3 = constant 3 : index
