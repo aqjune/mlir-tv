@@ -8,6 +8,3 @@ func @f(%arg0 : index) -> (f32, f32) {
   %ext_2 = tensor.extract %1[%const_1, %const_1, %const_1] : tensor<4x4x4xf32>
   return %ext_1, %ext_2 : f32, f32
 }
-
-// How to reproduce tgt:
-// mlir-opt -canonicalize <src>
