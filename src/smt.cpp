@@ -14,7 +14,7 @@ template<class T, class Fn>
 optional<T> fmap(const optional<T> &x, Fn &&fn) {
   if (!x)
     return std::nullopt;
-  return {fn(*x)};
+  return std::make_optional(fn(*x));
 }
 
 template<class Fn>
