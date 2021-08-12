@@ -443,7 +443,7 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
   }
 
   auto src = st.regs.get<MemRef>(op.source());
-  auto layout = src.toSubViewLayout(offsets, strides);
+  auto layout = src.createSubViewLayout(offsets, strides);
 
   auto memref = MemRef(st.m.get(), src.getBID(), src.getOffset(),  sizes, layout, Float::sort());
   st.regs.add(op.getResult(), move(memref));
