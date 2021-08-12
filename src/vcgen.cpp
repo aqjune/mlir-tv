@@ -427,6 +427,28 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
+  vector<smt::expr> sizes, offsets, strides;
+
+  for (unsigned i = 0; i < op.getSourceType().getRank(); i++) {
+#define ADD(vec, ee) { \
+  vec.push_back(op.isDynamic ## ee(i) ? \
+      st.regs.get<Index>(op.getDynamic ## ee(i)) : \
+      Index(op.getStatic ## ee(i))); \
+}
+    ADD(offsets, Offset);
+    ADD(sizes, Size);
+    ADD(strides, Stride);
+#undef ADD
+  }
+
+  auto src = st.regs.get<MemRef>(op.source());
+  auto memref = src.subview(offsets, sizes, strides);
+  st.regs.add(op.getResult(), move(memref));
+  return "Unsupported yet..";
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto tensor = st.regs.get<Tensor>(op.getOperand());
   auto memrefTy = op.memref().getType().cast<mlir::MemRefType>();
@@ -1105,6 +1127,7 @@ static optional<string> encodeRegion(
 
     ENCODE(st, op, mlir::memref::LoadOp);
     ENCODE(st, op, mlir::memref::StoreOp);
+    ENCODE(st, op, mlir::memref::SubViewOp);
     ENCODE(st, op, mlir::memref::BufferCastOp);
     ENCODE(st, op, mlir::memref::TensorLoadOp);
 

@@ -564,6 +564,14 @@ void MemRef::setWritable(bool writable) {
   m->setWritable(bid, writable);
 }
 
+MemRef MemRef::subview(const vector<expr> &offsets,
+    const vector<expr> &sizes,
+    const vector<expr> &strides) {
+  auto layout = createSubViewLayout(offsets, strides);
+  auto memref = MemRef(m, bid, offset, sizes, layout, Float::sort());
+  return memref;
+}
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   assert(m.dims.size() > 0);
   os << "(bid: " << or_omit(m.bid)
@@ -594,3 +602,20 @@ MemRef MemRef::eval(z3::model m) const {
 expr MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
   return layout.expr.substitute(toExprVector(layout.indVars), toExprVector(idxs));
 }
+
+MemRef::Layout MemRef::createSubViewLayout(
+   const vector<expr> &offsets,
+   const vector<expr> &strides) {
+   // Before : <(d0, d1) -> (d0 * s0 + d1)>,
+   // After: <(d0, d1) -> ((d0 + offsets[0]) * strides[0] * s0 + (d1 + offsets[1]) * strides[1])>
+   assert(layout.indVars.size() == offsets.size());
+   assert(layout.indVars.size() == strides.size());
+
+   vector<expr> idxs;
+   for (unsigned i = 0; i < layout.indVars.size(); i ++)
+     idxs.push_back((layout.indVars[i] + offsets[i]) * strides[i]);
+
+   auto transformed = layout.expr
+     .substitute(toExprVector(layout.indVars), toExprVector(idxs));
+   return Layout(layout.indVars, transformed);
+ }
