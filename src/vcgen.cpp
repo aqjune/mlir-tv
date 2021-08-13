@@ -670,7 +670,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
 
     st.regs.add(op, Integer(i.getSExtValue(), bw));
     return {};
-  } else if (mlir::SparseElementsAttr sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
+  } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
     std::vector<z3::expr> sparseValues;
     mlir::ShapedType sparseType = sparseAttr.getType();
     mlir::Type eltType = sparseType.getElementType();
