@@ -685,8 +685,9 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
     if (eltType.isa<mlir::FloatType>()) ;
     else if (eltType.isa<mlir::IntegerType>()) {
       zeroExpr = Integer(0, 64);
-    } else 
-        return "unsupported type";
+    } else {
+      return "unsupported type";
+    }
 
     uint64_t * indices = new uint64_t[rank];
     uint64_t dim = 0;
