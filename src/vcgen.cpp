@@ -674,44 +674,46 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
     std::vector<z3::expr> sparseValues;
     mlir::ShapedType sparseType = sparseAttr.getType();
     mlir::Type eltType = sparseType.getElementType();
+    mlir::DenseIntElementsAttr sparseIndices = sparseAttr.getIndices();
+    auto sparseIndexValues = sparseIndices.getValues<uint64_t>();
+    auto rank = sparseType.getRank();
+    auto shape = sparseType.getShape();
     std::vector<uint64_t> sparseIndexes;
     uint64_t index = 0;
+    
     z3::expr zeroExpr = Float(0.0);
-    if (eltType.isa<mlir::IntegerType>())
+    if (eltType.isa<mlir::FloatType>()) ;
+    else if (eltType.isa<mlir::IntegerType>()) {
       zeroExpr = Integer(0, 64);
+    } else 
+        return "unsupported type";
 
-    if (eltType.isa<mlir::FloatType>()) {
-      auto values = sparseAttr.getValues<mlir::FloatAttr>();
-      for (mlir::FloatAttr value : values) {
-        if (value.getValueAsDouble() == 0.0)
-        {
-          index++;
-          continue;
-        }
-        z3::expr floatExpr = Float(value.getValueAsDouble());
-        sparseValues.push_back(floatExpr);
-        sparseIndexes.push_back(index);
-        index++;
+    uint64_t * indices = new uint64_t[rank];
+    uint64_t dim = 0;
+    for (auto indexValue : sparseIndexValues) {
+      if (dim < rank) {
+        indices[dim] = indexValue;
+        index *= shape[dim];
+        index += indexValue;
+        dim++;
       }
-    } else if (eltType.isa<mlir::IntegerType>()) {
-      auto values = sparseAttr.getValues<mlir::IntegerAttr>();
-      for (mlir::IntegerAttr value : values) {
-        llvm::APInt i = value.getValue();
-        if (i==0)
-        {
-          index++;
-          continue;
-        }
-        unsigned bw = i.getBitWidth();
-        z3::expr integerExpr = Integer(i.getSExtValue(), bw);
-        sparseValues.push_back(integerExpr);
+      if (dim == rank) {
         sparseIndexes.push_back(index);
-        index++;
+        mlir::ArrayRef coordinate = mlir::ArrayRef(indices, rank);
+        auto value = sparseAttr.getValue(coordinate);
+        if (eltType.isa<mlir::FloatType>()) {
+          z3::expr floatExpr = Float(value.dyn_cast<mlir::FloatAttr>().getValueAsDouble());
+          sparseValues.push_back(floatExpr);
+        } else if (eltType.isa<mlir::IntegerType>()) {
+          llvm::APInt i = value.dyn_cast<mlir::IntegerAttr>().getValue();
+          unsigned bw = i.getBitWidth();
+          z3::expr integerExpr = Integer(i.getSExtValue(), bw);
+          sparseValues.push_back(integerExpr);
+        }
+        dim = 0;
+        index = 0;
       }
     }
-    else 
-      return "unsupported type";
-     
     auto resty = Tensor::getDimsAndElemTy(
         sparseType.cast<mlir::TensorType>());
     if (!resty)
