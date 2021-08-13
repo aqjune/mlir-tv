@@ -563,10 +563,25 @@ void MemRef::setWritable(bool writable) {
 
 MemRef MemRef::subview(const vector<expr> &offsets,
     const vector<expr> &sizes,
-    const vector<expr> &strides) {
-  auto layout = createSubViewLayout(offsets, strides);
-  auto memref = MemRef(m, bid, offset, sizes, layout, Float::sort());
-  return memref;
+    const vector<expr> &strides,
+    int rankDiff) {
+  if (rankDiff > 0) {
+    vector<expr> indVars, reducedSizes;
+    for (unsigned i = 0; i < sizes.size(); i++) {
+      if (rankDiff > 0 && sizes[i].is_numeral() && sizes[i].as_uint64() == 1) { //statically known to be 1
+        indVars.push_back(Index::zero());
+        rankDiff --;
+      } else {
+        indVars.push_back(layout.indVars[i]);
+        reducedSizes.push_back(sizes[i]);
+      }
+    }
+    auto subviewLayout = createSubViewLayout(indVars, offsets, strides);
+    return MemRef(m, bid, offset, reducedSizes, subviewLayout, Float::sort());
+  } else {
+    auto subviewLayout = createSubViewLayout(layout.indVars, offsets, strides);
+    return MemRef(m, bid, offset, sizes, subviewLayout, Float::sort());
+  }
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
@@ -605,21 +620,25 @@ pair<expr, expr> MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
   return {expr, inbounds};
 }
 
-MemRef::Layout MemRef::createSubViewLayout(
+MemRef::Layout MemRef::createSubViewLayout(const vector<expr> &indVars,
    const vector<expr> &offsets,
    const vector<expr> &strides) {
    // Before : <(d0, d1) -> (d0 * s0 + d1)>,
-   // After: <(d0, d1) -> ((d0 + offsets[0]) * strides[0] * s0 + (d1 + offsets[1]) * strides[1])>
-   assert(layout.indVars.size() == offsets.size());
-   assert(layout.indVars.size() == strides.size());
+   // After: <(d0, d1) -> ((indVars[0] + offsets[0]) * strides[0] * s0 + (indVars[1] + offsets[1]) * strides[1])>
+   // indVars[i] can be Index::zero() if reducing the dimension.
+  assert(layout.indVars.size() == indVars.size());
+  assert(layout.indVars.size() == offsets.size());
+  assert(layout.indVars.size() == strides.size());
 
-   vector<expr> idxs;
-   for (unsigned i = 0; i < layout.indVars.size(); i ++)
-     idxs.push_back((layout.indVars[i] + offsets[i]) * strides[i]);
+  vector<expr> idxs, transformedIndVars;
+  for (unsigned i = 0; i < layout.indVars.size(); i ++) {
+    idxs.push_back((indVars[i] + offsets[i]) * strides[i]);
+    if (!indVars[i].is_numeral()) transformedIndVars.push_back(indVars[i]);
+  }
 
-   auto transformed = layout.expr
-     .substitute(toExprVector(layout.indVars), toExprVector(idxs));
-   auto transformedInbounds = layout.inbounds
-     .substitute(toExprVector(layout.indVars), toExprVector(idxs));  
-   return Layout(layout.indVars, transformed, transformedInbounds);
+  auto transformed = layout.expr
+    .substitute(toExprVector(layout.indVars), toExprVector(idxs));
+  auto transformedInbounds = layout.inbounds
+   .substitute(toExprVector(layout.indVars), toExprVector(idxs));
+  return Layout(transformedIndVars, transformed, transformedInbounds);
  }
