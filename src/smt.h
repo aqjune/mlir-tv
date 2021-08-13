@@ -62,7 +62,7 @@ private:
   Expr(Context* const ctx, std::optional<z3::expr> &&z3_expr);
 
 public:
-  Expr(Expr&& from);
+  Expr(Expr&& from) = default;
   Expr& operator=(Expr &&from) = default;
   Expr clone() const;
 
@@ -94,7 +94,7 @@ private:
   static ExprVec withCapacity(Context* ctx, size_t size);
 
 public:
-  ExprVec(ExprVec&& from);
+  ExprVec(ExprVec&& from) = default;
   ExprVec& operator=(ExprVec &&from) = default;
   ExprVec clone() const;
 

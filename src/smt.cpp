@@ -160,11 +160,6 @@ Expr::Expr(Context* const ctx, std::optional<z3::expr> &&z3_expr) : Expr(ctx) {
   this->z3_expr = std::move(z3_expr);
 }
 
-Expr::Expr(Expr&& from) {
-  this->ctx = from.ctx;
-  this->z3_expr = std::move(from.z3_expr);
-}
-
 Expr Expr::clone() const {
   auto cloned_z3_expr = this->z3_expr;
   return Expr(this->ctx, std::move(cloned_z3_expr));
@@ -246,10 +241,6 @@ Expr Expr::boolOr(const Expr& rhs) const {
 
 ExprVec::ExprVec(Context* const ctx, std::vector<Expr>&& exprs) : ExprVec(ctx) {
   this->exprs = std::move(exprs);
-}
-
-ExprVec::ExprVec(ExprVec&& from) : ExprVec(from.ctx) {
-  this->exprs = std::move(from.exprs);
 }
 
 ExprVec ExprVec::withCapacity(Context* const ctx, size_t size) {
