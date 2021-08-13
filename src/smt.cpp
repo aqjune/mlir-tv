@@ -297,14 +297,6 @@ Expr ExprVec::fitsInDims(const ExprVec &sizes) const {
 }
 } // namespace smt
 
-
-void test() {
-  auto ct = smt::ContextBuilder().useZ3().build().value();
-  auto e1 = ct.bvVal(32, 32);
-  auto e2 = ct.bvVal(32, 32);
-  e1.add(e2);
-}
-
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e) {
   std::stringstream ss;
   ss << e;
