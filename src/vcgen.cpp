@@ -1313,7 +1313,7 @@ static Results checkRefinement(
       llvm_unreachable("unexpected result");
     }
   };
-  auto logic = (st_src.hasQuantifier || st_src.hasQuantifier) ? "UFBV" : "QF_UFBV";
+  auto logic = (st_src.hasQuantifier || st_tgt.hasQuantifier) ? "UFBV" : "QF_UFBV";
 
   { // 1. Check UB
     auto s = z3::solver(ctx, logic);
