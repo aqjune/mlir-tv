@@ -99,7 +99,7 @@ public:
   ExprVec clone() const;
 
   ExprVec simplify() const;
-  Expr to1DIndices(const ExprVec &dims) const;
+  Expr to1DIdx(const ExprVec &dims) const;
   Expr fitsInDims(const ExprVec &sizes) const;
 };
 } // namespace smt

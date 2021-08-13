@@ -276,7 +276,7 @@ ExprVec ExprVec::simplify() const {
   return simplified_exprs;
 }
 
-Expr ExprVec::to1DIndices(const ExprVec &dims) const {
+Expr ExprVec::to1DIdx(const ExprVec &dims) const {
   assert(this->exprs.size() == dims.exprs.size());
   
   auto idx = this->exprs[0].clone();
