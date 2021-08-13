@@ -674,7 +674,8 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
     std::vector<z3::expr> sparseValues;
     mlir::ShapedType sparseType = sparseAttr.getType();
     mlir::Type eltType = sparseType.getElementType();
-    
+    std::vector<uint64_t> sparseIndexes;
+    uint64_t index = 0;
     z3::expr zeroExpr = Float(0.0);
     if (eltType.isa<mlir::IntegerType>())
       zeroExpr = Integer(0, 64);
@@ -682,16 +683,30 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
     if (eltType.isa<mlir::FloatType>()) {
       auto values = sparseAttr.getValues<mlir::FloatAttr>();
       for (mlir::FloatAttr value : values) {
+        if (value.getValueAsDouble() == 0.0)
+        {
+          index++;
+          continue;
+        }
         z3::expr floatExpr = Float(value.getValueAsDouble());
         sparseValues.push_back(floatExpr);
+        sparseIndexes.push_back(index);
+        index++;
       }
     } else if (eltType.isa<mlir::IntegerType>()) {
       auto values = sparseAttr.getValues<mlir::IntegerAttr>();
       for (mlir::IntegerAttr value : values) {
         llvm::APInt i = value.getValue();
+        if (i==0)
+        {
+          index++;
+          continue;
+        }
         unsigned bw = i.getBitWidth();
         z3::expr integerExpr = Integer(i.getSExtValue(), bw);
         sparseValues.push_back(integerExpr);
+        sparseIndexes.push_back(index);
+        index++;
       }
     }
     else 
@@ -701,7 +716,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
         sparseType.cast<mlir::TensorType>());
     if (!resty)
       return "unsupported type";  
-    st.regs.add(op, Tensor(sparseValues, resty->first, zeroExpr));
+    st.regs.add(op, Tensor(sparseIndexes, sparseValues, resty->first, zeroExpr));
     return {};
   }
   return "unsupported constant";

@@ -96,7 +96,7 @@ public:
   Tensor(const std::string &name, const std::vector<smt::expr> &dims,
          const z3::sort &elemty);
   // Sparse
-  Tensor(const std::vector<smt::expr> &elems1d,
+  Tensor(const std::vector<uint64_t> &indexes, const std::vector<smt::expr> &elems1d,
          const std::vector<smt::expr> &dims, const smt::expr &zeroExpr);
 
   smt::expr asArray() const { return arr; }
