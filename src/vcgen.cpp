@@ -674,6 +674,11 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
     std::vector<z3::expr> sparseValues;
     mlir::ShapedType sparseType = sparseAttr.getType();
     mlir::Type eltType = sparseType.getElementType();
+    
+    z3::expr zeroExpr = Float(0.0);
+    if (eltType.isa<mlir::IntegerType>())
+      zeroExpr = Integer(0, 64);
+
     if (eltType.isa<mlir::FloatType>()) {
       auto values = sparseAttr.getValues<mlir::FloatAttr>();
       for (mlir::FloatAttr value : values) {
@@ -696,7 +701,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
         sparseType.cast<mlir::TensorType>());
     if (!resty)
       return "unsupported type";  
-    st.regs.add(op, Tensor(sparseValues, resty->first));
+    st.regs.add(op, Tensor(sparseValues, resty->first, zeroExpr));
     return {};
   }
   return "unsupported constant";

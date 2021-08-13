@@ -195,9 +195,9 @@ Tensor::Tensor(const string &name, const vector<expr> &dimvec,
   dims(dimvec) {}
 
 // Sparse
-Tensor::Tensor(const vector<expr> &elems1d, const vector<expr> &dimvec):
-    arr(z3::const_array(Index::sort(), elems1d[0])),
-    dims(dimvec) {
+Tensor::Tensor(const vector<expr> &elems1d, const vector<expr> &dimvec,
+               const expr &zeroExpr):
+    arr(z3::const_array(Index::sort(), zeroExpr)), dims(dimvec) {
   for (unsigned i = 1; i < elems1d.size(); ++i)
     arr = z3::store(arr, i, elems1d[i]);
 }
