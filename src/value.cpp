@@ -162,6 +162,9 @@ Integer::Integer(const std::string &name, unsigned bw):
 Integer::Integer(int64_t i, unsigned bw):
   e(ctx.bv_val(i, bw)) {}
 
+Integer::Integer(const llvm::APInt &api):
+  Integer(api.getSExtValue(), api.getBitWidth()) {}
+
 z3::sort Integer::sort(unsigned sz) {
   return ctx.bv_sort(sz);
 }
@@ -198,6 +201,28 @@ Tensor::Tensor(const string &name, const vector<expr> &dimvec,
                const z3::sort &elemty):
   arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), elemty))),
   dims(dimvec) {}
+
+Tensor::Tensor(
+    const vector<vector<uint64_t>> &indices,
+    const vector<expr> &elems,
+    const vector<uint64_t> &dims, const expr &zero):
+  arr(z3::const_array(Index::sort(), zero)) {
+
+  assert(indices.size() == elems.size());
+
+  for (auto d: dims)
+    this->dims.push_back(Index(d));
+
+  for (unsigned i = 0; i < indices.size(); ++i) {
+    assert(indices[i].size() == dims.size());
+
+    uint64_t ofs = indices[i][0];
+    for (unsigned j = 1; j < dims.size(); ++j)
+      ofs = ofs * dims[j] + indices[i][j];
+
+    arr = z3::store(arr, Index(ofs), elems[i]);
+  }
+}
 
 expr Tensor::getWellDefined() const {
   expr size = get1DSize();

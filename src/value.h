@@ -69,6 +69,7 @@ public:
   Integer(const std::string &name, unsigned bw);
   Integer(const smt::expr &e): e(e) {}
   Integer(int64_t i, unsigned bw);
+  Integer(const llvm::APInt &api);
 
   operator smt::expr() const { return e; }
 
@@ -92,6 +93,11 @@ public:
   Tensor();
   // A splat tensor.
   Tensor(const smt::expr &splat_elem, const std::vector<smt::expr> &dims);
+  // A sparse tensor.
+  Tensor(const std::vector<std::vector<uint64_t>> &indices,
+         const std::vector<smt::expr> &elems,
+         const std::vector<uint64_t> &dims, const smt::expr &zero);
+
   Tensor(const std::vector<smt::expr> &elems1d);
   Tensor(const std::string &name, const std::vector<smt::expr> &dims,
          const z3::sort &elemty);
