@@ -645,6 +645,26 @@ optional<string> encodeOp(State &st, mlir::ConstantFloatOp op) {
   return {};
 }
 
+static optional<smt::expr> getZero(mlir::Type eltType) {
+  if (eltType.isa<mlir::FloatType>())
+    return Float(0.0);
+  else if (eltType.isa<mlir::IntegerType>())
+    return Integer(0, 64);
+  else if (eltType.isa<mlir::IndexType>())
+    return Index(0);
+  return {};
+}
+
+static optional<smt::expr> getExpr(mlir::Attribute a) {
+  auto ty = a.getType();
+  if (ty.isa<mlir::FloatType>()) {
+    return Float(a.dyn_cast<mlir::FloatAttr>().getValueAsDouble());
+  } else if (ty.isa<mlir::IntegerType>()) {
+    return Integer(a.dyn_cast<mlir::IntegerAttr>().getValue());
+  }
+  return {};
+}
+
 template<>
 optional<string> encodeOp(State &st, mlir::ConstantOp op) {
   auto attr = op.getValue();
@@ -662,6 +682,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
       return "unsupported type";
     st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), resty->first));
     return {};
+
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
     llvm::APInt i = intAttr.getValue();
     unsigned bw = i.getBitWidth();
@@ -670,56 +691,43 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
 
     st.regs.add(op, Integer(i.getSExtValue(), bw));
     return {};
-  } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
-    std::vector<z3::expr> sparseValues;
-    mlir::ShapedType sparseType = sparseAttr.getType();
-    mlir::Type eltType = sparseType.getElementType();
-    mlir::DenseIntElementsAttr sparseIndices = sparseAttr.getIndices();
-    auto sparseIndexValues = sparseIndices.getValues<uint64_t>();
-    auto rank = sparseType.getRank();
-    auto shape = sparseType.getShape();
-    std::vector<uint64_t> sparseIndexes;
-    uint64_t index = 0;
-    
-    z3::expr zeroExpr = Float(0.0);
-    if (eltType.isa<mlir::FloatType>()) ;
-    else if (eltType.isa<mlir::IntegerType>()) {
-      zeroExpr = Integer(0, 64);
-    } else {
-      return "unsupported type";
-    }
 
-    uint64_t * indices = new uint64_t[rank];
-    uint64_t dim = 0;
-    for (auto indexValue : sparseIndexValues) {
-      if (dim < rank) {
-        indices[dim] = indexValue;
-        index *= shape[dim];
-        index += indexValue;
-        dim++;
+  } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
+    mlir::ShapedType sparseType = sparseAttr.getType();
+    if (!sparseType.isa<mlir::TensorType>())
+      return "unsupported type";
+
+    auto sparseIndexValues = sparseAttr.getIndices().getValues<uint64_t>();
+    auto rank = sparseType.getRank();
+    vector<uint64_t> dims;
+    for (unsigned i = 0; i < rank; ++i)
+      dims.push_back(sparseType.getDimSize(i));
+
+    // Unspecified locations are filled with zero.
+    auto zero = getZero(sparseType.getElementType());
+    if (!zero)
+      return "unsupported element type";
+
+    vector<vector<uint64_t>> sparseIndices;
+    vector<smt::expr> sparseValues;
+
+    auto sparseIndBeg = sparseIndexValues.begin();
+    while (sparseIndBeg != sparseIndexValues.end()) {
+      vector<uint64_t> curIndices;
+      for (unsigned i = 0; i < rank; ++i) {
+        curIndices.push_back(*sparseIndBeg);
+        sparseIndBeg++;
       }
-      if (dim == rank) {
-        sparseIndexes.push_back(index);
-        mlir::ArrayRef coordinate = mlir::ArrayRef(indices, rank);
-        auto value = sparseAttr.getValue(coordinate);
-        if (eltType.isa<mlir::FloatType>()) {
-          z3::expr floatExpr = Float(value.dyn_cast<mlir::FloatAttr>().getValueAsDouble());
-          sparseValues.push_back(floatExpr);
-        } else if (eltType.isa<mlir::IntegerType>()) {
-          llvm::APInt i = value.dyn_cast<mlir::IntegerAttr>().getValue();
-          unsigned bw = i.getBitWidth();
-          z3::expr integerExpr = Integer(i.getSExtValue(), bw);
-          sparseValues.push_back(integerExpr);
-        }
-        dim = 0;
-        index = 0;
-      }
+
+      auto value = sparseAttr.getValue(curIndices);
+      sparseIndices.push_back(move(curIndices));
+
+      auto e = getExpr(value);
+      if (!e)
+        return "unsupported element";
+      sparseValues.push_back(*e);
     }
-    auto resty = Tensor::getDimsAndElemTy(
-        sparseType.cast<mlir::TensorType>());
-    if (!resty)
-      return "unsupported type";  
-    st.regs.add(op, Tensor(sparseIndexes, sparseValues, resty->first, zeroExpr));
+    st.regs.add(op, Tensor(sparseIndices, sparseValues, dims, *zero));
     return {};
   }
   return "unsupported constant";
