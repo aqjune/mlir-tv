@@ -649,7 +649,7 @@ static optional<smt::expr> getZero(mlir::Type eltType) {
   if (eltType.isa<mlir::FloatType>())
     return Float(0.0);
   else if (eltType.isa<mlir::IntegerType>())
-    return Integer(0, 64);
+    return Integer(0, eltType.getIntOrFloatBitWidth());
   else if (eltType.isa<mlir::IndexType>())
     return Index(0);
   return {};
