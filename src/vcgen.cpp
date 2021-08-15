@@ -89,6 +89,7 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   } else if (ty.isa<mlir::IndexType>()) {
     llvm::APInt i = a.dyn_cast<mlir::IntegerAttr>().getValue();
     assert(i.getBitWidth() == 64);
+    // TODO: The result may not fit in Index::BITS
     return Index(i.getSExtValue());
   }
   return {};
@@ -350,7 +351,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
       // Nothing to do
       continue;
 
-    if (const_size >= (1ull << Index::BITS))
+    if (Index::BITS < 64 && const_size >= (1ull << Index::BITS))
       return "tensor size is too large";
 
     // If the original size isn't divisible, raise UB
