@@ -14,4 +14,4 @@ void printCounterEx(
     smt::model model, const std::vector<smt::expr> &params,
     mlir::FuncOp src, mlir::FuncOp tgt,
     const State &st_src, const State &st_tgt,
-    VerificationStep step);
+    VerificationStep step, unsigned retvalidx = -1);

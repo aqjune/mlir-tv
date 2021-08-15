@@ -158,12 +158,14 @@ static Results checkRefinement(
   auto fnname = src.getName().str();
 
   auto printErrorMsg = [&](z3::solver &s, z3::check_result res, const char *msg,
-                           vector<expr> &&params, VerificationStep step){
+                           vector<expr> &&params, VerificationStep step,
+                           unsigned retidx = -1){
     if (res == z3::unknown) {
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res == z3::sat) {
       llvm::outs() << "== Result: " << msg << "\n";
-      printCounterEx(s.get_model(), params, src, tgt, st_src, st_tgt, step);
+      printCounterEx(
+          s.get_model(), params, src, tgt, st_src, st_tgt, step, retidx);
     } else {
       llvm_unreachable("unexpected result");
     }
@@ -179,7 +181,8 @@ static Results checkRefinement(
                      fnname + ".1.ub");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
-      printErrorMsg(s, res.first, "Source is more defined than target", {}, VerificationStep::UB);
+      printErrorMsg(s, res.first, "Source is more defined than target", {},
+                    VerificationStep::UB);
       return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
     }
   }
@@ -196,24 +199,35 @@ static Results checkRefinement(
     }
   }
 
-  if (st_src.retValue) { // 3. Check the return values
-    auto s = z3::solver(ctx, logic);
+  if (st_src.retValues.size() != 0) { // 3. Check the return values
+    unsigned numret = st_src.retValues.size();
+    assert(numret == st_tgt.retValues.size());
+    for (unsigned i = 0; i < numret; ++i) {
+      auto s = z3::solver(ctx, logic);
 
-    expr refines(ctx);
-    vector<expr> params;
-    visit([&](auto &&src, auto &&tgt) {
-      auto typedTarget = (decltype(src)) tgt;
-      tie(refines, params) = src.refines(typedTarget);
-    }, *st_src.retValue, *st_tgt.retValue);
+      expr refines(ctx);
+      vector<expr> params;
+      visit([&](auto &&src, auto &&tgt) {
+        auto typedTarget = (decltype(src)) tgt;
+        tie(refines, params) = src.refines(typedTarget);
+      }, st_src.retValues[i], st_tgt.retValues[i]);
 
-    auto not_refines =
-      (st_src.isWellDefined() && st_tgt.isWellDefined() && !refines).simplify();
-    auto res = solve(s, precond && not_refines, vinput.dumpSMTPath,
-                     fnname + ".3.retval");
-    elapsedMillisec += res.second;
-    if (res.first != z3::unsat) {
-      printErrorMsg(s, res.first, "Return value mismatch", move(params), VerificationStep::RetValue);
-      return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
+      auto not_refines =
+        (st_src.isWellDefined() && st_tgt.isWellDefined() && !refines)
+        .simplify();
+      auto res = solve(s, precond && not_refines, vinput.dumpSMTPath,
+                      fnname + ".3.retval." + to_string(i));
+      elapsedMillisec += res.second;
+
+      if (res.first != z3::unsat) {
+        string msg = "Return value mismatch";
+        if (numret != 1)
+          msg = msg + " (" + to_string(i + 1) + "/" + to_string(numret) + ")";
+
+        printErrorMsg(s, res.first, msg.c_str(), move(params),
+                      VerificationStep::RetValue, i);
+        return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
+      }
     }
   }
 
@@ -227,7 +241,8 @@ static Results checkRefinement(
                      fnname + ".4.memory");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
-      printErrorMsg(s, res.first, "Memory mismatch", move(params), VerificationStep::Memory);
+      printErrorMsg(s, res.first, "Memory mismatch", move(params),
+                    VerificationStep::Memory);
       return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
     }
   }

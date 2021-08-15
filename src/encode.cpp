@@ -586,9 +586,8 @@ optional<string> encodeOp(State &st, mlir::AffineApplyOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::ReturnOp op) {
-  if (op.getNumOperands() == 0)
-    return {};
-  st.retValue = st.regs.findOrCrash(op.getOperand(0));
+  for (unsigned i = 0; i < op.getNumOperands(); ++i)
+    st.retValues.push_back(st.regs.findOrCrash(op.getOperand(i)));
   return {};
 }
 

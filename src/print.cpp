@@ -33,7 +33,7 @@ void printOperations(model m, mlir::FuncOp fn, const State &st) {
 void printCounterEx(
     model m, const vector<expr> &params, mlir::FuncOp src,
     mlir::FuncOp tgt, const State &st_src, const State &st_tgt,
-    VerificationStep step) {
+    VerificationStep step, unsigned retvalidx) {
   auto or_omit_z3 = [&](const expr &e) -> string {
     string s;
     llvm::raw_string_ostream rso(s);
@@ -55,13 +55,12 @@ void printCounterEx(
   printOperations(m, tgt, st_tgt);
 
 
-  if (st_src.retValue && step == VerificationStep::RetValue) {
-    if (src.getNumResults() == 1 &&
-        src.getType().getResult(0).isa<mlir::TensorType>()) {
+  if (step == VerificationStep::RetValue) {
+    if (src.getType().getResult(retvalidx).isa<mlir::TensorType>()) {
       llvm::outs() << "\n<Returned tensor>\n";
 
-      auto t_src = get<Tensor>(*st_src.retValue).eval(m);
-      auto t_tgt = get<Tensor>(*st_tgt.retValue).eval(m);
+      auto t_src = get<Tensor>(st_src.retValues[retvalidx]).eval(m);
+      auto t_tgt = get<Tensor>(st_tgt.retValues[retvalidx]).eval(m);
 
       llvm::outs() << "Dimensions (src): " << t_src.getDims() << '\n';
       llvm::outs() << "Dimensions (tgt): " << t_tgt.getDims() << '\n';
@@ -85,12 +84,13 @@ void printCounterEx(
 
       for (auto &param: params)
         llvm::outs() << "\tIndex: " << m.eval(param) << "\n";
-      llvm::outs() << "\tSrc: " << eval(*st_src.retValue, m) << "\n";
-      llvm::outs() << "\tSrc: " << eval(*st_tgt.retValue, m) << "\n";
-    }
-  }
 
-  if (step == VerificationStep::Memory) {
+      llvm::outs() << "\tSrc: " << eval(st_src.retValues[retvalidx], m)
+                   << "\n";
+      llvm::outs() << "\tSrc: " << eval(st_tgt.retValues[retvalidx], m)
+                   << "\n";
+    }
+  } else if (step == VerificationStep::Memory) {
     // Print Memory counter example
     auto bid = params[0];
     auto offset = params[1];
