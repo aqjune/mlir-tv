@@ -17,7 +17,7 @@ public:
 
   Index();
   Index(unsigned);
-  Index(const std::string &name, bool freshvar = false);
+  Index(std::string &&name, bool freshvar = false);
   Index(const smt::expr &e);
 
   operator smt::expr() const { return e; }
@@ -28,7 +28,7 @@ public:
     return Index(e + i);
   }
 
-  static z3::sort sort();
+  static smt::sort sort();
   static Index one();
   static Index zero();
 
@@ -44,14 +44,14 @@ class Float {
 public:
   static const unsigned BITS = 4;
 
-  Float(const std::string &name);
+  Float(std::string &&name);
   Float(const smt::expr &e): e(e) {}
   Float(const llvm::APFloat &apf);
   Float(double f);
 
   operator smt::expr() const { return e; }
 
-  static z3::sort sort();
+  static smt::sort sort();
 
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
@@ -66,14 +66,14 @@ class Integer {
   smt::expr e;
 
 public:
-  Integer(const std::string &name, unsigned bw);
+  Integer(std::string &&name, unsigned bw);
   Integer(const smt::expr &e): e(e) {}
   Integer(int64_t i, unsigned bw);
   Integer(const llvm::APInt &api);
 
   operator smt::expr() const { return e; }
 
-  static z3::sort sort(unsigned bw);
+  static smt::sort sort(unsigned bw);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
   std::pair<smt::expr, std::vector<smt::expr>> refines(const Integer &other)
@@ -99,8 +99,8 @@ public:
          const std::vector<uint64_t> &dims, const smt::expr &zero);
 
   Tensor(const std::vector<smt::expr> &elems1d);
-  Tensor(const std::string &name, const std::vector<smt::expr> &dims,
-         const z3::sort &elemty);
+  Tensor(std::string &&name, const std::vector<smt::expr> &dims,
+         const smt::sort &elemty);
 
   smt::expr asArray() const { return arr; }
 
@@ -145,11 +145,11 @@ public:
   operator smt::expr() const { return arr; }
 
   // If tensorTy is unsupported, return nullopt
-  static std::optional<std::pair<std::vector<smt::expr>, z3::sort>>
+  static std::optional<std::pair<std::vector<smt::expr>, smt::sort>>
       getDimsAndElemTy(mlir::TensorType tensorTy,
                        bool freshVarForUnknownSize = true);
 
-  static std::optional<z3::sort> getElemTy(mlir::TensorType tensorTy);
+  static std::optional<smt::sort> getElemTy(mlir::TensorType tensorTy);
 
   static Tensor mkLambda(
       std::vector<smt::expr> &&newdims,
@@ -191,23 +191,23 @@ public:
     const smt::expr &offset,
     const std::vector<smt::expr> &dims,
     const Layout &layout,
-    const z3::sort &elemty);
+    const smt::sort &elemty);
   MemRef(Memory *m,
     const std::string &name,
     const std::vector<smt::expr> &dims,
     const Layout &layout,
-    const z3::sort &elemty);
+    const smt::sort &elemty);
   MemRef(Memory *m,
     const std::vector<smt::expr> &dims,
     const Layout &layout,
-    const z3::sort &elemty);
+    const smt::sort &elemty);
 
   operator smt::expr() const { return bid && offset; }
 
   smt::expr getWellDefined() const;
 
   // If memRefTy is unsupported, return nullopt
-  static std::optional<std::tuple<std::vector<smt::expr>, Layout, z3::sort>>
+  static std::optional<std::tuple<std::vector<smt::expr>, Layout, smt::sort>>
     getDimsAndLayoutAndElemTy(mlir::MemRefType memRefTy,
       std::optional<std::vector<z3::expr>> predefinedDims = {},
       bool freshVarForUnknownSize = true);

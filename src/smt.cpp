@@ -82,6 +82,29 @@ expr fitsInDims(
   return cond;
 }
 
+expr mkFreshVar(const sort &s, std::string &&prefix) {
+  Z3_ast ast = Z3_mk_fresh_const(ctx, prefix.c_str(), s);
+  return z3::expr(ctx, ast);
+}
+
+expr mkVar(const sort &s, std::string &&name) {
+  return ctx.constant(name.c_str(), s);
+}
+
+func_decl mkUF(const sort &domain, const sort &range, std::string &&name) {
+  return ctx.function(move(name).c_str(), domain, range);
+}
+
+func_decl mkUF(
+    const vector<sort> &domain,
+    const sort &range,
+    std::string &&name) {
+  z3::sort_vector v(ctx);
+  for (const auto &s: domain)
+    v.push_back(s);
+  return ctx.function(move(name).c_str(), v, range);
+}
+
 expr substitute(
     expr e,
     const std::vector<expr> &vars,

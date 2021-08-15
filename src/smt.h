@@ -9,6 +9,8 @@
 namespace smt {
 using expr = z3::expr;
 using model = z3::model;
+using sort = z3::sort;
+using func_decl = z3::func_decl;
 
 class Expr;
 
@@ -31,6 +33,11 @@ std::string or_omit(const expr &e);
 expr substitute(expr e, const std::vector<expr> &vars,
                 const std::vector<expr> &values);
 expr forall(const std::vector<expr> &vars, const expr &e);
+expr mkFreshVar(const sort &s, std::string &&prefix);
+expr mkVar(const sort &s, std::string &&name);
+func_decl mkUF(const sort &domain, const sort &range, std::string &&name);
+func_decl mkUF(const std::vector<sort> &domain, const sort &range,
+               std::string &&name);
 
 class Expr {
 private:

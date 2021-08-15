@@ -297,8 +297,9 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
 
   // FIXME: can we use res's name?
   static int new_var_idx = 0;
-  auto name = string("init_tensor_") + to_string(new_var_idx++);
-  st.regs.add(res, Tensor(name, sizes, *elemTy));
+  st.regs.add(res,
+      Tensor(string("init_tensor_") + to_string(new_var_idx++), sizes,
+             *elemTy));
 
   return {};
 }

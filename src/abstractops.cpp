@@ -26,10 +26,7 @@ expr fp_add(const expr &f1, const expr &f2) {
   usedOps.add = true;
   auto fty = f1.get_sort();
 
-  z3::sort_vector domain(ctx);
-  domain.push_back(fty);
-  domain.push_back(fty);
-  auto addfn = ctx.function("fp_add", domain, fty);
+  auto addfn = mkUF({fty, fty}, fty, "fp_add");
   return addfn(f1, f2);
 }
 
@@ -37,10 +34,7 @@ expr fp_mul(const expr &a, const expr &b) {
   usedOps.mul = true;
 
   // TODO: check that a.get_sort() == b.get_sort()
-  z3::sort_vector domain(ctx);
-  domain.push_back(a.get_sort());
-  domain.push_back(b.get_sort());
-  auto mulfn = ctx.function("fp_mul", domain, Float::sort());
+  auto mulfn = mkUF({a.get_sort(), b.get_sort()}, Float::sort(), "fp_mul");
   return mulfn(a, b);
 }
 
@@ -48,10 +42,7 @@ expr sum(const expr &a, const expr &n) {
   usedOps.sum = true;
   // TODO: check that a.sort is Index::sort() -> Float::sort()
 
-  z3::sort_vector domain(ctx);
-  domain.push_back(a.get_sort());
-  auto sumfn = ctx.function("smt_sum", domain, Float::sort());
-
+  auto sumfn = mkUF(a.get_sort(), Float::sort(), "smt_sum");
   auto i = Index("idx");
   expr ai = z3::select(a, i);
   expr zero = mkZeroElemFromArr(a);
@@ -63,18 +54,13 @@ expr dot(const expr &a, const expr &b, const expr &n) {
     usedOps.dot = true;
     // TODO: check that a.get_sort() == b.get_sort()
     auto i = Index("idx");
+    auto dotfn = mkUF({a.get_sort(), b.get_sort()}, Float::sort(), "smt_dot");
 
-    z3::sort_vector domain(ctx);
-    domain.push_back(a.get_sort());
-    domain.push_back(b.get_sort());
-    auto dotfn = ctx.function("smt_dot", domain, Float::sort());
-
-    z3::expr_vector args(ctx);
     expr ai = z3::select(a, i), bi = z3::select(b, i);
     expr zero = mkZeroElemFromArr(a);
-    args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)));
-    args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), bi, zero)));
-    return dotfn(args);
+    return dotfn(
+        z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)),
+        z3::lambda(i, z3::ite(z3::ult(i, n), bi, zero)));
   } else if (alDot == SUM_MUL) {
     usedOps.mul = usedOps.sum = true;
     // TODO: check that a.get_sort() == b.get_sort()

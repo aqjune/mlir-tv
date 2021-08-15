@@ -34,8 +34,9 @@ static vector<expr> getDims(
   return dims;
 }
 
-static expr getConstOrVal(int64_t val, const std::string &name) {
-  return (val == mlir::ShapedType::kDynamicStrideOrOffset) ? Index(name, true) : Index(val);
+static expr getConstOrVal(int64_t val, std::string &&name) {
+  return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
+      Index(move(name), true) : Index(val);
 }
 
 static MemRef::Layout
@@ -86,14 +87,10 @@ Index::Index(): e(ctx) {}
 
 Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {}
 
-Index::Index(const std::string &name, bool freshvar):
-    e(ctx) {
-  static int count = 0;
-  string name0 = name;
-  if (freshvar)
-    name0 = name0 + "." + to_string(count++);
-  e = ctx.bv_const(name0.c_str(), BITS);
-}
+Index::Index(std::string &&name, bool freshvar):
+    e(freshvar ?
+      mkFreshVar(Index::sort(), move(name)) :
+      mkVar(Index::sort(), move(name))) {}
 
 Index::Index(const expr &e): e(e) {}
 
@@ -117,15 +114,18 @@ Index Index::eval(model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
-Float::Float(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {}
+Float::Float(std::string &&name): e(mkVar(Float::sort(), move(name))) {}
 
-static map<double, std::string> const_vars;
+static map<double, expr> const_vars;
 
 Float::Float(double f): e(ctx) {
   // We don't explicitly encode f
-  auto res = const_vars.try_emplace(f,
-      "#float_const" + to_string(const_vars.size()));
-  e = ctx.bv_const(res.first->second.c_str(), BITS);
+  auto itr = const_vars.find(f);
+  if (itr == const_vars.end()) {
+    e = mkFreshVar(Float::sort(), "#float_const");
+    const_vars.emplace(f, e);
+  } else
+    e = itr->second;
 }
 
 Float::Float(const llvm::APFloat &f): Float(f.convertToDouble()) {}
@@ -156,8 +156,8 @@ Float Float::mul(const Float &b) const {
 }
 
 
-Integer::Integer(const std::string &name, unsigned bw):
-  e(ctx.bv_const(name.c_str(), bw)) {}
+Integer::Integer(std::string &&name, unsigned bw):
+  e(mkVar(ctx.bv_sort(bw), move(name))) {}
 
 Integer::Integer(int64_t i, unsigned bw):
   e(ctx.bv_val(i, bw)) {}
@@ -197,9 +197,9 @@ Tensor::Tensor(const vector<expr> &elems1d):
     arr = z3::store(arr, i, elems1d[i]);
 }
 
-Tensor::Tensor(const string &name, const vector<expr> &dimvec,
-               const z3::sort &elemty):
-  arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), elemty))),
+Tensor::Tensor(string &&name, const vector<expr> &dimvec,
+               const smt::sort &elemty):
+  arr(mkVar(ctx.array_sort(Index::sort(), elemty), move(name))),
   dims(dimvec) {}
 
 Tensor::Tensor(
@@ -498,7 +498,7 @@ MemRef::MemRef(Memory *m,
   const Layout &layout,
   const z3::sort &elemty):
     m(m),
-    bid(ctx.bv_const((name + "_bid").c_str(), m->getBIDBits())),
+    bid(mkVar(ctx.bv_sort(m->getBIDBits()), (name + "_bid").c_str())),
     offset(Index((name + "_offset").c_str())),
     dims(dims),
     layout(layout) {}
