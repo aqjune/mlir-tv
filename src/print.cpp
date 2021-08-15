@@ -3,6 +3,33 @@
 using namespace std;
 using namespace smt;
 
+static void printInputs(model m, mlir::FuncOp src, const State &st_src) {
+  unsigned n = src.getNumArguments();
+  for (unsigned i = 0; i < n; ++i) {
+    auto argsrc = src.getArgument(i);
+    llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
+                 << eval(st_src.regs.findOrCrash(argsrc), m)
+                 << "\n";
+  }
+}
+
+static void printOperations(model m, mlir::FuncOp fn, const State &st) {
+  for (auto &op: fn.getRegion().front()) {
+    llvm::outs() << "\t" << op << "\n";
+
+    auto wb = m.eval(st.isOpWellDefined(&op));
+    if (wb.is_false()) {
+      llvm::outs() << "\t\t[This operation has undefined behavior!]\n";
+      break;
+    }
+
+    if (op.getNumResults() > 0 && st.regs.contains(op.getResult(0))) {
+      auto value = st.regs.findOrCrash(op.getResult(0));
+      llvm::outs() << "\t\tValue: " << eval(move(value), m) << "\n";
+    }
+  }
+}
+
 void printCounterEx(
     model m, const vector<expr> &params, mlir::FuncOp src,
     mlir::FuncOp tgt, const State &st_src, const State &st_tgt,
@@ -19,40 +46,14 @@ void printCounterEx(
   };
 
   llvm::outs() << "<Inputs>\n";
-
-  unsigned n = src.getNumArguments();
-  for (unsigned i = 0; i < n; ++i) {
-    auto argsrc = src.getArgument(i);
-    llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
-                 << eval(st_src.regs.findOrCrash(argsrc), m)
-                 << "\n";
-  }
+  printInputs(m, src, st_src);
 
   llvm::outs() << "\n<Source's instructions>\n";
-  for (auto &op: src.getRegion().front()) {
-    llvm::outs() << "\t" << op << "\n";
-
-    if (op.getNumResults() > 0 && st_src.regs.contains(op.getResult(0))) {
-      auto value =  st_src.regs.findOrCrash(op.getResult(0));
-      llvm::outs() << "\t\tValue: " << eval(move(value), m) << "\n";
-    }
-  }
+  printOperations(m, src, st_src);
 
   llvm::outs() << "\n<Target's instructions>\n";
-  for (auto &op: tgt.getRegion().front()) {
-    llvm::outs() << "\t" << op << "\n";
+  printOperations(m, tgt, st_tgt);
 
-    auto wb = m.eval(st_tgt.isOpWellDefined(&op));
-    if (wb.is_false()) {
-      llvm::outs() << "\t\t[This operation has undefined behavior!]\n";
-      break;
-    }
-
-    if (op.getNumResults() > 0 && st_tgt.regs.contains(op.getResult(0))) {
-      auto value = st_tgt.regs.findOrCrash(op.getResult(0));
-      llvm::outs() << "\t\tValue: " << eval(move(value), m) << "\n";
-    }
-  }
 
   if (st_src.retValue && step == VerificationStep::RetValue) {
     if (src.getNumResults() == 1 &&

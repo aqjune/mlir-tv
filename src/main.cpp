@@ -25,7 +25,7 @@ llvm::cl::opt<string> filename_src(llvm::cl::Positional,
 
 llvm::cl::opt<string> filename_tgt(llvm::cl::Positional,
   llvm::cl::desc("second-mlir-file"),
-  llvm::cl::Optional, llvm::cl::value_desc("filename"));
+  llvm::cl::Required, llvm::cl::value_desc("filename"));
 
 llvm::cl::opt<unsigned> arg_smt_to("smt-to",
   llvm::cl::desc("Timeout for SMT queries (default=10000)"),
