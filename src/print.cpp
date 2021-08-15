@@ -31,6 +31,7 @@ void printCounterEx(
   llvm::outs() << "\n<Source's instructions>\n";
   for (auto &op: src.getRegion().front()) {
     llvm::outs() << "\t" << op << "\n";
+
     if (op.getNumResults() > 0 && st_src.regs.contains(op.getResult(0))) {
       auto value =  st_src.regs.findOrCrash(op.getResult(0));
       llvm::outs() << "\t\tValue: " << eval(move(value), m) << "\n";
@@ -40,14 +41,16 @@ void printCounterEx(
   llvm::outs() << "\n<Target's instructions>\n";
   for (auto &op: tgt.getRegion().front()) {
     llvm::outs() << "\t" << op << "\n";
-    if (op.getNumResults() > 0 && st_tgt.regs.contains(op.getResult(0))) {
-      auto value = st_tgt.regs.findOrCrash(op.getResult(0));
-      llvm::outs() << "\t\tValue: " << eval(move(value), m) << "\n";
-    }
+
     auto wb = m.eval(st_tgt.isOpWellDefined(&op));
     if (wb.is_false()) {
       llvm::outs() << "\t\t[This operation has undefined behavior!]\n";
       break;
+    }
+
+    if (op.getNumResults() > 0 && st_tgt.regs.contains(op.getResult(0))) {
+      auto value = st_tgt.regs.findOrCrash(op.getResult(0));
+      llvm::outs() << "\t\tValue: " << eval(move(value), m) << "\n";
     }
   }
 
@@ -90,10 +93,12 @@ void printCounterEx(
     // Print Memory counter example
     auto bid = params[0];
     auto offset = params[1];
+
     auto [srcValue, srcSuccess] = st_src.m->load(bid, offset);
     auto [tgtValue, tgtSuccess] = st_tgt.m->load(bid, offset);
     auto srcWritable = st_src.m->getWritable(bid);
     auto tgtWritable = st_tgt.m->getWritable(bid);
+
     srcValue = m.eval(srcValue, true);
     srcSuccess = m.eval(srcSuccess);
     tgtValue = m.eval(tgtValue, true);
