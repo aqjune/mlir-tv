@@ -254,8 +254,7 @@ Tensor Tensor::affine(
   for (size_t i = 0; i < srcidxs.size(); ++i) {
     auto newv = srcidxs[i];
     for (size_t j = 0; j < newidxvars.size(); ++j) {
-      newv = newv.substitute(
-          toExprVector({ newidxvars[j] }), toExprVector({ indices[j] }));
+      newv = substitute(newv, { newidxvars[j] }, { indices[j] });
     }
     srcidxs[i] = newv;
   }
@@ -453,7 +452,7 @@ Tensor Tensor::mkLambda(
 
   if (!indexvars.empty()) {
     // If indexvars is empty, body represents the unique element.
-    body = body.substitute(toExprVector(indexvars), toExprVector(idxexprs));
+    body = substitute(body, indexvars, idxexprs);
   }
 
   Tensor t2;
@@ -642,17 +641,18 @@ MemRef MemRef::eval(z3::model m) const {
 }
 
 pair<expr, expr> MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
-  auto expr = layout.expr.substitute(toExprVector(layout.indVars), toExprVector(idxs));
-  auto inbounds = layout.inbounds.substitute(toExprVector(layout.indVars), toExprVector(idxs));
+  auto expr = substitute(layout.expr, layout.indVars, idxs);
+  auto inbounds = substitute(layout.inbounds, layout.indVars, idxs);
   return {expr, inbounds};
 }
 
-MemRef::Layout MemRef::createSubViewLayout(const vector<expr> &indVars,
-   const vector<expr> &offsets,
-   const vector<expr> &strides) {
-   // Before : <(d0, d1) -> (d0 * s0 + d1)>,
-   // After: <(d0, d1) -> ((indVars[0] + offsets[0]) * strides[0] * s0 + (indVars[1] + offsets[1]) * strides[1])>
-   // indVars[i] can be Index::zero() if reducing the dimension.
+MemRef::Layout MemRef::createSubViewLayout(
+    const vector<expr> &indVars,
+    const vector<expr> &offsets,
+    const vector<expr> &strides) {
+  // Before : <(d0, d1) -> (d0 * s0 + d1)>,
+  // After: <(d0, d1) -> ((indVars[0] + offsets[0]) * strides[0] * s0 + (indVars[1] + offsets[1]) * strides[1])>
+  // indVars[i] can be Index::zero() if reducing the dimension.
   assert(layout.indVars.size() == indVars.size());
   assert(layout.indVars.size() == offsets.size());
   assert(layout.indVars.size() == strides.size());
@@ -663,9 +663,7 @@ MemRef::Layout MemRef::createSubViewLayout(const vector<expr> &indVars,
     if (!indVars[i].is_numeral()) transformedIndVars.push_back(indVars[i]);
   }
 
-  auto transformed = layout.expr
-    .substitute(toExprVector(layout.indVars), toExprVector(idxs));
-  auto transformedInbounds = layout.inbounds
-   .substitute(toExprVector(layout.indVars), toExprVector(idxs));
+  auto transformed = substitute(layout.expr, layout.indVars, idxs);
+  auto transformedInbounds = substitute(layout.inbounds, layout.indVars, idxs);
   return Layout(transformedIndVars, transformed, transformedInbounds);
- }
+}

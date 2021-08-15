@@ -23,8 +23,13 @@ expr to1DIdx(const std::vector<expr> &idxs,
 expr to1DIdxWithLayout(const std::vector<expr> &idxs, expr layout);
 expr fitsInDims(const std::vector<expr> &idxs,
                 const std::vector<expr> &sizes);
-z3::expr_vector toExprVector(const std::vector<expr> &vec);
+
 std::string or_omit(const expr &e);
+
+// TODO: these functions must be member functions of Expr
+expr substitute(expr e, const std::vector<expr> &vars,
+                const std::vector<expr> &values);
+expr forall(const std::vector<expr> &vars, const expr &e);
 
 class Expr {
 private:

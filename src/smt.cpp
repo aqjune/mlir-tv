@@ -4,6 +4,15 @@
 
 using namespace std;
 
+namespace {
+z3::expr_vector toExprVector(const vector<smt::expr> &vec) {
+  z3::expr_vector ev(smt::ctx);
+  for (auto &e: vec)
+    ev.push_back(e);
+  return ev;
+}
+}
+
 namespace smt {
 z3::context ctx;
 
@@ -73,11 +82,15 @@ expr fitsInDims(
   return cond;
 }
 
-z3::expr_vector toExprVector(const vector<expr> &vec) {
-  z3::expr_vector ev(ctx);
-  for (auto &e: vec)
-    ev.push_back(e);
-  return ev;
+expr substitute(
+    expr e,
+    const std::vector<expr> &vars,
+    const std::vector<expr> &values) {
+  return e.substitute(toExprVector(vars), toExprVector(values));
+}
+
+expr forall(const std::vector<expr> &vars, const expr &e) {
+  return z3::forall(toExprVector(vars), e);
 }
 
 string or_omit(const expr &e) {
