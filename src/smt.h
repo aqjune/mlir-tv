@@ -39,6 +39,10 @@ func_decl mkUF(const sort &domain, const sort &range, std::string &&name);
 func_decl mkUF(const std::vector<sort> &domain, const sort &range,
                std::string &&name);
 
+// TODO: these functions must be member functions of Sort
+sort bvSort(unsigned bw);
+sort arraySort(const sort &domain, const sort &range);
+
 class Expr {
 private:
   std::optional<z3::expr> z3_expr;

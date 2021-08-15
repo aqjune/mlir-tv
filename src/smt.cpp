@@ -116,6 +116,15 @@ expr forall(const std::vector<expr> &vars, const expr &e) {
   return z3::forall(toExprVector(vars), e);
 }
 
+sort bvSort(unsigned bw) {
+  return ctx.bv_sort(bw);
+}
+
+sort arraySort(const sort &domain, const sort &range) {
+  return ctx.array_sort(domain, range);
+}
+
+
 string or_omit(const expr &e) {
   string s;
   llvm::raw_string_ostream rso(s);

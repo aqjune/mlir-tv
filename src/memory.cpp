@@ -36,7 +36,7 @@ expr Memory::isLocalBlock(const expr &bid) const {
 
 pair<expr, std::vector<expr>>
 SingleArrayMemory::refines(const Memory &other) const {
-  auto bid = mkVar(ctx.bv_sort(bidBits), "bid");
+  auto bid = mkVar(bvSort(bidBits), "bid");
   auto offset = Index("offset", true);
 
   auto [srcValue, srcSuccess] = load(bid, offset);
@@ -54,12 +54,12 @@ SingleArrayMemory::SingleArrayMemory(
     unsigned int numGlobalBlocks, unsigned int maxLocalBlocks):
   Memory(numGlobalBlocks, maxLocalBlocks, ulog2(numGlobalBlocks + maxLocalBlocks)),
   arrayMaps(mkVar(
-    ctx.array_sort(ctx.bv_sort(bidBits),
-      ctx.array_sort(Index::sort(), Float::sort())), "arrayMaps")),
-  writableMaps(mkVar(
-    ctx.array_sort(ctx.bv_sort(bidBits), ctx.bool_sort()), "writableMaps")),
-  numelemMaps(mkVar(
-    ctx.array_sort(ctx.bv_sort(bidBits), Index::sort()), "numelemMaps")) {}
+      arraySort(bvSort(bidBits), arraySort(Index::sort(), Float::sort())),
+      "arrayMaps")),
+  writableMaps(mkVar(arraySort(bvSort(bidBits), ctx.bool_sort()),
+      "writableMaps")),
+  numelemMaps(mkVar(arraySort(bvSort(bidBits), Index::sort()), "numelemMaps"))
+  {}
 
 MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
   expr array = z3::select(arrayMaps, bid);
@@ -125,7 +125,7 @@ MultipleArrayMemory::MultipleArrayMemory(
       return s + to_string(i);
     };
     arrays.push_back(mkVar(
-        ctx.array_sort(Index::sort(), Float::sort()), suffix("array").c_str()));
+        arraySort(Index::sort(), Float::sort()), suffix("array").c_str()));
     writables.push_back(ctx.bool_const(suffix("writable").c_str()));
     numelems.push_back(ctx.bv_const(suffix("numelems").c_str(), Index::BITS));
   }
@@ -175,7 +175,7 @@ expr MultipleArrayMemory::addLocalBlock(const expr &numelem, const expr &writabl
   auto bid = numGlobalBlocks + numLocalBlocks;
   auto suffix = [&](const string &s) { return s + to_string(bid); };
   arrays.push_back(mkVar(
-        ctx.array_sort(Index::sort(), Float::sort()), suffix("array").c_str()));
+        arraySort(Index::sort(), Float::sort()), suffix("array").c_str()));
   writables.push_back(ctx.bool_const(suffix("writable").c_str()));
   numelems.push_back(numelem);
   numLocalBlocks ++;
@@ -248,7 +248,7 @@ MultipleArrayMemory::refines(const Memory &other0) const {
       *static_cast<const MultipleArrayMemory *>(&other0);
   assert(other.numGlobalBlocks == numGlobalBlocks);
 
-  auto bid = mkVar(ctx.bv_sort(bidBits), "bid");
+  auto bid = mkVar(bvSort(bidBits), "bid");
   auto offset = Index("offset", true);
 
   auto refines = [this, &other, &bid, &offset](unsigned ubid) {

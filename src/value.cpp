@@ -94,8 +94,8 @@ Index::Index(std::string &&name, bool freshvar):
 
 Index::Index(const expr &e): e(e) {}
 
-z3::sort Index::sort() {
-  return ctx.bv_sort(BITS);
+smt::sort Index::sort() {
+  return bvSort(BITS);
 }
 
 Index Index::one() { return Index(1); }
@@ -130,8 +130,8 @@ Float::Float(double f): e(ctx) {
 
 Float::Float(const llvm::APFloat &f): Float(f.convertToDouble()) {}
 
-z3::sort Float::sort() {
-  return ctx.bv_sort(BITS);
+smt::sort Float::sort() {
+  return bvSort(BITS);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
@@ -157,7 +157,7 @@ Float Float::mul(const Float &b) const {
 
 
 Integer::Integer(std::string &&name, unsigned bw):
-  e(mkVar(ctx.bv_sort(bw), move(name))) {}
+  e(mkVar(bvSort(bw), move(name))) {}
 
 Integer::Integer(int64_t i, unsigned bw):
   e(ctx.bv_val(i, bw)) {}
@@ -165,8 +165,8 @@ Integer::Integer(int64_t i, unsigned bw):
 Integer::Integer(const llvm::APInt &api):
   Integer(api.getSExtValue(), api.getBitWidth()) {}
 
-z3::sort Integer::sort(unsigned sz) {
-  return ctx.bv_sort(sz);
+smt::sort Integer::sort(unsigned sz) {
+  return bvSort(sz);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
@@ -199,7 +199,7 @@ Tensor::Tensor(const vector<expr> &elems1d):
 
 Tensor::Tensor(string &&name, const vector<expr> &dimvec,
                const smt::sort &elemty):
-  arr(mkVar(ctx.array_sort(Index::sort(), elemty), move(name))),
+  arr(mkVar(arraySort(Index::sort(), elemty), move(name))),
   dims(dimvec) {}
 
 Tensor::Tensor(
@@ -377,7 +377,7 @@ pair<expr, vector<expr>> Tensor::refines(const Tensor &other) const {
     params};
 }
 
-optional<pair<vector<expr>, z3::sort>>
+optional<pair<vector<expr>, smt::sort>>
 Tensor::getDimsAndElemTy(
     mlir::TensorType tensorTy, bool freshVarForUnknownSize) {
   auto ety = getElemTy(tensorTy);
@@ -386,9 +386,9 @@ Tensor::getDimsAndElemTy(
   return {{::getDims(tensorTy, freshVarForUnknownSize), *ety}};
 }
 
-optional<z3::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
+optional<smt::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
   auto elemty = tensorTy.getElementType();
-  z3::sort elemty2(ctx);
+  smt::sort elemty2(ctx);
 
   if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
     elemty2 = Integer::sort(ielemty.getWidth());
@@ -490,15 +490,15 @@ MemRef::MemRef(Memory *m,
   const smt::expr &offset,
   const std::vector<smt::expr> &dims,
   const Layout &layout,
-  const z3::sort &elemty) : m(m), bid(bid), offset(offset), dims(dims), layout(layout) {}
+  const smt::sort &elemty) : m(m), bid(bid), offset(offset), dims(dims), layout(layout) {}
 
 MemRef::MemRef(Memory *m,
   const std::string &name,
   const std::vector<expr> &dims,
   const Layout &layout,
-  const z3::sort &elemty):
+  const smt::sort &elemty):
     m(m),
-    bid(mkVar(ctx.bv_sort(m->getBIDBits()), (name + "_bid").c_str())),
+    bid(mkVar(bvSort(m->getBIDBits()), (name + "_bid").c_str())),
     offset(Index((name + "_offset").c_str())),
     dims(dims),
     layout(layout) {}
@@ -506,7 +506,7 @@ MemRef::MemRef(Memory *m,
 MemRef::MemRef(Memory *m,
     const std::vector<expr> &dims,
     const Layout &layout,
-    const z3::sort &elemty) : MemRef(m, freshName("memref"), dims, layout, elemty) {}
+    const smt::sort &elemty) : MemRef(m, freshName("memref"), dims, layout, elemty) {}
 
 expr MemRef::getWellDefined() const {
   expr size = get1DSize();
@@ -520,14 +520,14 @@ expr MemRef::getWellDefined() const {
   return expr.simplify();
 }
 
-optional<tuple<vector<expr>, MemRef::Layout, z3::sort>>
+optional<tuple<vector<expr>, MemRef::Layout, smt::sort>>
 MemRef::getDimsAndLayoutAndElemTy(
     mlir::MemRefType memRefTy,
     optional<vector<expr>> predefinedDims,
     bool freshVarForUnknownSize) {
   // Step1. check element type
   auto elemty = memRefTy.getElementType();
-  z3::sort elemty2(ctx);
+  smt::sort elemty2(ctx);
 
   if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
     elemty2 = Float::sort();
