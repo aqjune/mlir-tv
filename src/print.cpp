@@ -13,7 +13,7 @@ static void printInputs(model m, mlir::FuncOp src, const State &st_src) {
   }
 }
 
-static void printOperations(model m, mlir::FuncOp fn, const State &st) {
+void printOperations(model m, mlir::FuncOp fn, const State &st) {
   for (auto &op: fn.getRegion().front()) {
     llvm::outs() << "\t" << op << "\n";
 
