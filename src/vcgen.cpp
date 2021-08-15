@@ -2,6 +2,7 @@
 #include "value.h"
 #include "smt.h"
 #include "state.h"
+#include "utils.h"
 #include "vcgen.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -65,7 +66,7 @@ enum VerificationStep {
 };
 
 
-static optional<smt::expr> getZero(mlir::Type eltType) {
+static optional<expr> getZero(mlir::Type eltType) {
   if (eltType.isa<mlir::FloatType>())
     return Float(0.0);
   else if (eltType.isa<mlir::IntegerType>())
@@ -75,11 +76,15 @@ static optional<smt::expr> getZero(mlir::Type eltType) {
   return {};
 }
 
-static optional<smt::expr> getExpr(mlir::Attribute a) {
+static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   auto ty = a.getType();
   if (ty.isa<mlir::FloatType>()) {
     return Float(a.dyn_cast<mlir::FloatAttr>().getValueAsDouble());
   } else if (ty.isa<mlir::IntegerType>()) {
+    if (64 < ty.getIntOrFloatBitWidth())
+      // size is too large
+      return {};
+
     return Integer(a.dyn_cast<mlir::IntegerAttr>().getValue());
   }
   return {};
@@ -552,7 +557,7 @@ optional<string> encodeOp(State &st, mlir::linalg::FillOp op) {
     return "it has multiple results";
 
   auto t = st.regs.get<Tensor>(op.getOperand(1));
-  auto res = Tensor(st.regs.getZ3Expr(op.getOperand(0)), t.getDims());
+  auto res = Tensor(st.regs.getExpr(op.getOperand(0)), t.getDims());
   st.regs.add(op.getResult(0), move(res));
   return {};
 }
@@ -610,31 +615,31 @@ static void addIntOrIndex(
 
 template<>
 optional<string> encodeOp(State &st, mlir::AddIOp op) {
-  auto a = st.regs.getZ3Expr(op.getOperand(0));
-  auto b = st.regs.getZ3Expr(op.getOperand(1));
+  auto a = st.regs.getExpr(op.getOperand(0));
+  auto b = st.regs.getExpr(op.getOperand(1));
   addIntOrIndex(st, op, a + b, op.getType().isIndex());
   return {};
 }
 
 template<>
 optional<string> encodeOp(State &st, mlir::SubIOp op) {
-  auto a = st.regs.getZ3Expr(op.getOperand(0));
-  auto b = st.regs.getZ3Expr(op.getOperand(1));
+  auto a = st.regs.getExpr(op.getOperand(0));
+  auto b = st.regs.getExpr(op.getOperand(1));
   addIntOrIndex(st, op, a - b, op.getType().isIndex());
   return {};
 }
 
 template<>
 optional<string> encodeOp(State &st, mlir::MulIOp op) {
-  auto a = st.regs.getZ3Expr(op.getOperand(0));
-  auto b = st.regs.getZ3Expr(op.getOperand(1));
+  auto a = st.regs.getExpr(op.getOperand(0));
+  auto b = st.regs.getExpr(op.getOperand(1));
   addIntOrIndex(st, op, a * b, op.getType().isIndex());
   return {};
 }
 
 template<>
 optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
-  auto src = st.regs.getZ3Expr(op.getOperand());
+  auto src = st.regs.getExpr(op.getOperand());
   assert(src.is_bv());
   unsigned srcWidth = src.get_sort().bv_size();
 
@@ -755,7 +760,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
       auto value = sparseAttr.getValue(curIndices);
       sparseIndices.push_back(move(curIndices));
 
-      auto e = getExpr(value);
+      auto e = fmap(attrToValueTy(value), getExpr);
       if (!e)
         return "unsupported element";
       sparseValues.push_back(*e);
@@ -992,7 +997,7 @@ static optional<string> encodeParallelLoopBodyAndOutput(
   auto outputIndVars = doMap(scope.indVars, outputMap);
   auto tensorSz = addOne(doMap(scope.indVarUpperBounds, outputMap));
   t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars),
-      newst.regs.getZ3Expr(yieldedValue));
+      newst.regs.getExpr(yieldedValue));
 
   return {};
 }
@@ -1045,7 +1050,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   Tensor t_v = Tensor::mkLambda(
       addOne(vector(linalgInfo.indVarUpperBounds)),
       vector(linalgInfo.indVars),
-      newst.regs.getZ3Expr(sumvar));
+      newst.regs.getExpr(sumvar));
 
   if (llvm::all_of(outputMap.getResults(), [](const mlir::AffineExpr &expr) {
     auto ac = expr.dyn_cast<mlir::AffineConstantExpr>();

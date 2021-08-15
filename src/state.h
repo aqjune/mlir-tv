@@ -12,6 +12,7 @@
 using ValueTy = std::variant<Tensor, MemRef, Index, Float, Integer>;
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream&, const ValueTy &);
+smt::expr getExpr(const ValueTy &vty);
 
 class ArgInfo {
 private:
@@ -41,7 +42,7 @@ public:
     return std::get<T>(findOrCrash(v));
   }
   bool contains(mlir::Value v) const;
-  smt::expr getZ3Expr(mlir::Value v) const;
+  smt::expr getExpr(mlir::Value v) const;
 
   auto begin() const { return m.begin(); }
   auto end() const { return m.end(); }

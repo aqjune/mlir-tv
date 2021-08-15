@@ -11,6 +11,14 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream &os, const ValueTy &v) {
   return os;
 }
 
+expr getExpr(const ValueTy &v) {
+  optional<expr> e;
+  visit([&](auto &&itm) {
+    e = (expr)itm;
+  }, v);
+  return *e;
+}
+
 
 ValueTy RegFile::findOrCrash(mlir::Value v) const {
   auto itr = m.find(v);
@@ -44,13 +52,8 @@ bool RegFile::contains(mlir::Value v) const {
   return (bool)m.count(v);
 }
 
-expr RegFile::getZ3Expr(mlir::Value v) const {
-  auto var = findOrCrash(v);
-  expr e(ctx);
-  visit([&](auto &&itm) {
-    e = (expr)itm;
-  }, var);
-  return e;
+expr RegFile::getExpr(mlir::Value v) const {
+  return ::getExpr(findOrCrash(v));
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
