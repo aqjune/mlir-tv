@@ -104,3 +104,9 @@ expr State::isWellDefined() const {
   }
   return e;
 }
+
+expr State::isOpWellDefined(mlir::Operation *op) const {
+  if (!welldef.count(op))
+    return ctx.bool_val(true);
+  return welldef.find(op)->second;
+}

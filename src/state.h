@@ -79,8 +79,9 @@ public:
 
   State(unsigned int numBlocks, MemEncoding encoding);
 
-  void wellDefined(mlir::Operation *val, smt::expr &&e);
+  void wellDefined(mlir::Operation *op, smt::expr &&e);
   smt::expr isWellDefined() const;
+  smt::expr isOpWellDefined(mlir::Operation *op) const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };

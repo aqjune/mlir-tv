@@ -30,24 +30,23 @@ void printCounterEx(
 
   llvm::outs() << "\n<Source's instructions>\n";
   for (auto &op: src.getRegion().front()) {
+    llvm::outs() << "\t" << op << "\n";
     if (op.getNumResults() > 0 && st_src.regs.contains(op.getResult(0))) {
       auto value =  st_src.regs.findOrCrash(op.getResult(0));
-      llvm::outs() << "\t'" << op.getResult(0) 
-                   << "'\n\t\tValue: " << eval(move(value), m) << "\n";
-    } else {
-      llvm::outs() << "\t" << op << "\n";
+      llvm::outs() << "\t\tValue: " << eval(move(value), m) << "\n";
     }
   }
 
   llvm::outs() << "\n<Target's instructions>\n";
   for (auto &op: tgt.getRegion().front()) {
+    llvm::outs() << "\t" << op << "\n";
     if (op.getNumResults() > 0 && st_tgt.regs.contains(op.getResult(0))) {
       auto value = st_tgt.regs.findOrCrash(op.getResult(0));
-      llvm::outs() << "\t'" << op.getResult(0)
-                   << "'\n\t\tValue: " << eval(move(value), m) << "\n";
-    } else {
-      llvm::outs() << "\t" << op << "\n";
+      llvm::outs() << "\t\tValue: " << eval(move(value), m) << "\n";
     }
+    auto wb = m.eval(st_tgt.isOpWellDefined(&op));
+    if (wb.is_false())
+      llvm::outs() << "\t\t[This operation has undefined behavior!]\n";
   }
 
   if (st_src.retValue && step == VerificationStep::RetValue) {
