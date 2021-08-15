@@ -86,6 +86,10 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
       return {};
 
     return Integer(a.dyn_cast<mlir::IntegerAttr>().getValue());
+  } else if (ty.isa<mlir::IndexType>()) {
+    llvm::APInt i = a.dyn_cast<mlir::IntegerAttr>().getValue();
+    assert(i.getBitWidth() == 64);
+    return Index(i.getSExtValue());
   }
   return {};
 }
@@ -710,24 +714,24 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
     if (!denseAttr.isSplat())
       return "a fp splat constant tensor is supported only";
 
-    auto splatfval = denseAttr.getSplatValue().dyn_cast<mlir::FloatAttr>();
-    if (!splatfval)
-      return "a fp splat constant tensor is supported only";
-
     auto resty = Tensor::getDimsAndElemTy(
         op.getType().cast<mlir::TensorType>());
     if (!resty)
       return "unsupported type";
-    st.regs.add(op, Tensor(Float(splatfval.getValueAsDouble()), resty->first));
+
+    auto v = attrToValueTy(denseAttr.getSplatValue());
+    if (!v)
+      return "unsupported constant";
+
+    st.regs.add(op, Tensor(getExpr(*v), resty->first));
     return {};
 
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
-    llvm::APInt i = intAttr.getValue();
-    unsigned bw = i.getBitWidth();
-    if (bw > 64)
-      return "size is too large";
+    auto v = attrToValueTy(intAttr);
+    if (!v)
+      return "unsupported constant";
 
-    st.regs.add(op, Integer(i.getSExtValue(), bw));
+    st.regs.add(op, move(*v));
     return {};
 
   } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
@@ -760,10 +764,10 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
       auto value = sparseAttr.getValue(curIndices);
       sparseIndices.push_back(move(curIndices));
 
-      auto e = fmap(attrToValueTy(value), getExpr);
+      auto e = attrToValueTy(value);
       if (!e)
         return "unsupported element";
-      sparseValues.push_back(*e);
+      sparseValues.push_back(getExpr(*e));
     }
     st.regs.add(op, Tensor(sparseIndices, sparseValues, dims, *zero));
     return {};

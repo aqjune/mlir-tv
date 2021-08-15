@@ -398,6 +398,8 @@ optional<z3::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
   } else if (auto felemty = elemty.dyn_cast<mlir::Float64Type>()) {
     // In the abstract world, f32 and f64 are all unknown values
     elemty2 = Float::sort();
+  } else if (elemty.isa<mlir::IndexType>()) {
+    elemty2 = Index::sort();
   } else {
     return {};
   }
