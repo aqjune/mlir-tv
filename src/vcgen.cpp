@@ -64,6 +64,39 @@ enum VerificationStep {
 };
 };
 
+
+static optional<smt::expr> getZero(mlir::Type eltType) {
+  if (eltType.isa<mlir::FloatType>())
+    return Float(0.0);
+  else if (eltType.isa<mlir::IntegerType>())
+    return Integer(0, eltType.getIntOrFloatBitWidth());
+  else if (eltType.isa<mlir::IndexType>())
+    return Index(0);
+  return {};
+}
+
+static optional<smt::expr> getExpr(mlir::Attribute a) {
+  auto ty = a.getType();
+  if (ty.isa<mlir::FloatType>()) {
+    return Float(a.dyn_cast<mlir::FloatAttr>().getValueAsDouble());
+  } else if (ty.isa<mlir::IntegerType>()) {
+    return Integer(a.dyn_cast<mlir::IntegerAttr>().getValue());
+  }
+  return {};
+}
+
+static optional<ValueTy> fromExpr(expr e, mlir::Type ty) {
+  if (ty.isa<mlir::IndexType>())
+    return Index(e);
+  else if (ty.isa<mlir::Float32Type>())
+    return Float(e);
+  else if (ty.isa<mlir::IntegerType>()) {
+    assert(e.get_sort().bv_size() == ty.getIntOrFloatBitWidth());
+    return Integer(e);
+  }
+  return {};
+}
+
 static vector<expr> createIndexVars(unsigned n) {
   vector<expr> idxs;
   for (unsigned i = 0; i < n; i ++) {
@@ -369,12 +402,9 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
-  if (op.getType().isa<mlir::IndexType>())
-    st.regs.add(op, Index(t.get(indices)));
-  else if (op.getType().isa<mlir::Float32Type>())
-    st.regs.add(op, Float(t.get(indices)));
+  if (auto v = fromExpr(t.get(indices), op.getType()))
+    st.regs.add(op, move(*v));
   else
-    // TODO: how to do this well?
     return "unsupported type";
 
   for (unsigned i = 0; i < indices.size(); ++i)
@@ -665,26 +695,6 @@ template<>
 optional<string> encodeOp(State &st, mlir::ConstantFloatOp op) {
   auto fp = op.getValue();
   st.regs.add(op, Float(fp));
-  return {};
-}
-
-static optional<smt::expr> getZero(mlir::Type eltType) {
-  if (eltType.isa<mlir::FloatType>())
-    return Float(0.0);
-  else if (eltType.isa<mlir::IntegerType>())
-    return Integer(0, eltType.getIntOrFloatBitWidth());
-  else if (eltType.isa<mlir::IndexType>())
-    return Index(0);
-  return {};
-}
-
-static optional<smt::expr> getExpr(mlir::Attribute a) {
-  auto ty = a.getType();
-  if (ty.isa<mlir::FloatType>()) {
-    return Float(a.dyn_cast<mlir::FloatAttr>().getValueAsDouble());
-  } else if (ty.isa<mlir::IntegerType>()) {
-    return Integer(a.dyn_cast<mlir::IntegerAttr>().getValue());
-  }
   return {};
 }
 
