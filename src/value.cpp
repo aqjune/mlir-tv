@@ -113,7 +113,7 @@ std::pair<expr, vector<expr>> Index::refines(const Index &other) const {
   return {(expr) other == (expr) *this, {}};
 }
 
-Index Index::eval(z3::model m) const {
+Index Index::eval(model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
@@ -143,7 +143,7 @@ std::pair<expr, vector<expr>> Float::refines(const Float &other) const {
   return {(expr) other == (expr) *this, {}};
 }
 
-Float Float::eval(z3::model m) const {
+Float Float::eval(model m) const {
   return Float(m.eval(e, true).simplify());
 }
 
@@ -178,7 +178,7 @@ std::pair<expr, vector<expr>> Integer::refines(const Integer &other) const {
   return {(expr) other == (expr) *this, {}};
 }
 
-Integer Integer::eval(z3::model m) const {
+Integer Integer::eval(model m) const {
   return Integer(m.eval(e, true).simplify());
 }
 
@@ -416,7 +416,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   return os;
 };
 
-Tensor Tensor::eval(z3::model m) const {
+Tensor Tensor::eval(model m) const {
   Tensor t2;
   t2.dims.reserve(dims.size());
   for (size_t i = 0; i < dims.size(); ++i) {
@@ -625,7 +625,7 @@ std::pair<expr, vector<expr>> MemRef::refines(const MemRef &other) const {
   return {(expr) other == (expr) *this, {}};
 }
 
-MemRef MemRef::eval(z3::model m) const {
+MemRef MemRef::eval(model m) const {
   MemRef m2(this->m);
   m2.dims.reserve(dims.size());
   for (size_t i = 0; i < dims.size(); ++i) {

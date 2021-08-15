@@ -8,6 +8,7 @@
 
 namespace smt {
 using expr = z3::expr;
+using model = z3::model;
 
 class Expr;
 

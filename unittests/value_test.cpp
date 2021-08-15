@@ -33,7 +33,7 @@ TEST(UnitIndexTest, Comparison) {
   }
 }
 
-// TODO: test for Index.eval(z3::model)
+// TODO: test for Index.eval(smt::model)
 // TEST(UnitIndexTest, Eval) {}
 
 TEST(UnitFloatTest, Comparison) {
