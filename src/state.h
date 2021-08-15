@@ -50,8 +50,11 @@ public:
 };
 
 class State {
-public:
+private:
+  // welldef[i]: is instruction i well-defined?
+  llvm::DenseMap<mlir::Operation *, smt::expr> welldef;
 
+public:
   class LinalgGenericScope {
   public:
     std::vector<smt::expr> indVars;
@@ -72,14 +75,12 @@ public:
   // expr some day (or simply use Alive2's one), and this form will be helpful
   // then.
   bool hasQuantifier;
-  smt::expr isWellDefined;
   std::shared_ptr<Memory> m;
 
   State(unsigned int numBlocks, MemEncoding encoding);
 
-  void wellDefined(const smt::expr &e) {
-    isWellDefined = isWellDefined && e;
-  }
+  void wellDefined(mlir::Operation *val, smt::expr &&e);
+  smt::expr isWellDefined() const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };

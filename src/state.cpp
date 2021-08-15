@@ -86,5 +86,21 @@ State::LinalgGenericScope::LinalgGenericScope(
 
 State::State(unsigned int numBlocks, MemEncoding encoding):
   hasQuantifier(false),
-  isWellDefined(ctx),
   m(Memory::create(numBlocks, numBlocks, encoding)) {}
+
+void State::wellDefined(mlir::Operation *val, expr &&e) {
+  auto itr = welldef.find(val);
+  if (itr == welldef.end()) {
+    welldef.insert({val, move(e)});
+  } else {
+    itr->second = itr->second && move(e);
+  }
+}
+
+expr State::isWellDefined() const {
+  expr e = ctx.bool_val(true);
+  for (auto &itm: welldef) {
+    e = e && itm.second;
+  }
+  return e;
+}

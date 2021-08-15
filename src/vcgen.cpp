@@ -91,7 +91,7 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   return {};
 }
 
-static optional<ValueTy> fromExpr(expr e, mlir::Type ty) {
+static optional<ValueTy> fromExpr(expr &&e, mlir::Type ty) {
   if (ty.isa<mlir::IndexType>())
     return Index(e);
   else if (ty.isa<mlir::Float32Type>())
@@ -128,9 +128,10 @@ static optional<string> checkFunctionSignatures(mlir::FuncOp src, mlir::FuncOp t
 }
 
 static variant<string, State>
-createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, ArgInfo &args) {
+createInputState(
+    mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding,
+    ArgInfo &args, vector<expr> &preconds) {
   State s(numBlocks, encoding);
-  s.isWellDefined = ctx.bool_val(true);
   unsigned n = fn.getNumArguments();
 
   for (unsigned i = 0; i < n; ++i) {
@@ -157,7 +158,7 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
       auto tensor = Tensor("arg" + to_string(arg.getArgNumber()),
         dimsAndElemTy->first,
         dimsAndElemTy->second);
-      s.wellDefined(tensor.getWellDefined());
+      preconds.push_back(tensor.getWellDefined());
       s.regs.add(arg, move(tensor));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
@@ -170,7 +171,8 @@ createInputState(mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding, 
         get<1>(*dimsAndLayoutAndElemTy),
         get<2>(*dimsAndLayoutAndElemTy));
       // memref from function argument must point global memblock.
-      s.wellDefined(memref.isGlobalBlock() && memref.getWellDefined());
+      preconds.push_back(memref.isGlobalBlock());
+      preconds.push_back(memref.getWellDefined());
       s.regs.add(arg, move(memref));
 
     } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
@@ -352,7 +354,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
       return "tensor size is too large";
 
     // If the original size isn't divisible, raise UB
-    st.wellDefined(z3::mod(orgdim, const_size) == 0);
+    st.wellDefined(op, z3::mod(orgdim, const_size) == 0);
     newdims[unknown_dim] = z3::udiv(orgdim, const_size); 
   }
 
@@ -416,7 +418,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
 
   for (unsigned i = 0; i < indices.size(); ++i)
     // TODO: revisit this; may not be axis-wise
-    st.wellDefined(z3::ult(indices[i], t.getDim(i)));
+    st.wellDefined(op.getOperation(), z3::ult(indices[i], t.getDim(i)));
 
   return {};
 }
@@ -430,13 +432,11 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
-  if (op.getType().isa<mlir::Float32Type>()) {
-    auto [expr, success] = m.load(indices);
-    st.regs.add(op, Float(expr));
-    st.wellDefined(success);
-  }
-  else
-    // TODO: how to do this well?
+  auto [expr, success] = m.load(indices);
+  if (auto vt = fromExpr(move(expr), op.getType())) {
+    st.regs.add(op, move(*vt));
+    st.wellDefined(op.getOperation(), move(success));
+  } else
     return "unsupported type";
 
   return {};
@@ -454,7 +454,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   if (op.getOperand(0).getType().isa<mlir::Float32Type>()) {
     auto val = st.regs.get<Float>(op.getOperand(0));
     auto success = m.store(val, indices);
-    st.wellDefined(success);
+    st.wellDefined(op.getOperation(), move(success));
   } else {
     // Currently we support only f32 memory type
     return "unsupported type";
@@ -508,15 +508,17 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   if (memrefTy.getAffineMaps().empty()) {
     // memref with identity map
     auto success = memref.storeArray(tensor.asArray(), Index::zero(), tensor.get1DSize());
-    st.wellDefined(success);
+    st.wellDefined(op.getOperation(), move(success));
     st.regs.add(op.memref(), move(memref));
+
   } else {
     vector<expr> idxs = createIndexVars(memrefTy.getRank());
     auto tVal = tensor.get(idxs);
     auto [mVal, success] = memref.load(idxs);
     memref.setWritable(false);
 
-    st.wellDefined(forall(idxs, z3::implies(success, mVal == tVal)));
+    st.wellDefined(
+        op.getOperation(), forall(idxs, z3::implies(success, mVal == tVal)));
     st.hasQuantifier = true;
     st.regs.add(op.memref(), move(memref));
   }
@@ -537,7 +539,7 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
 
   st.regs.add(op.getResult(), t_res);
-  st.wellDefined(m.isInBounds());
+  st.wellDefined(op.getOperation(), m.isInBounds());
 
   return {};
 }
@@ -585,7 +587,8 @@ optional<string> encodeOp(State &st, mlir::linalg::DotOp op) {
 
   auto t1 = st.regs.get<Tensor>(inputOps[0]->get());
   auto t2 = st.regs.get<Tensor>(inputOps[1]->get());
-  st.wellDefined(t1.get1DSize() == t2.get1DSize());
+  st.wellDefined(op.getOperation(), t1.get1DSize() == t2.get1DSize());
+
   auto res = t1.dot(t2);
   st.regs.add(op.getResult(0), Tensor(res, resty->first));
   return {};
@@ -885,7 +888,7 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
 
     expr size = (expr)viewSizes[idx];
     expr inbounds = z3::implies(z3::ugt(size, 0), z3::ult(*ae, size));
-    st.wellDefined(inbounds);
+    st.wellDefined(op.getOperation(), move(inbounds));
   }
 
   return {};
@@ -1257,7 +1260,8 @@ static pair<z3::check_result, int64_t> solve(
 
 static Results checkRefinement(
     const ValidationInput &vinput,
-    const State &st_src, const State &st_tgt, int64_t &elapsedMillisec) {
+    const State &st_src, const State &st_tgt, expr &&precond,
+    int64_t &elapsedMillisec) {
   mlir::FuncOp src = vinput.src;
   mlir::FuncOp tgt = vinput.tgt;
   auto fnname = src.getName().str();
@@ -1273,13 +1277,15 @@ static Results checkRefinement(
       llvm_unreachable("unexpected result");
     }
   };
-  auto logic = (st_src.hasQuantifier || st_tgt.hasQuantifier) ? "UFBV" : "QF_UFBV";
+  auto logic = (st_src.hasQuantifier || st_tgt.hasQuantifier) ?
+      "UFBV" : "QF_UFBV";
 
   { // 1. Check UB
     auto s = z3::solver(ctx, logic);
     auto not_refines =
-        (st_src.isWellDefined && !st_tgt.isWellDefined).simplify();
-    auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".1.ub");
+        (st_src.isWellDefined() && !st_tgt.isWellDefined()).simplify();
+    auto res = solve(s, precond && not_refines, vinput.dumpSMTPath,
+                     fnname + ".1.ub");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Source is more defined than target", {}, VerificationStep::UB);
@@ -1289,8 +1295,9 @@ static Results checkRefinement(
 
   { // 2. Check whether src is always UB
     auto s = z3::solver(ctx, logic);
-    auto not_ub = st_src.isWellDefined.simplify();
-    auto res = solve(s, not_ub, vinput.dumpSMTPath, fnname + ".2.notub");
+    auto not_ub = st_src.isWellDefined().simplify();
+    auto res = solve(s, precond && not_ub, vinput.dumpSMTPath,
+                     fnname + ".2.notub");
     elapsedMillisec += res.second;
     if (res.first == z3::unsat) {
       llvm::outs() << "== Result: correct (source is always undefined) ==\n";
@@ -1309,8 +1316,9 @@ static Results checkRefinement(
     }, *st_src.retValue, *st_tgt.retValue);
 
     auto not_refines =
-      (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
-    auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".3.retval");
+      (st_src.isWellDefined() && st_tgt.isWellDefined() && !refines).simplify();
+    auto res = solve(s, precond && not_refines, vinput.dumpSMTPath,
+                     fnname + ".3.retval");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Return value mismatch", move(params), VerificationStep::RetValue);
@@ -1323,8 +1331,9 @@ static Results checkRefinement(
     auto s = z3::solver(ctx, logic);
     auto [refines, params] = st_src.m->refines(*st_tgt.m);
     auto not_refines =
-      (st_src.isWellDefined && st_tgt.isWellDefined && !refines).simplify();
-    auto res = solve(s, not_refines, vinput.dumpSMTPath, fnname + ".4.memory");
+      (st_src.isWellDefined() && st_tgt.isWellDefined() && !refines).simplify();
+    auto res = solve(s, precond && not_refines, vinput.dumpSMTPath,
+                     fnname + ".4.memory");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Memory mismatch", move(params), VerificationStep::Memory);
@@ -1348,13 +1357,16 @@ static Results tryValidation(
     raiseUnsupported(*errmsg);
 
   ArgInfo args;
+  vector<expr> preconds;
 
-  auto st_src_or_err = createInputState(src, vinput.numBlocks, vinput.encoding, args);
+  auto st_src_or_err = createInputState(
+      src, vinput.numBlocks, vinput.encoding, args, preconds);
   if (holds_alternative<string>(st_src_or_err))
     raiseUnsupported(get<string>(st_src_or_err));
   auto st_src = get<State>(st_src_or_err);
 
-  auto st_tgt_or_err = createInputState(tgt, vinput.numBlocks, vinput.encoding, args);
+  auto st_tgt_or_err = createInputState(
+      tgt, vinput.numBlocks, vinput.encoding, args, preconds);
   if (holds_alternative<string>(st_tgt_or_err))
     raiseUnsupported(get<string>(st_tgt_or_err));
   auto st_tgt = get<State>(st_tgt_or_err);
@@ -1369,7 +1381,13 @@ static Results tryValidation(
   if (auto msg = encode(st_tgt, tgt, printOps))
     raiseUnsupported(*msg);
 
-  auto res = checkRefinement(vinput, st_src, st_tgt, elapsedMillisec);
+  expr precond = ctx.bool_val(true);
+  for (auto &e: preconds)
+    precond = precond && e;
+  precond = precond.simplify();
+
+  auto res = checkRefinement(
+      vinput, st_src, st_tgt, move(precond), elapsedMillisec);
   return res;
 }
 
