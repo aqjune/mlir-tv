@@ -16,7 +16,15 @@ expr getExpr(const ValueTy &v) {
   visit([&](auto &&itm) {
     e = (expr)itm;
   }, v);
-  return *e;
+  return move(*e);
+}
+
+ValueTy eval(const ValueTy &v, z3::model m) {
+  optional<ValueTy> e;
+  visit([&](auto &&itm) {
+    e = itm.eval(m);
+  }, v);
+  return move(*e);
 }
 
 

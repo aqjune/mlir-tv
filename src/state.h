@@ -13,6 +13,7 @@ using ValueTy = std::variant<Tensor, MemRef, Index, Float, Integer>;
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream&, const ValueTy &);
 smt::expr getExpr(const ValueTy &vty);
+ValueTy eval(const ValueTy &vty, z3::model m);
 
 class ArgInfo {
 private:

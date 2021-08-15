@@ -15,6 +15,7 @@ set(Z3_LIB_DIR "${Z3_DIR}/lib")
 set(PROJECT_LIB "mlirtv")
 add_library(${PROJECT_LIB} STATIC
     src/abstractops.cpp
+    src/print.cpp
     src/memory.cpp
     src/smt.cpp
     src/state.cpp
