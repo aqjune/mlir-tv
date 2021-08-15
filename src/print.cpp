@@ -45,8 +45,10 @@ void printCounterEx(
       llvm::outs() << "\t\tValue: " << eval(move(value), m) << "\n";
     }
     auto wb = m.eval(st_tgt.isOpWellDefined(&op));
-    if (wb.is_false())
+    if (wb.is_false()) {
       llvm::outs() << "\t\t[This operation has undefined behavior!]\n";
+      break;
+    }
   }
 
   if (st_src.retValue && step == VerificationStep::RetValue) {
