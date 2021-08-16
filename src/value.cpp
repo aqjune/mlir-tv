@@ -386,22 +386,19 @@ Tensor::getDimsAndElemTy(
 
 optional<smt::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
   auto elemty = tensorTy.getElementType();
-  smt::sort elemty2(ctx);
 
   if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
-    elemty2 = Integer::sort(ielemty.getWidth());
+    return Integer::sort(ielemty.getWidth());
   } else if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
-    elemty2 = Float::sort();
+    return Float::sort();
   } else if (auto felemty = elemty.dyn_cast<mlir::Float64Type>()) {
     // In the abstract world, f32 and f64 are all unknown values
-    elemty2 = Float::sort();
+    return Float::sort();
   } else if (elemty.isa<mlir::IndexType>()) {
-    elemty2 = Index::sort();
-  } else {
-    return {};
+    return Index::sort();
   }
 
-  return elemty2;
+  return {};
 }
 
 
@@ -481,8 +478,6 @@ expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::MemRef(Memory *m) : m(m), bid(ctx), offset(ctx), layout(Layout({}, ctx, ctx)) {}
-
 MemRef::MemRef(Memory *m,
   const smt::expr &bid,
   const smt::expr &offset,
@@ -525,14 +520,11 @@ MemRef::getDimsAndLayoutAndElemTy(
     bool freshVarForUnknownSize) {
   // Step1. check element type
   auto elemty = memRefTy.getElementType();
-  smt::sort elemty2(ctx);
-
-  if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
-    elemty2 = Float::sort();
-  } else {
+  if (!elemty.isa<mlir::Float32Type>())
     // Currently we only support f32 element type.
     return {};
-  }
+
+  smt::sort elemty2 = Float::sort();
 
   // Step2. check affine map
   if (mlir::isStrided(memRefTy)) {
@@ -623,18 +615,15 @@ std::pair<expr, vector<expr>> MemRef::refines(const MemRef &other) const {
   return {(expr) other == (expr) *this, {}};
 }
 
-MemRef MemRef::eval(model m) const {
-  MemRef m2(this->m);
-  m2.dims.reserve(dims.size());
-  for (size_t i = 0; i < dims.size(); ++i) {
-    auto v = m.eval(dims[i], true).simplify();
-    m2.dims.push_back(std::move(v));
-  }
-  m2.bid = m.eval(bid, true).simplify();
-  m2.offset = m.eval(offset, true).simplify();
-  m2.layout.indVars = layout.indVars;
-  m2.layout.expr = m.eval(layout.expr, true).simplify();
-  m2.layout.inbounds = m.eval(layout.inbounds, true).simplify();
+MemRef MemRef::eval(model mdl) const {
+  MemRef m2 = *this;
+  for (size_t i = 0; i < m2.dims.size(); ++i)
+    m2.dims[i] = mdl.eval(m2.dims[i], true).simplify();
+
+  m2.bid = mdl.eval(m2.bid, true).simplify();
+  m2.offset = mdl.eval(m2.offset, true).simplify();
+
+  m2.layout = m2.layout.eval(mdl);
   return m2;
 }
 

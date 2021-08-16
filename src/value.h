@@ -181,9 +181,13 @@ public:
       const smt::expr &expr,
       const smt::expr &inbounds):
       indVars(indVars), expr(expr), inbounds(inbounds) {}
+
+    Layout eval(smt::model mdl) const {
+      return { indVars, mdl.eval(expr).simplify(),
+               mdl.eval(inbounds).simplify() };
+    }
   };
 
-  MemRef(Memory *m);
   MemRef(Memory *m,
     const smt::expr &bid,
     const smt::expr &offset,
@@ -235,7 +239,7 @@ public:
       const MemRef &other) const;
   MemRef eval(smt::model m) const;
 
-  private:
+private:
   Memory *m;
   smt::expr bid; // blockID
   Index offset; // offset
