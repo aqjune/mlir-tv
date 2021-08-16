@@ -12,10 +12,6 @@ using model = z3::model;
 using sort = z3::sort;
 using func_decl = z3::func_decl;
 
-class Expr;
-class ExprVec;
-class Context;
-
 extern z3::context ctx;
 
 expr get1DSize(const std::vector<expr> &dims);
@@ -50,44 +46,16 @@ sort bvSort(unsigned bw);
 sort boolSort();
 sort arraySort(const sort &domain, const sort &range);
 
-class ContextBuilder {
-  private:
-    bool use_z3;
-
-  public:
-    ContextBuilder();
-    ContextBuilder& useZ3();
-    std::optional<Context> build() const;
-};
-
-class Context {
-  friend ContextBuilder;
-
-private:
-    z3::context* z3_ctx;
-    Context();
-    Context(bool use_z3);
-
-public:
-    Expr bvVal(const uint32_t val, const size_t sz);
-    Expr bvConst(char* const name, const size_t sz);
-    Expr boolVal(const bool val);
-};
+class Expr;
+using ExprVec = std::vector<Expr>;
 
 class Expr {
-  friend Context;
 private:
-  Context* ctx;
   std::optional<z3::expr> z3_expr;
-  
-  Expr(Context* const ctx) : ctx(ctx) {};
-  Expr(Context* const ctx, std::optional<z3::expr> &&z3_expr);
+
+  Expr(std::optional<z3::expr> &&z3_expr);
 
 public:
-  Expr(Expr&& from) = default;
-  Expr& operator=(Expr &&from) = default;
-  Expr clone() const;
-
   Expr simplify() const;
   ExprVec toNDIndices(const ExprVec &dims) const;
 
@@ -100,29 +68,10 @@ public:
   Expr ugt(const Expr &rhs) const;
   Expr boolAnd(const Expr &rhs) const;
   Expr boolOr(const Expr &rhs) const;
-};
 
-class ExprVec {
-  friend Context;
-  friend Expr;
-
-private:
-  Context* ctx;
-  std::vector<Expr> exprs;
-
-  ExprVec(Context* const ctx): ctx(ctx) {};
-  ExprVec(Context* const ctx, std::vector<Expr>&& exprs);
-
-  static ExprVec withCapacity(Context* ctx, size_t size);
-
-public:
-  ExprVec(ExprVec&& from) = default;
-  ExprVec& operator=(ExprVec &&from) = default;
-  ExprVec clone() const;
-
-  ExprVec simplify() const;
-  Expr to1DIdx(const ExprVec &dims) const;
-  Expr fitsInDims(const ExprVec &sizes) const;
+  Expr bvVal(const uint32_t val, const size_t sz);
+  Expr bvConst(char* const name, const size_t sz);
+  Expr boolVal(const bool val);
 };
 } // namespace smt
 

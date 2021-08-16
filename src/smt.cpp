@@ -14,7 +14,32 @@ z3::expr_vector toExprVector(const vector<smt::expr> &vec) {
 }
 
 namespace smt {
+class Context {
+
+public:
+  std::optional<z3::context> z3_ctx;
+
+  Context() {
+    this->z3_ctx = std::nullopt;
+  }
+
+  Context(bool use_z3) {
+    if (use_z3) {
+      this->z3_ctx.emplace();
+    }
+  }
+
+  template<class Fn>
+  auto z3Map(Fn fn) {
+    auto &ctx = this->z3_ctx;
+    if (ctx)
+      return std::optional(fn(*ctx));
+    return std::optional<decltype(fn(*ctx))>();
+  }
+};
+
 z3::context ctx;
+static Context sctx;
 
 vector<expr> from1DIdx(
     expr idx1d,
@@ -140,7 +165,6 @@ sort arraySort(const sort &domain, const sort &range) {
   return ctx.array_sort(domain, range);
 }
 
-
 string or_omit(const expr &e) {
   string s;
   llvm::raw_string_ostream rso(s);
@@ -173,176 +197,101 @@ string or_omit(const std::vector<expr> &evec) {
   return s;
 }
 
-
-ContextBuilder& ContextBuilder::useZ3() {
-  use_z3 = true;
-  return *this;
-}
-
-std::optional<Context> ContextBuilder::build() const {
-  if (!use_z3) {
-    return std::nullopt;
-  }
-  return std::make_optional(Context(use_z3));
-}
-
-Context::Context() {
-  z3_ctx = nullptr;
-}
-
-Context::Context(bool use_z3) : Context() {
-  if (use_z3) {
-    z3_ctx = &ctx;
-  }
-}
-
-Expr Context::bvVal(const uint32_t val, const size_t sz) {
-  auto z3_expr = fmap(z3_ctx, [val, sz](auto ctx){ return ctx->bv_val(val, sz); });
-
-  return Expr(this, std::move(z3_expr));
-}
-
-Expr Context::bvConst(char* const name, const size_t sz) {
-  auto z3_expr = fmap(z3_ctx, [name, sz](auto ctx){ return ctx->bv_const(name, sz); });
-
-  return Expr(this, std::move(z3_expr));
-}
-
-Expr Context::boolVal(const bool val) {
-  auto z3_expr = fmap(z3_ctx, [val](auto ctx){ return ctx->bool_val(val); });
-
-  return Expr(this, std::move(z3_expr));
-}
-
-Expr::Expr(Context* const ctx, std::optional<z3::expr> &&z3_expr) : Expr(ctx) {
+Expr::Expr(std::optional<z3::expr> &&z3_expr) {
   this->z3_expr = std::move(z3_expr);
-}
-
-Expr Expr::clone() const {
-  auto cloned_z3_expr = this->z3_expr;
-  return Expr(this->ctx, std::move(cloned_z3_expr));
 }
 
 Expr Expr::simplify() const {
   auto z3_expr = fmap(this->z3_expr, [](auto e) { return e.simplify(); });
 
-  return Expr(this->ctx, std::move(z3_expr));
+  return Expr(std::move(z3_expr));
 }
 
 ExprVec Expr::toNDIndices(const ExprVec &dims) const {
-  assert(dims.exprs.size() > 0);
+  assert(dims.size() > 0);
 
-  auto idx_1d = this->clone();
-  auto expanded_exprs = ExprVec::withCapacity(this->ctx, dims.exprs.size());
-  std::for_each(dims.exprs.crbegin(), dims.exprs.crend(), 
+  auto idx_1d = *this;
+  ExprVec expanded_exprs;
+  expanded_exprs.reserve(dims.size());
+  std::for_each(dims.crbegin(), dims.crend(), 
     [&idx_1d, &expanded_exprs](const Expr& dim) {
-      expanded_exprs.exprs.push_back(idx_1d.urem(dim));
+      expanded_exprs.push_back(idx_1d.urem(dim));
       idx_1d = idx_1d.udiv(dim);
     });
-  std::reverse(expanded_exprs.exprs.begin(), expanded_exprs.exprs.end());
+  std::reverse(expanded_exprs.begin(), expanded_exprs.end());
   return expanded_exprs;
 }
 
 Expr Expr::urem(const Expr &rhs) const {
   auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return z3::urem(e, *rhs.z3_expr); });
   
-  return Expr(this->ctx, std::move(z3_expr));
+  return Expr(std::move(z3_expr));
 }
 
 Expr Expr::udiv(const Expr& rhs) const {
   auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return z3::udiv(e, *rhs.z3_expr); });
   
-  return Expr(this->ctx, std::move(z3_expr));
+  return Expr(std::move(z3_expr));
 }
 
 Expr Expr::add(const Expr& rhs) const {
   auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e + *rhs.z3_expr; });
   
-  return Expr(this->ctx, std::move(z3_expr));
+  return Expr(std::move(z3_expr));
 }
 
 Expr Expr::sub(const Expr& rhs) const {
   auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e - *rhs.z3_expr; });
   
-  return Expr(this->ctx, std::move(z3_expr));
+  return Expr(std::move(z3_expr));
 }
 
 Expr Expr::mul(const Expr& rhs) const {
   auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e * *rhs.z3_expr; });
   
-  return Expr(this->ctx, std::move(z3_expr));
+  return Expr(std::move(z3_expr));
 }
 
 Expr Expr::ult(const Expr& rhs) const {
   auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return z3::ult(e, *rhs.z3_expr); });
   
-  return Expr(this->ctx, std::move(z3_expr));
+  return Expr(std::move(z3_expr));
 }
 
 Expr Expr::ugt(const Expr& rhs) const {
   auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return z3::ugt(e, *rhs.z3_expr); });
   
-  return Expr(this->ctx, std::move(z3_expr));
+  return Expr(std::move(z3_expr));
 }
 
 Expr Expr::boolAnd(const Expr& rhs) const {
   auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e && *rhs.z3_expr; });
   
-  return Expr(this->ctx, std::move(z3_expr));
+  return Expr(std::move(z3_expr));
 }
 
 Expr Expr::boolOr(const Expr& rhs) const {
   auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e || *rhs.z3_expr; });
   
-  return Expr(this->ctx, std::move(z3_expr));
+  return Expr(std::move(z3_expr));
 }
 
-ExprVec::ExprVec(Context* const ctx, std::vector<Expr>&& exprs) : ExprVec(ctx) {
-  this->exprs = std::move(exprs);
+Expr Expr::bvVal(const uint32_t val, const size_t sz) {
+  auto z3_expr = sctx.z3Map([val, sz](auto &ctx){ return ctx.bv_val(val, sz); });
+
+  return Expr(std::move(z3_expr));
 }
 
-ExprVec ExprVec::withCapacity(Context* const ctx, size_t size) {
-  std::vector<Expr> exprs;
-  exprs.reserve(size);
-  return ExprVec(ctx, std::move(exprs));
+Expr Expr::bvConst(char* const name, const size_t sz) {
+  auto z3_expr = sctx.z3Map([name, sz](auto &ctx){ return ctx.bv_const(name, sz); });
+
+  return Expr(std::move(z3_expr));
 }
 
-ExprVec ExprVec::clone() const {
-  auto cloned_exprs = ExprVec::withCapacity(this->ctx, this->exprs.size());
-  std::transform(this->exprs.cbegin(), this->exprs.cend(), 
-    std::back_inserter(cloned_exprs.exprs),
-    [](const Expr &expr){ return expr.clone(); });
-  return cloned_exprs;
-}
+Expr Expr::boolVal(const bool val) {
+  auto z3_expr = sctx.z3Map([val](auto &ctx){ return ctx.bool_val(val); });
 
-ExprVec ExprVec::simplify() const {
-  auto simplified_exprs = ExprVec::withCapacity(this->ctx, this->exprs.size());
-
-  std::transform(this->exprs.cbegin(), this->exprs.cend(), 
-    std::back_inserter(simplified_exprs.exprs), 
-    [](const Expr &expr) { return expr.simplify(); });
-  
-  return simplified_exprs;
-}
-
-Expr ExprVec::to1DIdx(const ExprVec &dims) const {
-  assert(this->exprs.size() == dims.exprs.size());
-  
-  auto idx = this->exprs[0].clone();
-  for (size_t i = 1; i < this->exprs.size(); i++) {
-    idx = idx.mul(dims.exprs[i]).add(this->exprs[i]);
-  }
-  return idx;
-}
-
-Expr ExprVec::fitsInDims(const ExprVec &sizes) const {
-  assert(this->exprs.size() == sizes.exprs.size());
-
-  Expr cond = this->ctx->boolVal(true);
-  for (size_t i = 0; i < this->exprs.size(); i++) {
-    cond = cond.boolAnd(this->exprs[0].ult(sizes.exprs[0]));
-  }
-  return cond;
+  return Expr(std::move(z3_expr));
 }
 } // namespace smt
 
