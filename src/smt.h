@@ -44,6 +44,7 @@ bool structurallyEq(const expr &e1, const expr &e2);
 
 // TODO: these functions must be member functions of Sort
 sort bvSort(unsigned bw);
+sort boolSort();
 sort arraySort(const sort &domain, const sort &range);
 
 class Expr {

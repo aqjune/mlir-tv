@@ -56,7 +56,7 @@ SingleArrayMemory::SingleArrayMemory(
   arrayMaps(mkVar(
       arraySort(bvSort(bidBits), arraySort(Index::sort(), Float::sort())),
       "arrayMaps")),
-  writableMaps(mkVar(arraySort(bvSort(bidBits), ctx.bool_sort()),
+  writableMaps(mkVar(arraySort(bvSort(bidBits), boolSort()),
       "writableMaps")),
   numelemMaps(mkVar(arraySort(bvSort(bidBits), Index::sort()), "numelemMaps"))
   {}
@@ -126,8 +126,8 @@ MultipleArrayMemory::MultipleArrayMemory(
     };
     arrays.push_back(mkVar(
         arraySort(Index::sort(), Float::sort()), suffix("array").c_str()));
-    writables.push_back(ctx.bool_const(suffix("writable").c_str()));
-    numelems.push_back(ctx.bv_const(suffix("numelems").c_str(), Index::BITS));
+    writables.push_back(mkVar(boolSort(), suffix("writable").c_str()));
+    numelems.push_back(mkVar(Index::sort(), suffix("numelems").c_str()));
   }
 }
 
@@ -176,7 +176,7 @@ expr MultipleArrayMemory::addLocalBlock(const expr &numelem, const expr &writabl
   auto suffix = [&](const string &s) { return s + to_string(bid); };
   arrays.push_back(mkVar(
         arraySort(Index::sort(), Float::sort()), suffix("array").c_str()));
-  writables.push_back(ctx.bool_const(suffix("writable").c_str()));
+  writables.push_back(mkVar(boolSort(), suffix("writable").c_str()));
   numelems.push_back(numelem);
   numLocalBlocks ++;
   return mkBV(bid, bidBits);

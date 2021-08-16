@@ -132,6 +132,10 @@ sort bvSort(unsigned bw) {
   return ctx.bv_sort(bw);
 }
 
+sort boolSort() {
+  return ctx.bool_sort();
+}
+
 sort arraySort(const sort &domain, const sort &range) {
   return ctx.array_sort(domain, range);
 }
