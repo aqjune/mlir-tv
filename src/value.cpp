@@ -1,6 +1,7 @@
 #include "abstractops.h"
 #include "value.h"
 #include "smt.h"
+#include "smtmatchers.h"
 #include "memory.h"
 
 using namespace smt;
@@ -395,10 +396,31 @@ optional<smt::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   assert(t.dims.size() > 0);
-  os << "(dim :" << or_omit(t.dims[0]);
+  os << "(dim: " << or_omit(t.dims[0]);
   for (size_t i = 1; i < t.dims.size(); ++i)
     os << ", " << or_omit(t.dims[i]);
-  os << ") " << or_omit(t.arr);
+  os << ") ";
+
+  using namespace smt::matchers;
+  expr arr = t.arr;
+  bool hasStore = false;
+
+  while (true) {
+    optional<expr> arr2, idx, val;
+    if (Store{Any(arr2), Any(idx), Any(val)}.match(arr)) {
+      os << or_omit(*idx) << " -> " << or_omit(*val) << ", ";
+      arr = move(*arr2);
+      hasStore = true;
+
+    } else if (ConstSplatArray{Any(val)}.match(arr)) {
+      os << (hasStore ? "else " : "") << "splat array of " << or_omit(*val);
+      break;
+
+    } else {
+      os << (hasStore ? "else " : "") << or_omit(arr);
+      break;
+    }
+  }
   return os;
 };
 
