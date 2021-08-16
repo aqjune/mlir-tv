@@ -1,6 +1,7 @@
 #include "abstractops.h"
 #include "value.h"
 #include "smt.h"
+#include "smtmatchers.h"
 #include "memory.h"
 
 using namespace smt;
@@ -34,8 +35,9 @@ static vector<expr> getDims(
   return dims;
 }
 
-static expr getConstOrVal(int64_t val, const std::string &name) {
-  return (val == mlir::ShapedType::kDynamicStrideOrOffset) ? Index(name, true) : Index(val);
+static expr getConstOrVal(int64_t val, std::string &&name) {
+  return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
+      Index(move(name), true) : Index(val);
 }
 
 static MemRef::Layout
@@ -46,16 +48,19 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
     expr layout = Index::zero();
     expr stride = Index::one();
     vector<expr> indVars;
+    expr inbounds = mkBool(true);
 
-    for (int i = 0; i < dims.size(); i ++)
+    for (int i = 0; i < dims.size(); i ++) {
       indVars.push_back(Index("idx" + to_string(i)));
+      inbounds = inbounds && z3::ult(indVars[i], dims[i]);
+    }
 
     for (int i = dims.size() - 1; i >= 0; i --) {
       layout = layout + stride * indVars[i];
       stride = stride * dims[i];
     }
 
-    return MemRef::Layout(indVars, layout);
+    return MemRef::Layout(indVars, layout, inbounds);
   } else {
     int64_t offset;
     llvm::SmallVector<int64_t, 4> strides;
@@ -63,12 +68,14 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
     assert(succeeded(success) && "unexpected non-strided memref");
     expr layout = getConstOrVal(offset, "offset");
     vector<expr> indVars;
+    expr inbounds = mkBool(true);
     for (int i = 0; i < strides.size(); i ++) {
       indVars.push_back(Index("idx" + to_string(i)));
       layout = layout + getConstOrVal(strides[i], "strides") * indVars[i];
+      inbounds = inbounds && z3::ult(indVars[i], dims[i]);
     }
 
-    return MemRef::Layout(indVars, layout);
+    return MemRef::Layout(indVars, layout, inbounds);
   }
 }
 
@@ -77,23 +84,17 @@ static string freshName(string prefix) {
   return prefix + to_string(count ++);
 }
 
-Index::Index(): e(ctx) {}
+Index::Index(unsigned i): e(mkBV(i, BITS)) {}
 
-Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {}
-
-Index::Index(const std::string &name, bool freshvar):
-    e(ctx) {
-  static int count = 0;
-  string name0 = name;
-  if (freshvar)
-    name0 = name0 + "." + to_string(count++);
-  e = ctx.bv_const(name0.c_str(), BITS);
-}
+Index::Index(std::string &&name, bool freshvar):
+    e(freshvar ?
+      mkFreshVar(Index::sort(), move(name)) :
+      mkVar(Index::sort(), move(name))) {}
 
 Index::Index(const expr &e): e(e) {}
 
-z3::sort Index::sort() {
-  return ctx.bv_sort(BITS);
+smt::sort Index::sort() {
+  return bvSort(BITS);
 }
 
 Index Index::one() { return Index(1); }
@@ -108,29 +109,30 @@ std::pair<expr, vector<expr>> Index::refines(const Index &other) const {
   return {(expr) other == (expr) *this, {}};
 }
 
-Index Index::eval(z3::model m) const {
+Index Index::eval(model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
-Float::Float(const std::string &name): e(ctx.bv_const(name.c_str(), BITS)) {}
+Float::Float(std::string &&name): e(mkVar(Float::sort(), move(name))) {}
 
-static map<double, std::string> const_vars;
-
-Float::Float(double f): e(ctx) {
-  // We don't explicitly encode f
-  auto res = const_vars.try_emplace(f,
-      "#float_const" + to_string(const_vars.size()));
-  e = ctx.bv_const(res.first->second.c_str(), BITS);
-}
+Float::Float(double f): e(aop::fpConst(f)) {}
 
 Float::Float(const llvm::APFloat &f): Float(f.convertToDouble()) {}
 
-z3::sort Float::sort() {
-  return ctx.bv_sort(BITS);
+smt::sort Float::sort() {
+  return aop::fpSort();
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
-  os << or_omit((expr)f);
+  expr e = f;
+  auto vec = aop::fpPossibleConsts(e);
+  if (!vec.empty()) {
+    os << vec[0];
+    for (unsigned i = 1; i < vec.size(); ++i)
+      os << " or " << vec[i];
+  } else {
+    os << "unknown (" << or_omit((expr)f) << ")";
+  }
   return os;
 };
 
@@ -138,27 +140,30 @@ std::pair<expr, vector<expr>> Float::refines(const Float &other) const {
   return {(expr) other == (expr) *this, {}};
 }
 
-Float Float::eval(z3::model m) const {
+Float Float::eval(model m) const {
   return Float(m.eval(e, true).simplify());
 }
 
 Float Float::add(const Float &b) const {
-  return Float(aop::fp_add(e, b.e));
+  return Float(aop::fpAdd(e, b.e));
 }
 
 Float Float::mul(const Float &b) const {
-  return Float(aop::fp_mul(e, b.e));
+  return Float(aop::fpMul(e, b.e));
 }
 
 
-Integer::Integer(const std::string &name, unsigned bw):
-  e(ctx.bv_const(name.c_str(), bw)) {}
+Integer::Integer(std::string &&name, unsigned bw):
+  e(mkVar(bvSort(bw), move(name))) {}
 
 Integer::Integer(int64_t i, unsigned bw):
-  e(ctx.bv_val(i, bw)) {}
+  e(mkBV(i, bw)) {}
 
-z3::sort Integer::sort(unsigned sz) {
-  return ctx.bv_sort(sz);
+Integer::Integer(const llvm::APInt &api):
+  Integer(api.getSExtValue(), api.getBitWidth()) {}
+
+smt::sort Integer::sort(unsigned sz) {
+  return bvSort(sz);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
@@ -170,17 +175,13 @@ std::pair<expr, vector<expr>> Integer::refines(const Integer &other) const {
   return {(expr) other == (expr) *this, {}};
 }
 
-Integer Integer::eval(z3::model m) const {
+Integer Integer::eval(model m) const {
   return Integer(m.eval(e, true).simplify());
 }
 
 
-Tensor::Tensor(): arr(ctx) {}
-
 Tensor::Tensor(const expr &splat_elem, const vector<expr> &dimvec):
-    arr(ctx), dims(dimvec) {
-  arr = z3::const_array(Index::sort(), splat_elem);
-}
+    arr(z3::const_array(Index::sort(), splat_elem)), dims(dimvec) {}
 
 Tensor::Tensor(const vector<expr> &elems1d):
     arr(z3::const_array(Index::sort(), elems1d[0])),
@@ -189,15 +190,37 @@ Tensor::Tensor(const vector<expr> &elems1d):
     arr = z3::store(arr, i, elems1d[i]);
 }
 
-Tensor::Tensor(const string &name, const vector<expr> &dimvec,
-               const z3::sort &elemty):
-  arr(ctx.constant(name.c_str(), ctx.array_sort(Index::sort(), elemty))),
+Tensor::Tensor(string &&name, const vector<expr> &dimvec,
+               const smt::sort &elemty):
+  arr(mkVar(arraySort(Index::sort(), elemty), move(name))),
   dims(dimvec) {}
+
+Tensor::Tensor(
+    const vector<vector<uint64_t>> &indices,
+    const vector<expr> &elems,
+    const vector<uint64_t> &dims, const expr &zero):
+  arr(z3::const_array(Index::sort(), zero)) {
+
+  assert(indices.size() == elems.size());
+
+  for (auto d: dims)
+    this->dims.push_back(Index(d));
+
+  for (unsigned i = 0; i < indices.size(); ++i) {
+    assert(indices[i].size() == dims.size());
+
+    uint64_t ofs = indices[i][0];
+    for (unsigned j = 1; j < dims.size(); ++j)
+      ofs = ofs * dims[j] + indices[i][j];
+
+    arr = z3::store(arr, Index(ofs), elems[i]);
+  }
+}
 
 expr Tensor::getWellDefined() const {
   expr size = get1DSize();
   if (size.is_numeral())
-    return ctx.bool_val(true);
+    return mkBool(true);
   auto expr = z3::ule(size, MAX_TENSOR_SIZE);
   for (auto dim: dims) {
     if (dim.is_numeral()) continue;
@@ -215,31 +238,30 @@ Index Tensor::getDim(uint64_t idx) const {
 }
 
 Tensor Tensor::affine(
-    const std::vector<expr> &newidxvars,
-    std::vector<expr> srcidxs,
-    const std::vector<expr> &newsizes) const {
+    const vector<expr> &newidxvars,
+    vector<expr> srcidxs,
+    vector<expr> &&newsizes) const {
   auto idxvar = Index("idx");
   auto indices = from1DIdx(idxvar, newsizes);
 
   for (size_t i = 0; i < srcidxs.size(); ++i) {
     auto newv = srcidxs[i];
     for (size_t j = 0; j < newidxvars.size(); ++j) {
-      newv = newv.substitute(
-          toExprVector({ newidxvars[j] }), toExprVector({ indices[j] }));
+      newv = substitute(newv, { newidxvars[j] }, { indices[j] });
     }
     srcidxs[i] = newv;
   }
 
-  Tensor newm;
-  newm.dims = newsizes;
-  newm.arr = z3::lambda(
+  return {
+    move(newsizes),
+    z3::lambda(
       idxvar,
       z3::ite(
         z3::ult(idxvar, ::get1DSize(newsizes)),
         get(srcidxs),
         aop::mkZeroElemFromArr(arr)
-      ));
-  return newm;
+      ))
+  };
 }
 
 Tensor Tensor::rotateDimensions() const {
@@ -258,7 +280,7 @@ Tensor Tensor::rotateDimensions() const {
   std::copy(++vars.cbegin(), vars.cend(), std::back_inserter(tgtvars));
   tgtvars.push_back(vars.front());
   
-  return affine(vars, tgtvars, newdims);
+  return affine(vars, tgtvars, move(newdims));
 }
 
 Tensor Tensor::conv(const Tensor &filter) const {
@@ -293,10 +315,7 @@ Tensor Tensor::conv(const Tensor &filter) const {
 
 Tensor Tensor::reshape(const vector<expr> &newdims) const {
   // TODO: check whether size(newdims) == size(dims)
-  Tensor t2;
-  t2.dims = simplifyList(newdims);
-  t2.arr = arr;
-  return t2;
+  return { simplifyList(newdims), expr(arr) };
 }
 
 Tensor Tensor::matmul(const Tensor &b) const {
@@ -330,9 +349,9 @@ pair<expr, vector<expr>> Tensor::refines(const Tensor &other) const {
   // If it does, don't return index var.
   size_t sz = getDims().size();
   if (other.getDims().size() != sz)
-    return {ctx.bool_val(false), {}};
+    return {mkBool(false), {}};
 
-  expr size_match = ctx.bool_val(true);
+  expr size_match = mkBool(true);
   for (size_t i = 0; i < sz; ++i)
     size_match = size_match && (expr)other.getDim(i) == (expr)getDim(i);
   size_match = size_match.simplify();
@@ -348,7 +367,7 @@ pair<expr, vector<expr>> Tensor::refines(const Tensor &other) const {
     params};
 }
 
-optional<pair<vector<expr>, z3::sort>>
+optional<pair<vector<expr>, smt::sort>>
 Tensor::getDimsAndElemTy(
     mlir::TensorType tensorTy, bool freshVarForUnknownSize) {
   auto ety = getElemTy(tensorTy);
@@ -357,43 +376,84 @@ Tensor::getDimsAndElemTy(
   return {{::getDims(tensorTy, freshVarForUnknownSize), *ety}};
 }
 
-optional<z3::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
+optional<smt::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
   auto elemty = tensorTy.getElementType();
-  z3::sort elemty2(ctx);
 
   if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
-    elemty2 = Integer::sort(ielemty.getWidth());
+    return Integer::sort(ielemty.getWidth());
   } else if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
-    elemty2 = Float::sort();
+    return Float::sort();
   } else if (auto felemty = elemty.dyn_cast<mlir::Float64Type>()) {
     // In the abstract world, f32 and f64 are all unknown values
-    elemty2 = Float::sort();
-  } else {
-    return {};
+    return Float::sort();
+  } else if (elemty.isa<mlir::IndexType>()) {
+    return Index::sort();
   }
 
-  return elemty2;
+  return {};
 }
 
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   assert(t.dims.size() > 0);
-  os << "(dim :" << or_omit(t.dims[0]);
+  os << "(dim: " << or_omit(t.dims[0]);
   for (size_t i = 1; i < t.dims.size(); ++i)
     os << ", " << or_omit(t.dims[i]);
-  os << ") " << or_omit(t.arr);
+  os << ") ";
+
+  using namespace smt::matchers;
+  expr arr = t.arr;
+  bool hasStore = false;
+
+  while (true) {
+    optional<expr> arr2, idx, val;
+
+    if (Store(Any(arr2), Any(idx), Any(val)).match(arr)) {
+      auto idxnd = from1DIdx(*idx, t.dims);
+      vector<int64_t> idxconsts;
+
+      bool constIdxs = all_of(idxnd.begin(), idxnd.end(), [&](const expr &e) {
+        int64_t i;
+        if (e.simplify().is_numeral_i64(i)) {
+          idxconsts.push_back(i);
+          return true;
+        }
+        return false;
+      });
+      if (constIdxs) {
+        os << "(" << idxconsts[0];
+        for (size_t i = 1; i < idxconsts.size(); ++i)
+          os << ", " << idxconsts[i];
+        os << ")";
+      } else
+        os << or_omit(*idx);
+      os << " -> " << or_omit(*val) << ", ";
+
+      arr = move(*arr2);
+      hasStore = true;
+
+    } else if (ConstSplatArray(Any(val)).match(arr)) {
+      if (hasStore)
+        os << "else " << or_omit(*val);
+      else
+        os << "a splat tensor of " << or_omit(*val);
+      break;
+
+    } else {
+      os << (hasStore ? "else " : "") << or_omit(arr);
+      break;
+    }
+  }
   return os;
 };
 
-Tensor Tensor::eval(z3::model m) const {
-  Tensor t2;
-  t2.dims.reserve(dims.size());
-  for (size_t i = 0; i < dims.size(); ++i) {
-    auto v = m.eval(dims[i], true).simplify();
-    t2.dims.push_back(std::move(v));
-  }
-  t2.arr = m.eval(arr, true).simplify();
-  return t2;
+Tensor Tensor::eval(model m) const {
+  vector<expr> dims_ev;
+  dims_ev.reserve(dims.size());
+  for (auto &d: dims)
+    dims_ev.push_back(m.eval(d, true).simplify());
+
+  return { move(dims_ev), m.eval(arr, true).simplify() };
 }
 
 Tensor Tensor::transpose() const {
@@ -421,13 +481,10 @@ Tensor Tensor::mkLambda(
 
   if (!indexvars.empty()) {
     // If indexvars is empty, body represents the unique element.
-    body = body.substitute(toExprVector(indexvars), toExprVector(idxexprs));
+    body = substitute(body, indexvars, idxexprs);
   }
 
-  Tensor t2;
-  t2.dims = move(newdims);
-  t2.arr = z3::lambda({(expr)idx}, body);
-  return t2;
+  return { move(newdims), z3::lambda({(expr)idx}, body) };
 }
 
 expr Tensor::to1DArrayWithOfs(
@@ -452,22 +509,20 @@ expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::MemRef(Memory *m) : m(m), bid(ctx), offset(ctx), layout(Layout({}, ctx)) {}
-
 MemRef::MemRef(Memory *m,
   const smt::expr &bid,
   const smt::expr &offset,
   const std::vector<smt::expr> &dims,
   const Layout &layout,
-  const z3::sort &elemty) : m(m), bid(bid), offset(offset), dims(dims), layout(layout) {}
+  const smt::sort &elemty) : m(m), bid(bid), offset(offset), dims(dims), layout(layout) {}
 
 MemRef::MemRef(Memory *m,
   const std::string &name,
   const std::vector<expr> &dims,
   const Layout &layout,
-  const z3::sort &elemty):
+  const smt::sort &elemty):
     m(m),
-    bid(ctx.bv_const((name + "_bid").c_str(), m->getBIDBits())),
+    bid(mkVar(bvSort(m->getBIDBits()), (name + "_bid").c_str())),
     offset(Index((name + "_offset").c_str())),
     dims(dims),
     layout(layout) {}
@@ -475,12 +530,12 @@ MemRef::MemRef(Memory *m,
 MemRef::MemRef(Memory *m,
     const std::vector<expr> &dims,
     const Layout &layout,
-    const z3::sort &elemty) : MemRef(m, freshName("memref"), dims, layout, elemty) {}
+    const smt::sort &elemty) : MemRef(m, freshName("memref"), dims, layout, elemty) {}
 
 expr MemRef::getWellDefined() const {
   expr size = get1DSize();
   if (size.is_numeral())
-    return ctx.bool_val(true);
+    return mkBool(true);
   auto expr = z3::ule(size, MAX_MEMREF_SIZE);
   for (auto dim: dims) {
     if (dim.is_numeral()) continue;
@@ -489,21 +544,18 @@ expr MemRef::getWellDefined() const {
   return expr.simplify();
 }
 
-optional<tuple<vector<expr>, MemRef::Layout, z3::sort>>
+optional<tuple<vector<expr>, MemRef::Layout, smt::sort>>
 MemRef::getDimsAndLayoutAndElemTy(
     mlir::MemRefType memRefTy,
     optional<vector<expr>> predefinedDims,
     bool freshVarForUnknownSize) {
   // Step1. check element type
   auto elemty = memRefTy.getElementType();
-  z3::sort elemty2(ctx);
-
-  if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
-    elemty2 = Float::sort();
-  } else {
+  if (!elemty.isa<mlir::Float32Type>())
     // Currently we only support f32 element type.
     return {};
-  }
+
+  smt::sort elemty2 = Float::sort();
 
   // Step2. check affine map
   if (mlir::isStrided(memRefTy)) {
@@ -517,25 +569,17 @@ MemRef::getDimsAndLayoutAndElemTy(
 }
 
 pair<expr, expr> MemRef::load(const vector<expr> &indices) {
-  expr idx = to1DIdxWithLayout(indices);
+  auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto [expr, success] = m->load(bid, offset + idx);
 
-  // check whether indices are inbound.
-  for (int i = 0; i < indices.size(); i ++)
-    success = success && z3::ult(indices[i], getDim(i));
-
-  return {expr, success.simplify()};
+  return {expr, (success && inbounds).simplify()};
 }
 
 expr MemRef::store(const expr &value, const std::vector<expr> &indices) {
-  expr idx = to1DIdxWithLayout(indices);
+  auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto success = m->store(value, bid, offset + idx);
 
-  // check whether indices are inbound.
-  for (int i = 0; i < indices.size(); i ++)
-    success = success && z3::ult(indices[i], getDim(i));
-
-  return success.simplify();
+  return (success && inbounds).simplify();
 }
 
 expr MemRef::storeArray(const expr &array, const expr &startOffset, const expr &size) {
@@ -564,6 +608,29 @@ void MemRef::setWritable(bool writable) {
   m->setWritable(bid, writable);
 }
 
+MemRef MemRef::subview(const vector<expr> &offsets,
+    const vector<expr> &sizes,
+    const vector<expr> &strides,
+    int rankDiff) {
+  if (rankDiff > 0) {
+    vector<expr> indVars, reducedSizes;
+    for (unsigned i = 0; i < sizes.size(); i++) {
+      if (rankDiff > 0 && sizes[i].is_numeral() && sizes[i].as_uint64() == 1) { //statically known to be 1
+        indVars.push_back(Index::zero());
+        rankDiff --;
+      } else {
+        indVars.push_back(layout.indVars[i]);
+        reducedSizes.push_back(sizes[i]);
+      }
+    }
+    auto subviewLayout = createSubViewLayout(indVars, offsets, strides);
+    return MemRef(m, bid, offset, reducedSizes, subviewLayout, Float::sort());
+  } else {
+    auto subviewLayout = createSubViewLayout(layout.indVars, offsets, strides);
+    return MemRef(m, bid, offset, sizes, subviewLayout, Float::sort());
+  }
+}
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   assert(m.dims.size() > 0);
   os << "(bid: " << or_omit(m.bid)
@@ -579,18 +646,42 @@ std::pair<expr, vector<expr>> MemRef::refines(const MemRef &other) const {
   return {(expr) other == (expr) *this, {}};
 }
 
-MemRef MemRef::eval(z3::model m) const {
-  MemRef m2(this->m);
-  m2.dims.reserve(dims.size());
-  for (size_t i = 0; i < dims.size(); ++i) {
-    auto v = m.eval(dims[i], true).simplify();
-    m2.dims.push_back(std::move(v));
-  }
-  m2.bid = m.eval(bid, true).simplify();
-  m2.offset = m.eval(offset, true).simplify();
+MemRef MemRef::eval(model mdl) const {
+  MemRef m2 = *this;
+  for (size_t i = 0; i < m2.dims.size(); ++i)
+    m2.dims[i] = mdl.eval(m2.dims[i], true).simplify();
+
+  m2.bid = mdl.eval(m2.bid, true).simplify();
+  m2.offset = mdl.eval(m2.offset, true).simplify();
+
+  m2.layout = m2.layout.eval(mdl);
   return m2;
 }
 
-expr MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
-  return layout.expr.substitute(toExprVector(layout.indVars), toExprVector(idxs));
+pair<expr, expr> MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
+  auto expr = substitute(layout.expr, layout.indVars, idxs);
+  auto inbounds = substitute(layout.inbounds, layout.indVars, idxs);
+  return {expr, inbounds};
+}
+
+MemRef::Layout MemRef::createSubViewLayout(
+    const vector<expr> &indVars,
+    const vector<expr> &offsets,
+    const vector<expr> &strides) {
+  // Before : <(d0, d1) -> (d0 * s0 + d1)>,
+  // After: <(d0, d1) -> ((indVars[0] + offsets[0]) * strides[0] * s0 + (indVars[1] + offsets[1]) * strides[1])>
+  // indVars[i] can be Index::zero() if reducing the dimension.
+  assert(layout.indVars.size() == indVars.size());
+  assert(layout.indVars.size() == offsets.size());
+  assert(layout.indVars.size() == strides.size());
+
+  vector<expr> idxs, transformedIndVars;
+  for (unsigned i = 0; i < layout.indVars.size(); i ++) {
+    idxs.push_back((indVars[i] + offsets[i]) * strides[i]);
+    if (!indVars[i].is_numeral()) transformedIndVars.push_back(indVars[i]);
+  }
+
+  auto transformed = substitute(layout.expr, layout.indVars, idxs);
+  auto transformedInbounds = substitute(layout.inbounds, layout.indVars, idxs);
+  return Layout(transformedIndVars, transformed, transformedInbounds);
 }

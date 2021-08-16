@@ -8,6 +8,9 @@
 
 namespace smt {
 using expr = z3::expr;
+using model = z3::model;
+using sort = z3::sort;
+using func_decl = z3::func_decl;
 
 class Expr;
 class ExprVec;
@@ -25,8 +28,27 @@ expr to1DIdx(const std::vector<expr> &idxs,
 expr to1DIdxWithLayout(const std::vector<expr> &idxs, expr layout);
 expr fitsInDims(const std::vector<expr> &idxs,
                 const std::vector<expr> &sizes);
-z3::expr_vector toExprVector(const std::vector<expr> &vec);
+
 std::string or_omit(const expr &e);
+std::string or_omit(const std::vector<expr> &evec);
+
+// TODO: these functions must be member functions of Expr
+expr substitute(expr e, const std::vector<expr> &vars,
+                const std::vector<expr> &values);
+expr forall(const std::vector<expr> &vars, const expr &e);
+expr mkFreshVar(const sort &s, std::string &&prefix);
+expr mkVar(const sort &s, std::string &&name);
+expr mkBV(uint64_t i, unsigned bw);
+expr mkBool(bool b);
+func_decl mkUF(const sort &domain, const sort &range, std::string &&name);
+func_decl mkUF(const std::vector<sort> &domain, const sort &range,
+               std::string &&name);
+bool structurallyEq(const expr &e1, const expr &e2);
+
+// TODO: these functions must be member functions of Sort
+sort bvSort(unsigned bw);
+sort boolSort();
+sort arraySort(const sort &domain, const sort &range);
 
 class ContextBuilder {
   private:

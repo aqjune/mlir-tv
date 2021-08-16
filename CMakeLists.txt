@@ -15,7 +15,9 @@ set(Z3_LIB_DIR "${Z3_DIR}/lib")
 set(PROJECT_LIB "mlirtv")
 add_library(${PROJECT_LIB} STATIC
     src/abstractops.cpp
+    src/encode.cpp
     src/memory.cpp
+    src/print.cpp
     src/smt.cpp
     src/state.cpp
     src/value.cpp
@@ -63,6 +65,12 @@ add_executable(${PROJECT_NAME} src/main.cpp)
 add_dependencies(${PROJECT_NAME} ${PROJECT_LIB})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_LIB})
 target_compile_options(${PROJECT_NAME} PRIVATE -fno-rtti)
+
+# Build interpreter
+add_executable(mlir-interp src/interp.cpp)
+add_dependencies(mlir-interp ${PROJECT_LIB})
+target_link_libraries(mlir-interp PRIVATE ${PROJECT_LIB})
+target_compile_options(mlir-interp PRIVATE -fno-rtti)
 
 enable_testing()
 add_subdirectory(${PROJECT_SOURCE_DIR}/tests)

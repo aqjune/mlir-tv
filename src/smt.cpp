@@ -1,27 +1,15 @@
-#include "smt.h"
 #include "value.h"
-#include <numeric>
+#include "smt.h"
+#include "utils.h"
 
 using namespace std;
 
 namespace {
-
-// optional::map from
-// http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0798r0.html
-// Fn is simply declared because std::function with template arguments works
-// poorly. :(
-template<class T, class Fn>
-optional<T> fmap(const optional<T> &x, Fn &&fn) {
-  if (!x)
-    return std::nullopt;
-  return std::make_optional(fn(*x));
-}
-
-template<class Fn>
-std::optional<z3::expr> fmap(z3::context *ctx, Fn &&fn) {
-  if (!ctx)
-    return std::nullopt;
-  return std::make_optional(fn(ctx));
+z3::expr_vector toExprVector(const vector<smt::expr> &vec) {
+  z3::expr_vector ev(smt::ctx);
+  for (auto &e: vec)
+    ev.push_back(e);
+  return ev;
 }
 }
 
@@ -88,23 +76,80 @@ expr fitsInDims(
     const vector<expr> &sizes) {
   assert(idxs.size() == sizes.size());
 
-  expr cond = ctx.bool_val(true);
+  expr cond = mkBool(true);
   for (size_t i = 0; i < idxs.size(); ++i)
     cond = cond && (z3::ult(idxs[i], sizes[i]));
   return cond;
 }
 
-z3::expr_vector toExprVector(const vector<expr> &vec) {
-  z3::expr_vector ev(ctx);
-  for (auto &e: vec)
-    ev.push_back(e);
-  return ev;
+expr mkFreshVar(const sort &s, std::string &&prefix) {
+  Z3_ast ast = Z3_mk_fresh_const(ctx, prefix.c_str(), s);
+  return z3::expr(ctx, ast);
 }
+
+expr mkVar(const sort &s, std::string &&name) {
+  return ctx.constant(name.c_str(), s);
+}
+
+expr mkBV(uint64_t i, unsigned bw) {
+  return ctx.bv_val(i, bw);
+}
+
+expr mkBool(bool b) {
+  return ctx.bool_val(b);
+}
+
+func_decl mkUF(const sort &domain, const sort &range, std::string &&name) {
+  return ctx.function(move(name).c_str(), domain, range);
+}
+
+func_decl mkUF(
+    const vector<sort> &domain,
+    const sort &range,
+    std::string &&name) {
+  z3::sort_vector v(ctx);
+  for (const auto &s: domain)
+    v.push_back(s);
+  return ctx.function(move(name).c_str(), v, range);
+}
+
+bool structurallyEq(const expr &e1, const expr &e2) {
+  return (Z3_ast)e1 == (Z3_ast)e2;
+}
+
+expr substitute(
+    expr e,
+    const std::vector<expr> &vars,
+    const std::vector<expr> &values) {
+  return e.substitute(toExprVector(vars), toExprVector(values));
+}
+
+expr forall(const std::vector<expr> &vars, const expr &e) {
+  return z3::forall(toExprVector(vars), e);
+}
+
+sort bvSort(unsigned bw) {
+  return ctx.bv_sort(bw);
+}
+
+sort boolSort() {
+  return ctx.bool_sort();
+}
+
+sort arraySort(const sort &domain, const sort &range) {
+  return ctx.array_sort(domain, range);
+}
+
 
 string or_omit(const expr &e) {
   string s;
   llvm::raw_string_ostream rso(s);
-  rso << e.simplify();
+  expr e2 = e.simplify();
+
+  int64_t i;
+  if (e2.is_numeral_i64(i))
+    return to_string(i);
+  rso << e2;
   rso.flush();
 
   if (s.size() > 500)
@@ -112,9 +157,22 @@ string or_omit(const expr &e) {
   return s;
 }
 
-ContextBuilder::ContextBuilder() {
-  use_z3 = false;
+string or_omit(const std::vector<expr> &evec) {
+  string s;
+  llvm::raw_string_ostream rso(s);
+  rso << "(";
+
+  if (evec.size() != 0) {
+    rso << or_omit(evec[0]);
+    for (size_t i = 1; i < evec.size(); ++i)
+      rso << ", " << or_omit(evec[i]);
+  }
+  rso << ")";
+  rso.flush();
+
+  return s;
 }
+
 
 ContextBuilder& ContextBuilder::useZ3() {
   use_z3 = true;

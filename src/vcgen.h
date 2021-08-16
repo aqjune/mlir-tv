@@ -34,6 +34,12 @@ public:
   Code code;
 };
 
+enum VerificationStep {
+  UB,
+  RetValue,
+  Memory
+};
+
 Results validate(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const std::string &dump_smt_to,
     unsigned int numBlocks,

@@ -15,9 +15,8 @@ class Index {
 public:
   static const unsigned BITS = 32;
 
-  Index();
   Index(unsigned);
-  Index(const std::string &name, bool freshvar = false);
+  Index(std::string &&name, bool freshvar = false);
   Index(const smt::expr &e);
 
   operator smt::expr() const { return e; }
@@ -28,30 +27,28 @@ public:
     return Index(e + i);
   }
 
-  static z3::sort sort();
+  static smt::sort sort();
   static Index one();
   static Index zero();
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
   std::pair<smt::expr, std::vector<smt::expr>> refines(
       const Index &other) const;
-  Index eval(z3::model m) const;
+  Index eval(smt::model m) const;
 };
 
 class Float {
   smt::expr e;
 
 public:
-  static const unsigned BITS = 4;
-
-  Float(const std::string &name);
+  Float(std::string &&name);
   Float(const smt::expr &e): e(e) {}
   Float(const llvm::APFloat &apf);
   Float(double f);
 
   operator smt::expr() const { return e; }
 
-  static z3::sort sort();
+  static smt::sort sort();
 
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
@@ -59,42 +56,50 @@ public:
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
   std::pair<smt::expr, std::vector<smt::expr>> refines(
       const Float &other) const;
-  Float eval(z3::model m) const;
+  Float eval(smt::model m) const;
 };
 
 class Integer {
   smt::expr e;
 
 public:
-  Integer(const std::string &name, unsigned bw);
+  Integer(std::string &&name, unsigned bw);
   Integer(const smt::expr &e): e(e) {}
   Integer(int64_t i, unsigned bw);
+  Integer(const llvm::APInt &api);
 
   operator smt::expr() const { return e; }
 
-  static z3::sort sort(unsigned bw);
+  static smt::sort sort(unsigned bw);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
   std::pair<smt::expr, std::vector<smt::expr>> refines(const Integer &other)
       const;
-  Integer eval(z3::model m) const;
+  Integer eval(smt::model m) const;
 };
 
 class Tensor {
   std::vector<smt::expr> dims;
   smt::expr arr;
 
+  Tensor(std::vector<smt::expr> &&dims, smt::expr &&arr):
+      dims(std::move(dims)), arr(std::move(arr)){}
+
 public:
   // This may be parameterized later..
   static const unsigned MAX_TENSOR_SIZE = 10000;
   static const unsigned MAX_DIM_SIZE = 25;
 
-  Tensor();
   // A splat tensor.
   Tensor(const smt::expr &splat_elem, const std::vector<smt::expr> &dims);
+  // A sparse tensor.
+  Tensor(const std::vector<std::vector<uint64_t>> &indices,
+         const std::vector<smt::expr> &elems,
+         const std::vector<uint64_t> &dims, const smt::expr &zero);
+
   Tensor(const std::vector<smt::expr> &elems1d);
-  Tensor(const std::string &name, const std::vector<smt::expr> &dims,
-         const z3::sort &elemty);
+  Tensor(std::string &&name, const std::vector<smt::expr> &dims,
+         const smt::sort &elemty);
 
   smt::expr asArray() const { return arr; }
 
@@ -118,7 +123,7 @@ public:
   Tensor affine(
       const std::vector<smt::expr> &newidxvars,
       std::vector<smt::expr> srcidxs,
-      const std::vector<smt::expr> &newsizes) const;
+      std::vector<smt::expr> &&newsizes) const;
 
   // Return a new tensor T2 s.t.
   //   T2[i1][i2]..[iN] = this[i2]..[iN][i1]
@@ -139,11 +144,11 @@ public:
   operator smt::expr() const { return arr; }
 
   // If tensorTy is unsupported, return nullopt
-  static std::optional<std::pair<std::vector<smt::expr>, z3::sort>>
+  static std::optional<std::pair<std::vector<smt::expr>, smt::sort>>
       getDimsAndElemTy(mlir::TensorType tensorTy,
                        bool freshVarForUnknownSize = true);
 
-  static std::optional<z3::sort> getElemTy(mlir::TensorType tensorTy);
+  static std::optional<smt::sort> getElemTy(mlir::TensorType tensorTy);
 
   static Tensor mkLambda(
       std::vector<smt::expr> &&newdims,
@@ -153,7 +158,7 @@ public:
   // Returns (arr[idx] == src.arr[idx], idx var)
   std::pair<smt::expr, std::vector<smt::expr>> refines(
       const Tensor &other) const;
-  Tensor eval(z3::model m) const;
+  Tensor eval(smt::model m) const;
 
 private:
   smt::expr to1DArrayWithOfs(
@@ -171,34 +176,41 @@ public:
   public:
     std::vector<smt::expr> indVars;
     smt::expr expr;
+    smt::expr inbounds;
 
-    Layout(const std::vector<smt::expr> &indVars, const smt::expr &expr):
-      indVars(indVars), expr(expr) {}
+    Layout(const std::vector<smt::expr> &indVars,
+      const smt::expr &expr,
+      const smt::expr &inbounds):
+      indVars(indVars), expr(expr), inbounds(inbounds) {}
+
+    Layout eval(smt::model mdl) const {
+      return { indVars, mdl.eval(expr).simplify(),
+               mdl.eval(inbounds).simplify() };
+    }
   };
 
-  MemRef(Memory *m);
   MemRef(Memory *m,
     const smt::expr &bid,
     const smt::expr &offset,
     const std::vector<smt::expr> &dims,
     const Layout &layout,
-    const z3::sort &elemty);
+    const smt::sort &elemty);
   MemRef(Memory *m,
     const std::string &name,
     const std::vector<smt::expr> &dims,
     const Layout &layout,
-    const z3::sort &elemty);
+    const smt::sort &elemty);
   MemRef(Memory *m,
     const std::vector<smt::expr> &dims,
     const Layout &layout,
-    const z3::sort &elemty);
+    const smt::sort &elemty);
 
   operator smt::expr() const { return bid && offset; }
 
   smt::expr getWellDefined() const;
 
   // If memRefTy is unsupported, return nullopt
-  static std::optional<std::tuple<std::vector<smt::expr>, Layout, z3::sort>>
+  static std::optional<std::tuple<std::vector<smt::expr>, Layout, smt::sort>>
     getDimsAndLayoutAndElemTy(mlir::MemRefType memRefTy,
       std::optional<std::vector<z3::expr>> predefinedDims = {},
       bool freshVarForUnknownSize = true);
@@ -217,12 +229,18 @@ public:
   void setWritable(bool writable);
   void setMemory(Memory *m) { this->m = m; }
 
+  // Return a new memerf which is subview of source memref.
+  MemRef subview(const std::vector<smt::expr> &offsets,
+      const std::vector<smt::expr> &sizes,
+      const std::vector<smt::expr> &strides,
+      int rankDiff = 0);
+
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
   std::pair<smt::expr, std::vector<smt::expr>> refines(
       const MemRef &other) const;
-  MemRef eval(z3::model m) const;
+  MemRef eval(smt::model m) const;
 
-  private:
+private:
   Memory *m;
   smt::expr bid; // blockID
   Index offset; // offset
@@ -232,5 +250,9 @@ public:
   smt::expr to1DArrayWithOfs(
       const std::vector<smt::expr> &offbegins,
       const std::vector<smt::expr> &sizes) const;
-  smt::expr to1DIdxWithLayout(const std::vector<smt::expr> &idxs);
+  std::pair<smt::expr, smt::expr> to1DIdxWithLayout(const std::vector<smt::expr> &idxs);
+
+  MemRef::Layout createSubViewLayout(const std::vector<smt::expr> &indVars,
+      const std::vector<smt::expr> &offsets,
+      const std::vector<smt::expr> &strides);
 };

@@ -1,7 +1,10 @@
 # MLIR-TV project
 
 MLIR-TV is an SMT-based translation validation framework for MLIR.
-Currently this is in an experimental stage.
+This project is inspired by [Alive2](https://github.com/aliveToolkit/alive2), an SMT-based bounded translation validation framework for LLVM IR.
+However, unlike Alive2, we focus on supporting dialects that are tailored for machine learning applications only.
+
+Currently MLIR-TV is in an experimental stage.
 
 ## How to build MLIR-TV
 
@@ -31,6 +34,14 @@ mlir-tv <.mlir before opt> <.mlir after opt>`
 # ex: ./build/mlir-tv \
 #        tests/opts/conv2d_to_img2col/nhwc_filter.src.mlir \
 #        tests/opts/conv2d_to_img2col/nhwc_filter.tgt.mlir -smt-to=5000
+```
+
+To explore the semantics encoded in `mlir-tv`, you can use `mlir-interp`.
+It takes a module containing functions without arguments, and prints their outputs and UBs according to the semantics encoded in it.
+```bash
+mlir-interp <.mlir>
+# ex: ./build/mlir-interp \
+#       tests/litmus/tensor-ops/extract_ub.src.mlir
 ```
 
 ## How to test MLIR-TV

@@ -93,14 +93,14 @@ TEST_F(UnitRegFileTest, Get) {
   EXPECT_THROW(r2.get<Index>(floatOp0), std::bad_variant_access);
   EXPECT_NO_THROW(r2.get<Float>(floatOp0));
 
-  EXPECT_Z3_EQ(r2.getZ3Expr(indexOp0), ZE_INDEX(indexOp0.getValue()));
-  EXPECT_DEATH(r2.getZ3Expr(indexOp1), "Cannot find key"); // llvm_unreachable
-  EXPECT_Z3_EQ(r2.getZ3Expr(floatOp0), ZE_FLOAT(floatOp0.getValue()));
+  EXPECT_Z3_EQ(r2.getExpr(indexOp0), ZE_INDEX(indexOp0.getValue()));
+  EXPECT_DEATH(r2.getExpr(indexOp1), "Cannot find key"); // llvm_unreachable
+  EXPECT_Z3_EQ(r2.getExpr(floatOp0), ZE_FLOAT(floatOp0.getValue()));
 
-  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp0), ZE_INDEX(indexOp0.getValue()));
-  EXPECT_Z3_EQ(r3.getZ3Expr(indexOp1), ZE_INDEX(indexOp1.getValue()));
-  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp0), ZE_FLOAT(floatOp0.getValue()));
-  EXPECT_Z3_EQ(r3.getZ3Expr(floatOp1), ZE_FLOAT(floatOp1.getValue()));
+  EXPECT_Z3_EQ(r3.getExpr(indexOp0), ZE_INDEX(indexOp0.getValue()));
+  EXPECT_Z3_EQ(r3.getExpr(indexOp1), ZE_INDEX(indexOp1.getValue()));
+  EXPECT_Z3_EQ(r3.getExpr(floatOp0), ZE_FLOAT(floatOp0.getValue()));
+  EXPECT_Z3_EQ(r3.getExpr(floatOp1), ZE_FLOAT(floatOp1.getValue()));
 }
 
 TEST_F(UnitRegFileTest, Iterator) {

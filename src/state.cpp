@@ -11,6 +11,22 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream &os, const ValueTy &v) {
   return os;
 }
 
+expr getExpr(const ValueTy &v) {
+  optional<expr> e;
+  visit([&](auto &&itm) {
+    e = (expr)itm;
+  }, v);
+  return move(*e);
+}
+
+ValueTy eval(const ValueTy &v, smt::model m) {
+  optional<ValueTy> e;
+  visit([&](auto &&itm) {
+    e = itm.eval(m);
+  }, v);
+  return move(*e);
+}
+
 
 ValueTy RegFile::findOrCrash(mlir::Value v) const {
   auto itr = m.find(v);
@@ -44,13 +60,8 @@ bool RegFile::contains(mlir::Value v) const {
   return (bool)m.count(v);
 }
 
-expr RegFile::getZ3Expr(mlir::Value v) const {
-  auto var = findOrCrash(v);
-  expr e(ctx);
-  visit([&](auto &&itm) {
-    e = (expr)itm;
-  }, var);
-  return e;
+expr RegFile::getExpr(mlir::Value v) const {
+  return ::getExpr(findOrCrash(v));
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
@@ -75,5 +86,27 @@ State::LinalgGenericScope::LinalgGenericScope(
 
 State::State(unsigned int numBlocks, MemEncoding encoding):
   hasQuantifier(false),
-  isWellDefined(ctx),
   m(Memory::create(numBlocks, numBlocks, encoding)) {}
+
+void State::wellDefined(mlir::Operation *val, expr &&e) {
+  auto itr = welldef.find(val);
+  if (itr == welldef.end()) {
+    welldef.insert({val, move(e)});
+  } else {
+    itr->second = itr->second && move(e);
+  }
+}
+
+expr State::isWellDefined() const {
+  expr e = mkBool(true);
+  for (auto &itm: welldef) {
+    e = e && itm.second;
+  }
+  return e;
+}
+
+expr State::isOpWellDefined(mlir::Operation *op) const {
+  if (!welldef.count(op))
+    return mkBool(true);
+  return welldef.find(op)->second;
+}

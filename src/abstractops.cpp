@@ -1,8 +1,21 @@
 #include "abstractops.h"
 #include "smt.h"
 #include "value.h"
+#include <map>
 
 using namespace smt;
+using namespace std;
+
+namespace {
+// Abstract representation of fp constants.
+map<double, expr> fpconst_absrepr;
+unsigned fpconst_absrepr_num;
+
+// TODO: this must be properly set
+// What we need to do is to statically find how many 'different' fp values a
+// program may observe.
+const unsigned FP_BITS = 4;
+}
 
 namespace aop {
 
@@ -14,33 +27,61 @@ UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 void setAbstractionLevel(AbsLevelDot ad) {
   alDot = ad;
   memset(&usedOps, 0, sizeof(usedOps));
+
+  fpconst_absrepr.clear();
+  fpconst_absrepr_num = 0;
 }
 
+
+smt::sort fpSort() {
+  return bvSort(FP_BITS);
+}
+
+expr fpConst(double f) {
+  // We don't explicitly encode f
+  auto itr = fpconst_absrepr.find(f);
+  if (itr != fpconst_absrepr.end())
+    return itr->second;
+
+  uint64_t absval;
+  if (f == 0.0)
+    absval = 0; // This is consistent with what mkZeroElemFromArr assumes
+  else {
+    assert(1 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
+    absval = 1 + fpconst_absrepr_num++;
+  }
+  expr e = mkBV(absval, FP_BITS);
+  fpconst_absrepr.emplace(f, e);
+  return e;
+}
+
+vector<double> fpPossibleConsts(const expr &e) {
+  vector<double> vec;
+  for (auto &[k, v]: fpconst_absrepr) {
+    if (structurallyEq(v, e))
+      vec.push_back(k);
+  }
+  return vec;
+}
 
 expr mkZeroElemFromArr(const expr &arr) {
   unsigned bvsz = z3::select(arr, Index::zero()).get_sort().bv_size();
-  return ctx.bv_val(0, bvsz);
+  return mkBV(0, bvsz);
 }
 
-expr fp_add(const expr &f1, const expr &f2) {
+expr fpAdd(const expr &f1, const expr &f2) {
   usedOps.add = true;
   auto fty = f1.get_sort();
 
-  z3::sort_vector domain(ctx);
-  domain.push_back(fty);
-  domain.push_back(fty);
-  auto addfn = ctx.function("fp_add", domain, fty);
+  auto addfn = mkUF({fty, fty}, fty, "fp_add");
   return addfn(f1, f2);
 }
 
-expr fp_mul(const expr &a, const expr &b) {
+expr fpMul(const expr &a, const expr &b) {
   usedOps.mul = true;
 
   // TODO: check that a.get_sort() == b.get_sort()
-  z3::sort_vector domain(ctx);
-  domain.push_back(a.get_sort());
-  domain.push_back(b.get_sort());
-  auto mulfn = ctx.function("fp_mul", domain, Float::sort());
+  auto mulfn = mkUF({a.get_sort(), b.get_sort()}, Float::sort(), "fp_mul");
   return mulfn(a, b);
 }
 
@@ -48,10 +89,7 @@ expr sum(const expr &a, const expr &n) {
   usedOps.sum = true;
   // TODO: check that a.sort is Index::sort() -> Float::sort()
 
-  z3::sort_vector domain(ctx);
-  domain.push_back(a.get_sort());
-  auto sumfn = ctx.function("smt_sum", domain, Float::sort());
-
+  auto sumfn = mkUF(a.get_sort(), Float::sort(), "smt_sum");
   auto i = Index("idx");
   expr ai = z3::select(a, i);
   expr zero = mkZeroElemFromArr(a);
@@ -59,28 +97,23 @@ expr sum(const expr &a, const expr &n) {
 }
 
 expr dot(const expr &a, const expr &b, const expr &n) {
-  if (alDot == FULLY_ABS) {
+  if (alDot == AbsLevelDot::FULLY_ABS) {
     usedOps.dot = true;
     // TODO: check that a.get_sort() == b.get_sort()
     auto i = Index("idx");
+    auto dotfn = mkUF({a.get_sort(), b.get_sort()}, Float::sort(), "smt_dot");
 
-    z3::sort_vector domain(ctx);
-    domain.push_back(a.get_sort());
-    domain.push_back(b.get_sort());
-    auto dotfn = ctx.function("smt_dot", domain, Float::sort());
-
-    z3::expr_vector args(ctx);
     expr ai = z3::select(a, i), bi = z3::select(b, i);
     expr zero = mkZeroElemFromArr(a);
-    args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)));
-    args.push_back(z3::lambda(i, z3::ite(z3::ult(i, n), bi, zero)));
-    return dotfn(args);
-  } else if (alDot == SUM_MUL) {
+    return dotfn(
+        z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)),
+        z3::lambda(i, z3::ite(z3::ult(i, n), bi, zero)));
+  } else if (alDot == AbsLevelDot::SUM_MUL) {
     usedOps.mul = usedOps.sum = true;
     // TODO: check that a.get_sort() == b.get_sort()
     auto i = Index("idx");
     expr ai = z3::select(a, i), bi = z3::select(b, i);
-    return sum(z3::lambda(i, fp_mul(ai, bi)), n);
+    return sum(z3::lambda(i, fpMul(ai, bi)), n);
   }
   llvm_unreachable("Unknown abstraction level for dot");
 }

@@ -12,6 +12,8 @@
 using ValueTy = std::variant<Tensor, MemRef, Index, Float, Integer>;
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream&, const ValueTy &);
+smt::expr getExpr(const ValueTy &vty);
+ValueTy eval(const ValueTy &vty, smt::model m);
 
 class ArgInfo {
 private:
@@ -41,15 +43,18 @@ public:
     return std::get<T>(findOrCrash(v));
   }
   bool contains(mlir::Value v) const;
-  smt::expr getZ3Expr(mlir::Value v) const;
+  smt::expr getExpr(mlir::Value v) const;
 
   auto begin() const { return m.begin(); }
   auto end() const { return m.end(); }
 };
 
 class State {
-public:
+private:
+  // welldef[i]: is instruction i well-defined?
+  llvm::DenseMap<mlir::Operation *, smt::expr> welldef;
 
+public:
   class LinalgGenericScope {
   public:
     std::vector<smt::expr> indVars;
@@ -61,8 +66,8 @@ public:
 
   RegFile regs;
   std::stack<LinalgGenericScope> linalgGenericScopes;
-  // If returns void, it is nullopt
-  std::optional<ValueTy> retValue;
+  // Return value tuples
+  std::vector<ValueTy> retValues;
 
   // The negated form of UB is tracked because the neg. of value refinement is:
   // 'src.no-ub /\ tgt.no-ub /\ src.retvalue != tgt.retvalue'.
@@ -70,14 +75,13 @@ public:
   // expr some day (or simply use Alive2's one), and this form will be helpful
   // then.
   bool hasQuantifier;
-  smt::expr isWellDefined;
   std::shared_ptr<Memory> m;
 
   State(unsigned int numBlocks, MemEncoding encoding);
 
-  void wellDefined(const smt::expr &e) {
-    isWellDefined = isWellDefined && e;
-  }
+  void wellDefined(mlir::Operation *op, smt::expr &&e);
+  smt::expr isWellDefined() const;
+  smt::expr isOpWellDefined(mlir::Operation *op) const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };

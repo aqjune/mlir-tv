@@ -36,8 +36,9 @@ expr Memory::isLocalBlock(const expr &bid) const {
 
 pair<expr, std::vector<expr>>
 SingleArrayMemory::refines(const Memory &other) const {
-  auto bid = ctx.bv_const("bid", bidBits);
+  auto bid = mkVar(bvSort(bidBits), "bid");
   auto offset = Index("offset", true);
+
   auto [srcValue, srcSuccess] = load(bid, offset);
   auto srcWritable = getWritable(bid);
   auto [tgtValue, tgtSuccess] = other.load(bid, offset);
@@ -52,12 +53,13 @@ SingleArrayMemory::refines(const Memory &other) const {
 SingleArrayMemory::SingleArrayMemory(
     unsigned int numGlobalBlocks, unsigned int maxLocalBlocks):
   Memory(numGlobalBlocks, maxLocalBlocks, ulog2(numGlobalBlocks + maxLocalBlocks)),
-  arrayMaps(ctx.constant("arrayMaps",
-    ctx.array_sort(ctx.bv_sort(bidBits), ctx.array_sort(Index::sort(), Float::sort())))),
-  writableMaps(ctx.constant("writableMaps",
-    ctx.array_sort(ctx.bv_sort(bidBits), ctx.bool_sort()))),
-  numelemMaps(ctx.constant("numelemMaps",
-    ctx.array_sort(ctx.bv_sort(bidBits), Index::sort()))) {}
+  arrayMaps(mkVar(
+      arraySort(bvSort(bidBits), arraySort(Index::sort(), Float::sort())),
+      "arrayMaps")),
+  writableMaps(mkVar(arraySort(bvSort(bidBits), boolSort()),
+      "writableMaps")),
+  numelemMaps(mkVar(arraySort(bvSort(bidBits), Index::sort()), "numelemMaps"))
+  {}
 
 MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
   expr array = z3::select(arrayMaps, bid);
@@ -69,14 +71,14 @@ MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
 expr SingleArrayMemory::addLocalBlock(const expr &numelem, const expr &writable) {
   assert(numLocalBlocks < maxLocalBlocks);
 
-  auto bid = ctx.bv_val(numGlobalBlocks + numLocalBlocks, bidBits);
+  auto bid = mkBV(numGlobalBlocks + numLocalBlocks, bidBits);
   numelemMaps = z3::store(numelemMaps, bid, numelem);
   numLocalBlocks ++;
   return bid;
 }
 
 void SingleArrayMemory::setWritable(const expr &bid, bool writable) {
-  writableMaps = z3::store(writableMaps, bid, ctx.bool_val(writable));
+  writableMaps = z3::store(writableMaps, bid, mkBool(writable));
 }
 
 expr SingleArrayMemory::getWritable(const expr &bid) const {
@@ -122,10 +124,10 @@ MultipleArrayMemory::MultipleArrayMemory(
     auto suffix = [&](const string &s) {
       return s + to_string(i);
     };
-    arrays.push_back(ctx.constant(suffix("array").c_str(),
-        ctx.array_sort(Index::sort(), Float::sort())));
-    writables.push_back(ctx.bool_const(suffix("writable").c_str()));
-    numelems.push_back(ctx.bv_const(suffix("numelems").c_str(), Index::BITS));
+    arrays.push_back(mkVar(
+        arraySort(Index::sort(), Float::sort()), suffix("array").c_str()));
+    writables.push_back(mkVar(boolSort(), suffix("writable").c_str()));
+    numelems.push_back(mkVar(Index::sort(), suffix("numelems").c_str()));
   }
 }
 
@@ -142,7 +144,7 @@ expr MultipleArrayMemory::itebid(
 
   expr expr = fn(0);
   for (unsigned i = 1; i < getNumBlocks(); i ++)
-    expr = z3::ite(bid == ctx.bv_val(i, bits), fn(i), expr);
+    expr = z3::ite(bid == mkBV(i, bits), fn(i), expr);
 
   return expr;
 }
@@ -163,7 +165,7 @@ void MultipleArrayMemory::update(
   for (unsigned i = 0; i < getNumBlocks(); ++i) {
     expr *expr = getExprToUpdate(i);
     assert(expr);
-    *expr = z3::ite(bid == ctx.bv_val(i, bits), getUpdatedValue(i), *expr);
+    *expr = z3::ite(bid == mkBV(i, bits), getUpdatedValue(i), *expr);
   }
 }
 
@@ -172,12 +174,12 @@ expr MultipleArrayMemory::addLocalBlock(const expr &numelem, const expr &writabl
 
   auto bid = numGlobalBlocks + numLocalBlocks;
   auto suffix = [&](const string &s) { return s + to_string(bid); };
-  arrays.push_back(ctx.constant(suffix("array").c_str(),
-        ctx.array_sort(Index::sort(), Float::sort())));
-  writables.push_back(ctx.bool_const(suffix("writable").c_str()));
+  arrays.push_back(mkVar(
+        arraySort(Index::sort(), Float::sort()), suffix("array").c_str()));
+  writables.push_back(mkVar(boolSort(), suffix("writable").c_str()));
   numelems.push_back(numelem);
   numLocalBlocks ++;
-  return ctx.bv_val(bid, bidBits);
+  return mkBV(bid, bidBits);
 }
 
 expr MultipleArrayMemory::getNumElementsOfMemBlock(
@@ -187,7 +189,7 @@ expr MultipleArrayMemory::getNumElementsOfMemBlock(
 
 void MultipleArrayMemory::setWritable(const expr &bid, bool writable) {
   update(bid, [&](unsigned ubid) { return &writables[ubid]; },
-      [&](auto) { return ctx.bool_val(writable); });
+      [&](auto) { return mkBool(writable); });
 }
 
 expr MultipleArrayMemory::getWritable(const expr &bid) const {
@@ -246,7 +248,7 @@ MultipleArrayMemory::refines(const Memory &other0) const {
       *static_cast<const MultipleArrayMemory *>(&other0);
   assert(other.numGlobalBlocks == numGlobalBlocks);
 
-  auto bid = ctx.bv_const("bid", bidBits);
+  auto bid = mkVar(bvSort(bidBits), "bid");
   auto offset = Index("offset", true);
 
   auto refines = [this, &other, &bid, &offset](unsigned ubid) {
@@ -262,7 +264,7 @@ MultipleArrayMemory::refines(const Memory &other0) const {
 
   expr refinement = refines(0);
   for (unsigned i = 1; i < numGlobalBlocks; i ++)
-    refinement = z3::ite(bid == ctx.bv_val(i, bidBits), refines(i), refinement);
+    refinement = z3::ite(bid == mkBV(i, bidBits), refines(i), refinement);
 
   return {refinement, {bid, offset}};
 }

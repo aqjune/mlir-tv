@@ -1,6 +1,6 @@
+#include "memory.h"
 #include "smt.h"
 #include "vcgen.h"
-#include "memory.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -25,7 +25,7 @@ llvm::cl::opt<string> filename_src(llvm::cl::Positional,
 
 llvm::cl::opt<string> filename_tgt(llvm::cl::Positional,
   llvm::cl::desc("second-mlir-file"),
-  llvm::cl::Optional, llvm::cl::value_desc("filename"));
+  llvm::cl::Required, llvm::cl::value_desc("filename"));
 
 llvm::cl::opt<unsigned> arg_smt_to("smt-to",
   llvm::cl::desc("Timeout for SMT queries (default=10000)"),
@@ -39,7 +39,8 @@ llvm::cl::opt<bool> split_input_file("split-input-file",
   llvm::cl::init(false));
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
-  llvm::cl::desc("Number of memory blocks required to verify translation (default=8)"),
+  llvm::cl::desc("Number of memory blocks required to validate translation"
+                 " (default=8)"),
   llvm::cl::init(8), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
