@@ -182,9 +182,7 @@ Integer Integer::eval(model m) const {
 
 
 Tensor::Tensor(const expr &splat_elem, const vector<expr> &dimvec):
-    arr(ctx), dims(dimvec) {
-  arr = z3::const_array(Index::sort(), splat_elem);
-}
+    arr(z3::const_array(Index::sort(), splat_elem)), dims(dimvec) {}
 
 Tensor::Tensor(const vector<expr> &elems1d):
     arr(z3::const_array(Index::sort(), elems1d[0])),

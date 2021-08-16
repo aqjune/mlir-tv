@@ -205,12 +205,14 @@ static Results checkRefinement(
     for (unsigned i = 0; i < numret; ++i) {
       auto s = z3::solver(ctx, logic);
 
-      expr refines(ctx);
+      optional<expr> refines_opt;
       vector<expr> params;
       visit([&](auto &&src, auto &&tgt) {
         auto typedTarget = (decltype(src)) tgt;
-        tie(refines, params) = src.refines(typedTarget);
+        tie(refines_opt, params) = src.refines(typedTarget);
       }, st_src.retValues[i], st_tgt.retValues[i]);
+
+      expr refines = move(*refines_opt);
 
       auto not_refines =
         (st_src.isWellDefined() && st_tgt.isWellDefined() && !refines)
