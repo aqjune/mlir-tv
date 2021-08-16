@@ -739,8 +739,10 @@ vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
   //   numDims = 3 (i, j, k), numRes = 4 (i, j, i, k)
   unsigned numRes = map.getNumResults();
 
-  vector<Index> res(numDims);
-  vector<bool> resFilled(numDims);
+  vector<Index> res;
+  vector<int> resFilled(numDims);
+  fill(resFilled.begin(), resFilled.end(), -1);
+
   for (unsigned idx = 0; idx < numRes; ++idx) {
     auto result = map.getResult(idx);
     auto d = result.dyn_cast<mlir::AffineDimExpr>();
@@ -748,15 +750,19 @@ vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
       continue;
 
     unsigned pos = d.getPosition();
-    if (resFilled[pos])
+    if (resFilled[pos] != -1)
       continue;
     // If i < N, store N - 1
     // It is to bound e.g., 'i + j <= N - 1 + M - 1'
-    res[pos] = viewSizes[idx].ofs(-1);
-    resFilled[pos] = true;
+    resFilled[pos] = res.size();
+    res.push_back(viewSizes[idx].ofs(-1));
   }
 
-  return res;
+  vector<Index> res_ordered;
+  for (unsigned i = 0; i < numDims; ++i)
+    res_ordered.push_back(move(res[resFilled[i]]));
+
+  return res_ordered;
 }
 
 static optional<string>

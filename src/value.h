@@ -15,7 +15,6 @@ class Index {
 public:
   static const unsigned BITS = 32;
 
-  Index();
   Index(unsigned);
   Index(std::string &&name, bool freshvar = false);
   Index(const smt::expr &e);

@@ -83,8 +83,6 @@ static string freshName(string prefix) {
   return prefix + to_string(count ++);
 }
 
-Index::Index(): e(ctx) {}
-
 Index::Index(unsigned i): e(mkBV(i, BITS)) {}
 
 Index::Index(std::string &&name, bool freshvar):

@@ -2,10 +2,6 @@
 #include "src/value.h"
 #include "tv_test_shared.h"
 
-TEST(UnitIndexTest, Default) {
-  EXPECT_THROW((ZE_INDEX()).get_sort(), z3::exception);
-}
-
 TEST(UnitIndexTest, Static) {
   EXPECT_Z3_EQ(ZE_INDEX::one(), ZE_INDEX(1));
   EXPECT_Z3_EQ(ZE_INDEX::zero(), ZE_INDEX(0));
