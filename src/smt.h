@@ -38,6 +38,7 @@ expr mkVar(const sort &s, std::string &&name);
 func_decl mkUF(const sort &domain, const sort &range, std::string &&name);
 func_decl mkUF(const std::vector<sort> &domain, const sort &range,
                std::string &&name);
+bool structurallyEq(const expr &e1, const expr &e2);
 
 // TODO: these functions must be member functions of Sort
 sort bvSort(unsigned bw);

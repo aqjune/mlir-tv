@@ -42,8 +42,6 @@ class Float {
   smt::expr e;
 
 public:
-  static const unsigned BITS = 4;
-
   Float(std::string &&name);
   Float(const smt::expr &e): e(e) {}
   Float(const llvm::APFloat &apf);

@@ -1,3 +1,4 @@
+#include "abstractops.h"
 #include "print.h"
 
 using namespace std;
@@ -45,6 +46,8 @@ void printCounterEx(
     return s;
   };
 
+  aop::fpEvalConstVars(m);
+
   llvm::outs() << "<Inputs>\n";
   printInputs(m, src, st_src);
 
@@ -87,7 +90,7 @@ void printCounterEx(
 
       llvm::outs() << "\tSrc: " << eval(st_src.retValues[retvalidx], m)
                    << "\n";
-      llvm::outs() << "\tSrc: " << eval(st_tgt.retValues[retvalidx], m)
+      llvm::outs() << "\tTgt: " << eval(st_tgt.retValues[retvalidx], m)
                    << "\n";
     }
   } else if (step == VerificationStep::Memory) {

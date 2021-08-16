@@ -306,7 +306,7 @@ static Results validate(ValidationInput vinput) {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
 
-  aop::setAbstractionLevel(aop::FULLY_ABS);
+  aop::setAbstractionLevel(aop::AbsLevelDot::FULLY_ABS);
   auto res = tryValidation(vinput, true, elapsedMillisec);
   if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
     return res;
@@ -314,7 +314,7 @@ static Results validate(ValidationInput vinput) {
   auto usedOps = aop::getUsedAbstractOps();
   if (usedOps.dot && usedOps.sum && usedOps.mul)
     // dot = mul + sum
-    aop::setAbstractionLevel(aop::SUM_MUL);
+    aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL);
   else
     return res;
 

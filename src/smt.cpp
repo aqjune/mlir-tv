@@ -105,6 +105,10 @@ func_decl mkUF(
   return ctx.function(move(name).c_str(), v, range);
 }
 
+bool structurallyEq(const expr &e1, const expr &e2) {
+  return (Z3_ast)e1 == (Z3_ast)e2;
+}
+
 expr substitute(
     expr e,
     const std::vector<expr> &vars,

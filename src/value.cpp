@@ -116,26 +116,24 @@ Index Index::eval(model m) const {
 
 Float::Float(std::string &&name): e(mkVar(Float::sort(), move(name))) {}
 
-static map<double, expr> const_vars;
-
-Float::Float(double f): e(ctx) {
-  // We don't explicitly encode f
-  auto itr = const_vars.find(f);
-  if (itr == const_vars.end()) {
-    e = mkFreshVar(Float::sort(), "#float_const");
-    const_vars.emplace(f, e);
-  } else
-    e = itr->second;
-}
+Float::Float(double f): e(aop::fpConst(f)) {}
 
 Float::Float(const llvm::APFloat &f): Float(f.convertToDouble()) {}
 
 smt::sort Float::sort() {
-  return bvSort(BITS);
+  return aop::fpSort();
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
-  os << or_omit((expr)f);
+  expr e = f;
+  auto vec = aop::fpPossibleConsts(e);
+  if (!vec.empty()) {
+    os << vec[0];
+    for (unsigned i = 1; i < vec.size(); ++i)
+      os << " or " << vec[i];
+  } else {
+    os << "unknown (" << or_omit((expr)f) << ")";
+  }
   return os;
 };
 
@@ -148,11 +146,11 @@ Float Float::eval(model m) const {
 }
 
 Float Float::add(const Float &b) const {
-  return Float(aop::fp_add(e, b.e));
+  return Float(aop::fpAdd(e, b.e));
 }
 
 Float Float::mul(const Float &b) const {
-  return Float(aop::fp_mul(e, b.e));
+  return Float(aop::fpMul(e, b.e));
 }
 
 
