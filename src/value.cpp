@@ -407,13 +407,36 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 
   while (true) {
     optional<expr> arr2, idx, val;
+
     if (Store(Any(arr2), Any(idx), Any(val)).match(arr)) {
-      os << or_omit(*idx) << " -> " << or_omit(*val) << ", ";
+      auto idxnd = from1DIdx(*idx, t.dims);
+      vector<int64_t> idxconsts;
+
+      bool constIdxs = all_of(idxnd.begin(), idxnd.end(), [&](const expr &e) {
+        int64_t i;
+        if (e.simplify().is_numeral_i64(i)) {
+          idxconsts.push_back(i);
+          return true;
+        }
+        return false;
+      });
+      if (constIdxs) {
+        os << "(" << idxconsts[0];
+        for (size_t i = 1; i < idxconsts.size(); ++i)
+          os << ", " << idxconsts[i];
+        os << ")";
+      } else
+        os << or_omit(*idx);
+      os << " -> " << or_omit(*val) << ", ";
+
       arr = move(*arr2);
       hasStore = true;
 
     } else if (ConstSplatArray(Any(val)).match(arr)) {
-      os << (hasStore ? "else " : "") << "splat array of " << or_omit(*val);
+      if (hasStore)
+        os << "else " << or_omit(*val);
+      else
+        os << "a splat tensor of " << or_omit(*val);
       break;
 
     } else {
