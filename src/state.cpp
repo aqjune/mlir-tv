@@ -98,7 +98,7 @@ void State::wellDefined(mlir::Operation *val, expr &&e) {
 }
 
 expr State::isWellDefined() const {
-  expr e = ctx.bool_val(true);
+  expr e = mkBool(true);
   for (auto &itm: welldef) {
     e = e && itm.second;
   }
@@ -107,6 +107,6 @@ expr State::isWellDefined() const {
 
 expr State::isOpWellDefined(mlir::Operation *op) const {
   if (!welldef.count(op))
-    return ctx.bool_val(true);
+    return mkBool(true);
   return welldef.find(op)->second;
 }

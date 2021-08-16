@@ -76,7 +76,7 @@ expr fitsInDims(
     const vector<expr> &sizes) {
   assert(idxs.size() == sizes.size());
 
-  expr cond = ctx.bool_val(true);
+  expr cond = mkBool(true);
   for (size_t i = 0; i < idxs.size(); ++i)
     cond = cond && (z3::ult(idxs[i], sizes[i]));
   return cond;
@@ -89,6 +89,14 @@ expr mkFreshVar(const sort &s, std::string &&prefix) {
 
 expr mkVar(const sort &s, std::string &&name) {
   return ctx.constant(name.c_str(), s);
+}
+
+expr mkBV(uint64_t i, unsigned bw) {
+  return ctx.bv_val(i, bw);
+}
+
+expr mkBool(bool b) {
+  return ctx.bool_val(b);
 }
 
 func_decl mkUF(const sort &domain, const sort &range, std::string &&name) {

@@ -47,7 +47,7 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
     expr layout = Index::zero();
     expr stride = Index::one();
     vector<expr> indVars;
-    expr inbounds = ctx.bool_val(true);
+    expr inbounds = mkBool(true);
 
     for (int i = 0; i < dims.size(); i ++) {
       indVars.push_back(Index("idx" + to_string(i)));
@@ -67,7 +67,7 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
     assert(succeeded(success) && "unexpected non-strided memref");
     expr layout = getConstOrVal(offset, "offset");
     vector<expr> indVars;
-    expr inbounds = ctx.bool_val(true);
+    expr inbounds = mkBool(true);
     for (int i = 0; i < strides.size(); i ++) {
       indVars.push_back(Index("idx" + to_string(i)));
       layout = layout + getConstOrVal(strides[i], "strides") * indVars[i];
@@ -85,7 +85,7 @@ static string freshName(string prefix) {
 
 Index::Index(): e(ctx) {}
 
-Index::Index(unsigned i): e(ctx.bv_val(i, BITS)) {}
+Index::Index(unsigned i): e(mkBV(i, BITS)) {}
 
 Index::Index(std::string &&name, bool freshvar):
     e(freshvar ?
@@ -158,7 +158,7 @@ Integer::Integer(std::string &&name, unsigned bw):
   e(mkVar(bvSort(bw), move(name))) {}
 
 Integer::Integer(int64_t i, unsigned bw):
-  e(ctx.bv_val(i, bw)) {}
+  e(mkBV(i, bw)) {}
 
 Integer::Integer(const llvm::APInt &api):
   Integer(api.getSExtValue(), api.getBitWidth()) {}
@@ -225,7 +225,7 @@ Tensor::Tensor(
 expr Tensor::getWellDefined() const {
   expr size = get1DSize();
   if (size.is_numeral())
-    return ctx.bool_val(true);
+    return mkBool(true);
   auto expr = z3::ule(size, MAX_TENSOR_SIZE);
   for (auto dim: dims) {
     if (dim.is_numeral()) continue;
@@ -357,9 +357,9 @@ pair<expr, vector<expr>> Tensor::refines(const Tensor &other) const {
   // If it does, don't return index var.
   size_t sz = getDims().size();
   if (other.getDims().size() != sz)
-    return {ctx.bool_val(false), {}};
+    return {mkBool(false), {}};
 
-  expr size_match = ctx.bool_val(true);
+  expr size_match = mkBool(true);
   for (size_t i = 0; i < sz; ++i)
     size_match = size_match && (expr)other.getDim(i) == (expr)getDim(i);
   size_match = size_match.simplify();
@@ -509,7 +509,7 @@ MemRef::MemRef(Memory *m,
 expr MemRef::getWellDefined() const {
   expr size = get1DSize();
   if (size.is_numeral())
-    return ctx.bool_val(true);
+    return mkBool(true);
   auto expr = z3::ule(size, MAX_MEMREF_SIZE);
   for (auto dim: dims) {
     if (dim.is_numeral()) continue;

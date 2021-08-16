@@ -71,14 +71,14 @@ MemBlock SingleArrayMemory::getMemBlock(const expr &bid) const {
 expr SingleArrayMemory::addLocalBlock(const expr &numelem, const expr &writable) {
   assert(numLocalBlocks < maxLocalBlocks);
 
-  auto bid = ctx.bv_val(numGlobalBlocks + numLocalBlocks, bidBits);
+  auto bid = mkBV(numGlobalBlocks + numLocalBlocks, bidBits);
   numelemMaps = z3::store(numelemMaps, bid, numelem);
   numLocalBlocks ++;
   return bid;
 }
 
 void SingleArrayMemory::setWritable(const expr &bid, bool writable) {
-  writableMaps = z3::store(writableMaps, bid, ctx.bool_val(writable));
+  writableMaps = z3::store(writableMaps, bid, mkBool(writable));
 }
 
 expr SingleArrayMemory::getWritable(const expr &bid) const {
@@ -144,7 +144,7 @@ expr MultipleArrayMemory::itebid(
 
   expr expr = fn(0);
   for (unsigned i = 1; i < getNumBlocks(); i ++)
-    expr = z3::ite(bid == ctx.bv_val(i, bits), fn(i), expr);
+    expr = z3::ite(bid == mkBV(i, bits), fn(i), expr);
 
   return expr;
 }
@@ -165,7 +165,7 @@ void MultipleArrayMemory::update(
   for (unsigned i = 0; i < getNumBlocks(); ++i) {
     expr *expr = getExprToUpdate(i);
     assert(expr);
-    *expr = z3::ite(bid == ctx.bv_val(i, bits), getUpdatedValue(i), *expr);
+    *expr = z3::ite(bid == mkBV(i, bits), getUpdatedValue(i), *expr);
   }
 }
 
@@ -179,7 +179,7 @@ expr MultipleArrayMemory::addLocalBlock(const expr &numelem, const expr &writabl
   writables.push_back(ctx.bool_const(suffix("writable").c_str()));
   numelems.push_back(numelem);
   numLocalBlocks ++;
-  return ctx.bv_val(bid, bidBits);
+  return mkBV(bid, bidBits);
 }
 
 expr MultipleArrayMemory::getNumElementsOfMemBlock(
@@ -189,7 +189,7 @@ expr MultipleArrayMemory::getNumElementsOfMemBlock(
 
 void MultipleArrayMemory::setWritable(const expr &bid, bool writable) {
   update(bid, [&](unsigned ubid) { return &writables[ubid]; },
-      [&](auto) { return ctx.bool_val(writable); });
+      [&](auto) { return mkBool(writable); });
 }
 
 expr MultipleArrayMemory::getWritable(const expr &bid) const {
@@ -264,7 +264,7 @@ MultipleArrayMemory::refines(const Memory &other0) const {
 
   expr refinement = refines(0);
   for (unsigned i = 1; i < numGlobalBlocks; i ++)
-    refinement = z3::ite(bid == ctx.bv_val(i, bidBits), refines(i), refinement);
+    refinement = z3::ite(bid == mkBV(i, bidBits), refines(i), refinement);
 
   return {refinement, {bid, offset}};
 }

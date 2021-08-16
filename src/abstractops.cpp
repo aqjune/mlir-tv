@@ -50,7 +50,7 @@ expr fpConst(double f) {
     assert(1 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
     absval = 1 + fpconst_absrepr_num++;
   }
-  expr e = ctx.bv_val(absval, FP_BITS);
+  expr e = mkBV(absval, FP_BITS);
   fpconst_absrepr.emplace(f, e);
   return e;
 }
@@ -66,7 +66,7 @@ vector<double> fpPossibleConsts(const expr &e) {
 
 expr mkZeroElemFromArr(const expr &arr) {
   unsigned bvsz = z3::select(arr, Index::zero()).get_sort().bv_size();
-  return ctx.bv_val(0, bvsz);
+  return mkBV(0, bvsz);
 }
 
 expr fpAdd(const expr &f1, const expr &f2) {

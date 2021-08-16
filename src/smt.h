@@ -35,6 +35,8 @@ expr substitute(expr e, const std::vector<expr> &vars,
 expr forall(const std::vector<expr> &vars, const expr &e);
 expr mkFreshVar(const sort &s, std::string &&prefix);
 expr mkVar(const sort &s, std::string &&name);
+expr mkBV(uint64_t i, unsigned bw);
+expr mkBool(bool b);
 func_decl mkUF(const sort &domain, const sort &range, std::string &&name);
 func_decl mkUF(const std::vector<sort> &domain, const sort &range,
                std::string &&name);

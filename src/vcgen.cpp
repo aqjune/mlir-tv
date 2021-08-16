@@ -287,7 +287,7 @@ static Results tryValidation(
   if (auto msg = encode(st_tgt, tgt, printOps))
     raiseUnsupported(*msg);
 
-  expr precond = ctx.bool_val(true);
+  expr precond = mkBool(true);
   for (auto &e: preconds)
     precond = precond && e;
   precond = precond.simplify();

@@ -397,7 +397,7 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto layout = get<1>(*dimsAndLayoutAndElemTy);
   auto elemty = get<2>(*dimsAndLayoutAndElemTy);
   // Add new local block
-  auto bid = st.m->addLocalBlock(smt::get1DSize(dims), ctx.bool_val(false));
+  auto bid = st.m->addLocalBlock(smt::get1DSize(dims), mkBool(false));
   auto offset = Index::zero();
   // Create MemRef which points newly created block id
   auto memref = MemRef(st.m.get(), bid, offset, dims, layout, elemty);
@@ -557,7 +557,7 @@ optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
   if (srcWidth > destWidth)
     casted = src.extract(destWidth - 1, 0);
   else if (srcWidth < destWidth)
-    casted = z3::concat(ctx.bv_val(0, destWidth - srcWidth), casted);
+    casted = z3::concat(mkBV(0, destWidth - srcWidth), casted);
   st.regs.add(op, Integer(casted));
   return {};
 }
@@ -864,7 +864,7 @@ static vector<expr> addOne(vector<expr> &&vec) {
   for (unsigned i = 0; i < vec.size(); ++i) {
     uint64_t v;
     if (vec[i].is_bv() && vec[i].is_numeral_u64(v))
-      vec[i] = ctx.bv_val(v + 1, vec[i].get_sort().bv_size());
+      vec[i] = mkBV(v + 1, vec[i].get_sort().bv_size());
     else
       vec[i] = vec[i] + 1;
   }
