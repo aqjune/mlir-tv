@@ -35,17 +35,6 @@ void printCounterEx(
     model m, const vector<expr> &params, mlir::FuncOp src,
     mlir::FuncOp tgt, const State &st_src, const State &st_tgt,
     VerificationStep step, unsigned retvalidx) {
-  auto or_omit_z3 = [&](const expr &e) -> string {
-    string s;
-    llvm::raw_string_ostream rso(s);
-    rso << e;
-    rso.flush();
-
-    if (s.size() > 500)
-      return "(omitted)";
-    return s;
-  };
-
   llvm::outs() << "<Inputs>\n";
   printInputs(m, src, st_src);
 
@@ -63,20 +52,20 @@ void printCounterEx(
       auto t_src = get<Tensor>(st_src.retValues[retvalidx]).eval(m);
       auto t_tgt = get<Tensor>(st_tgt.retValues[retvalidx]).eval(m);
 
-      llvm::outs() << "Dimensions (src): " << t_src.getDims() << '\n';
-      llvm::outs() << "Dimensions (tgt): " << t_tgt.getDims() << '\n';
+      llvm::outs() << "Dimensions (src): " << or_omit(t_src.getDims()) << '\n';
+      llvm::outs() << "Dimensions (tgt): " << or_omit(t_tgt.getDims()) << '\n';
 
       if (params.size() > 0) {
         // More than size mismatch
         assert(params.size() == 1);
         auto param = m.eval(params[0]);
         auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
-        llvm::outs() << "Index: " << indices << '\n';
+        llvm::outs() << "Index: " << or_omit(indices) << '\n';
         llvm::outs() << "Element (src): "
-                    << or_omit_z3(t_src.get(indices).simplify())
+                    << or_omit(t_src.get(indices).simplify())
                     << '\n';
         llvm::outs() << "Element (tgt): "
-                    << or_omit_z3(t_tgt.get(indices).simplify())
+                    << or_omit(t_tgt.get(indices).simplify())
                     << '\n';
       }
 

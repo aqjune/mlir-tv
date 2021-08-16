@@ -407,12 +407,12 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 
   while (true) {
     optional<expr> arr2, idx, val;
-    if (Store{Any(arr2), Any(idx), Any(val)}.match(arr)) {
+    if (Store(Any(arr2), Any(idx), Any(val)).match(arr)) {
       os << or_omit(*idx) << " -> " << or_omit(*val) << ", ";
       arr = move(*arr2);
       hasStore = true;
 
-    } else if (ConstSplatArray{Any(val)}.match(arr)) {
+    } else if (ConstSplatArray(Any(val)).match(arr)) {
       os << (hasStore ? "else " : "") << "splat array of " << or_omit(*val);
       break;
 

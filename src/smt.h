@@ -28,6 +28,7 @@ expr fitsInDims(const std::vector<expr> &idxs,
                 const std::vector<expr> &sizes);
 
 std::string or_omit(const expr &e);
+std::string or_omit(const std::vector<expr> &evec);
 
 // TODO: these functions must be member functions of Expr
 expr substitute(expr e, const std::vector<expr> &vars,

@@ -144,11 +144,32 @@ sort arraySort(const sort &domain, const sort &range) {
 string or_omit(const expr &e) {
   string s;
   llvm::raw_string_ostream rso(s);
-  rso << e.simplify();
+  expr e2 = e.simplify();
+
+  int64_t i;
+  if (e2.is_numeral_i64(i))
+    return to_string(i);
+  rso << e2;
   rso.flush();
 
   if (s.size() > 500)
     return "(omitted)";
+  return s;
+}
+
+string or_omit(const std::vector<expr> &evec) {
+  string s;
+  llvm::raw_string_ostream rso(s);
+  rso << "(";
+
+  if (evec.size() != 0) {
+    rso << or_omit(evec[0]);
+    for (size_t i = 1; i < evec.size(); ++i)
+      rso << ", " << or_omit(evec[i]);
+  }
+  rso << ")";
+  rso.flush();
+
   return s;
 }
 
