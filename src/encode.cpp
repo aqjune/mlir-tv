@@ -873,7 +873,7 @@ static vector<expr> addOne(vector<expr> &&vec) {
 
 static optional<string> encodeParallelLoopBodyAndOutput(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
-    const mlir::TensorType &outputType, Tensor &t_res) {
+    const mlir::TensorType &outputType, optional<Tensor> &t_res) {
   // Encode the loop body
   // TODO: deal with merging UBs and memorys
   auto &ops = block.getOperations();
@@ -906,7 +906,7 @@ static optional<string> encodeParallelLoopBodyAndOutput(
 static optional<string> encodeReductionLoopBodyAndOutput(
     State &newst, mlir::Block &block,
     const mlir::ArrayRef<mlir::Attribute> &indexingMaps,
-    const mlir::TensorType &outputType, Tensor &t_res) {
+    const mlir::TensorType &outputType, optional<Tensor> &t_res) {
   // Deal with simple reduction loops.
   // TODO: support more kinds of reduction loops!
   string errmsg = "permutated output map or simple reduction form is"
@@ -1045,7 +1045,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   if (auto msg = initInputStateForLoopBody(newst, op))
     return msg;
 
-  Tensor t_res;
+  optional<Tensor> t_res;
   auto indexingMaps = op.indexing_maps().getValue();
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
   auto outputType = op.getOutputOperand(0)->get().getType()
@@ -1062,14 +1062,14 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
       return errmsg;
   }
 
-  assert(t_res.getDims().size() != 0);
+  assert(t_res->getDims().size() != 0);
   newst.linalgGenericScopes.pop();
 
   if (op.getNumResults() != 0) {
     // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
     // aqjune talked with mlir people and confirmed
     assert(op.getNumResults() == 1);
-    st.regs.add(op.getResult(0), move(t_res));
+    st.regs.add(op.getResult(0), move(*t_res));
   }
   return {};
 }

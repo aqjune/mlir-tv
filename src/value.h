@@ -83,12 +83,14 @@ class Tensor {
   std::vector<smt::expr> dims;
   smt::expr arr;
 
+  Tensor(std::vector<smt::expr> &&dims, smt::expr &&arr):
+      dims(std::move(dims)), arr(std::move(arr)){}
+
 public:
   // This may be parameterized later..
   static const unsigned MAX_TENSOR_SIZE = 10000;
   static const unsigned MAX_DIM_SIZE = 25;
 
-  Tensor();
   // A splat tensor.
   Tensor(const smt::expr &splat_elem, const std::vector<smt::expr> &dims);
   // A sparse tensor.
@@ -122,7 +124,7 @@ public:
   Tensor affine(
       const std::vector<smt::expr> &newidxvars,
       std::vector<smt::expr> srcidxs,
-      const std::vector<smt::expr> &newsizes) const;
+      std::vector<smt::expr> &&newsizes) const;
 
   // Return a new tensor T2 s.t.
   //   T2[i1][i2]..[iN] = this[i2]..[iN][i1]

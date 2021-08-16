@@ -72,10 +72,6 @@ TEST(UnitIntegerTest, VariableComparison) {
 }
 
 
-TEST(UnitTensorTest, Default) {
-  EXPECT_THROW(((ZE)Tensor()).get_sort(), z3::exception);
-}
-
 TEST(UnitTensorTest, Splat) {
   {
     Integer elem("elem", 32);

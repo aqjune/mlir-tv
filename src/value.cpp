@@ -181,8 +181,6 @@ Integer Integer::eval(model m) const {
 }
 
 
-Tensor::Tensor(): arr(ctx) {}
-
 Tensor::Tensor(const expr &splat_elem, const vector<expr> &dimvec):
     arr(ctx), dims(dimvec) {
   arr = z3::const_array(Index::sort(), splat_elem);
@@ -243,9 +241,9 @@ Index Tensor::getDim(uint64_t idx) const {
 }
 
 Tensor Tensor::affine(
-    const std::vector<expr> &newidxvars,
-    std::vector<expr> srcidxs,
-    const std::vector<expr> &newsizes) const {
+    const vector<expr> &newidxvars,
+    vector<expr> srcidxs,
+    vector<expr> &&newsizes) const {
   auto idxvar = Index("idx");
   auto indices = from1DIdx(idxvar, newsizes);
 
@@ -257,16 +255,16 @@ Tensor Tensor::affine(
     srcidxs[i] = newv;
   }
 
-  Tensor newm;
-  newm.dims = newsizes;
-  newm.arr = z3::lambda(
+  return {
+    move(newsizes),
+    z3::lambda(
       idxvar,
       z3::ite(
         z3::ult(idxvar, ::get1DSize(newsizes)),
         get(srcidxs),
         aop::mkZeroElemFromArr(arr)
-      ));
-  return newm;
+      ))
+  };
 }
 
 Tensor Tensor::rotateDimensions() const {
@@ -285,7 +283,7 @@ Tensor Tensor::rotateDimensions() const {
   std::copy(++vars.cbegin(), vars.cend(), std::back_inserter(tgtvars));
   tgtvars.push_back(vars.front());
   
-  return affine(vars, tgtvars, newdims);
+  return affine(vars, tgtvars, move(newdims));
 }
 
 Tensor Tensor::conv(const Tensor &filter) const {
@@ -320,10 +318,7 @@ Tensor Tensor::conv(const Tensor &filter) const {
 
 Tensor Tensor::reshape(const vector<expr> &newdims) const {
   // TODO: check whether size(newdims) == size(dims)
-  Tensor t2;
-  t2.dims = simplifyList(newdims);
-  t2.arr = arr;
-  return t2;
+  return { simplifyList(newdims), expr(arr) };
 }
 
 Tensor Tensor::matmul(const Tensor &b) const {
@@ -412,14 +407,12 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 };
 
 Tensor Tensor::eval(model m) const {
-  Tensor t2;
-  t2.dims.reserve(dims.size());
-  for (size_t i = 0; i < dims.size(); ++i) {
-    auto v = m.eval(dims[i], true).simplify();
-    t2.dims.push_back(std::move(v));
-  }
-  t2.arr = m.eval(arr, true).simplify();
-  return t2;
+  vector<expr> dims_ev;
+  dims_ev.reserve(dims.size());
+  for (auto &d: dims)
+    dims_ev.push_back(m.eval(d, true).simplify());
+
+  return { move(dims_ev), m.eval(arr, true).simplify() };
 }
 
 Tensor Tensor::transpose() const {
@@ -450,10 +443,7 @@ Tensor Tensor::mkLambda(
     body = substitute(body, indexvars, idxexprs);
   }
 
-  Tensor t2;
-  t2.dims = move(newdims);
-  t2.arr = z3::lambda({(expr)idx}, body);
-  return t2;
+  return { move(newdims), z3::lambda({(expr)idx}, body) };
 }
 
 expr Tensor::to1DArrayWithOfs(
