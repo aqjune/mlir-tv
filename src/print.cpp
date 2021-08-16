@@ -46,8 +46,6 @@ void printCounterEx(
     return s;
   };
 
-  aop::fpEvalConstVars(m);
-
   llvm::outs() << "<Inputs>\n";
   printInputs(m, src, st_src);
 

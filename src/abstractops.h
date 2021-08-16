@@ -23,7 +23,6 @@ void setAbstractionLevel(AbsLevelDot);
 
 smt::sort fpSort();
 smt::expr fpConst(double f);
-void fpEvalConstVars(smt::model mdl);
 // Return the set of possible FP constants for 'e'.
 std::vector<double> fpPossibleConsts(const smt::expr &e);
 
