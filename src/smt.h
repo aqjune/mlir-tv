@@ -67,7 +67,7 @@ public:
   friend Expr operator&(const Expr &lhs, const Expr &rhs);
   friend Expr operator|(const Expr &lhs, const Expr &rhs);
 
-  Expr mkBV(const uint32_t val, const size_t sz);
+  Expr mkBV(const uint64_t val, const size_t sz);
   Expr mkVar(char* const name, const size_t sz);
   Expr mkBool(const bool val);
 };

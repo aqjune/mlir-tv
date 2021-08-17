@@ -277,7 +277,7 @@ Expr operator|(const Expr &lhs, const Expr &rhs) {
   return Expr(move(z3_expr));
 }
 
-Expr Expr::mkBV(const uint32_t val, const size_t sz) {
+Expr Expr::mkBV(const uint64_t val, const size_t sz) {
   auto z3_expr = fupdate(sctx.z3_ctx, [val, sz](auto &ctx){ return ctx.bv_val(val, sz); });
 
   return Expr(move(z3_expr));
