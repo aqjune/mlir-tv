@@ -178,7 +178,7 @@ public:
     // ex) {d0, d1..}
     std::vector<smt::expr> indVars;
     // Inbounds condition for induction variables
-    // ex) 0 <= d0 < 3 && 0 <= d1 < 4 && ...
+    // ex) (d0, d1) -> 0 <= d0 < 3 && 0 <= d1 < 4 && ...
     smt::expr inbounds;
     // Layout mapping of indVars (indVars -> 1D Index)
     // ex) mapping := (d0, d1) -> (4 * d0 + d1)

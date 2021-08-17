@@ -20,7 +20,6 @@ std::vector<expr> simplifyList(const std::vector<expr> &exprs);
 
 expr to1DIdx(const std::vector<expr> &idxs,
                 const std::vector<expr> &dims);
-expr to1DIdxWithLayout(const std::vector<expr> &idxs, expr layout);
 expr fitsInDims(const std::vector<expr> &idxs,
                 const std::vector<expr> &sizes);
 

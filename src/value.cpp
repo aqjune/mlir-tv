@@ -58,13 +58,16 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
       inbounds = inbounds && z3::ult(indVars[i], dims[i]);
     }
 
-    expr mapping = smt::lambda(indVars, to1DIdx(indVars, dims));
     expr idx = Index("1DIdx");
     vector<expr> inverseIdxs = from1DIdx(idx, dims);
     for (auto inverse : inverseIdxs)
       inverseMappings.push_back(smt::lambda(idx, inverse));
-    return MemRef::Layout(indVars, inbounds, mapping, inverseMappings, mkBool(true));
-
+    return MemRef::Layout(indVars,
+      smt::lambda(indVars, inbounds),
+      smt::lambda(indVars, to1DIdx(indVars, dims)),
+      inverseMappings,
+      mkBool(true)
+    );
   } else {
     int64_t offset;
     llvm::SmallVector<int64_t, 4> strides;
@@ -79,9 +82,7 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
       inbounds = inbounds && z3::ult(indVars[i], dims[i]);
     }
 
-    expr mapping = smt::lambda(indVars, layout);
     expr condition = mkBool(true);
-
     vector<expr> inverseMappings;
     for (unsigned i = 0; i < indVars.size(); i ++) {
       auto inverseName = freshName("inverse" + to_string(i));
@@ -89,11 +90,15 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
       auto inverse = smt::lambda(indVars[i], inverseFn(indVars[i]));
       inverseMappings.push_back(inverse);
 
-      condition = condition && smt::select(inverse, smt::select(mapping, indVars)) == indVars[i];
+      condition = condition && smt::select(inverse, layout) == indVars[i];
     }
-    expr precondition = smt::forall(indVars, smt::implies(inbounds, condition));
 
-    return MemRef::Layout(indVars, inbounds, mapping, inverseMappings, precondition);
+    return MemRef::Layout(indVars,
+      smt::lambda(indVars, inbounds),
+      smt::lambda(indVars, layout),
+      inverseMappings,
+      smt::forall(indVars, smt::implies(inbounds, condition))
+    );
   }
 }
 
@@ -676,7 +681,7 @@ MemRef MemRef::eval(model mdl) const {
 
 pair<expr, expr> MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
   auto expr = smt::select(layout.mapping, idxs);
-  auto inbounds = substitute(layout.inbounds, layout.indVars, idxs);
+  auto inbounds = smt::select(layout.inbounds, idxs);
   return {expr, inbounds};
 }
 
@@ -697,8 +702,8 @@ MemRef::Layout MemRef::createSubViewLayout(
     if (!indVars[i].is_numeral()) transformedIndVars.push_back(indVars[i]);
   }
 
-  auto transformedInbounds = substitute(layout.inbounds, layout.indVars, idxs);
-  auto mapping = lambda(transformedIndVars, smt::select(layout.mapping, idxs));
+  auto transformedInbounds = smt::select(layout.inbounds, idxs);
+  auto transformedLayout = smt::select(layout.mapping, idxs);
   auto condition = mkBool(true);
   vector<expr> inverseMappings;
   for (unsigned i =0; i < transformedIndVars.size(); i ++) {
@@ -708,14 +713,13 @@ MemRef::Layout MemRef::createSubViewLayout(
     inverseMappings.push_back(inverse);
 
     condition = condition &&
-      smt::select(inverse, smt::select(mapping, transformedIndVars)) == transformedIndVars[i];
+      smt::select(inverse, transformedLayout) == transformedIndVars[i];
   }
-  auto precondition = smt::forall(transformedIndVars, smt::implies(transformedInbounds, condition));
 
   return Layout(transformedIndVars,
-    transformedInbounds,
-    mapping,
+    lambda(transformedIndVars, transformedInbounds),
+    lambda(transformedIndVars, transformedLayout),
     inverseMappings,
-    precondition
+    smt::forall(transformedIndVars, smt::implies(transformedInbounds, condition))
   );
 }

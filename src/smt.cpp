@@ -79,14 +79,6 @@ expr to1DIdx(
   return idx;
 }
 
-expr to1DIdxWithLayout(const vector<expr> &idxs, expr layout) {
-  vector<expr> indices;
-  for (unsigned i = 0; i < idxs.size(); i ++)
-    indices.push_back(Index("idx" + to_string(i)));
-
-  return layout.substitute(toExprVector(indices), toExprVector(idxs));
-}
-
 expr fitsInDims(
     const vector<expr> &idxs,
     const vector<expr> &sizes) {
