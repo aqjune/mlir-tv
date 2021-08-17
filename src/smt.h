@@ -3,7 +3,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "z3++.h"
 #include <vector>
-#include <functional>
 #include <optional>
 
 namespace smt {
