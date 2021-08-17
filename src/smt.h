@@ -46,9 +46,6 @@ sort bvSort(unsigned bw);
 sort boolSort();
 sort arraySort(const sort &domain, const sort &range);
 
-class Expr;
-using ExprVec = std::vector<Expr>;
-
 class Expr {
 private:
   std::optional<z3::expr> z3_expr;
@@ -57,7 +54,7 @@ private:
 
 public:
   Expr simplify() const;
-  ExprVec toNDIndices(const ExprVec &dims) const;
+  std::vector<Expr> toNDIndices(const std::vector<Expr> &dims) const;
 
   Expr urem(const Expr &rhs) const;
   Expr udiv(const Expr &rhs) const;

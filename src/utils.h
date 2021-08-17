@@ -7,7 +7,7 @@
 // Fn is simply declared because std::function with template arguments works
 // poorly. :(
 template<class T, class Fn>
-auto fmap(const std::optional<T> &x, Fn &&fn) {
+auto fmap(const std::optional<T> &x, Fn fn) {
   if (x)
     return std::optional(fn(*x));
   return std::optional<decltype(fn(*x))>();

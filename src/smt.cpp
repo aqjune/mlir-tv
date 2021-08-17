@@ -207,11 +207,11 @@ Expr Expr::simplify() const {
   return Expr(std::move(z3_expr));
 }
 
-ExprVec Expr::toNDIndices(const ExprVec &dims) const {
+std::vector<Expr> Expr::toNDIndices(const std::vector<Expr> &dims) const {
   assert(dims.size() > 0);
 
   auto idx_1d = *this;
-  ExprVec expanded_exprs;
+  std::vector<Expr> expanded_exprs;
   expanded_exprs.reserve(dims.size());
   std::for_each(dims.crbegin(), dims.crend(), 
     [&idx_1d, &expanded_exprs](const Expr& dim) {
