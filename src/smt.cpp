@@ -214,25 +214,33 @@ vector<Expr> Expr::toNDIndices(const vector<Expr> &dims) const {
 }
 
 Expr Expr::urem(const Expr &rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return z3::urem(e, *rhs.z3_expr); });
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
+    return z3::urem(e, *rhs.z3_expr); 
+  });
   
   return Expr(move(z3_expr));
 }
 
 Expr Expr::udiv(const Expr& rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return z3::udiv(e, *rhs.z3_expr); });
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
+    return z3::udiv(e, *rhs.z3_expr); 
+  });
   
   return Expr(move(z3_expr));
 }
 
 Expr Expr::ult(const Expr& rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return z3::ult(e, *rhs.z3_expr); });
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
+    return z3::ult(e, *rhs.z3_expr); 
+  });
   
   return Expr(move(z3_expr));
 }
 
 Expr Expr::ugt(const Expr& rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return z3::ugt(e, *rhs.z3_expr); });
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
+    return z3::ugt(e, *rhs.z3_expr); 
+  });
   
   return Expr(move(z3_expr));
 }
@@ -277,22 +285,61 @@ Expr operator|(const Expr &lhs, const Expr &rhs) {
   return Expr(move(z3_expr));
 }
 
-Expr Expr::mkBV(const uint64_t val, const size_t sz) {
-  auto z3_expr = fupdate(sctx.z3_ctx, [val, sz](auto &ctx){ return ctx.bv_val(val, sz); });
+Expr Expr::mkFreshVar(const Sort &s, std::string_view prefix) {
+  auto z3_expr = fupdate(sctx.z3_ctx, [s, prefix](auto &ctx){ 
+    auto ast = Z3_mk_fresh_const(ctx, prefix.data(), *s.z3_sort);
+    return z3::expr(ctx, ast);
+  });
 
   return Expr(move(z3_expr));
 }
 
-Expr Expr::mkVar(char* const name, const size_t sz) {
-  auto z3_expr = fupdate(sctx.z3_ctx, [name, sz](auto &ctx){ return ctx.bv_const(name, sz); });
+Expr Expr::mkVar(const Sort &s, std::string_view name) {
+  auto z3_expr = fupdate(sctx.z3_ctx, [s, name](auto &ctx){ 
+    return ctx.constant(name.data(), *s.z3_sort);
+  });
+
+  return Expr(move(z3_expr));
+}
+
+Expr Expr::mkBV(const uint64_t val, const size_t sz) {
+  auto z3_expr = fupdate(sctx.z3_ctx, [val, sz](auto &ctx){ 
+    return ctx.bv_val(val, sz); 
+  });
 
   return Expr(move(z3_expr));
 }
 
 Expr Expr::mkBool(const bool val) {
-  auto z3_expr = fupdate(sctx.z3_ctx, [val](auto &ctx){ return ctx.bool_val(val); });
+  auto z3_expr = fupdate(sctx.z3_ctx, [val](auto &ctx){ 
+    return ctx.bool_val(val); 
+  });
 
   return Expr(move(z3_expr));
+}
+
+Sort::Sort(std::optional<z3::sort> &&z3_sort) {
+  this->z3_sort = std::move(z3_sort);
+}
+
+Sort Sort::bvSort(size_t bw) {
+  auto z3_sort = fupdate(sctx.z3_ctx, [bw](auto &ctx){ return ctx.bv_sort(bw); });
+
+  return Sort(move(z3_sort));
+}
+
+Sort Sort::boolSort() {
+  auto z3_sort = fupdate(sctx.z3_ctx, [](auto &ctx){ return ctx.bool_sort(); });
+
+  return Sort(move(z3_sort));
+}
+
+Sort Sort::arraySort(const Sort &domain, const Sort &range) {
+  auto z3_sort = fupdate(sctx.z3_ctx, [domain, range](auto &ctx){ 
+    return ctx.array_sort(*domain.z3_sort, *range.z3_sort); 
+  });
+
+  return Sort(move(z3_sort));
 }
 } // namespace smt
 
