@@ -46,6 +46,8 @@ sort bvSort(unsigned bw);
 sort boolSort();
 sort arraySort(const sort &domain, const sort &range);
 
+class Sort;
+
 class Expr {
 private:
   std::optional<z3::expr> z3_expr;
@@ -67,9 +69,24 @@ public:
   friend Expr operator&(const Expr &lhs, const Expr &rhs);
   friend Expr operator|(const Expr &lhs, const Expr &rhs);
 
+  static Expr mkFreshVar(const Sort &s, std::string_view prefix);
+  static Expr mkVar(const Sort &s, std::string_view name);
   static Expr mkBV(const uint64_t val, const size_t sz);
-  static Expr mkVar(char* const name, const size_t sz);
   static Expr mkBool(const bool val);
+};
+
+class Sort {
+  friend Expr;
+
+private:
+  std::optional<z3::sort> z3_sort;
+
+  Sort(std::optional<z3::sort> &&z3_sort);
+
+public:
+  static Sort bvSort(size_t bw);
+  static Sort boolSort();
+  static Sort arraySort(const Sort &domain, const Sort &range);
 };
 } // namespace smt
 
