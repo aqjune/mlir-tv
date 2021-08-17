@@ -67,9 +67,9 @@ public:
   friend Expr operator&(const Expr &lhs, const Expr &rhs);
   friend Expr operator|(const Expr &lhs, const Expr &rhs);
 
-  Expr mkBV(const uint64_t val, const size_t sz);
-  Expr mkVar(char* const name, const size_t sz);
-  Expr mkBool(const bool val);
+  static Expr mkBV(const uint64_t val, const size_t sz);
+  static Expr mkVar(char* const name, const size_t sz);
+  static Expr mkBool(const bool val);
 };
 } // namespace smt
 
