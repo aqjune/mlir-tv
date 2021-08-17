@@ -58,17 +58,18 @@ public:
 
   Expr urem(const Expr &rhs) const;
   Expr udiv(const Expr &rhs) const;
-  Expr add(const Expr &rhs) const;
-  Expr sub(const Expr &rhs) const;
-  Expr mul(const Expr &rhs) const;
   Expr ult(const Expr &rhs) const;
   Expr ugt(const Expr &rhs) const;
-  Expr boolAnd(const Expr &rhs) const;
-  Expr boolOr(const Expr &rhs) const;
 
-  Expr bvVal(const uint32_t val, const size_t sz);
-  Expr bvConst(char* const name, const size_t sz);
-  Expr boolVal(const bool val);
+  friend Expr operator+(const Expr &lhs, const Expr &rhs);
+  friend Expr operator-(const Expr &lhs, const Expr &rhs);
+  friend Expr operator*(const Expr &lhs, const Expr &rhs);
+  friend Expr operator&(const Expr &lhs, const Expr &rhs);
+  friend Expr operator|(const Expr &lhs, const Expr &rhs);
+
+  Expr mkBV(const uint32_t val, const size_t sz);
+  Expr mkVar(char* const name, const size_t sz);
+  Expr mkBool(const bool val);
 };
 } // namespace smt
 

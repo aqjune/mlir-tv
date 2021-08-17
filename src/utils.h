@@ -12,3 +12,10 @@ auto fmap(const std::optional<T> &x, Fn fn) {
     return std::optional(fn(*x));
   return std::optional<decltype(fn(*x))>();
 }
+
+template<class T, class Fn>
+auto fupdate(std::optional<T> &x, Fn fn) {
+  if (x)
+    return std::optional(fn(*x));
+  return std::optional<decltype(fn(*x))>();
+}
