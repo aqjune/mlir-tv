@@ -292,6 +292,8 @@ static Results tryValidation(
   expr precond = mkBool(true);
   for (auto &e: preconds)
     precond = precond && e;
+
+  precond = precond && st_src.precondition() && st_tgt.precondition();
   precond = precond.simplify();
 
   auto res = checkRefinement(

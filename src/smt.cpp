@@ -140,8 +140,28 @@ expr substitute(
   return e.substitute(toExprVector(vars), toExprVector(values));
 }
 
+expr implies(const expr &a, const expr &b) {
+  return z3::implies(a, b);
+}
+
 expr forall(const vector<expr> &vars, const expr &e) {
   return z3::forall(toExprVector(vars), e);
+}
+
+expr lambda(const expr &var, const expr &e) {
+  return z3::lambda(var, e);
+}
+
+expr lambda(const vector<expr> &vars, const expr &e) {
+  return z3::lambda(toExprVector(vars), e);
+}
+
+expr select(const expr &arr, const expr &idx) {
+  return z3::select(arr, idx);
+}
+
+expr select(const expr &arr, const vector<expr> &idxs) {
+  return z3::select(arr, toExprVector(idxs));
 }
 
 sort bvSort(unsigned bw) {

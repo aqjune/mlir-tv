@@ -85,8 +85,12 @@ State::LinalgGenericScope::LinalgGenericScope(
 }
 
 State::State(unsigned int numBlocks, MemEncoding encoding):
-  hasQuantifier(false),
+  hasQuantifier(false), precond(mkBool(true)),
   m(Memory::create(numBlocks, numBlocks, encoding)) {}
+
+void State::addPrecondition(smt::expr &&e) {
+  precond = precond && e;
+}
 
 void State::wellDefined(mlir::Operation *val, expr &&e) {
   auto itr = welldef.find(val);
@@ -95,6 +99,10 @@ void State::wellDefined(mlir::Operation *val, expr &&e) {
   } else {
     itr->second = itr->second && move(e);
   }
+}
+
+expr State::precondition() const {
+  return precond;
 }
 
 expr State::isWellDefined() const {

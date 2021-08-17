@@ -7,6 +7,11 @@
 using namespace smt;
 using namespace std;
 
+static string freshName(string prefix) {
+  static int count = 0;
+  return prefix + to_string(count ++);
+}
+
 static vector<expr> getDims(
     const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize = false) {
   vector<expr> dims;
@@ -45,9 +50,7 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
   auto affineMaps = memRefTy.getAffineMaps();
 
   if (affineMaps.empty()) {
-    expr layout = Index::zero();
-    expr stride = Index::one();
-    vector<expr> indVars;
+    vector<expr> indVars, inverseMappings;
     expr inbounds = mkBool(true);
 
     for (int i = 0; i < dims.size(); i ++) {
@@ -55,12 +58,13 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
       inbounds = inbounds && z3::ult(indVars[i], dims[i]);
     }
 
-    for (int i = dims.size() - 1; i >= 0; i --) {
-      layout = layout + stride * indVars[i];
-      stride = stride * dims[i];
-    }
+    expr mapping = smt::lambda(indVars, to1DIdx(indVars, dims));
+    expr idx = Index("1DIdx");
+    vector<expr> inverseIdxs = from1DIdx(idx, dims);
+    for (auto inverse : inverseIdxs)
+      inverseMappings.push_back(smt::lambda(idx, inverse));
+    return MemRef::Layout(indVars, inbounds, mapping, inverseMappings, mkBool(true));
 
-    return MemRef::Layout(indVars, layout, inbounds);
   } else {
     int64_t offset;
     llvm::SmallVector<int64_t, 4> strides;
@@ -75,13 +79,22 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
       inbounds = inbounds && z3::ult(indVars[i], dims[i]);
     }
 
-    return MemRef::Layout(indVars, layout, inbounds);
-  }
-}
+    expr mapping = smt::lambda(indVars, layout);
+    expr condition = mkBool(true);
 
-static string freshName(string prefix) {
-  static int count = 0;
-  return prefix + to_string(count ++);
+    vector<expr> inverseMappings;
+    for (unsigned i = 0; i < indVars.size(); i ++) {
+      auto inverseName = freshName("inverse" + to_string(i));
+      auto inverseFn = mkUF(Index::sort(), Index::sort(), move(inverseName));
+      auto inverse = smt::lambda(indVars[i], inverseFn(indVars[i]));
+      inverseMappings.push_back(inverse);
+
+      condition = condition && smt::select(inverse, smt::select(mapping, indVars)) == indVars[i];
+    }
+    expr precondition = smt::forall(indVars, smt::implies(inbounds, condition));
+
+    return MemRef::Layout(indVars, inbounds, mapping, inverseMappings, precondition);
+  }
 }
 
 Index::Index(unsigned i): e(mkBV(i, BITS)) {}
@@ -532,6 +545,10 @@ MemRef::MemRef(Memory *m,
     const Layout &layout,
     const smt::sort &elemty) : MemRef(m, freshName("memref"), dims, layout, elemty) {}
 
+expr MemRef::getPrecondition() const {
+  return layout.precondition;
+}
+
 expr MemRef::getWellDefined() const {
   expr size = get1DSize();
   if (size.is_numeral())
@@ -654,12 +671,11 @@ MemRef MemRef::eval(model mdl) const {
   m2.bid = mdl.eval(m2.bid, true).simplify();
   m2.offset = mdl.eval(m2.offset, true).simplify();
 
-  m2.layout = m2.layout.eval(mdl);
   return m2;
 }
 
 pair<expr, expr> MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
-  auto expr = substitute(layout.expr, layout.indVars, idxs);
+  auto expr = smt::select(layout.mapping, idxs);
   auto inbounds = substitute(layout.inbounds, layout.indVars, idxs);
   return {expr, inbounds};
 }
@@ -681,7 +697,25 @@ MemRef::Layout MemRef::createSubViewLayout(
     if (!indVars[i].is_numeral()) transformedIndVars.push_back(indVars[i]);
   }
 
-  auto transformed = substitute(layout.expr, layout.indVars, idxs);
   auto transformedInbounds = substitute(layout.inbounds, layout.indVars, idxs);
-  return Layout(transformedIndVars, transformed, transformedInbounds);
+  auto mapping = lambda(transformedIndVars, smt::select(layout.mapping, idxs));
+  auto condition = mkBool(true);
+  vector<expr> inverseMappings;
+  for (unsigned i =0; i < transformedIndVars.size(); i ++) {
+    auto inverseName = freshName("inverse" + to_string(i));
+    auto inverseFn = mkUF(Index::sort(), Index::sort(), move(inverseName));
+    auto inverse = smt::lambda(transformedIndVars[i], inverseFn(transformedIndVars[i]));
+    inverseMappings.push_back(inverse);
+
+    condition = condition &&
+      smt::select(inverse, smt::select(mapping, transformedIndVars)) == transformedIndVars[i];
+  }
+  auto precondition = smt::forall(transformedIndVars, smt::implies(transformedInbounds, condition));
+
+  return Layout(transformedIndVars,
+    transformedInbounds,
+    mapping,
+    inverseMappings,
+    precondition
+  );
 }
