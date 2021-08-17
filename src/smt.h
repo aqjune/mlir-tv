@@ -12,8 +12,6 @@ using model = z3::model;
 using sort = z3::sort;
 using func_decl = z3::func_decl;
 
-class Expr;
-
 extern z3::context ctx;
 
 expr get1DSize(const std::vector<expr> &dims);
@@ -52,15 +50,28 @@ class Expr {
 private:
   std::optional<z3::expr> z3_expr;
 
-  Expr(std::optional<z3::expr> z3_expr): z3_expr(z3_expr) {}
+  Expr(std::optional<z3::expr> &&z3_expr);
 
 public:
   Expr simplify() const;
+  std::vector<Expr> toNDIndices(const std::vector<Expr> &dims) const;
 
   Expr urem(const Expr &rhs) const;
   Expr udiv(const Expr &rhs) const;
+  Expr ult(const Expr &rhs) const;
+  Expr ugt(const Expr &rhs) const;
+
+  friend Expr operator+(const Expr &lhs, const Expr &rhs);
+  friend Expr operator-(const Expr &lhs, const Expr &rhs);
+  friend Expr operator*(const Expr &lhs, const Expr &rhs);
+  friend Expr operator&(const Expr &lhs, const Expr &rhs);
+  friend Expr operator|(const Expr &lhs, const Expr &rhs);
+
+  static Expr mkBV(const uint64_t val, const size_t sz);
+  static Expr mkVar(char* const name, const size_t sz);
+  static Expr mkBool(const bool val);
 };
-};
+} // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e);
 llvm::raw_ostream& operator<<(
