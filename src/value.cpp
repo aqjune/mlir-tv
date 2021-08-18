@@ -7,6 +7,11 @@
 using namespace smt;
 using namespace std;
 
+static string freshName(string prefix) {
+  static int count = 0;
+  return prefix + to_string(count ++);
+}
+
 static vector<expr> getDims(
     const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize = false) {
   vector<expr> dims;
@@ -44,44 +49,23 @@ static MemRef::Layout
 getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
   auto affineMaps = memRefTy.getAffineMaps();
 
-  if (affineMaps.empty()) {
-    expr layout = Index::zero();
-    expr stride = Index::one();
-    vector<expr> indVars;
-    expr inbounds = mkBool(true);
+  if (affineMaps.empty())
+    return MemRef::Layout(dims);
 
-    for (int i = 0; i < dims.size(); i ++) {
-      indVars.push_back(Index("idx" + to_string(i)));
-      inbounds = inbounds && z3::ult(indVars[i], dims[i]);
-    }
-
-    for (int i = dims.size() - 1; i >= 0; i --) {
-      layout = layout + stride * indVars[i];
-      stride = stride * dims[i];
-    }
-
-    return MemRef::Layout(indVars, layout, inbounds);
-  } else {
-    int64_t offset;
-    llvm::SmallVector<int64_t, 4> strides;
-    auto success = mlir::getStridesAndOffset(memRefTy, strides, offset);
-    assert(succeeded(success) && "unexpected non-strided memref");
-    expr layout = getConstOrVal(offset, "offset");
-    vector<expr> indVars;
-    expr inbounds = mkBool(true);
-    for (int i = 0; i < strides.size(); i ++) {
-      indVars.push_back(Index("idx" + to_string(i)));
-      layout = layout + getConstOrVal(strides[i], "strides") * indVars[i];
-      inbounds = inbounds && z3::ult(indVars[i], dims[i]);
-    }
-
-    return MemRef::Layout(indVars, layout, inbounds);
+  int64_t offset;
+  llvm::SmallVector<int64_t, 4> strides;
+  auto success = mlir::getStridesAndOffset(memRefTy, strides, offset);
+  assert(succeeded(success) && "unexpected non-strided memref");
+  expr layout = getConstOrVal(offset, "offset");
+  vector<expr> indVars;
+  expr inbounds = mkBool(true);
+  for (int i = 0; i < strides.size(); i ++) {
+    indVars.push_back(Index("idx" + to_string(i)));
+    layout = layout + getConstOrVal(strides[i], "strides") * indVars[i];
+    inbounds = inbounds && z3::ult(indVars[i], dims[i]);
   }
-}
 
-static string freshName(string prefix) {
-  static int count = 0;
-  return prefix + to_string(count ++);
+  return MemRef::Layout(indVars, layout, inbounds);
 }
 
 Index::Index(unsigned i): e(mkBV(i, BITS)) {}
@@ -509,6 +493,68 @@ expr Tensor::to1DArrayWithOfs(
         aop::mkZeroElemFromArr(arr)));
 }
 
+MemRef::Layout::Layout(const vector<expr> &dims):
+    inbounds(init()), mapping(init()), precondition(init()) {
+  vector<expr> indVars, inverseMappings;
+  expr inbounds = mkBool(true);
+
+  for (int i = 0; i < dims.size(); i ++) {
+    indVars.push_back(Index("idx" + to_string(i)));
+    inbounds = inbounds && z3::ult(indVars[i], dims[i]);
+  }
+
+  expr idx = Index("1DIdx");
+  vector<expr> inverseIdxs = from1DIdx(idx, dims);
+  for (auto inverse : inverseIdxs)
+    inverseMappings.push_back(smt::lambda(idx, inverse));
+
+  this->indVars = indVars;
+  this->inbounds = smt::lambda(indVars, inbounds);
+  this->mapping = smt::lambda(indVars, to1DIdx(indVars, dims));
+  this->inverseMappings = inverseMappings;
+  this->precondition = mkBool(true);
+}
+
+MemRef::Layout::Layout(const std::vector<smt::expr> &indVars,
+    const smt::expr &layout,
+    const smt::expr &inbounds,
+    bool useUF): indVars(indVars), inbounds(init()), mapping(init()), precondition(init()) {
+  if (useUF) {
+    vector<smt::sort> domains(indVars.size(), Index::sort());
+    auto layoutFn = mkUF(domains, Index::sort(), freshName("layoutFn"));
+    auto layoutFnExpr = fapply(layoutFn, indVars);
+    expr condition = (layoutFnExpr == layout);
+    vector<expr> inverseMappings;
+    for (unsigned i = 0; i < indVars.size(); i ++) {
+      auto inverseName = freshName("inverse" + to_string(i));
+      auto inverseFn = mkUF(Index::sort(), Index::sort(), move(inverseName));
+      auto inverse = smt::lambda(indVars[i], inverseFn(indVars[i]));
+      inverseMappings.push_back(inverse);
+
+      condition = condition && smt::select(inverse, layoutFnExpr) == indVars[i];
+    }
+    this->inbounds = smt::lambda(indVars, inbounds);
+    this->mapping = smt::lambda(indVars, layoutFnExpr);
+    this->inverseMappings = inverseMappings;
+    this->precondition = smt::forall(indVars, smt::implies(inbounds, condition));
+  } else {
+    expr condition = mkBool(true);
+    vector<expr> inverseMappings;
+    for (unsigned i = 0; i < indVars.size(); i ++) {
+      auto inverseName = freshName("inverse" + to_string(i));
+      auto inverseFn = mkUF(Index::sort(), Index::sort(), move(inverseName));
+      auto inverse = smt::lambda(indVars[i], inverseFn(indVars[i]));
+      inverseMappings.push_back(inverse);
+
+      condition = condition && smt::select(inverse, layout) == indVars[i];
+    }
+    this->inbounds = smt::lambda(indVars, inbounds);
+    this->mapping = smt::lambda(indVars, layout);
+    this->inverseMappings = inverseMappings;
+    this->precondition = smt::forall(indVars, smt::implies(inbounds, condition));
+  }
+}
+
 MemRef::MemRef(Memory *m,
   const smt::expr &bid,
   const smt::expr &offset,
@@ -531,6 +577,10 @@ MemRef::MemRef(Memory *m,
     const std::vector<expr> &dims,
     const Layout &layout,
     const smt::sort &elemty) : MemRef(m, freshName("memref"), dims, layout, elemty) {}
+
+expr MemRef::getPrecondition() const {
+  return layout.precondition;
+}
 
 expr MemRef::getWellDefined() const {
   expr size = get1DSize();
@@ -654,13 +704,12 @@ MemRef MemRef::eval(model mdl) const {
   m2.bid = mdl.eval(m2.bid, true).simplify();
   m2.offset = mdl.eval(m2.offset, true).simplify();
 
-  m2.layout = m2.layout.eval(mdl);
   return m2;
 }
 
 pair<expr, expr> MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
-  auto expr = substitute(layout.expr, layout.indVars, idxs);
-  auto inbounds = substitute(layout.inbounds, layout.indVars, idxs);
+  auto expr = smt::select(layout.mapping, idxs);
+  auto inbounds = smt::select(layout.inbounds, idxs);
   return {expr, inbounds};
 }
 
@@ -680,8 +729,7 @@ MemRef::Layout MemRef::createSubViewLayout(
     idxs.push_back((indVars[i] + offsets[i]) * strides[i]);
     if (!indVars[i].is_numeral()) transformedIndVars.push_back(indVars[i]);
   }
-
-  auto transformed = substitute(layout.expr, layout.indVars, idxs);
-  auto transformedInbounds = substitute(layout.inbounds, layout.indVars, idxs);
-  return Layout(transformedIndVars, transformed, transformedInbounds);
+  auto transformedLayout = smt::select(layout.mapping, idxs);
+  auto transformedInbounds = smt::select(layout.inbounds, idxs);
+  return Layout(transformedIndVars, transformedLayout, transformedInbounds);
 }

@@ -174,19 +174,42 @@ public:
 
   class Layout {
   public:
+    // Induction variables
+    // ex) {d0, d1..}
     std::vector<smt::expr> indVars;
-    smt::expr expr;
+    // Inbounds condition for induction variables
+    // ex) (d0, d1) -> 0 <= d0 < 3 && 0 <= d1 < 4 && ...
     smt::expr inbounds;
+    // Layout mapping of indVars (indVars -> 1D Index)
+    // ex) mapping := (d0, d1) -> (4 * d0 + d1)
+    smt::expr mapping;
+    // Inverse layout mapping of indVars (1D Index -> indVars)
+    // If we can not give exact definition of inverseMappings, then encode it with uninterpreted function.
+    // ex)
+    // - If we can give exact definition
+    //    inverseMappings := (idx) -> {(idx / 4), (idx % 4)}
+    // - If we cannot give exact definition
+    //    inverseMappings := (idx) -> {inverse0(idx), inverse1(idx)}
+    std::vector<smt::expr> inverseMappings;
+    // Precondition for inverse mapping function.
+    // If we cannot give exact definition of inverseMappings, then give its meaning with forall quantifier.
+    // This will be added to state's precondition only when inverseMappings are used explicitly.
+    // ex) forall indVars, if (indVars are inbounds) then inverse0(mapping(d0, d1)) = d0 && inverse1(mapping(d0, d1)) = d1
+    smt::expr precondition;
+
+    Layout(const std::vector<smt::expr> &dims);
 
     Layout(const std::vector<smt::expr> &indVars,
-      const smt::expr &expr,
-      const smt::expr &inbounds):
-      indVars(indVars), expr(expr), inbounds(inbounds) {}
+        const smt::expr &layout,
+        const smt::expr &inbounds,
+        bool useUF = false); // encode "mapping" using uninterpreted function
 
-    Layout eval(smt::model mdl) const {
-      return { indVars, mdl.eval(expr).simplify(),
-               mdl.eval(inbounds).simplify() };
-    }
+    // MARK(makesource)
+    // Without this copy constructor, I encounter libc+abi.dylib related error in MacOS
+    Layout(const Layout& copy):
+      indVars(copy.indVars), inbounds(copy.inbounds),
+      mapping(copy.mapping), inverseMappings(copy.inverseMappings),
+      precondition(copy.precondition) {}
   };
 
   MemRef(Memory *m,
@@ -207,6 +230,7 @@ public:
 
   operator smt::expr() const { return bid && offset; }
 
+  smt::expr getPrecondition() const;
   smt::expr getWellDefined() const;
 
   // If memRefTy is unsupported, return nullopt

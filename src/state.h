@@ -51,6 +51,7 @@ public:
 
 class State {
 private:
+  smt::expr precond;
   // welldef[i]: is instruction i well-defined?
   llvm::DenseMap<mlir::Operation *, smt::expr> welldef;
 
@@ -79,7 +80,9 @@ public:
 
   State(unsigned int numBlocks, MemEncoding encoding);
 
+  void addPrecondition(smt::expr &&e);
   void wellDefined(mlir::Operation *op, smt::expr &&e);
+  smt::expr precondition() const;
   smt::expr isWellDefined() const;
   smt::expr isOpWellDefined(mlir::Operation *op) const;
 

@@ -20,7 +20,6 @@ std::vector<expr> simplifyList(const std::vector<expr> &exprs);
 
 expr to1DIdx(const std::vector<expr> &idxs,
                 const std::vector<expr> &dims);
-expr to1DIdxWithLayout(const std::vector<expr> &idxs, expr layout);
 expr fitsInDims(const std::vector<expr> &idxs,
                 const std::vector<expr> &sizes);
 
@@ -28,9 +27,15 @@ std::string or_omit(const expr &e);
 std::string or_omit(const std::vector<expr> &evec);
 
 // TODO: these functions must be member functions of Expr
+expr init();
 expr substitute(expr e, const std::vector<expr> &vars,
                 const std::vector<expr> &values);
+expr implies(const expr &a, const expr &b);
 expr forall(const std::vector<expr> &vars, const expr &e);
+expr lambda(const expr &var, const expr &e);
+expr lambda(const std::vector<expr> &vars, const expr &e);
+expr select(const expr &arr, const expr &idx);
+expr select(const expr &arr, const std::vector<expr> &idxs);
 expr mkFreshVar(const sort &s, std::string &&prefix);
 expr mkVar(const sort &s, std::string &&name);
 expr mkBV(uint64_t i, unsigned bw);
@@ -38,6 +43,7 @@ expr mkBool(bool b);
 func_decl mkUF(const sort &domain, const sort &range, std::string &&name);
 func_decl mkUF(const std::vector<sort> &domain, const sort &range,
                std::string &&name);
+expr fapply(const func_decl &func, const std::vector<expr> &vars);
 bool structurallyEq(const expr &e1, const expr &e2);
 
 // TODO: these functions must be member functions of Sort

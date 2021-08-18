@@ -79,14 +79,6 @@ expr to1DIdx(
   return idx;
 }
 
-expr to1DIdxWithLayout(const vector<expr> &idxs, expr layout) {
-  vector<expr> indices;
-  for (unsigned i = 0; i < idxs.size(); i ++)
-    indices.push_back(Index("idx" + to_string(i)));
-
-  return layout.substitute(toExprVector(indices), toExprVector(idxs));
-}
-
 expr fitsInDims(
     const vector<expr> &idxs,
     const vector<expr> &sizes) {
@@ -129,9 +121,15 @@ func_decl mkUF(
   return ctx.function(move(name).c_str(), v, range);
 }
 
+expr fapply(const func_decl &func, const vector<expr> &vars) {
+  return func(toExprVector(vars));
+}
+
 bool structurallyEq(const expr &e1, const expr &e2) {
   return (Z3_ast)e1 == (Z3_ast)e2;
 }
+
+expr init() { return ctx; }
 
 expr substitute(
     expr e,
@@ -140,8 +138,28 @@ expr substitute(
   return e.substitute(toExprVector(vars), toExprVector(values));
 }
 
+expr implies(const expr &a, const expr &b) {
+  return z3::implies(a, b);
+}
+
 expr forall(const vector<expr> &vars, const expr &e) {
   return z3::forall(toExprVector(vars), e);
+}
+
+expr lambda(const expr &var, const expr &e) {
+  return z3::lambda(var, e);
+}
+
+expr lambda(const vector<expr> &vars, const expr &e) {
+  return z3::lambda(toExprVector(vars), e);
+}
+
+expr select(const expr &arr, const expr &idx) {
+  return z3::select(arr, idx);
+}
+
+expr select(const expr &arr, const vector<expr> &idxs) {
+  return z3::select(arr, toExprVector(idxs));
 }
 
 sort bvSort(unsigned bw) {
