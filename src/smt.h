@@ -62,11 +62,11 @@ public:
   Expr ult(const Expr &rhs) const;
   Expr ugt(const Expr &rhs) const;
 
-  friend Expr operator+(const Expr &lhs, const Expr &rhs);
-  friend Expr operator-(const Expr &lhs, const Expr &rhs);
-  friend Expr operator*(const Expr &lhs, const Expr &rhs);
-  friend Expr operator&(const Expr &lhs, const Expr &rhs);
-  friend Expr operator|(const Expr &lhs, const Expr &rhs);
+  Expr operator+(const Expr &rhs);
+  Expr operator-(const Expr &rhs);
+  Expr operator*(const Expr &rhs);
+  Expr operator&(const Expr &rhs);
+  Expr operator|(const Expr &rhs);
 
   static Expr mkFreshVar(const Sort &s, std::string_view prefix);
   static Expr mkVar(const Sort &s, std::string_view name);
