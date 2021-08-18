@@ -101,6 +101,7 @@ public:
 
   Result(const std::optional<z3::check_result> &z3_result);
   const bool operator==(const Result &rhs);
+  const bool operator!=(const Result &rhs) { return !(*this == rhs); }
   
 private:
   Internal result;
