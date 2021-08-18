@@ -263,26 +263,26 @@ Expr Expr::ugt(const Expr& rhs) const {
   return Expr(move(z3_expr));
 }
 
-Expr operator+(const Expr &lhs, const Expr &rhs) {
-  auto z3_expr = fmap(lhs.z3_expr, [&rhs](auto e) { return e + *rhs.z3_expr; });
+Expr Expr::operator+(const Expr &rhs) {
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e + *rhs.z3_expr; });
   
   return Expr(move(z3_expr));
 }
 
-Expr operator-(const Expr &lhs, const Expr &rhs) {
-  auto z3_expr = fmap(lhs.z3_expr, [&rhs](auto e) { return e - *rhs.z3_expr; });
+Expr Expr::operator-(const Expr &rhs) {
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e - *rhs.z3_expr; });
   
   return Expr(move(z3_expr));
 }
 
-Expr operator*(const Expr &lhs, const Expr &rhs) {
-  auto z3_expr = fmap(lhs.z3_expr, [&rhs](auto e) { return e * *rhs.z3_expr; });
+Expr Expr::operator*(const Expr &rhs) {
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e * *rhs.z3_expr; });
   
   return Expr(move(z3_expr));
 }
 
-Expr operator&(const Expr &lhs, const Expr &rhs) {
-  auto z3_expr = fmap(lhs.z3_expr, [&rhs](auto e) { 
+Expr Expr::operator&(const Expr &rhs) {
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
     if (e.is_bool()) 
       return e && *rhs.z3_expr;
     else
@@ -292,8 +292,8 @@ Expr operator&(const Expr &lhs, const Expr &rhs) {
   return Expr(move(z3_expr));
 }
 
-Expr operator|(const Expr &lhs, const Expr &rhs) {
-  auto z3_expr = fmap(lhs.z3_expr, [&rhs](auto e) { 
+Expr Expr::operator|(const Expr &rhs) {
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
     if (e.is_bool()) 
       return e || *rhs.z3_expr;
     else
