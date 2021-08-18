@@ -341,6 +341,43 @@ Sort Sort::arraySort(const Sort &domain, const Sort &range) {
 
   return Sort(move(z3_sort));
 }
+
+Result::Result(const optional<z3::check_result> &z3_result) {
+  auto unwrapped_z3_result = z3_result.value_or(z3::check_result::unknown);
+  if (unwrapped_z3_result == z3::check_result::sat) {
+    this->result = Result::SAT;
+  } else if (unwrapped_z3_result == z3::check_result::unsat) {
+    this->result = Result::UNSAT;
+  } else {
+    this->result = Result::UNKNOWN;
+  }
+}
+
+const bool Result::operator==(const Result &rhs) {
+  return this->result == rhs.result;
+}
+
+Solver::Solver() {
+  this->z3_solver = fupdate(sctx.z3_ctx, [](auto &ctx){ return z3::solver(ctx); });
+}
+
+void Solver::add(const Expr &e) {
+  fupdate(this->z3_solver, [e](auto &solver) { solver.add(*e.z3_expr); return 0; });
+}
+
+void Solver::reset() {
+  fupdate(this->z3_solver, [](auto &solver) { solver.reset(); return 0; });
+}
+
+Result Solver::check() {
+  auto z3_result = fupdate(this->z3_solver, [](auto &solver) {
+    return solver.check();
+  });
+  
+  // TODO: compare with results from other solvers
+  // TODO: concurrent run with solvers and return the fastest one?
+  return Result(z3_result);    
+}
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e) {
