@@ -31,11 +31,11 @@ elseif(NOT EXISTS ${MLIR_INC_DIR} OR NOT EXISTS ${MLIR_LIB_DIR})
 else()
     target_include_directories(${PROJECT_LIB} PUBLIC ${MLIR_INC_DIR})
     target_link_directories(${PROJECT_LIB} PUBLIC ${MLIR_LIB_DIR})
-    target_link_libraries(${PROJECT_LIB} PUBLIC
+    target_link_libraries(${PROJECT_LIB} PUBLIC "-Wl,--start-group"
         MLIRViewLikeInterface MLIRInferTypeOpInterface MLIRControlFlowInterfaces MLIRSideEffectInterfaces
         MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRAffine MLIRMemRef MLIRShape MLIRMath
         MLIRStandard MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport
-        LLVMSupport LLVMDemangle pthread m curses)
+        LLVMSupport LLVMDemangle pthread m curses "-Wl,--end-group")
 endif()
 
 # Check if at least one solver is available
