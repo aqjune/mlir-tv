@@ -52,8 +52,11 @@ sort boolSort();
 sort arraySort(const sort &domain, const sort &range);
 
 class Sort;
+class Solver;
 
 class Expr {
+  friend Solver;
+
 private:
   std::optional<z3::expr> z3_expr;
 
@@ -92,6 +95,34 @@ public:
   static Sort bvSort(size_t bw);
   static Sort boolSort();
   static Sort arraySort(const Sort &domain, const Sort &range);
+};
+
+class Result {
+public:
+  enum Internal {
+    SAT,
+    UNSAT,
+    UNKNOWN
+  };
+
+  Result(const std::optional<z3::check_result> &z3_result);
+  const bool operator==(const Result &rhs);
+  const bool operator!=(const Result &rhs) { return !(*this == rhs); }
+  
+private:
+  Internal result;
+};
+
+class Solver {
+private:
+  std::optional<z3::solver> z3_solver;
+
+public:
+  Solver();
+
+  void add(const Expr &e);
+  void reset();
+  Result check();
 };
 } // namespace smt
 
