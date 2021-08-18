@@ -27,6 +27,7 @@ std::string or_omit(const expr &e);
 std::string or_omit(const std::vector<expr> &evec);
 
 // TODO: these functions must be member functions of Expr
+expr init();
 expr substitute(expr e, const std::vector<expr> &vars,
                 const std::vector<expr> &values);
 expr implies(const expr &a, const expr &b);
@@ -42,6 +43,7 @@ expr mkBool(bool b);
 func_decl mkUF(const sort &domain, const sort &range, std::string &&name);
 func_decl mkUF(const std::vector<sort> &domain, const sort &range,
                std::string &&name);
+expr fapply(const func_decl &func, const std::vector<expr> &vars);
 bool structurallyEq(const expr &e1, const expr &e2);
 
 // TODO: these functions must be member functions of Sort

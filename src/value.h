@@ -197,13 +197,12 @@ public:
     // ex) forall indVars, if (indVars are inbounds) then inverse0(mapping(d0, d1)) = d0 && inverse1(mapping(d0, d1)) = d1
     smt::expr precondition;
 
+    Layout(const std::vector<smt::expr> &dims);
+
     Layout(const std::vector<smt::expr> &indVars,
+        const smt::expr &layout,
         const smt::expr &inbounds,
-        const smt::expr &mapping,
-        const std::vector<smt::expr> &inverseMappings,
-        const smt::expr &precondition):
-      indVars(indVars), inbounds(inbounds),
-      mapping(mapping), inverseMappings(inverseMappings), precondition(precondition) {}
+        bool useUF = false); // encode "mapping" using uninterpreted function
 
     // MARK(makesource)
     // Without this copy constructor, I encounter libc+abi.dylib related error in MacOS

@@ -121,9 +121,15 @@ func_decl mkUF(
   return ctx.function(move(name).c_str(), v, range);
 }
 
+expr fapply(const func_decl &func, const vector<expr> &vars) {
+  return func(toExprVector(vars));
+}
+
 bool structurallyEq(const expr &e1, const expr &e2) {
   return (Z3_ast)e1 == (Z3_ast)e2;
 }
+
+expr init() { return ctx; }
 
 expr substitute(
     expr e,
