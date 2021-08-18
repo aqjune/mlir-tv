@@ -64,6 +64,10 @@ private:
 
 public:
   Expr simplify() const;
+  Expr substitute(const std::vector<Expr> &vars, const std::vector<Expr> &values) const;
+  Expr implies(const Expr &rhs) const;
+  Expr select(const Expr &idx) const;
+  Expr select(const std::vector<Expr> &indices) const;
   std::vector<Expr> toNDIndices(const std::vector<Expr> &dims) const;
 
   Expr urem(const Expr &rhs) const;
@@ -81,6 +85,8 @@ public:
   static Expr mkVar(const Sort &s, std::string_view name);
   static Expr mkBV(const uint64_t val, const size_t sz);
   static Expr mkBool(const bool val);
+
+  friend z3::expr_vector toZ3ExprVector(const std::vector<Expr> &vec);
 };
 
 class Sort {

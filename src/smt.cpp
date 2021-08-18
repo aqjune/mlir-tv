@@ -216,6 +216,38 @@ Expr Expr::simplify() const {
   return Expr(move(z3_expr));
 }
 
+Expr Expr::substitute(const std::vector<Expr> &vars, const std::vector<Expr> &values) const {
+  auto z3_expr = fmap(this->z3_expr, [vars, values](auto e) {    
+    return e.substitute(toZ3ExprVector(vars), toZ3ExprVector(values));
+  });
+
+  return Expr(move(z3_expr));
+}
+
+Expr Expr::implies(const Expr &rhs) const {
+  auto z3_expr = fmap(this->z3_expr, [rhs](auto z3_lhs) {
+    return z3::implies(z3_lhs, *rhs.z3_expr);
+  });
+
+  return Expr(move(z3_expr));
+}
+
+Expr Expr::select(const Expr &idx) const {
+  auto z3_expr = fmap(this->z3_expr, [idx](auto z3_arr) {
+    return z3::select(z3_arr, *idx.z3_expr);
+  });
+
+  return Expr(move(z3_expr));
+}
+
+Expr Expr::select(const std::vector<Expr> &indices) const {
+  auto z3_expr = fmap(this->z3_expr, [indices](auto z3_arr) {
+    return z3::select(z3_arr, toZ3ExprVector(indices));
+  });
+
+  return Expr(move(z3_expr));
+}
+
 vector<Expr> Expr::toNDIndices(const vector<Expr> &dims) const {
   assert(dims.size() > 0);
 
@@ -334,6 +366,14 @@ Expr Expr::mkBool(const bool val) {
   });
 
   return Expr(move(z3_expr));
+}
+
+z3::expr_vector toZ3ExprVector(const vector<Expr> &vec) {
+  z3::expr_vector z3_exprs(*sctx.z3_ctx);
+  std::for_each(vec.begin(), vec.end(),
+    [z3_exprs](auto e) mutable { z3_exprs.push_back(*e.z3_expr); });
+
+  return z3_exprs;
 }
 
 Sort::Sort(std::optional<z3::sort> &&z3_sort) {
