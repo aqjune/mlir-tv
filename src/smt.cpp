@@ -303,6 +303,22 @@ Expr Expr::operator|(const Expr &rhs) {
   return Expr(move(z3_expr));
 }
 
+Expr Expr::operator==(const Expr &rhs) {
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto z3_lhs) {
+    return z3_lhs == *rhs.z3_expr;
+  });
+  
+  return Expr(move(z3_expr));
+}
+
+Expr Expr::operator!=(const Expr &rhs) {
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto z3_lhs) {
+    return z3_lhs != *rhs.z3_expr;
+  });
+  
+  return Expr(move(z3_expr));
+}
+
 Expr Expr::mkFreshVar(const Sort &s, std::string_view prefix) {
   auto z3_expr = fupdate(sctx.z3_ctx, [s, prefix](auto &ctx){ 
     auto ast = Z3_mk_fresh_const(ctx, prefix.data(), *s.z3_sort);

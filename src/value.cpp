@@ -68,17 +68,22 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
   return MemRef::Layout(indVars, layout, inbounds);
 }
 
-Index::Index(unsigned i): e(mkBV(i, BITS)) {}
+Index::Index(unsigned i): e(mkBV(i, BITS)), se(smt::Expr::mkBV(i, BITS)) {}
 
 Index::Index(std::string &&name, bool freshvar):
     e(freshvar ?
       mkFreshVar(Index::sort(), move(name)) :
-      mkVar(Index::sort(), move(name))) {}
-
-Index::Index(const expr &e): e(e) {}
+      mkVar(Index::sort(), move(name))),
+    se(freshvar ?
+      Expr::mkFreshVar(Index::sSort(), name) :
+      Expr::mkVar(Index::sSort(), name)) {}
 
 smt::sort Index::sort() {
   return bvSort(BITS);
+}
+
+Sort Index::sSort() {
+  return Sort::bvSort(BITS);
 }
 
 Index Index::one() { return Index(1); }
@@ -91,6 +96,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
 
 std::pair<expr, vector<expr>> Index::refines(const Index &other) const {
   return {(expr) other == (expr) *this, {}};
+}
+
+std::pair<Expr, vector<Expr>> Index::sRefines(const Index &other) const {
+  return {(Expr) other == (Expr) *this, {}};
 }
 
 Index Index::eval(model m) const {

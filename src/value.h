@@ -11,15 +11,18 @@ class Memory;
 
 class Index {
   smt::expr e;
+  smt::Expr se;
 
 public:
   static const unsigned BITS = 32;
 
   Index(unsigned);
   Index(std::string &&name, bool freshvar = false);
-  Index(const smt::expr &e);
+  // DEPRECATED: this constructor creates invalid se
+  Index(const smt::expr &e): e(e), se(smt::Expr::mkBV(0, BITS)) {}
 
   operator smt::expr() const { return e; }
+  operator smt::Expr() const { return se; }
   Index ofs(int i) const {
     uint64_t v;
     if (e.is_numeral_u64(v))
@@ -28,11 +31,14 @@ public:
   }
 
   static smt::sort sort();
+  static smt::Sort sSort();
   static Index one();
   static Index zero();
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
   std::pair<smt::expr, std::vector<smt::expr>> refines(
+      const Index &other) const;
+  std::pair<smt::Expr, std::vector<smt::Expr>> sRefines(
       const Index &other) const;
   Index eval(smt::model m) const;
 };

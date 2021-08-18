@@ -76,6 +76,8 @@ public:
   Expr operator*(const Expr &rhs);
   Expr operator&(const Expr &rhs);
   Expr operator|(const Expr &rhs);
+  Expr operator==(const Expr &rhs);
+  Expr operator!=(const Expr &rhs);
 
   static Expr mkFreshVar(const Sort &s, std::string_view prefix);
   static Expr mkVar(const Sort &s, std::string_view name);
