@@ -18,10 +18,10 @@ Solvers (at least one of them must be used): [Z3-solver](https://github.com/Z3Pr
 ```bash
 mkdir build
 cd build
-# At least one of -DZ3_DIR and -DCVC5_DIR must be provided
+# As of now, mlir-tv won't compile without -DZ3_DIR. This will be fixed soon.
 # -DUSE_LIBC is OFF by default. Set it to ON iff the MLIR (and CVC5) is linked against libc++
 cmake -DMLIR_DIR=<dir/to/mlir-install> \
-      [-DZ3_DIR=<dir/to/z3-install>] \
+      -DZ3_DIR=<dir/to/z3-install> \
       [-DCVC5_DIR=<dir/to/cvc5-install>] \
       [-DUSE_LIBC=ON|OFF] \
       [-DCMAKE_BUILD_TYPE=DEBUG|RELEASE] \
