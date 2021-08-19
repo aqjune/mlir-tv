@@ -1,9 +1,22 @@
 #pragma once
 
 #include "llvm/Support/raw_ostream.h"
-#include "z3++.h"
 #include <vector>
 #include <optional>
+
+#ifdef SOLVER_Z3
+  #include "z3++.h"
+  #define IF_Z3_ENABLED(stmt) stmt
+#else
+  #define IF_Z3_ENABLED(stmt)
+#endif
+
+#ifdef SOLVER_CVC5
+  #include "cvc5/cvc5.h"
+  #define IF_CVC5_ENABLED(stmt) stmt
+#else
+  #define IF_CVC5_ENABLED(stmt)
+#endif
 
 namespace smt {
 using expr = z3::expr;
@@ -58,9 +71,17 @@ class Expr {
   friend Solver;
 
 private:
-  std::optional<z3::expr> z3_expr;
+  Expr();
 
-  Expr(std::optional<z3::expr> &&z3_expr);
+#ifdef SOLVER_Z3
+  std::optional<z3::expr> z3_expr;
+  void setZ3Expr(std::optional<z3::expr> &&z3_expr);
+#endif // SOLVER_Z3
+
+#ifdef SOLVER_CVC5
+  std::optional<cvc5::api::Term> cvc5_expr;
+  void setCVC5Expr(std::optional<cvc5::api::Term> &&cvc5_expr);
+#endif // SOLVER_CVC5
 
 public:
   Expr simplify() const;
@@ -77,8 +98,8 @@ public:
   Expr operator&(const Expr &rhs);
   Expr operator|(const Expr &rhs);
 
-  static Expr mkFreshVar(const Sort &s, std::string_view prefix);
-  static Expr mkVar(const Sort &s, std::string_view name);
+  static Expr mkFreshVar(const Sort &s, const std::string &prefix);
+  static Expr mkVar(const Sort &s, const std::string &name);
   static Expr mkBV(const uint64_t val, const size_t sz);
   static Expr mkBool(const bool val);
 };
@@ -87,9 +108,17 @@ class Sort {
   friend Expr;
 
 private:
-  std::optional<z3::sort> z3_sort;
+  Sort();
 
-  Sort(std::optional<z3::sort> &&z3_sort);
+#ifdef SOLVER_Z3
+  std::optional<z3::sort> z3_sort;
+  void setZ3Sort(std::optional<z3::sort> &&z3_sort);
+#endif // SOLVER_Z3
+
+#ifdef SOLVER_CVC5
+  std::optional<cvc5::api::Sort> cvc5_sort;
+  void setCVC5Sort(std::optional<cvc5::api::Sort> &&cvc5_sort);
+#endif // SOLVER_CVC5
 
 public:
   static Sort bvSort(size_t bw);
@@ -100,14 +129,19 @@ public:
 class Result {
 public:
   enum Internal {
-    SAT,
-    UNSAT,
-    UNKNOWN
+    UNKNOWN = 1,
+    SAT = 2,
+    UNSAT = 3,
   };
 
-  Result(const std::optional<z3::check_result> &z3_result);
+  Result(): result(UNKNOWN) {};
+  IF_Z3_ENABLED(Result(const std::optional<z3::check_result> &z3_result));
+  IF_CVC5_ENABLED(Result(const std::optional<cvc5::api::Result> &cvc5_result));
+
   const bool operator==(const Result &rhs);
   const bool operator!=(const Result &rhs) { return !(*this == rhs); }
+
+  static Result evaluateResults(const std::vector<Result> &results);
   
 private:
   Internal result;
@@ -115,7 +149,8 @@ private:
 
 class Solver {
 private:
-  std::optional<z3::solver> z3_solver;
+  IF_Z3_ENABLED(std::optional<z3::solver> z3_solver);
+  IF_CVC5_ENABLED(std::optional<cvc5::api::Solver> cvc5_solver);
 
 public:
   Solver();
@@ -124,6 +159,9 @@ public:
   void reset();
   Result check();
 };
+
+IF_Z3_ENABLED(void useZ3());
+IF_CVC5_ENABLED(void useCVC5());
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e);

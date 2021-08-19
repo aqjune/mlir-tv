@@ -11,16 +11,18 @@ Currently MLIR-TV is in an experimental stage.
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
 [MLIR](https://github.com/llvm/llvm-project),
 [Python3](https://www.python.org/downloads/)(>=3.9)  
-Solvers (at least one of them must be used): [Z3-solver](https://github.com/Z3Prover/z3)
+Solvers (at least one of them must be used): [Z3-solver](https://github.com/Z3Prover/z3), [CVC5](https://github.com/cvc5/cvc5)
 
 - Installation of MLIR: please follow [this instruction](https://llvm.org/docs/GettingStarted.html#getting-the-source-code-and-building-llvm) & run `cmake --build . --target install`
 
 ```bash
 mkdir build
 cd build
-# -DUSE_LIBC is OFF by default. Set it to ON iff the MLIR is built using libc++
+# At least one of -DZ3_DIR and -DCVC5_DIR must be provided
+# -DUSE_LIBC is OFF by default. Set it to ON iff the MLIR (and CVC5) is linked against libc++
 cmake -DMLIR_DIR=<dir/to/mlir-install> \
-      -DZ3_DIR=<dir/to/z3-install> \
+      [-DZ3_DIR=<dir/to/z3-install>] \
+      [-DCVC5_DIR=<dir/to/cvc5-install>] \
       [-DUSE_LIBC=ON|OFF] \
       [-DCMAKE_BUILD_TYPE=DEBUG|RELEASE] \
       ..
