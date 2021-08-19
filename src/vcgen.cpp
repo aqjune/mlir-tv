@@ -316,10 +316,12 @@ static Results validate(ValidationInput vinput) {
     return res;
 
   auto usedOps = aop::getUsedAbstractOps();
-  if (usedOps.dot && usedOps.sum && usedOps.mul)
+  if (usedOps.dot && usedOps.sum && usedOps.mul) {
     // dot = mul + sum
     aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL);
-  else
+    if (!vinput.dumpSMTPath.empty())
+      vinput.dumpSMTPath += "_noabs";
+  } else
     return res;
 
   // Try more precise encoding
