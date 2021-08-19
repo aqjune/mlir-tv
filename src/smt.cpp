@@ -528,6 +528,7 @@ const bool Result::operator==(const Result &rhs) {
 Result Result::evaluateResults(const vector<Result> &results) {
   return accumulate(results.cbegin(), results.cend(), Result(),
     [](auto acc, const auto result) {
+      // precedence is UNKNOWN < SAT < UNSAT
       acc.result = max(acc.result, result.result); return acc;
     }
   );
