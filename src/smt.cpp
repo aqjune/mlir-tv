@@ -4,6 +4,7 @@
 
 #include <unordered_map>
 #include <numeric>
+#include <thread>
 
 #ifdef SOLVER_Z3
 #define TRY_SET_Z3_EXPR(fn) e.setZ3Expr(fn)
@@ -245,9 +246,9 @@ void Expr::setZ3Expr(optional<z3::expr> &&z3_expr) {
 
 z3::expr_vector toZ3ExprVector(const vector<Expr> &vec) {
   z3::expr_vector z3_exprs(*sctx.z3_ctx);
-  for_each(vec.begin(), vec.end(),
-    [z3_exprs](auto e) mutable { z3_exprs.push_back(*e.z3_expr); });
-
+  for (const auto e : vec) {
+    z3_exprs.push_back(*e.z3_expr);
+  }
   return z3_exprs;
 }
 #endif // SOLVER_Z3
@@ -259,9 +260,9 @@ void Expr::setCVC5Expr(optional<cvc5::api::Term> &&cvc5_expr) {
 
 vector<cvc5::api::Term> toCVC5ExprVector(const vector<Expr> &vec) {
   vector<cvc5::api::Term> cvc5_exprs;
-  for_each(vec.begin(), vec.end(),
-    [cvc5_exprs](auto e) mutable { cvc5_exprs.push_back(*e.cvc5_expr); });
-
+  for (const auto e : vec) {
+    cvc5_exprs.push_back(*e.cvc5_expr);
+  }
   return cvc5_exprs;
 }
 #endif // SOLVER_CVC5
@@ -714,26 +715,39 @@ void Solver::reset() {
 #endif // SOLVER_CVC5
 }
 
-Result Solver::check() {
+Result Solver::check() { 
   vector<Result> solver_results;
+  vector<thread> solver_threads;
+  mutex results_lock;
 
 #ifdef SOLVER_Z3
-  solver_results.push_back(
-    Result(fupdate(this->z3_solver, [](auto &solver) {
-      return solver.check();
-    }))
+  solver_threads.push_back(
+    thread([this, &solver_results, &results_lock]() {
+      auto z3_result = fupdate(this->z3_solver, [](auto &solver) {
+        return solver.check();
+      });
+      lock_guard<mutex> lg(results_lock);
+      solver_results.push_back(Result(z3_result));
+    })
   );
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-  solver_results.push_back(
-    Result(fupdate(this->cvc5_solver, [](auto &solver) {
-      return solver.checkSat();
-    }))
+  solver_threads.push_back(
+    thread([this, &solver_results, &results_lock]() {
+      auto cvc5_result = fupdate(this->cvc5_solver, [](auto &solver) {
+        return solver.checkSat();
+      });
+      lock_guard<mutex> lg(results_lock);
+      solver_results.push_back(Result(cvc5_result));
+    })
   );
 #endif // SOLVER_CVC5
+
+  for (auto &t : solver_threads) {
+    t.join();
+  }
   
-  // TODO: concurrent run with solvers and return the fastest one?
   return Result::evaluateResults(solver_results);
 }
 
