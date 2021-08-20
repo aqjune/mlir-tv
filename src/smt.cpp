@@ -18,6 +18,7 @@
   #define TRY_SET_CVC5_SORT(fn)
 #endif
 
+
 using namespace std;
 
 namespace {
