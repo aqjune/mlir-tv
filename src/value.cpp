@@ -12,15 +12,14 @@ static string freshName(string prefix) {
   return prefix + to_string(count ++);
 }
 
-static vector<expr> getDims(
+static vector<Expr> getDims(
     const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize = false) {
-  vector<expr> dims;
-  //static int dim_var = 0;
+  vector<Expr> dims;
 
   uint64_t rank = shapedTy.getRank();
   if (rank == 0) {
     // A single element tensor.
-    return vector<expr>{Index(1)};
+    return vector<Expr>{Index(1)};
   }
 
   dims.reserve(rank);
@@ -40,13 +39,13 @@ static vector<expr> getDims(
   return dims;
 }
 
-static expr getConstOrVal(int64_t val, std::string &&name) {
+static Expr getConstOrVal(int64_t val, std::string &&name) {
   return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
       Index(move(name), true) : Index(val);
 }
 
 static MemRef::Layout
-getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
+getLayout(const mlir::MemRefType &memRefTy, const vector<Expr> &dims) {
   auto affineMaps = memRefTy.getAffineMaps();
 
   if (affineMaps.empty())
@@ -56,72 +55,72 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<expr> &dims) {
   llvm::SmallVector<int64_t, 4> strides;
   auto success = mlir::getStridesAndOffset(memRefTy, strides, offset);
   assert(succeeded(success) && "unexpected non-strided memref");
-  expr layout = getConstOrVal(offset, "offset");
-  vector<expr> indVars;
-  expr inbounds = mkBool(true);
+  Expr layout = getConstOrVal(offset, "offset");
+  vector<Expr> indVars;
+  Expr inbounds = Expr::mkBool(true);
   for (int i = 0; i < strides.size(); i ++) {
     indVars.push_back(Index("idx" + to_string(i)));
     layout = layout + getConstOrVal(strides[i], "strides") * indVars[i];
-    inbounds = inbounds && z3::ult(indVars[i], dims[i]);
+    inbounds = inbounds & indVars[i].ult(dims[i]);
   }
 
   return MemRef::Layout(indVars, layout, inbounds);
 }
 
-Index::Index(unsigned i): e(mkBV(i, BITS)) {}
+Index::Index(unsigned i): e(Expr::mkBV(i, BITS)) {}
 
 Index::Index(std::string &&name, bool freshvar):
     e(freshvar ?
-      mkFreshVar(Index::sort(), move(name)) :
-      mkVar(Index::sort(), move(name))) {}
+      Expr::mkFreshVar(Index::sort(), move(name)) :
+      Expr::mkVar(Index::sort(), move(name))) {}
 
-Index::Index(const expr &e): e(e) {}
+Index::Index(const Expr &e): e(e) {}
 
-smt::sort Index::sort() {
-  return bvSort(BITS);
+Sort Index::sort() {
+  return Sort::bvSort(BITS);
 }
 
 Index Index::one() { return Index(1); }
 Index Index::zero() { return Index(0); }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
-  os << or_omit((expr)i);
+  os << or_omit((Expr)i);
   return os;
 };
 
-std::pair<expr, vector<expr>> Index::refines(const Index &other) const {
-  return {(expr) other == (expr) *this, {}};
+std::pair<Expr, vector<Expr>> Index::refines(const Index &other) const {
+  return {(Expr) other == (Expr) *this, {}};
 }
 
 Index Index::eval(model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
-Float::Float(std::string &&name): e(mkVar(Float::sort(), move(name))) {}
+Float::Float(std::string &&name): e(Expr::mkVar(Float::sort(), move(name))) {}
 
 Float::Float(double f): e(aop::fpConst(f)) {}
 
 Float::Float(const llvm::APFloat &f): Float(f.convertToDouble()) {}
 
-smt::sort Float::sort() {
+Sort Float::sort() {
   return aop::fpSort();
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
-  expr e = f;
+  Expr e = f;
   auto vec = aop::fpPossibleConsts(e);
   if (!vec.empty()) {
     os << vec[0];
     for (unsigned i = 1; i < vec.size(); ++i)
       os << " or " << vec[i];
   } else {
-    os << "unknown (" << or_omit((expr)f) << ")";
+    os << "unknown (" << or_omit((Expr)f) << ")";
   }
   return os;
 };
 
-std::pair<expr, vector<expr>> Float::refines(const Float &other) const {
-  return {(expr) other == (expr) *this, {}};
+std::pair<Expr, vector<Expr>> Float::refines(const Float &other) const {
+  return {(Expr) other == (Expr) *this, {}};
 }
 
 Float Float::eval(model m) const {
@@ -138,25 +137,25 @@ Float Float::mul(const Float &b) const {
 
 
 Integer::Integer(std::string &&name, unsigned bw):
-  e(mkVar(bvSort(bw), move(name))) {}
+  e(Expr::mkVar(Sort::bvSort(bw), move(name))) {}
 
 Integer::Integer(int64_t i, unsigned bw):
-  e(mkBV(i, bw)) {}
+  e(Expr::mkBV(i, bw)) {}
 
 Integer::Integer(const llvm::APInt &api):
   Integer(api.getSExtValue(), api.getBitWidth()) {}
 
-smt::sort Integer::sort(unsigned sz) {
-  return bvSort(sz);
+Sort Integer::sort(unsigned sz) {
+  return Sort::bvSort(sz);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
-  os << or_omit((expr)i);
+  os << or_omit((Expr)i);
   return os;
 };
 
-std::pair<expr, vector<expr>> Integer::refines(const Integer &other) const {
-  return {(expr) other == (expr) *this, {}};
+std::pair<Expr, vector<Expr>> Integer::refines(const Integer &other) const {
+  return {(Expr) other == (Expr) *this, {}};
 }
 
 Integer Integer::eval(model m) const {
@@ -164,26 +163,26 @@ Integer Integer::eval(model m) const {
 }
 
 
-Tensor::Tensor(const expr &splat_elem, const vector<expr> &dimvec):
-    arr(z3::const_array(Index::sort(), splat_elem)), dims(dimvec) {}
+Tensor::Tensor(const Expr &splat_elem, const vector<Expr> &dimvec):
+    arr(Expr::mkConstArray(Index::sort(), splat_elem)), dims(dimvec) {}
 
-Tensor::Tensor(const vector<expr> &elems1d):
-    arr(z3::const_array(Index::sort(), elems1d[0])),
-    dims({ (expr)Index(elems1d.size()) }) {
+Tensor::Tensor(const vector<Expr> &elems1d):
+    arr(Expr::mkConstArray(Index::sort(), elems1d[0])),
+    dims({ (Expr)Index(elems1d.size()) }) {
   for (unsigned i = 1; i < elems1d.size(); ++i)
-    arr = z3::store(arr, i, elems1d[i]);
+    arr = arr.store(i, elems1d[i]);
 }
 
-Tensor::Tensor(string &&name, const vector<expr> &dimvec,
-               const smt::sort &elemty):
-  arr(mkVar(arraySort(Index::sort(), elemty), move(name))),
+Tensor::Tensor(string &&name, const vector<Expr> &dimvec,
+               const smt::Sort &elemty):
+  arr(Expr::mkVar(Sort::arraySort(Index::sort(), elemty), move(name))),
   dims(dimvec) {}
 
 Tensor::Tensor(
     const vector<vector<uint64_t>> &indices,
-    const vector<expr> &elems,
-    const vector<uint64_t> &dims, const expr &zero):
-  arr(z3::const_array(Index::sort(), zero)) {
+    const vector<Expr> &elems,
+    const vector<uint64_t> &dims, const Expr &zero):
+  arr(Expr::mkConstArray(Index::sort(), zero)) {
 
   assert(indices.size() == elems.size());
 
@@ -201,20 +200,20 @@ Tensor::Tensor(
   }
 }
 
-expr Tensor::getWellDefined() const {
-  expr size = get1DSize();
-  if (size.is_numeral())
-    return mkBool(true);
-  auto expr = z3::ule(size, MAX_TENSOR_SIZE);
+Expr Tensor::getWellDefined() const {
+  Expr size = get1DSize();
+  if (size.isNumeral())
+    return Expr::mkBool(true);
+  auto Expr = size.ule(MAX_TENSOR_SIZE);
   for (auto dim: dims) {
-    if (dim.is_numeral()) continue;
-    expr = expr && z3::ule(dim, MAX_DIM_SIZE);
+    if (dim.isNumeral()) continue;
+    Expr = Expr & dim.ule(MAX_DIM_SIZE);
   }
-  return expr.simplify();
+  return Expr.simplify();
 }
 
-expr Tensor::get(const vector<expr> &idxs) const {
-  return z3::select(arr, to1DIdx(idxs, dims));
+Expr Tensor::get(const vector<Expr> &idxs) const {
+  return arr.select(to1DIdx(idxs, dims));
 }
 
 Index Tensor::getDim(uint64_t idx) const {
@@ -222,26 +221,26 @@ Index Tensor::getDim(uint64_t idx) const {
 }
 
 Tensor Tensor::affine(
-    const vector<expr> &newidxvars,
-    vector<expr> srcidxs,
-    vector<expr> &&newsizes) const {
+    const vector<Expr> &newidxvars,
+    vector<Expr> srcidxs,
+    vector<Expr> &&newsizes) const {
   auto idxvar = Index("idx");
   auto indices = from1DIdx(idxvar, newsizes);
 
   for (size_t i = 0; i < srcidxs.size(); ++i) {
     auto newv = srcidxs[i];
     for (size_t j = 0; j < newidxvars.size(); ++j) {
-      newv = substitute(newv, { newidxvars[j] }, { indices[j] });
+      newv = newv.substitute({ newidxvars[j] }, { indices[j] });
     }
     srcidxs[i] = newv;
   }
 
   return {
     move(newsizes),
-    z3::lambda(
+    Expr::mkLambda(
       idxvar,
-      z3::ite(
-        z3::ult(idxvar, ::get1DSize(newsizes)),
+      Expr::mkIte(
+        ((Expr)idxvar).ult(::get1DSize(newsizes)),
         get(srcidxs),
         aop::mkZeroElemFromArr(arr)
       ))
@@ -249,12 +248,12 @@ Tensor Tensor::affine(
 }
 
 Tensor Tensor::rotateDimensions() const {
-  vector<expr> newdims;
+  vector<Expr> newdims;
   newdims.reserve(dims.size());
   newdims.push_back(dims.back());
   std::copy(dims.cbegin(), --dims.cend(), std::back_inserter(newdims));
 
-  vector<expr> vars, tgtvars;
+  vector<Expr> vars, tgtvars;
   vars.reserve(dims.size());
   tgtvars.reserve(dims.size());
   for (size_t i = 0; i < dims.size(); ++i) {
@@ -268,13 +267,13 @@ Tensor Tensor::rotateDimensions() const {
 }
 
 Tensor Tensor::conv(const Tensor &filter) const {
-  vector<expr> output_dims = {
+  vector<Expr> output_dims = {
     Index::one(), // support an input with batch size > 1
     dims[1] + 1 - filter.dims[0],
     dims[2] + 1 - filter.dims[1],
     filter.dims[3] // channel(dims[3] = filtr.dims[2]) disappears
   };
-  std::vector<expr> cube_size = {
+  std::vector<Expr> cube_size = {
     Index::one(),
     filter.dims[0], filter.dims[1], filter.dims[2]
   };
@@ -297,9 +296,9 @@ Tensor Tensor::conv(const Tensor &filter) const {
   return Tensor::mkLambda(move(output_dims), {i, j, k, l}, move(res));
 }
 
-Tensor Tensor::reshape(const vector<expr> &newdims) const {
+Tensor Tensor::reshape(const vector<Expr> &newdims) const {
   // TODO: check whether size(newdims) == size(dims)
-  return { simplifyList(newdims), expr(arr) };
+  return { simplifyList(newdims), Expr(arr) };
 }
 
 Tensor Tensor::matmul(const Tensor &b) const {
@@ -317,41 +316,40 @@ Tensor Tensor::matmul(const Tensor &b) const {
       aop::dot(a_row, bt_row, dims[1]));
 }
 
-expr Tensor::dot(const Tensor &t2) const {
+Expr Tensor::dot(const Tensor &t2) const {
   return aop::dot(arr, t2.arr, get1DSize());
 }
 
-expr Tensor::sum() const {
+Expr Tensor::sum() const {
   return aop::sum(arr, get1DSize());
 }
 
-pair<expr, vector<expr>> Tensor::refines(const Tensor &other) const {
-  assert(arr.get_sort().is_array());
-  assert(other.arr.get_sort().is_array());
+pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
+  assert(arr.sort().isArray());
+  assert(other.arr.sort().isArray());
 
   // Size mismatch check.
   // If it does, don't return index var.
   size_t sz = getDims().size();
   if (other.getDims().size() != sz)
-    return {mkBool(false), {}};
+    return {Expr::mkBool(false), {}};
 
-  expr size_match = mkBool(true);
+  Expr size_match = Expr::mkBool(true);
   for (size_t i = 0; i < sz; ++i)
-    size_match = size_match && (expr)other.getDim(i) == (expr)getDim(i);
+    size_match = size_match & (Expr)other.getDim(i) == (Expr)getDim(i);
   size_match = size_match.simplify();
-  if (size_match.is_false())
+  if (size_match.isFalse())
     return {size_match, {}};
 
   // Assume that src and tgt's shape equality is already checked
-  expr i = Index("i");
-  vector<expr> params = {i};
-  return {size_match && z3::implies(
-      z3::ult(i, ::get1DSize(dims)),
-      z3::select(arr, i) == z3::select(other.arr, i)),
+  Expr i = Index("i");
+  vector<Expr> params = {i};
+  return {size_match &
+      i.ult(::get1DSize(dims)).implies(arr.select(i) == other.arr.select(i)),
     params};
 }
 
-optional<pair<vector<expr>, smt::sort>>
+optional<pair<vector<Expr>, smt::Sort>>
 Tensor::getDimsAndElemTy(
     mlir::TensorType tensorTy, bool freshVarForUnknownSize) {
   auto ety = getElemTy(tensorTy);
@@ -360,7 +358,7 @@ Tensor::getDimsAndElemTy(
   return {{::getDims(tensorTy, freshVarForUnknownSize), *ety}};
 }
 
-optional<smt::sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
+optional<smt::Sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
   auto elemty = tensorTy.getElementType();
 
   if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
@@ -386,19 +384,19 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   os << ") ";
 
   using namespace smt::matchers;
-  expr arr = t.arr;
+  Expr arr = t.arr;
   bool hasStore = false;
 
   while (true) {
-    optional<expr> arr2, idx, val;
+    optional<Expr> arr2, idx, val;
 
     if (Store(Any(arr2), Any(idx), Any(val)).match(arr)) {
       auto idxnd = from1DIdx(*idx, t.dims);
       vector<int64_t> idxconsts;
 
-      bool constIdxs = all_of(idxnd.begin(), idxnd.end(), [&](const expr &e) {
+      bool constIdxs = all_of(idxnd.begin(), idxnd.end(), [&](const Expr &e) {
         int64_t i;
-        if (e.simplify().is_numeral_i64(i)) {
+        if (e.simplify().isInt(i)) {
           idxconsts.push_back(i);
           return true;
         }
@@ -432,7 +430,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 };
 
 Tensor Tensor::eval(model m) const {
-  vector<expr> dims_ev;
+  vector<Expr> dims_ev;
   dims_ev.reserve(dims.size());
   for (auto &d: dims)
     dims_ev.push_back(m.eval(d, true).simplify());
@@ -447,8 +445,8 @@ Tensor Tensor::transpose() const {
 }
 
 Tensor Tensor::mkLambda(
-    std::vector<expr> &&newdims, std::vector<expr> &&indexvars,
-    expr body) {
+    std::vector<Expr> &&newdims, std::vector<Expr> &&indexvars,
+    Expr body) {
   if (indexvars.size() == 0) {
     int64_t i;
     // If indexvars is empty, let's assume that the tensor has only one
@@ -456,117 +454,118 @@ Tensor Tensor::mkLambda(
     if (newdims.size() == 0) {
       newdims.push_back(Index(1));
     } else
-      assert(newdims.size() == 1 && newdims[0].is_numeral_i64(i) && i == 1);
+      assert(newdims.size() == 1 && newdims[0].isInt(i) && i == 1);
   } else
     assert(newdims.size() == indexvars.size());
 
   auto idx = Index("idx");
-  auto idxexprs = from1DIdx(idx, newdims);
+  auto idxExprs = from1DIdx(idx, newdims);
 
   if (!indexvars.empty()) {
     // If indexvars is empty, body represents the unique element.
-    body = substitute(body, indexvars, idxexprs);
+    body = body.substitute(indexvars, idxExprs);
   }
 
-  return { move(newdims), z3::lambda({(expr)idx}, body) };
+  return { move(newdims), Expr::mkLambda(idx, body) };
 }
 
-expr Tensor::to1DArrayWithOfs(
-      const vector<expr> &offbegins,
-      const vector<expr> &sizes) const {
+Expr Tensor::to1DArrayWithOfs(
+      const vector<Expr> &offbegins,
+      const vector<Expr> &sizes) const {
   assert(offbegins.size() == sizes.size());
 
   auto idxvar = Index("idx");
   auto relidxs = from1DIdx(idxvar, sizes);
-  vector<expr> absidxs;
+  vector<Expr> absidxs;
   absidxs.reserve(relidxs.size());
   for (size_t i = 0; i < relidxs.size(); ++i) {
     auto absidx = relidxs[i] + offbegins[i];
     absidxs.push_back(std::move(absidx));
   }
 
-  return z3::lambda(
+  return Expr::mkLambda(
       idxvar,
-      z3::ite(
-        z3::ult(idxvar, ::get1DSize(sizes)),
+      Expr::mkIte(
+        ((Expr)idxvar).ult(::get1DSize(sizes)),
         get(absidxs),
         aop::mkZeroElemFromArr(arr)));
 }
 
-MemRef::Layout::Layout(const vector<expr> &dims):
+MemRef::Layout::Layout(const vector<Expr> &dims):
     inbounds(init()), mapping(init()), precondition(init()) {
-  vector<expr> indVars, inverseMappings;
-  expr inbounds = mkBool(true);
+  vector<Expr> indVars, inverseMappings;
+  Expr inbounds = Expr::mkBool(true);
 
   for (int i = 0; i < dims.size(); i ++) {
     indVars.push_back(Index("idx" + to_string(i)));
-    inbounds = inbounds && z3::ult(indVars[i], dims[i]);
+    inbounds = inbounds & indVars[i].ult(dims[i]);
   }
 
-  expr idx = Index("1DIdx");
-  vector<expr> inverseIdxs = from1DIdx(idx, dims);
+  Expr idx = Index("1DIdx");
+  vector<Expr> inverseIdxs = from1DIdx(idx, dims);
   for (auto inverse : inverseIdxs)
-    inverseMappings.push_back(smt::lambda(idx, inverse));
+    inverseMappings.push_back(Expr::mkLambda(idx, inverse));
 
   this->indVars = indVars;
-  this->inbounds = smt::lambda(indVars, inbounds);
-  this->mapping = smt::lambda(indVars, to1DIdx(indVars, dims));
+  this->inbounds = Expr::mkLambda(indVars, inbounds);
+  this->mapping = Expr::mkLambda(indVars, to1DIdx(indVars, dims));
   this->inverseMappings = inverseMappings;
-  this->precondition = mkBool(true);
+  this->precondition = Expr::mkBool(true);
 }
 
-MemRef::Layout::Layout(const std::vector<smt::expr> &indVars,
-    const smt::expr &layout,
-    const smt::expr &inbounds,
+MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
+    const smt::Expr &layout,
+    const smt::Expr &inbounds,
     bool useUF): indVars(indVars), inbounds(init()), mapping(init()), precondition(init()) {
   if (useUF) {
-    vector<smt::sort> domains(indVars.size(), Index::sort());
-    auto layoutFn = mkUF(domains, Index::sort(), freshName("layoutFn"));
-    auto layoutFnExpr = fapply(layoutFn, indVars);
-    expr condition = (layoutFnExpr == layout);
-    vector<expr> inverseMappings;
+    vector<smt::Sort> domains(indVars.size(), Index::sort());
+    FnDecl layoutFn(domains, Index::sort(), freshName("layoutFn"));
+    auto layoutFnExpr = layoutFn.apply(indVars);
+    Expr condition = (layoutFnExpr == layout);
+    vector<Expr> inverseMappings;
     for (unsigned i = 0; i < indVars.size(); i ++) {
       auto inverseName = freshName("inverse" + to_string(i));
-      auto inverseFn = mkUF(Index::sort(), Index::sort(), move(inverseName));
-      auto inverse = smt::lambda(indVars[i], inverseFn(indVars[i]));
+      FnDecl inverseFn(Index::sort(), Index::sort(), move(inverseName));
+      auto inverse = Expr::mkLambda(indVars[i], inverseFn(indVars[i]));
       inverseMappings.push_back(inverse);
 
-      condition = condition && smt::select(inverse, layoutFnExpr) == indVars[i];
+      condition = condition & inverse.select(layoutFnExpr) == indVars[i];
     }
-    this->inbounds = smt::lambda(indVars, inbounds);
-    this->mapping = smt::lambda(indVars, layoutFnExpr);
+    this->inbounds = Expr::mkLambda(indVars, inbounds);
+    this->mapping = Expr::mkLambda(indVars, layoutFnExpr);
     this->inverseMappings = inverseMappings;
-    this->precondition = smt::forall(indVars, smt::implies(inbounds, condition));
+    this->precondition = Expr::mkForall(
+        indVars, inbounds.implies(condition));
   } else {
-    expr condition = mkBool(true);
-    vector<expr> inverseMappings;
+    Expr condition = Expr::mkBool(true);
+    vector<Expr> inverseMappings;
     for (unsigned i = 0; i < indVars.size(); i ++) {
       auto inverseName = freshName("inverse" + to_string(i));
-      auto inverseFn = mkUF(Index::sort(), Index::sort(), move(inverseName));
-      auto inverse = smt::lambda(indVars[i], inverseFn(indVars[i]));
+      FnDecl inverseFn(Index::sort(), Index::sort(), move(inverseName));
+      auto inverse = Expr::mkLambda(indVars[i], inverseFn(indVars[i]));
       inverseMappings.push_back(inverse);
 
-      condition = condition && smt::select(inverse, layout) == indVars[i];
+      condition = condition & inverse.select(layout) == indVars[i];
     }
-    this->inbounds = smt::lambda(indVars, inbounds);
-    this->mapping = smt::lambda(indVars, layout);
+    this->inbounds = Expr::mkLambda(indVars, inbounds);
+    this->mapping = Expr::mkLambda(indVars, layout);
     this->inverseMappings = inverseMappings;
-    this->precondition = smt::forall(indVars, smt::implies(inbounds, condition));
+    this->precondition = Expr::mkForall(indVars, inbounds.implies(condition));
   }
 }
 
 MemRef::MemRef(Memory *m,
-  const smt::expr &bid,
-  const smt::expr &offset,
-  const std::vector<smt::expr> &dims,
+  const smt::Expr &bid,
+  const smt::Expr &offset,
+  const std::vector<smt::Expr> &dims,
   const Layout &layout,
-  const smt::sort &elemty) : m(m), bid(bid), offset(offset), dims(dims), layout(layout) {}
+  const smt::Sort &elemty) : m(m), bid(bid), offset(offset), dims(dims), layout(layout) {}
 
 MemRef::MemRef(Memory *m,
   const std::string &name,
-  const std::vector<expr> &dims,
+  const std::vector<Expr> &dims,
   const Layout &layout,
-  const smt::sort &elemty):
+  const smt::Sort &elemty):
     m(m),
     bid(mkVar(bvSort(m->getBIDBits()), (name + "_bid").c_str())),
     offset(Index((name + "_offset").c_str())),
@@ -574,30 +573,30 @@ MemRef::MemRef(Memory *m,
     layout(layout) {}
 
 MemRef::MemRef(Memory *m,
-    const std::vector<expr> &dims,
+    const std::vector<Expr> &dims,
     const Layout &layout,
-    const smt::sort &elemty) : MemRef(m, freshName("memref"), dims, layout, elemty) {}
+    const smt::Sort &elemty) : MemRef(m, freshName("memref"), dims, layout, elemty) {}
 
-expr MemRef::getPrecondition() const {
+Expr MemRef::getPrecondition() const {
   return layout.precondition;
 }
 
-expr MemRef::getWellDefined() const {
-  expr size = get1DSize();
-  if (size.is_numeral())
-    return mkBool(true);
-  auto expr = z3::ule(size, MAX_MEMREF_SIZE);
+Expr MemRef::getWellDefined() const {
+  Expr size = get1DSize();
+  if (size.isNumeral())
+    return Expr::mkBool(true);
+  auto Expr = size.ule(MAX_MEMREF_SIZE);
   for (auto dim: dims) {
-    if (dim.is_numeral()) continue;
-    expr = expr && z3::ule(dim, MAX_DIM_SIZE);
+    if (dim.isNumeral()) continue;
+    Expr = Expr & dim.ule(MAX_DIM_SIZE);
   }
-  return expr.simplify();
+  return Expr.simplify();
 }
 
-optional<tuple<vector<expr>, MemRef::Layout, smt::sort>>
+optional<tuple<vector<Expr>, MemRef::Layout, smt::Sort>>
 MemRef::getDimsAndLayoutAndElemTy(
     mlir::MemRefType memRefTy,
-    optional<vector<expr>> predefinedDims,
+    optional<vector<Expr>> predefinedDims,
     bool freshVarForUnknownSize) {
   // Step1. check element type
   auto elemty = memRefTy.getElementType();
@@ -605,7 +604,7 @@ MemRef::getDimsAndLayoutAndElemTy(
     // Currently we only support f32 element type.
     return {};
 
-  smt::sort elemty2 = Float::sort();
+  auto elemty2 = Float::sort();
 
   // Step2. check affine map
   if (mlir::isStrided(memRefTy)) {
@@ -618,35 +617,36 @@ MemRef::getDimsAndLayoutAndElemTy(
   }
 }
 
-pair<expr, expr> MemRef::load(const vector<expr> &indices) {
+pair<Expr, Expr> MemRef::load(const vector<Expr> &indices) {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto [expr, success] = m->load(bid, offset + idx);
+  auto [Expr, success] = m->load(bid, (Expr)offset + idx);
 
-  return {expr, (success && inbounds).simplify()};
+  return {Expr, (success & inbounds).simplify()};
 }
 
-expr MemRef::store(const expr &value, const std::vector<expr> &indices) {
+Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto success = m->store(value, bid, offset + idx);
+  auto success = m->store(value, bid, (Expr)offset + idx);
 
-  return (success && inbounds).simplify();
+  return (success & inbounds).simplify();
 }
 
-expr MemRef::storeArray(const expr &array, const expr &startOffset, const expr &size) {
+Expr MemRef::storeArray(
+    const Expr &array, const Expr &startOffset, const Expr &size) {
   return m->storeArray(array, bid, offset + startOffset, size);
 }
 
-expr MemRef::isInBounds() const {
+Expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(bid);
   auto memrefSize = get1DSize();
-  return z3::uge(numelem, memrefSize) && z3::ult(offset, numelem - memrefSize);
+  return z3::uge(numelem, memrefSize) && offset.ult(numelem - memrefSize);
 }
 
-expr MemRef::isGlobalBlock() const {
+Expr MemRef::isGlobalBlock() const {
   return m->isGlobalBlock(bid);
 }
 
-expr MemRef::isLocalBlock() const {
+Expr MemRef::isLocalBlock() const {
   return m->isLocalBlock(bid);
 }
 
@@ -658,14 +658,16 @@ void MemRef::setWritable(bool writable) {
   m->setWritable(bid, writable);
 }
 
-MemRef MemRef::subview(const vector<expr> &offsets,
-    const vector<expr> &sizes,
-    const vector<expr> &strides,
+MemRef MemRef::subview(const vector<Expr> &offsets,
+    const vector<Expr> &sizes,
+    const vector<Expr> &strides,
     int rankDiff) {
   if (rankDiff > 0) {
-    vector<expr> indVars, reducedSizes;
+    vector<Expr> indVars, reducedSizes;
     for (unsigned i = 0; i < sizes.size(); i++) {
-      if (rankDiff > 0 && sizes[i].is_numeral() && sizes[i].as_uint64() == 1) { //statically known to be 1
+      uint64_t size_cst;
+      if (rankDiff > 0 && sizes[i].isUInt(size_cst) && size_cst == 1) {
+        //statically known to be 1
         indVars.push_back(Index::zero());
         rankDiff --;
       } else {
@@ -692,8 +694,8 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   return os;
 };
 
-std::pair<expr, vector<expr>> MemRef::refines(const MemRef &other) const {
-  return {(expr) other == (expr) *this, {}};
+std::pair<Expr, vector<Expr>> MemRef::refines(const MemRef &other) const {
+  return {(Expr) other == (Expr) *this, {}};
 }
 
 MemRef MemRef::eval(model mdl) const {
@@ -707,16 +709,16 @@ MemRef MemRef::eval(model mdl) const {
   return m2;
 }
 
-pair<expr, expr> MemRef::to1DIdxWithLayout(const vector<expr> &idxs) {
-  auto expr = smt::select(layout.mapping, idxs);
-  auto inbounds = smt::select(layout.inbounds, idxs);
-  return {expr, inbounds};
+pair<Expr, Expr> MemRef::to1DIdxWithLayout(const vector<Expr> &idxs) {
+  auto Expr = layout.mapping.select(idxs);
+  auto inbounds = layout.inbounds.select(idxs);
+  return {Expr, inbounds};
 }
 
 MemRef::Layout MemRef::createSubViewLayout(
-    const vector<expr> &indVars,
-    const vector<expr> &offsets,
-    const vector<expr> &strides) {
+    const vector<Expr> &indVars,
+    const vector<Expr> &offsets,
+    const vector<Expr> &strides) {
   // Before : <(d0, d1) -> (d0 * s0 + d1)>,
   // After: <(d0, d1) -> ((indVars[0] + offsets[0]) * strides[0] * s0 + (indVars[1] + offsets[1]) * strides[1])>
   // indVars[i] can be Index::zero() if reducing the dimension.
@@ -724,12 +726,12 @@ MemRef::Layout MemRef::createSubViewLayout(
   assert(layout.indVars.size() == offsets.size());
   assert(layout.indVars.size() == strides.size());
 
-  vector<expr> idxs, transformedIndVars;
+  vector<Expr> idxs, transformedIndVars;
   for (unsigned i = 0; i < layout.indVars.size(); i ++) {
     idxs.push_back((indVars[i] + offsets[i]) * strides[i]);
-    if (!indVars[i].is_numeral()) transformedIndVars.push_back(indVars[i]);
+    if (!indVars[i].isNumeral()) transformedIndVars.push_back(indVars[i]);
   }
-  auto transformedLayout = smt::select(layout.mapping, idxs);
-  auto transformedInbounds = smt::select(layout.inbounds, idxs);
+  auto transformedLayout = layout.mapping.select(idxs);
+  auto transformedInbounds = layout.inbounds.select(idxs);
   return Layout(transformedIndVars, transformedLayout, transformedInbounds);
 }

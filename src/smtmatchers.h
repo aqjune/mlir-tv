@@ -7,12 +7,12 @@ namespace smt {
 namespace matchers {
 
 class Any {
-  std::optional<expr> *e;
+  std::optional<Expr> *e;
 
 public:
-  Any(std::optional<expr> &e): e(&e) {}
+  Any(std::optional<Expr> &e): e(&e) {}
 
-  bool match(const expr &expr) const {
+  bool match(const Expr &expr) const {
     e->emplace(std::move(expr));
     return true;
   }
@@ -25,7 +25,7 @@ class ConstSplatArray {
 public:
   ConstSplatArray(T &&m): subMatcher(std::move(m)) {}
 
-  bool match(const expr &e) const {
+  bool match(const Expr &e) const {
     if (!e.is_app())
       return false;
 
@@ -49,7 +49,7 @@ public:
       arrMatcher(std::move(arr)), idxMatcher(std::move(idx)),
       valMatcher(std::move(val)) {}
 
-  bool match(const expr &e) const {
+  bool match(const Expr &e) const {
     if (!e.is_app())
       return false;
 

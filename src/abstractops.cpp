@@ -8,7 +8,7 @@ using namespace std;
 
 namespace {
 // Abstract representation of fp constants.
-map<double, expr> fpconst_absrepr;
+map<double, Expr> fpconst_absrepr;
 unsigned fpconst_absrepr_num;
 
 // TODO: this must be properly set
@@ -33,11 +33,11 @@ void setAbstractionLevel(AbsLevelDot ad) {
 }
 
 
-smt::sort fpSort() {
-  return bvSort(FP_BITS);
+Sort fpSort() {
+  return Sort::bvSort(FP_BITS);
 }
 
-expr fpConst(double f) {
+Expr fpConst(double f) {
   // We don't explicitly encode f
   auto itr = fpconst_absrepr.find(f);
   if (itr != fpconst_absrepr.end())
@@ -50,12 +50,12 @@ expr fpConst(double f) {
     assert(1 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
     absval = 1 + fpconst_absrepr_num++;
   }
-  expr e = mkBV(absval, FP_BITS);
+  Expr e = Expr::mkBV(absval, FP_BITS);
   fpconst_absrepr.emplace(f, e);
   return e;
 }
 
-vector<double> fpPossibleConsts(const expr &e) {
+vector<double> fpPossibleConsts(const Expr &e) {
   vector<double> vec;
   for (auto &[k, v]: fpconst_absrepr) {
     if (structurallyEq(v, e))
@@ -64,55 +64,55 @@ vector<double> fpPossibleConsts(const expr &e) {
   return vec;
 }
 
-expr mkZeroElemFromArr(const expr &arr) {
-  unsigned bvsz = z3::select(arr, Index::zero()).get_sort().bv_size();
-  return mkBV(0, bvsz);
+Expr mkZeroElemFromArr(const Expr &arr) {
+  unsigned bvsz = arr.select(Index::zero()).sort().bitwidth();
+  return Expr::mkBV(0, bvsz);
 }
 
-expr fpAdd(const expr &f1, const expr &f2) {
+Expr fpAdd(const Expr &f1, const Expr &f2) {
   usedOps.add = true;
-  auto fty = f1.get_sort();
+  auto fty = f1.sort();
 
   auto addfn = mkUF({fty, fty}, fty, "fp_add");
   return addfn(f1, f2);
 }
 
-expr fpMul(const expr &a, const expr &b) {
+Expr fpMul(const Expr &a, const Expr &b) {
   usedOps.mul = true;
 
-  // TODO: check that a.get_sort() == b.get_sort()
-  auto mulfn = mkUF({a.get_sort(), b.get_sort()}, Float::sort(), "fp_mul");
+  // TODO: check that a.get_Sort() == b.get_Sort()
+  auto mulfn = mkUF({a.get_Sort(), b.get_Sort()}, Float::Sort(), "fp_mul");
   return mulfn(a, b);
 }
 
-expr sum(const expr &a, const expr &n) {
+Expr sum(const Expr &a, const Expr &n) {
   usedOps.sum = true;
-  // TODO: check that a.sort is Index::sort() -> Float::sort()
+  // TODO: check that a.Sort is Index::Sort() -> Float::Sort()
 
-  auto sumfn = mkUF(a.get_sort(), Float::sort(), "smt_sum");
+  auto sumfn = mkUF(a.get_Sort(), Float::Sort(), "smt_sum");
   auto i = Index("idx");
-  expr ai = z3::select(a, i);
-  expr zero = mkZeroElemFromArr(a);
+  Expr ai = z3::select(a, i);
+  Expr zero = mkZeroElemFromArr(a);
   return sumfn(z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)));
 }
 
-expr dot(const expr &a, const expr &b, const expr &n) {
+Expr dot(const Expr &a, const Expr &b, const Expr &n) {
   if (alDot == AbsLevelDot::FULLY_ABS) {
     usedOps.dot = true;
-    // TODO: check that a.get_sort() == b.get_sort()
+    // TODO: check that a.get_Sort() == b.get_Sort()
     auto i = Index("idx");
-    auto dotfn = mkUF({a.get_sort(), b.get_sort()}, Float::sort(), "smt_dot");
+    auto dotfn = mkUF({a.get_Sort(), b.get_Sort()}, Float::Sort(), "smt_dot");
 
-    expr ai = z3::select(a, i), bi = z3::select(b, i);
-    expr zero = mkZeroElemFromArr(a);
+    Expr ai = z3::select(a, i), bi = z3::select(b, i);
+    Expr zero = mkZeroElemFromArr(a);
     return dotfn(
         z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)),
         z3::lambda(i, z3::ite(z3::ult(i, n), bi, zero)));
   } else if (alDot == AbsLevelDot::SUM_MUL) {
     usedOps.mul = usedOps.sum = true;
-    // TODO: check that a.get_sort() == b.get_sort()
+    // TODO: check that a.get_Sort() == b.get_Sort()
     auto i = Index("idx");
-    expr ai = z3::select(a, i), bi = z3::select(b, i);
+    Expr ai = z3::select(a, i), bi = z3::select(b, i);
     return sum(z3::lambda(i, fpMul(ai, bi)), n);
   }
   llvm_unreachable("Unknown abstraction level for dot");
