@@ -30,7 +30,7 @@ z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec);
 namespace smt {
 class Context {
 private:
-  unordered_map<string, uint64_t> fresh_var_map;
+  uint64_t fresh_var_counter;
 
 public:
   IF_Z3_ENABLED(optional<z3::context> z3);
@@ -41,6 +41,7 @@ public:
   Context() {
     IF_Z3_ENABLED(this->z3.reset());
     IF_CVC5_ENABLED(this->cvc5.reset());
+    fresh_var_counter = 0;
     timeout_ms = 20000;
   }
 
@@ -48,9 +49,7 @@ public:
   IF_CVC5_ENABLED(void useCVC5() { this->cvc5.emplace(); })
 
   string getFreshName(string prefix) {
-    this->fresh_var_map.insert({prefix, 0});
-    uint64_t suffix = fresh_var_map.at(prefix)++;
-    return prefix.append("_" + to_string(suffix));
+    return prefix.append("#" + to_string(fresh_var_counter++));
   }
 };
 
