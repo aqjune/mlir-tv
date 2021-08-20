@@ -51,7 +51,7 @@ static void runFunction(mlir::FuncOp fn) {
 
   State s(num_memblocks, memory_encoding);
   encode(s, fn, false);
-  printOperations(smt::model(ctx), fn, s);
+  printOperations(smt::Model::empty(), fn, s);
 }
 
 static unsigned runBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,

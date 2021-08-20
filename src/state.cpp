@@ -19,7 +19,7 @@ Expr getExpr(const ValueTy &v) {
   return move(*e);
 }
 
-ValueTy eval(const ValueTy &v, smt::model m) {
+ValueTy eval(const ValueTy &v, smt::Model m) {
   optional<ValueTy> e;
   visit([&](auto &&itm) {
     e = itm.eval(m);

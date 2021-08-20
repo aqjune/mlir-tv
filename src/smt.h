@@ -30,6 +30,7 @@ extern Context sctx;
 
 class Expr;
 class FnDecl;
+class Model;
 class Sort;
 
 Expr get1DSize(const std::vector<Expr> &dims);
@@ -79,6 +80,8 @@ public:
   Expr ule(uint64_t rhs) const;
   Expr ugt(const Expr &rhs) const;
   Expr ugt(uint64_t rhs) const;
+  Expr uge(const Expr &rhs) const;
+  Expr uge(uint64_t rhs) const;
 
   Expr select(const Expr &idx) const;
   Expr select(const std::vector<Expr> &idxs) const;
@@ -124,6 +127,7 @@ public:
 
   friend Solver;
   friend FnDecl;
+  friend Model;
 };
 
 class FnDecl {
@@ -163,35 +167,54 @@ public:
   friend FnDecl;
 };
 
-class Result {
+class CheckResult {
 public:
+  CheckResult(const std::optional<z3::check_result> &z3_result);
+  const bool operator==(const CheckResult &rhs);
+  const bool operator!=(const CheckResult &rhs) { return !(*this == rhs); }
+
+  bool isUnknown() const { return result == UNKNOWN; }
+  bool isSat() const { return result == SAT; }
+  bool isUnsat() const { return result == UNSAT; }
+
+private:
   enum Internal {
     SAT,
     UNSAT,
     UNKNOWN
   };
 
-  Result(const std::optional<z3::check_result> &z3_result);
-  const bool operator==(const Result &rhs);
-  const bool operator!=(const Result &rhs) { return !(*this == rhs); }
-  
-private:
   Internal result;
+};
+
+class Model {
+private:
+  std::optional<z3::model> z3;
+
+  Model(std::optional<z3::model> &&z3): z3(move(z3)) {}
+
+public:
+  Expr eval(const Expr &e, bool modelCompletion = false) const;
+
+  static Model empty();
+
+  friend Solver;
 };
 
 class Solver {
 private:
-  std::optional<z3::solver> z3_solver;
+  std::optional<z3::solver> z3;
 
 public:
-  Solver();
+  Solver(const char *logic);
 
   void add(const Expr &e);
   void reset();
-  Result check();
+  CheckResult check();
+  Model getModel() const;
 };
 } // namespace smt
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e);
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e);
 llvm::raw_ostream& operator<<(
-    llvm::raw_ostream& os, const std::vector<smt::expr> &es);
+    llvm::raw_ostream& os, const std::vector<smt::Expr> &es);

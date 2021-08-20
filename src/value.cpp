@@ -92,7 +92,7 @@ std::pair<Expr, vector<Expr>> Index::refines(const Index &other) const {
   return {(Expr) other == (Expr) *this, {}};
 }
 
-Index Index::eval(model m) const {
+Index Index::eval(Model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
@@ -123,7 +123,7 @@ std::pair<Expr, vector<Expr>> Float::refines(const Float &other) const {
   return {(Expr) other == (Expr) *this, {}};
 }
 
-Float Float::eval(model m) const {
+Float Float::eval(Model m) const {
   return Float(m.eval(e, true).simplify());
 }
 
@@ -158,7 +158,7 @@ std::pair<Expr, vector<Expr>> Integer::refines(const Integer &other) const {
   return {(Expr) other == (Expr) *this, {}};
 }
 
-Integer Integer::eval(model m) const {
+Integer Integer::eval(Model m) const {
   return Integer(m.eval(e, true).simplify());
 }
 
@@ -196,7 +196,7 @@ Tensor::Tensor(
     for (unsigned j = 1; j < dims.size(); ++j)
       ofs = ofs * dims[j] + indices[i][j];
 
-    arr = z3::store(arr, Index(ofs), elems[i]);
+    arr = arr.store(ofs, elems[i]);
   }
 }
 
@@ -429,7 +429,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   return os;
 };
 
-Tensor Tensor::eval(model m) const {
+Tensor Tensor::eval(Model m) const {
   vector<Expr> dims_ev;
   dims_ev.reserve(dims.size());
   for (auto &d: dims)
@@ -492,9 +492,10 @@ Expr Tensor::to1DArrayWithOfs(
 }
 
 MemRef::Layout::Layout(const vector<Expr> &dims):
-    inbounds(init()), mapping(init()), precondition(init()) {
+    inbounds(Expr::mkBool(true)),
+    mapping(Expr::mkBool(true)), // Filled with a new lambda expr later
+    precondition(Expr::mkBool(true)) {
   vector<Expr> indVars, inverseMappings;
-  Expr inbounds = Expr::mkBool(true);
 
   for (int i = 0; i < dims.size(); i ++) {
     indVars.push_back(Index("idx" + to_string(i)));
@@ -510,19 +511,24 @@ MemRef::Layout::Layout(const vector<Expr> &dims):
   this->inbounds = Expr::mkLambda(indVars, inbounds);
   this->mapping = Expr::mkLambda(indVars, to1DIdx(indVars, dims));
   this->inverseMappings = inverseMappings;
-  this->precondition = Expr::mkBool(true);
 }
 
 MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
     const smt::Expr &layout,
     const smt::Expr &inbounds,
-    bool useUF): indVars(indVars), inbounds(init()), mapping(init()), precondition(init()) {
+    bool useUF):
+    indVars(indVars),
+    inbounds(Expr::mkBool(true)),  // Filled with a new lambda expr later
+    mapping(Expr::mkBool(true)), // Filled with a new lambda expr later
+    precondition(Expr::mkBool(true)) // Filled with a new lambda expr later
+    {
   if (useUF) {
     vector<smt::Sort> domains(indVars.size(), Index::sort());
     FnDecl layoutFn(domains, Index::sort(), freshName("layoutFn"));
     auto layoutFnExpr = layoutFn.apply(indVars);
     Expr condition = (layoutFnExpr == layout);
     vector<Expr> inverseMappings;
+
     for (unsigned i = 0; i < indVars.size(); i ++) {
       auto inverseName = freshName("inverse" + to_string(i));
       FnDecl inverseFn(Index::sort(), Index::sort(), move(inverseName));
@@ -567,7 +573,7 @@ MemRef::MemRef(Memory *m,
   const Layout &layout,
   const smt::Sort &elemty):
     m(m),
-    bid(mkVar(bvSort(m->getBIDBits()), (name + "_bid").c_str())),
+    bid(Expr::mkVar(Sort::bvSort(m->getBIDBits()), (name + "_bid").c_str())),
     offset(Index((name + "_offset").c_str())),
     dims(dims),
     layout(layout) {}
@@ -633,13 +639,13 @@ Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) {
 
 Expr MemRef::storeArray(
     const Expr &array, const Expr &startOffset, const Expr &size) {
-  return m->storeArray(array, bid, offset + startOffset, size);
+  return m->storeArray(array, bid, (Expr)offset + startOffset, size);
 }
 
 Expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(bid);
   auto memrefSize = get1DSize();
-  return z3::uge(numelem, memrefSize) && offset.ult(numelem - memrefSize);
+  return numelem.uge(memrefSize) & ((Expr)offset).ult(numelem - memrefSize);
 }
 
 Expr MemRef::isGlobalBlock() const {
@@ -698,7 +704,7 @@ std::pair<Expr, vector<Expr>> MemRef::refines(const MemRef &other) const {
   return {(Expr) other == (Expr) *this, {}};
 }
 
-MemRef MemRef::eval(model mdl) const {
+MemRef MemRef::eval(Model mdl) const {
   MemRef m2 = *this;
   for (size_t i = 0; i < m2.dims.size(); ++i)
     m2.dims[i] = mdl.eval(m2.dims[i], true).simplify();

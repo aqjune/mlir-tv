@@ -34,7 +34,7 @@ public:
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const Index &other) const;
-  Index eval(smt::model m) const;
+  Index eval(smt::Model m) const;
 };
 
 class Float {
@@ -56,7 +56,7 @@ public:
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const Float &other) const;
-  Float eval(smt::model m) const;
+  Float eval(smt::Model m) const;
 };
 
 class Integer {
@@ -75,7 +75,7 @@ public:
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(const Integer &other)
       const;
-  Integer eval(smt::model m) const;
+  Integer eval(smt::Model m) const;
 };
 
 class Tensor {
@@ -158,7 +158,7 @@ public:
   // Returns (arr[idx] == src.arr[idx], idx var)
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const Tensor &other) const;
-  Tensor eval(smt::model m) const;
+  Tensor eval(smt::Model m) const;
 
 private:
   smt::Expr to1DArrayWithOfs(
@@ -263,7 +263,7 @@ public:
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const MemRef &other) const;
-  MemRef eval(smt::model m) const;
+  MemRef eval(smt::Model m) const;
 
 private:
   Memory *m;

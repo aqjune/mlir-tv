@@ -110,13 +110,13 @@ Expr FnDecl::apply(const Expr &arg) const {
 }
 
 
-string or_omit(const expr &e) {
+string or_omit(const Expr &e) {
   string s;
   llvm::raw_string_ostream rso(s);
-  expr e2 = e.simplify();
+  Expr e2 = e.simplify();
 
   int64_t i;
-  if (e2.is_numeral_i64(i))
+  if (e2.isInt(i))
     return to_string(i);
   rso << e2;
   rso.flush();
@@ -126,7 +126,7 @@ string or_omit(const expr &e) {
   return s;
 }
 
-string or_omit(const vector<expr> &evec) {
+string or_omit(const vector<Expr> &evec) {
   string s;
   llvm::raw_string_ostream rso(s);
   rso << "(";
@@ -261,6 +261,15 @@ Expr Expr::ugt(const Expr& rhs) const {
     return z3::ugt(e, *rhs.z3_expr); 
   });
   
+  return Expr(move(z3_expr));
+}
+
+EXPR_BVOP_UINT64(uge)
+Expr Expr::uge(const Expr& rhs) const {
+  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) {
+    return z3::uge(e, *rhs.z3_expr);
+  });
+
   return Expr(move(z3_expr));
 }
 
@@ -528,54 +537,77 @@ FnDecl::FnDecl(std::optional<z3::func_decl> &&z3_fdecl) {
   this->z3_fdecl = std::move(z3_fdecl);
 }
 
-Result::Result(const optional<z3::check_result> &z3_result) {
+CheckResult::CheckResult(const optional<z3::check_result> &z3_result) {
   auto unwrapped_z3_result = z3_result.value_or(z3::check_result::unknown);
   if (unwrapped_z3_result == z3::check_result::sat) {
-    this->result = Result::SAT;
+    this->result = CheckResult::SAT;
   } else if (unwrapped_z3_result == z3::check_result::unsat) {
-    this->result = Result::UNSAT;
+    this->result = CheckResult::UNSAT;
   } else {
-    this->result = Result::UNKNOWN;
+    this->result = CheckResult::UNKNOWN;
   }
 }
 
-const bool Result::operator==(const Result &rhs) {
+const bool CheckResult::operator==(const CheckResult &rhs) {
   return this->result == rhs.result;
 }
 
-Solver::Solver() {
-  this->z3_solver = fupdate(sctx.z3, [](auto &ctx){ return z3::solver(ctx); });
+
+Expr Model::eval(const Expr &e, bool modelCompletion) const {
+  auto z3e = fmap(z3, [modelCompletion, &e](auto &z3model){
+    return z3model.eval(e.getZ3Expr(), modelCompletion);
+  });
+
+  return Expr({move(z3e)});
+}
+
+Model Model::empty() {
+  // FIXME
+  return {*sctx.z3};
+}
+
+
+Solver::Solver(const char *logic) {
+  z3 = fupdate(sctx.z3, [logic](auto &ctx){
+    return z3::solver(ctx, logic);
+  });
 }
 
 void Solver::add(const Expr &e) {
-  fupdate(this->z3_solver, [e](auto &solver) { solver.add(*e.z3_expr); return 0; });
+  fupdate(z3, [e](auto &solver) { solver.add(*e.z3_expr); return 0; });
 }
 
 void Solver::reset() {
-  fupdate(this->z3_solver, [](auto &solver) { solver.reset(); return 0; });
+  fupdate(z3, [](auto &solver) { solver.reset(); return 0; });
 }
 
-Result Solver::check() {
-  auto z3_result = fupdate(this->z3_solver, [](auto &solver) {
-    return solver.check();
-  });
+CheckResult Solver::check() {
+  auto z3_result = fupdate(z3, [](auto &solver) { return solver.check(); });
   
   // TODO: compare with results from other solvers
   // TODO: concurrent run with solvers and return the fastest one?
-  return Result(z3_result);    
+  return CheckResult(z3_result);
 }
+
+Model Solver::getModel() const {
+  auto z3_result = fmap(z3, [](auto &solver) { return solver.get_model(); });
+
+  return Model(move(z3_result));
+}
+
 } // namespace smt
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e) {
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
+  // FIXME
   stringstream ss;
-  ss << e;
+  ss << e.getZ3Expr();
   os << ss.str();
   return os;
 }
 
 
 llvm::raw_ostream& operator<<(
-    llvm::raw_ostream& os, const vector<smt::expr> &es) {
+    llvm::raw_ostream& os, const vector<smt::Expr> &es) {
   os << "(";
   if (es.size() != 0) {
     os << es[0];
