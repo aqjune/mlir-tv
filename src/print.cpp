@@ -4,7 +4,7 @@
 using namespace std;
 using namespace smt;
 
-static void printInputs(model m, mlir::FuncOp src, const State &st_src) {
+static void printInputs(Model m, mlir::FuncOp src, const State &st_src) {
   unsigned n = src.getNumArguments();
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
@@ -14,12 +14,12 @@ static void printInputs(model m, mlir::FuncOp src, const State &st_src) {
   }
 }
 
-void printOperations(model m, mlir::FuncOp fn, const State &st) {
+void printOperations(Model m, mlir::FuncOp fn, const State &st) {
   for (auto &op: fn.getRegion().front()) {
     llvm::outs() << "\t" << op << "\n";
 
     auto wb = m.eval(st.isOpWellDefined(&op));
-    if (wb.is_false()) {
+    if (wb.isFalse()) {
       llvm::outs() << "\t\t[This operation has undefined behavior!]\n";
       break;
     }
@@ -32,7 +32,7 @@ void printOperations(model m, mlir::FuncOp fn, const State &st) {
 }
 
 void printCounterEx(
-    model m, const vector<expr> &params, mlir::FuncOp src,
+    Model m, const vector<Expr> &params, mlir::FuncOp src,
     mlir::FuncOp tgt, const State &st_src, const State &st_tgt,
     VerificationStep step, unsigned retvalidx) {
   llvm::outs() << "<Inputs>\n";

@@ -21,15 +21,15 @@ enum class AbsLevelDot {
 // This resets the used abstract ops record.
 void setAbstractionLevel(AbsLevelDot);
 
-smt::sort fpSort();
-smt::expr fpConst(double f);
+smt::Sort fpSort();
+smt::Expr fpConst(double f);
 // Return the set of possible FP constants for 'e'.
-std::vector<double> fpPossibleConsts(const smt::expr &e);
+std::vector<double> fpPossibleConsts(const smt::Expr &e);
 
-smt::expr mkZeroElemFromArr(const smt::expr &arr);
-smt::expr fpAdd(const smt::expr &f1, const smt::expr &f2);
-smt::expr fpMul(const smt::expr &f1, const smt::expr &f2);
-smt::expr sum(const smt::expr &arr, const smt::expr &n);
-smt::expr dot(const smt::expr &arr1, const smt::expr &arr2, const smt::expr &n);
+smt::Expr mkZeroElemFromArr(const smt::Expr &arr);
+smt::Expr fpAdd(const smt::Expr &f1, const smt::Expr &f2);
+smt::Expr fpMul(const smt::Expr &f1, const smt::Expr &f2);
+smt::Expr sum(const smt::Expr &arr, const smt::Expr &n);
+smt::Expr dot(const smt::Expr &arr1, const smt::Expr &arr2, const smt::Expr &n);
 
 };
