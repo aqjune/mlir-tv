@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.15.0)
 project(mlir-tv VERSION 0.1.0)
 set (CMAKE_CXX_STANDARD 17)
 
-set(MLIR_DIR /opt/llvm-13-libc CACHE PATH "MLIR installation top-level directory")
-set(Z3_DIR /opt/z3-inst CACHE PATH "Z3 installation top-level directory")
-set(CVC5_DIR /opt/cvc5 CACHE PATH "CVC5 installation top-level directory")
-option(USE_LIBC "Use libc++ in case the MLIR is linked against libc++" ON)
+set(MLIR_DIR CACHE PATH "MLIR installation top-level directory")
+set(Z3_DIR CACHE PATH "Z3 installation top-level directory")
+set(CVC5_DIR CACHE PATH "CVC5 installation top-level directory")
+option(USE_LIBC "Use libc++ in case the MLIR (and CVC5) is linked against libc++")
 
 set(MLIR_INC_DIR "${MLIR_DIR}/include")
 set(MLIR_LIB_DIR "${MLIR_DIR}/lib")
@@ -76,17 +76,6 @@ if(CVC5_DIR)
     endif()
 endif()
 
-# Check for CVC5 installation
-if(CVC5_DIR)
-    if(NOT EXISTS ${CVC5_INC_DIR} OR NOT EXISTS ${CVC5_LIB_DIR})
-        message(FATAL_ERROR "the provided path doesn't seem to be a valid CVC5 directory")
-    else()
-        target_include_directories(${PROJECT_LIB} PUBLIC ${CVC5_INC_DIR})
-        target_link_directories(${PROJECT_LIB} PUBLIC ${CVC5_LIB_DIR})
-        target_link_libraries(${PROJECT_LIB} PUBLIC cvc5)
-    endif()
-endif()
-
 # Try using libc if possible
 if(USE_LIBC)
     target_compile_options(${PROJECT_LIB} PUBLIC -stdlib=libc++)
@@ -107,5 +96,4 @@ target_compile_options(mlir-interp PRIVATE -fno-rtti)
 
 enable_testing()
 add_subdirectory(${PROJECT_SOURCE_DIR}/tests)
-# Reactivate this after unit tests are updated to use the new SMT wrapper classes
-#add_subdirectory(${PROJECT_SOURCE_DIR}/unittests)
+add_subdirectory(${PROJECT_SOURCE_DIR}/unittests)
