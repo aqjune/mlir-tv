@@ -4,12 +4,15 @@ set (CMAKE_CXX_STANDARD 17)
 
 set(MLIR_DIR CACHE PATH "MLIR installation top-level directory")
 set(Z3_DIR CACHE PATH "Z3 installation top-level directory")
-option(USE_LIBC "Use libc++ in case the MLIR is linked against libc++")
+set(CVC5_DIR CACHE PATH "CVC5 installation top-level directory")
+option(USE_LIBC "Use libc++ in case the MLIR (and CVC5) is linked against libc++")
 
 set(MLIR_INC_DIR "${MLIR_DIR}/include")
 set(MLIR_LIB_DIR "${MLIR_DIR}/lib")
 set(Z3_INC_DIR "${Z3_DIR}/include")
 set(Z3_LIB_DIR "${Z3_DIR}/lib")
+set(CVC5_INC_DIR "${CVC5_DIR}/include")
+set(CVC5_LIB_DIR "${CVC5_DIR}/lib")
 
 # Build library first
 set(PROJECT_LIB "mlirtv")
@@ -46,7 +49,7 @@ else()
 endif()
 
 # Check if at least one solver is available
-if(NOT Z3_DIR)
+if(NOT Z3_DIR AND NOT CVC5_DIR)
     message(FATAL_ERROR "path to at least one of the solvers must be provided!")
 endif()
 
@@ -58,6 +61,19 @@ if(Z3_DIR)
         target_include_directories(${PROJECT_LIB} PUBLIC ${Z3_INC_DIR})
         target_link_directories(${PROJECT_LIB} PUBLIC ${Z3_LIB_DIR})
         target_link_libraries(${PROJECT_LIB} PUBLIC z3)
+        target_compile_definitions(${PROJECT_LIB} PUBLIC SOLVER_Z3)
+    endif()
+endif()
+
+# Check for CVC5 installation
+if(CVC5_DIR)
+    if(NOT EXISTS ${CVC5_INC_DIR} OR NOT EXISTS ${CVC5_LIB_DIR})
+        message(FATAL_ERROR "the provided path doesn't seem to be a valid CVC5 directory")
+    else()
+        target_include_directories(${PROJECT_LIB} PUBLIC ${CVC5_INC_DIR})
+        target_link_directories(${PROJECT_LIB} PUBLIC ${CVC5_LIB_DIR})
+        target_link_libraries(${PROJECT_LIB} PUBLIC cvc5)
+        target_compile_definitions(${PROJECT_LIB} PUBLIC SOLVER_CVC5)
     endif()
 endif()
 
