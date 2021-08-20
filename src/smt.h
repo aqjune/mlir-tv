@@ -1,9 +1,22 @@
 #pragma once
 
 #include "llvm/Support/raw_ostream.h"
-#include "z3++.h"
 #include <vector>
 #include <optional>
+
+#ifdef SOLVER_Z3
+  #include "z3++.h"
+  #define IF_Z3_ENABLED(stmt) stmt
+#else
+  #define IF_Z3_ENABLED(stmt)
+#endif
+
+#ifdef SOLVER_CVC5
+  #include "cvc5/cvc5.h"
+  #define IF_CVC5_ENABLED(stmt) stmt
+#else
+  #define IF_CVC5_ENABLED(stmt)
+#endif
 
 namespace smt {
 using expr = z3::expr;

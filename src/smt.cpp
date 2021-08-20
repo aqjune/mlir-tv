@@ -2,6 +2,22 @@
 #include "smt.h"
 #include "utils.h"
 
+#ifdef SOLVER_Z3
+#define TRY_SET_Z3_EXPR(fn) e.setZ3Expr(fn)
+#define TRY_SET_Z3_SORT(fn) s.setZ3Sort(fn)
+#else
+#define TRY_SET_Z3_EXPR(fn)
+#define TRY_SET_Z3_SORT(fn)
+#endif
+
+#ifdef SOLVER_CVC5
+#define TRY_SET_CVC5_EXPR(fn) e.setCVC5Expr(fn)
+#define TRY_SET_CVC5_SORT(fn) s.setCVC5Sort(fn)
+#else
+#define TRY_SET_CVC5_EXPR(fn)
+#define TRY_SET_CVC5_SORT(fn)
+#endif
+
 using namespace std;
 
 namespace {
