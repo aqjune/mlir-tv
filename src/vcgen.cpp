@@ -187,19 +187,7 @@ static Results checkRefinement(
     }
   }
 
-  { // 2. Check whether src is always UB
-    auto s = z3::solver(ctx, logic);
-    auto not_ub = st_src.isWellDefined().simplify();
-    auto res = solve(s, precond && not_ub, vinput.dumpSMTPath,
-                     fnname + ".2.notub");
-    elapsedMillisec += res.second;
-    if (res.first == z3::unsat) {
-      llvm::outs() << "== Result: correct (source is always undefined) ==\n";
-      return Results::SUCCESS;
-    }
-  }
-
-  if (st_src.retValues.size() != 0) { // 3. Check the return values
+  if (st_src.retValues.size() != 0) { // 2. Check the return values
     unsigned numret = st_src.retValues.size();
     assert(numret == st_tgt.retValues.size());
     for (unsigned i = 0; i < numret; ++i) {
@@ -218,7 +206,7 @@ static Results checkRefinement(
         (st_src.isWellDefined() && st_tgt.isWellDefined() && !refines)
         .simplify();
       auto res = solve(s, precond && not_refines, vinput.dumpSMTPath,
-                      fnname + ".3.retval." + to_string(i));
+                      fnname + ".2.retval." + to_string(i));
       elapsedMillisec += res.second;
 
       if (res.first != z3::unsat) {
@@ -234,13 +222,13 @@ static Results checkRefinement(
   }
 
   if (st_src.m->getNumBlocks() > 0 ||
-      st_tgt.m->getNumBlocks() > 0) { // 4. Check memory refinement
+      st_tgt.m->getNumBlocks() > 0) { // 3. Check memory refinement
     auto s = z3::solver(ctx, logic);
     auto [refines, params] = st_src.m->refines(*st_tgt.m);
     auto not_refines =
       (st_src.isWellDefined() && st_tgt.isWellDefined() && !refines).simplify();
     auto res = solve(s, precond && not_refines, vinput.dumpSMTPath,
-                     fnname + ".4.memory");
+                     fnname + ".3.memory");
     elapsedMillisec += res.second;
     if (res.first != z3::unsat) {
       printErrorMsg(s, res.first, "Memory mismatch", move(params),
@@ -249,17 +237,45 @@ static Results checkRefinement(
     }
   }
 
-  llvm::outs() << "== Result: correct ==\n";
   return Results::SUCCESS;
 }
 
-static Results tryValidation(
-    const ValidationInput &vinput, bool printOps, int64_t &elapsedMillisec) {
+static void raiseUnsupported(const string &msg) {
+  llvm::errs() << msg << "\n";
+  exit(91);
+}
+
+static State encodeFinalState(
+    const ValidationInput &vinput, bool printOps, bool issrc, ArgInfo &args,
+    vector<expr> &preconds) {
+  mlir::FuncOp fn = issrc ? vinput.src : vinput.tgt;
+
+  auto st_or_err = createInputState(
+      fn, vinput.numBlocks, vinput.encoding, args, preconds);
+  if (holds_alternative<string>(st_or_err))
+    raiseUnsupported(get<string>(st_or_err));
+  auto st = get<State>(st_or_err);
+
+  if (printOps)
+    llvm::outs() << (issrc ? "<src>" : "<tgt>") << "\n";
+  if (auto msg = encode(st, fn, printOps))
+    raiseUnsupported(*msg);
+
+  return st;
+}
+
+// 'conjunction' overlaps with std::conjunction
+// Will move this function to Expr::and someday
+expr exprAnd(const std::vector<expr>& v) {
+  expr e = mkBool(true);
+  for (auto &e2: v)
+    e = e2 & e;
+  return e;
+}
+
+static tuple<State, State, expr> encodeFinalStates(
+    const ValidationInput &vinput, bool printOps) {
   auto src = vinput.src, tgt = vinput.tgt;
-  auto raiseUnsupported = [](const string &msg) {
-    llvm::errs() << msg << "\n";
-    exit(91);
-  };
 
   if (auto errmsg = checkFunctionSignatures(src, tgt))
     raiseUnsupported(*errmsg);
@@ -267,38 +283,51 @@ static Results tryValidation(
   ArgInfo args;
   vector<expr> preconds;
 
-  auto st_src_or_err = createInputState(
-      src, vinput.numBlocks, vinput.encoding, args, preconds);
-  if (holds_alternative<string>(st_src_or_err))
-    raiseUnsupported(get<string>(st_src_or_err));
-  auto st_src = get<State>(st_src_or_err);
+  State st_src = encodeFinalState(vinput, printOps, true,  args, preconds);
+  State st_tgt = encodeFinalState(vinput, printOps, false, args, preconds);
 
-  auto st_tgt_or_err = createInputState(
-      tgt, vinput.numBlocks, vinput.encoding, args, preconds);
-  if (holds_alternative<string>(st_tgt_or_err))
-    raiseUnsupported(get<string>(st_tgt_or_err));
-  auto st_tgt = get<State>(st_tgt_or_err);
-
-  if (printOps)
-    llvm::outs() << "<src>\n";
-  if (auto msg = encode(st_src, src, printOps))
-    raiseUnsupported(*msg);
-
-  if (printOps)
-    llvm::outs() << "<tgt>\n";
-  if (auto msg = encode(st_tgt, tgt, printOps))
-    raiseUnsupported(*msg);
-
-  expr precond = mkBool(true);
-  for (auto &e: preconds)
-    precond = precond && e;
-
-  precond = precond && st_src.precondition() && st_tgt.precondition();
+  expr precond =
+      exprAnd(preconds) && st_src.precondition() && st_tgt.precondition();
   precond = precond.simplify();
 
-  auto res = checkRefinement(
-      vinput, st_src, st_tgt, move(precond), elapsedMillisec);
-  return res;
+  return {move(st_src), move(st_tgt), move(precond)};
+}
+
+static Results tryValidation(
+    const ValidationInput &vinput, bool printOps, int64_t &elapsedMillisec) {
+  auto enc = encodeFinalStates(vinput, true);
+  return checkRefinement(
+        vinput, get<0>(enc), get<1>(enc), move(get<2>(enc)), elapsedMillisec);
+}
+
+static void checkIsSrcAlwaysUB(
+    const ValidationInput &vinput, bool wasSuccess, int64_t &elapsedMillisec) {
+  static bool isCalled = false;
+  assert(!isCalled);
+  isCalled = true;
+  mlir::FuncOp src = vinput.src;
+  string fnname = src.getName().str();
+
+  // Set the abstract level to be as concrete as possible because we may not
+  // be able to detect always-UB cases
+  aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL);
+
+  ArgInfo args_dummy;
+  vector<expr> preconds;
+  auto st = encodeFinalState(vinput, false, true, args_dummy, preconds);
+
+  auto logic = st.hasQuantifier ? "UFBV" : "QF_UFBV";
+  auto solver = z3::solver(ctx, logic);
+  auto not_ub = st.isWellDefined().simplify();
+  auto smtres = solve(solver, exprAnd(preconds) && not_ub, vinput.dumpSMTPath,
+                      fnname + ".notub");
+  elapsedMillisec += smtres.second;
+
+  if (smtres.first == z3::unsat) {
+    llvm::outs() << "== Result: correct (source is always undefined) ==\n";
+  } else if (wasSuccess) {
+    llvm::outs() << "== Result: correct ==\n";
+  }
 }
 
 static Results validate(ValidationInput vinput) {
@@ -312,8 +341,12 @@ static Results validate(ValidationInput vinput) {
 
   aop::setAbstractionLevel(aop::AbsLevelDot::FULLY_ABS);
   auto res = tryValidation(vinput, true, elapsedMillisec);
-  if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
+
+  if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
+    // Check whether it is always UB
+    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, elapsedMillisec);
     return res;
+  }
 
   auto usedOps = aop::getUsedAbstractOps();
   if (usedOps.dot && usedOps.sum && usedOps.mul) {
@@ -329,7 +362,12 @@ static Results validate(ValidationInput vinput) {
       << "\n===============================================================\n"
       << "  Giving more precise semantics to abstractly defined ops...\n"
       << "===============================================================\n\n";
-  return tryValidation(vinput, false, elapsedMillisec);
+
+  res = tryValidation(vinput, false, elapsedMillisec);
+  if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
+    // Check whether it is always UB
+    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, elapsedMillisec);
+  return res;
 }
 
 
