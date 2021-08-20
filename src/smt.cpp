@@ -600,11 +600,16 @@ Model Solver::getModel() const {
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
   // FIXME
   stringstream ss;
-  ss << e.getZ3Expr();
+  ss << e;
   os << ss.str();
   return os;
 }
 
+std::ostream& operator<<(std::ostream& os, const smt::Expr &e) {
+  // FIXME
+  os << e.getZ3Expr();
+  return os;
+}
 
 llvm::raw_ostream& operator<<(
     llvm::raw_ostream& os, const vector<smt::Expr> &es) {

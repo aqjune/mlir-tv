@@ -625,9 +625,9 @@ MemRef::getDimsAndLayoutAndElemTy(
 
 pair<Expr, Expr> MemRef::load(const vector<Expr> &indices) {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto [Expr, success] = m->load(bid, (Expr)offset + idx);
+  auto [loaded, success] = m->load(bid, (Expr)offset + idx);
 
-  return {Expr, (success & inbounds).simplify()};
+  return {loaded, (success & inbounds).simplify()};
 }
 
 Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) {

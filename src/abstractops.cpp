@@ -58,7 +58,7 @@ Expr fpConst(double f) {
 vector<double> fpPossibleConsts(const Expr &e) {
   vector<double> vec;
   for (auto &[k, v]: fpconst_absrepr) {
-    if (structurallyEq(v, e))
+    if (v.structurallyEq(e))
       vec.push_back(k);
   }
   return vec;
@@ -73,47 +73,47 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
   usedOps.add = true;
   auto fty = f1.sort();
 
-  auto addfn = mkUF({fty, fty}, fty, "fp_add");
-  return addfn(f1, f2);
+  FnDecl addfn({fty, fty}, fty, "fp_add");
+  return addfn.apply({f1, f2});
 }
 
 Expr fpMul(const Expr &a, const Expr &b) {
   usedOps.mul = true;
 
   // TODO: check that a.get_Sort() == b.get_Sort()
-  auto mulfn = mkUF({a.get_Sort(), b.get_Sort()}, Float::Sort(), "fp_mul");
-  return mulfn(a, b);
+  FnDecl mulfn({a.sort(), b.sort()}, Float::sort(), "fp_mul");
+  return mulfn.apply({a, b});
 }
 
 Expr sum(const Expr &a, const Expr &n) {
   usedOps.sum = true;
   // TODO: check that a.Sort is Index::Sort() -> Float::Sort()
 
-  auto sumfn = mkUF(a.get_Sort(), Float::Sort(), "smt_sum");
+  FnDecl sumfn(a.sort(), Float::sort(), "smt_sum");
   auto i = Index("idx");
-  Expr ai = z3::select(a, i);
+  Expr ai = a.select(i);
   Expr zero = mkZeroElemFromArr(a);
-  return sumfn(z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)));
+  return sumfn(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
 }
 
 Expr dot(const Expr &a, const Expr &b, const Expr &n) {
   if (alDot == AbsLevelDot::FULLY_ABS) {
     usedOps.dot = true;
     // TODO: check that a.get_Sort() == b.get_Sort()
-    auto i = Index("idx");
-    auto dotfn = mkUF({a.get_Sort(), b.get_Sort()}, Float::Sort(), "smt_dot");
+    auto i = (Expr)Index("idx");
+    FnDecl dotfn({a.sort(), b.sort()}, Float::sort(), "smt_dot");
 
-    Expr ai = z3::select(a, i), bi = z3::select(b, i);
+    Expr ai = a.select(i), bi = b.select(i);
     Expr zero = mkZeroElemFromArr(a);
-    return dotfn(
-        z3::lambda(i, z3::ite(z3::ult(i, n), ai, zero)),
-        z3::lambda(i, z3::ite(z3::ult(i, n), bi, zero)));
+    return dotfn.apply({
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero)),
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero))});
   } else if (alDot == AbsLevelDot::SUM_MUL) {
     usedOps.mul = usedOps.sum = true;
     // TODO: check that a.get_Sort() == b.get_Sort()
-    auto i = Index("idx");
-    Expr ai = z3::select(a, i), bi = z3::select(b, i);
-    return sum(z3::lambda(i, fpMul(ai, bi)), n);
+    auto i = (Expr)Index("idx");
+    Expr ai = a.select(i), bi = b.select(i);
+    return sum(Expr::mkLambda(i, fpMul(ai, bi)), n);
   }
   llvm_unreachable("Unknown abstraction level for dot");
 }

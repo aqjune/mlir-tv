@@ -6,19 +6,12 @@
 #include <optional>
 
 namespace smt {
-using expr = z3::expr;
-using model = z3::model;
-using sort = z3::sort;
-using func_decl = z3::func_decl;
 
 class Context {
 public:
-  optional<z3::context> z3;
+  std::optional<z3::context> z3;
 
-  Context() {
-    this->z3 = nullopt;
-  }
-
+  Context() {}
   Context(bool use_z3) {
     if (use_z3) {
       this->z3.emplace();
@@ -32,6 +25,10 @@ class Expr;
 class FnDecl;
 class Model;
 class Sort;
+
+namespace matchers {
+class Matcher;
+}
 
 Expr get1DSize(const std::vector<Expr> &dims);
 std::vector<Expr> from1DIdx(
@@ -125,9 +122,11 @@ public:
   static Expr mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed);
 
 
-  friend Solver;
+  friend Context;
   friend FnDecl;
   friend Model;
+  friend Solver;
+  friend matchers::Matcher;
 };
 
 class FnDecl {
@@ -216,5 +215,6 @@ public:
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e);
+std::ostream& operator<<(std::ostream& os, const smt::Expr &e);
 llvm::raw_ostream& operator<<(
     llvm::raw_ostream& os, const std::vector<smt::Expr> &es);
