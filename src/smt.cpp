@@ -42,9 +42,12 @@ public:
   IF_Z3_ENABLED(optional<z3::context> z3_ctx);
   IF_CVC5_ENABLED(optional<cvc5::api::Solver> cvc5_ctx);
 
+  uint64_t timeout_ms;
+
   Context() {
     IF_Z3_ENABLED(this->z3_ctx.reset());
     IF_CVC5_ENABLED(this->cvc5_ctx.reset());
+    timeout_ms = 20000;
   }
 
   IF_Z3_ENABLED(void useZ3() { this->z3_ctx.emplace(); })
@@ -724,6 +727,7 @@ Result Solver::check() {
   solver_threads.push_back(
     thread([this, &solver_results, &results_lock]() {
       auto z3_result = fupdate(this->z3_solver, [](auto &solver) {
+        z3::set_param("timeout", (int)sctx.timeout_ms);
         return solver.check();
       });
       lock_guard<mutex> lg(results_lock);
@@ -736,6 +740,7 @@ Result Solver::check() {
   solver_threads.push_back(
     thread([this, &solver_results, &results_lock]() {
       auto cvc5_result = fupdate(this->cvc5_solver, [](auto &solver) {
+        solver.setOption("timeout", to_string(sctx.timeout_ms));
         return solver.checkSat();
       });
       lock_guard<mutex> lg(results_lock);
@@ -753,6 +758,10 @@ Result Solver::check() {
 
 IF_Z3_ENABLED(void useZ3() { sctx.useZ3(); })
 IF_CVC5_ENABLED(void useCVC5() { sctx.useCVC5(); })
+
+void setTimeout(const uint64_t ms) {
+  sctx.timeout_ms = ms;
+}
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e) {

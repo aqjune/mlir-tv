@@ -175,6 +175,7 @@ public:
 
 IF_Z3_ENABLED(void useZ3());
 IF_CVC5_ENABLED(void useCVC5());
+void setTimeout(const uint64_t ms);
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::expr &e);
