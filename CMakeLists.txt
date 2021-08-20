@@ -22,7 +22,6 @@ add_library(${PROJECT_LIB} STATIC
     src/memory.cpp
     src/print.cpp
     src/smt.cpp
-    src/smtmatchers.cpp
     src/state.cpp
     src/value.cpp
     src/vcgen.cpp)
@@ -98,4 +97,4 @@ target_compile_options(mlir-interp PRIVATE -fno-rtti)
 enable_testing()
 add_subdirectory(${PROJECT_SOURCE_DIR}/tests)
 # Reactivate this after unit tests are updated to use the new SMT wrapper classes
-#add_subdirectory(${PROJECT_SOURCE_DIR}/unittests)
+# add_subdirectory(${PROJECT_SOURCE_DIR}/unittests)

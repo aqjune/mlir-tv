@@ -1,5 +1,6 @@
 #include "value.h"
 #include "smt.h"
+#include "smtmatchers.h"
 #include "utils.h"
 
 #ifdef SOLVER_Z3
@@ -20,25 +21,39 @@
 
 using namespace std;
 
-namespace {
-z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec) {
-  z3::expr_vector ev(*smt::sctx.z3);
-  for (auto &e: vec)
-    ev.push_back(e);
-  return ev;
-}
 
-z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec) {
-  z3::expr_vector ev(*smt::sctx.z3);
-  for (auto &e: vec)
-    ev.push_back(e.getZ3Expr());
-  return ev;
-}
+namespace {
+z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec);
+z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec);
 }
 
 namespace smt {
+class Context {
+private:
+  uint64_t fresh_var_counter;
 
-Context sctx(true);
+public:
+  IF_Z3_ENABLED(optional<z3::context> z3);
+  IF_CVC5_ENABLED(optional<cvc5::api::Solver> cvc5);
+
+  uint64_t timeout_ms;
+
+  Context() {
+    IF_Z3_ENABLED(this->z3.reset());
+    IF_CVC5_ENABLED(this->cvc5.reset());
+    fresh_var_counter = 0;
+    timeout_ms = 10000;
+  }
+
+  IF_Z3_ENABLED(void useZ3() { this->z3.emplace(); })
+  IF_CVC5_ENABLED(void useCVC5() { this->cvc5.emplace(); })
+
+  string getFreshName(string prefix) {
+    return prefix.append("#" + to_string(fresh_var_counter++));
+  }
+};
+
+Context sctx;
 
 vector<Expr> from1DIdx(
     Expr idx1d,
@@ -622,7 +637,68 @@ Model Solver::getModel() const {
   return Model(move(z3_result));
 }
 
+void useZ3() { IF_Z3_ENABLED(sctx.useZ3()); }
+void useCVC5() { IF_CVC5_ENABLED(sctx.useCVC5()); }
+void setTimeout(const uint64_t ms) { sctx.timeout_ms = ms; }
+
+namespace matchers {
+
+Expr Matcher::createExpr(optional<z3::expr> &&opt) const {
+  return Expr(move(opt));
+}
+
+bool ConstSplatArray::operator()(const Expr &expr) const {
+  // FIXME: cvc5
+  auto e = expr.getZ3Expr();
+  if (!e.is_app())
+    return false;
+
+  Z3_app a = e;
+  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_CONST_ARRAY)
+    return false;
+
+  z3::expr newe(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0));
+  return subMatcher(createExpr(move(newe)));
+}
+
+bool Store::operator()(const Expr &expr) const {
+  // FIXME: cvc5
+  auto e = expr.getZ3Expr();
+  if (!e.is_app())
+    return false;
+
+  Z3_app a = e;
+  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_STORE)
+    return false;
+
+  z3::expr arr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0));
+  z3::expr idx(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1));
+  z3::expr val(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 2));
+
+  return arrMatcher(createExpr(move(arr))) &&
+      idxMatcher(createExpr(move(idx))) &&
+      valMatcher(createExpr(move(val)));
+}
+}
 } // namespace smt
+
+namespace {
+z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec) {
+  z3::expr_vector ev(*smt::sctx.z3);
+  for (auto &e: vec)
+    ev.push_back(e);
+  return ev;
+}
+
+z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec) {
+  z3::expr_vector ev(*smt::sctx.z3);
+  for (auto &e: vec)
+    ev.push_back(e.getZ3Expr());
+  return ev;
+}
+}
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
   // FIXME
