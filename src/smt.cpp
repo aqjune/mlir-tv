@@ -42,7 +42,7 @@ public:
     IF_Z3_ENABLED(this->z3.reset());
     IF_CVC5_ENABLED(this->cvc5.reset());
     fresh_var_counter = 0;
-    timeout_ms = 20000;
+    timeout_ms = 10000;
   }
 
   IF_Z3_ENABLED(void useZ3() { this->z3.emplace(); })
