@@ -112,6 +112,8 @@ int main(int argc, char* argv[]) {
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   z3::set_param("timeout", (int)arg_smt_to.getValue());
+  smt::useZ3();
+  smt::useCVC5();
 
   MLIRContext context;
   DialectRegistry registry;

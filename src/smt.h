@@ -226,6 +226,10 @@ public:
   CheckResult check();
   Model getModel() const;
 };
+
+void useZ3();
+void useCVC5();
+void setTimeout(const uint64_t ms);
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e);

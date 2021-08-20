@@ -18,7 +18,6 @@
   #define TRY_SET_CVC5_SORT(fn)
 #endif
 
-
 using namespace std;
 
 namespace {
@@ -38,8 +37,33 @@ z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec) {
 }
 
 namespace smt {
+class Context {
+private:
+  unordered_map<string, uint64_t> fresh_var_map;
 
-Context sctx(true);
+public:
+  IF_Z3_ENABLED(optional<z3::context> z3_ctx);
+  IF_CVC5_ENABLED(optional<cvc5::api::Solver> cvc5_ctx);
+
+  uint64_t timeout_ms;
+
+  Context() {
+    IF_Z3_ENABLED(this->z3_ctx.reset());
+    IF_CVC5_ENABLED(this->cvc5_ctx.reset());
+    timeout_ms = 20000;
+  }
+
+  IF_Z3_ENABLED(void useZ3() { this->z3_ctx.emplace(); })
+  IF_CVC5_ENABLED(void useCVC5() { this->cvc5_ctx.emplace(); })
+
+  string getFreshName(string prefix) {
+    this->fresh_var_map.insert({prefix, 0});
+    uint64_t suffix = fresh_var_map.at(prefix)++;
+    return prefix.append("_" + to_string(suffix));
+  }
+};
+
+Context sctx;
 
 vector<Expr> from1DIdx(
     Expr idx1d,
@@ -623,6 +647,9 @@ Model Solver::getModel() const {
   return Model(move(z3_result));
 }
 
+void useZ3() { IF_Z3_ENABLED(sctx.useZ3()); }
+void useCVC5() { IF_CVC5_ENABLED(sctx.useCVC5()); }
+void setTimeout(const uint64_t ms) { sctx.timeout_ms = ms; }
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
