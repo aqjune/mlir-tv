@@ -149,6 +149,9 @@ static pair<z3::check_result, int64_t> solve(
   return {result, elapsedMillisec};
 }
 
+static const char *SMT_LOGIC_QF = "QF_UFBV";
+static const char *SMT_LOGIC    = "UFBV";
+
 static Results checkRefinement(
     const ValidationInput &vinput,
     const State &st_src, const State &st_tgt, expr &&precond,
@@ -170,8 +173,8 @@ static Results checkRefinement(
       llvm_unreachable("unexpected result");
     }
   };
-  auto logic = (st_src.hasQuantifier || st_tgt.hasQuantifier) ?
-      "UFBV" : "QF_UFBV";
+  const char *logic = (st_src.hasQuantifier || st_tgt.hasQuantifier) ?
+      SMT_LOGIC : SMT_LOGIC_QF;
 
   { // 1. Check UB
     auto s = z3::solver(ctx, logic);
@@ -316,7 +319,7 @@ static void checkIsSrcAlwaysUB(
   vector<expr> preconds;
   auto st = encodeFinalState(vinput, false, true, args_dummy, preconds);
 
-  auto logic = st.hasQuantifier ? "UFBV" : "QF_UFBV";
+  auto logic = st.hasQuantifier ? SMT_LOGIC : SMT_LOGIC_QF;
   auto solver = z3::solver(ctx, logic);
   auto not_ub = st.isWellDefined().simplify();
   auto smtres = solve(solver, exprAnd(preconds) && not_ub, vinput.dumpSMTPath,
