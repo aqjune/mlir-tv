@@ -12,8 +12,8 @@
 using ValueTy = std::variant<Tensor, MemRef, Index, Float, Integer>;
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream&, const ValueTy &);
-smt::expr getExpr(const ValueTy &vty);
-ValueTy eval(const ValueTy &vty, smt::model m);
+smt::Expr getExpr(const ValueTy &vty);
+ValueTy eval(const ValueTy &vty, smt::Model m);
 
 class ArgInfo {
 private:
@@ -36,14 +36,14 @@ public:
   void add(mlir::Value v, ValueTy &&t);
 
   // For non-aggregate types only
-  void add(mlir::Value v, const smt::expr &e, mlir::Type ty);
+  void add(mlir::Value v, const smt::Expr &e, mlir::Type ty);
 
   ValueTy findOrCrash(mlir::Value v) const;
   template<class T> T get(mlir::Value v) const {
     return std::get<T>(findOrCrash(v));
   }
   bool contains(mlir::Value v) const;
-  smt::expr getExpr(mlir::Value v) const;
+  smt::Expr getExpr(mlir::Value v) const;
 
   auto begin() const { return m.begin(); }
   auto end() const { return m.end(); }
@@ -51,16 +51,16 @@ public:
 
 class State {
 private:
-  smt::expr precond;
+  smt::Expr precond;
   // welldef[i]: is instruction i well-defined?
-  llvm::DenseMap<mlir::Operation *, smt::expr> welldef;
+  llvm::DenseMap<mlir::Operation *, smt::Expr> welldef;
 
 public:
   class LinalgGenericScope {
   public:
-    std::vector<smt::expr> indVars;
+    std::vector<smt::Expr> indVars;
     // indVars[i] <= indVarUpperBounds[i]
-    std::vector<smt::expr> indVarUpperBounds;
+    std::vector<smt::Expr> indVarUpperBounds;
 
     LinalgGenericScope(std::vector<Index> &&upperbounds);
   };
@@ -80,11 +80,11 @@ public:
 
   State(unsigned int numBlocks, MemEncoding encoding);
 
-  void addPrecondition(smt::expr &&e);
-  void wellDefined(mlir::Operation *op, smt::expr &&e);
-  smt::expr precondition() const;
-  smt::expr isWellDefined() const;
-  smt::expr isOpWellDefined(mlir::Operation *op) const;
+  void addPrecondition(smt::Expr &&e);
+  void wellDefined(mlir::Operation *op, smt::Expr &&e);
+  smt::Expr precondition() const;
+  smt::Expr isWellDefined() const;
+  smt::Expr isOpWellDefined(mlir::Operation *op) const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };

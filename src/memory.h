@@ -12,12 +12,12 @@ enum MemEncoding {
 // A memory block containing f32 elements.
 class MemBlock {
 public:
-  smt::expr array;    // Index::sort() -> Float::sort()
-  smt::expr writable; // bool::sort()
-  smt::expr numelem;  // Index::sort()
+  smt::Expr array;    // Index::sort() -> Float::sort()
+  smt::Expr writable; // bool::sort()
+  smt::Expr numelem;  // Index::sort()
 
-  MemBlock(const smt::expr &array, const smt::expr &writable,
-           const smt::expr &numelem):
+  MemBlock(const smt::Expr &array, const smt::Expr &writable,
+           const smt::Expr &numelem):
     array(array), writable(writable), numelem(numelem) {}
 };
 
@@ -48,64 +48,64 @@ public:
   unsigned int getNumBlocks() const { return numGlobalBlocks + numLocalBlocks; }
 
   // Bids smaller than numGlobalBlocks are global (0 ~ numGlobalBlocks - 1)
-  smt::expr isGlobalBlock(const smt::expr &bid) const;
+  smt::Expr isGlobalBlock(const smt::Expr &bid) const;
   // Bids bigger than and equal to numGlobalBlocks are local blocks (numGlobalBlocks ~ numGlobalBlocks + numGlobalBlocks)
-  smt::expr isLocalBlock(const smt::expr &bid) const;
+  smt::Expr isLocalBlock(const smt::Expr &bid) const;
 
   // Returns: (newly created block id)
-  virtual smt::expr addLocalBlock(const smt::expr &numelem, const smt::expr &writable) = 0;
+  virtual smt::Expr addLocalBlock(const smt::Expr &numelem, const smt::Expr &writable) = 0;
 
-  virtual smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const = 0;
+  virtual smt::Expr getNumElementsOfMemBlock(const smt::Expr &bid) const = 0;
   // Mark memblock's writable flag to `writable`
-  virtual void setWritable(const smt::expr &bid, bool writable) = 0;
+  virtual void setWritable(const smt::Expr &bid, bool writable) = 0;
   // get memblocks' writable flag
-  virtual smt::expr getWritable(const smt::expr &bid) const = 0;
+  virtual smt::Expr getWritable(const smt::Expr &bid) const = 0;
   // Returns: store successful?
-  virtual smt::expr store(
-      const smt::expr &f32val, const smt::expr &bid,
-      const smt::expr &idx) = 0;
+  virtual smt::Expr store(
+      const smt::Expr &f32val, const smt::Expr &bid,
+      const smt::Expr &idx) = 0;
   // Returns: store successful?
-  virtual smt::expr storeArray(
-      const smt::expr &arr, const smt::expr &bid,
-      const smt::expr &offset, const smt::expr &size) = 0;
+  virtual smt::Expr storeArray(
+      const smt::Expr &arr, const smt::Expr &bid,
+      const smt::Expr &offset, const smt::Expr &size) = 0;
   // Returns: (loaded value, load successful?)
-  virtual std::pair<smt::expr, smt::expr> load(
-      const smt::expr &bid, const smt::expr &idx) const = 0;
+  virtual std::pair<smt::Expr, smt::Expr> load(
+      const smt::Expr &bid, const smt::Expr &idx) const = 0;
 
   // Encode the refinement relation between src (other) and tgt (this) memory
-  virtual std::pair<smt::expr, std::vector<smt::expr>>
+  virtual std::pair<smt::Expr, std::vector<smt::Expr>>
     refines(const Memory &other) const = 0;
 };
 
 class SingleArrayMemory: public Memory {
-  smt::expr arrayMaps; // bv(bits)::sort() -> (Index::sort() -> Float::sort())
-  smt::expr writableMaps; // bv(bits)::sort() -> bool::sort()
-  smt::expr numelemMaps; // bv(bits)::sort() -> Index::sort()
+  smt::Expr arrayMaps; // bv(bits)::sort() -> (Index::sort() -> Float::sort())
+  smt::Expr writableMaps; // bv(bits)::sort() -> bool::sort()
+  smt::Expr numelemMaps; // bv(bits)::sort() -> Index::sort()
 
 private:
-  MemBlock getMemBlock(const smt::expr &bid) const;
+  MemBlock getMemBlock(const smt::Expr &bid) const;
 
 public:
   SingleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
 
-  smt::expr addLocalBlock(const smt::expr &numelem, const smt::expr &writable) override;
+  smt::Expr addLocalBlock(const smt::Expr &numelem, const smt::Expr &writable) override;
 
-  smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const override {
+  smt::Expr getNumElementsOfMemBlock(const smt::Expr &bid) const override {
     return getMemBlock(bid).numelem;
   }
 
-  void setWritable(const smt::expr &bid, bool writable) override;
-  smt::expr getWritable(const smt::expr &bid) const override;
-  smt::expr store(
-      const smt::expr &f32val, const smt::expr &bid, const smt::expr &idx)
+  void setWritable(const smt::Expr &bid, bool writable) override;
+  smt::Expr getWritable(const smt::Expr &bid) const override;
+  smt::Expr store(
+      const smt::Expr &f32val, const smt::Expr &bid, const smt::Expr &idx)
       override;
-  smt::expr storeArray(
-      const smt::expr &arr, const smt::expr &bid, const smt::expr &offset, const smt::expr &size)
+  smt::Expr storeArray(
+      const smt::Expr &arr, const smt::Expr &bid, const smt::Expr &offset, const smt::Expr &size)
       override;
-  std::pair<smt::expr, smt::expr> load(
-      const smt::expr &bid, const smt::expr &idx) const override;
+  std::pair<smt::Expr, smt::Expr> load(
+      const smt::Expr &bid, const smt::Expr &idx) const override;
 
-  std::pair<smt::expr, std::vector<smt::expr>> refines(const Memory &other)
+  std::pair<smt::Expr, std::vector<smt::Expr>> refines(const Memory &other)
       const override;
 };
 
@@ -113,43 +113,43 @@ public:
 // A class that implements the memory model described in CAV'21 (An SMT
 // Encoding of LLVM's Memory Model for Bounded Translation Validation)
 class MultipleArrayMemory: public Memory {
-  std::vector<smt::expr> arrays;  // vector<(Index::sort() -> Float::sort())>
-  std::vector<smt::expr> writables; // vector<Bool::sort()>
-  std::vector<smt::expr> numelems;  // vector<Index::sort>
+  std::vector<smt::Expr> arrays;  // vector<(Index::sort() -> Float::sort())>
+  std::vector<smt::Expr> writables; // vector<Bool::sort()>
+  std::vector<smt::Expr> numelems;  // vector<Index::sort>
 
 public:
   MultipleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
 
-  smt::expr addLocalBlock(const smt::expr &numelem, const smt::expr &writable) override;
+  smt::Expr addLocalBlock(const smt::Expr &numelem, const smt::Expr &writable) override;
 
-  smt::expr getNumElementsOfMemBlock(unsigned ubid) const
+  smt::Expr getNumElementsOfMemBlock(unsigned ubid) const
   { assert(ubid < getNumBlocks()); return numelems[ubid]; }
-  smt::expr getNumElementsOfMemBlock(const smt::expr &bid) const override;
+  smt::Expr getNumElementsOfMemBlock(const smt::Expr &bid) const override;
 
-  void setWritable(const smt::expr &bid, bool writable) override;
-  smt::expr getWritable(const smt::expr &bid) const override;
-  smt::expr getWritable(unsigned ubid) const
+  void setWritable(const smt::Expr &bid, bool writable) override;
+  smt::Expr getWritable(const smt::Expr &bid) const override;
+  smt::Expr getWritable(unsigned ubid) const
   { assert(ubid < getNumBlocks()); return writables[ubid]; }
 
-  smt::expr store(
-      const smt::expr &f32val, const smt::expr &bid, const smt::expr &idx)
+  smt::Expr store(
+      const smt::Expr &f32val, const smt::Expr &bid, const smt::Expr &idx)
       override;
-  smt::expr storeArray(
-      const smt::expr &arr, const smt::expr &bid, const smt::expr &offset, const smt::expr &size)
+  smt::Expr storeArray(
+      const smt::Expr &arr, const smt::Expr &bid, const smt::Expr &offset, const smt::Expr &size)
       override;
-  std::pair<smt::expr, smt::expr> load(
-      const smt::expr &bid, const smt::expr &idx) const override;
-  std::pair<smt::expr, smt::expr> load(unsigned ubid, const smt::expr &idx)
+  std::pair<smt::Expr, smt::Expr> load(
+      const smt::Expr &bid, const smt::Expr &idx) const override;
+  std::pair<smt::Expr, smt::Expr> load(unsigned ubid, const smt::Expr &idx)
       const;
 
-  std::pair<smt::expr, std::vector<smt::expr>> refines(
+  std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const Memory &other) const override;
 
 private:
-  smt::expr itebid(
-      const smt::expr &bid, std::function<smt::expr(unsigned)> fn) const;
+  smt::Expr itebid(
+      const smt::Expr &bid, std::function<smt::Expr(unsigned)> fn) const;
   void update(
-      const smt::expr &bid,
-      std::function<smt::expr*(unsigned)> exprToUpdate, // bid -> ptr to expr
-      std::function<smt::expr(unsigned)> updatedValue) const; // bid -> updated
+      const smt::Expr &bid,
+      std::function<smt::Expr*(unsigned)> exprToUpdate, // bid -> ptr to expr
+      std::function<smt::Expr(unsigned)> updatedValue) const; // bid -> updated
 };

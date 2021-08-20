@@ -35,7 +35,7 @@ using namespace std;
 }
 
 
-static optional<expr> getZero(mlir::Type eltType) {
+static optional<Expr> getZero(mlir::Type eltType) {
   if (eltType.isa<mlir::FloatType>())
     return Float(0.0);
   else if (eltType.isa<mlir::IntegerType>())
@@ -64,20 +64,20 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   return {};
 }
 
-static optional<ValueTy> fromExpr(expr &&e, mlir::Type ty) {
+static optional<ValueTy> fromExpr(Expr &&e, mlir::Type ty) {
   if (ty.isa<mlir::IndexType>())
     return Index(e);
   else if (ty.isa<mlir::Float32Type>())
     return Float(e);
   else if (ty.isa<mlir::IntegerType>()) {
-    assert(e.get_sort().bv_size() == ty.getIntOrFloatBitWidth());
+    assert(e.sort().bitwidth() == ty.getIntOrFloatBitWidth());
     return Integer(e);
   }
   return {};
 }
 
-static vector<expr> createIndexVars(unsigned n) {
-  vector<expr> idxs;
+static vector<Expr> createIndexVars(unsigned n) {
+  vector<Expr> idxs;
   for (unsigned i = 0; i < n; i ++) {
     idxs.push_back(Index("i" + std::to_string(i), true));
   }
@@ -88,7 +88,7 @@ static vector<expr> createIndexVars(unsigned n) {
 
 
 template<class T>
-optional<expr> encodeAffineExpr(
+optional<Expr> encodeAffineExpr(
     mlir::AffineExpr ae, const vector<T> &dimvars, const vector<T> &symbolvars
 ) {
   switch (ae.getKind()) {
@@ -178,7 +178,7 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   auto ty = res.getType().dyn_cast<mlir::TensorType>();
   assert(ty);
 
-  vector<expr> sizes;
+  vector<Expr> sizes;
   if (ty.getRank() == 0) {
     sizes.push_back(Index(1));
   } else {
@@ -227,7 +227,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
   unsigned i = 0;
   for (unsigned srci = 0; srci < indices.size(); ++srci) {
     auto &ids = indices[srci];
-    auto orgdim = (expr)t.getDim(srci);
+    auto orgdim = (Expr)t.getDim(srci);
 
     // Allow one '?' only.
     int unknown_dim = -1;
@@ -251,8 +251,8 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
       return "tensor size is too large";
 
     // If the original size isn't divisible, raise UB
-    st.wellDefined(op, z3::mod(orgdim, const_size) == 0);
-    newdims[unknown_dim] = z3::udiv(orgdim, const_size); 
+    st.wellDefined(op, orgdim.mod(const_size) == 0);
+    newdims[unknown_dim] = orgdim.udiv(const_size); 
   }
 
   st.regs.add(op.getResult(), t.reshape(newdims));
@@ -304,7 +304,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
   // out-of-bounds. It is currently encoded as UB.
 
   auto t = st.regs.get<Tensor>(op.getOperand(0));
-  vector<expr> indices;
+  vector<Expr> indices;
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
@@ -315,7 +315,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
 
   for (unsigned i = 0; i < indices.size(); ++i)
     // TODO: revisit this; may not be axis-wise
-    st.wellDefined(op.getOperation(), z3::ult(indices[i], t.getDim(i)));
+    st.wellDefined(op.getOperation(), indices[i].ult(t.getDim(i)));
 
   return {};
 }
@@ -325,12 +325,12 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
   auto m = st.regs.get<MemRef>(op.getOperand(0));
-  vector<expr> indices;
+  vector<Expr> indices;
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
-  auto [expr, success] = m.load(indices);
-  if (auto vt = fromExpr(move(expr), op.getType())) {
+  auto [Expr, success] = m.load(indices);
+  if (auto vt = fromExpr(move(Expr), op.getType())) {
     st.regs.add(op, move(*vt));
     st.wellDefined(op.getOperation(), move(success));
   } else
@@ -344,7 +344,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
   auto m = st.regs.get<MemRef>(op.getOperand(1));
-  vector<expr> indices;
+  vector<Expr> indices;
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
@@ -362,7 +362,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
-  vector<smt::expr> sizes, offsets, strides;
+  vector<smt::Expr> sizes, offsets, strides;
 
   for (unsigned i = 0; i < op.getSourceType().getRank(); i++) {
 #define ADD(vec, ee) { \
@@ -397,7 +397,7 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto layout = get<1>(*dimsAndLayoutAndElemTy);
   auto elemty = get<2>(*dimsAndLayoutAndElemTy);
   // Add new local block
-  auto bid = st.m->addLocalBlock(smt::get1DSize(dims), mkBool(false));
+  auto bid = st.m->addLocalBlock(smt::get1DSize(dims), Expr::mkBool(false));
   auto offset = Index::zero();
   // Create MemRef which points newly created block id
   auto memref = MemRef(st.m.get(), bid, offset, dims, layout, elemty);
@@ -409,13 +409,14 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
     st.regs.add(op.memref(), move(memref));
 
   } else {
-    vector<expr> idxs = createIndexVars(memrefTy.getRank());
+    vector<Expr> idxs = createIndexVars(memrefTy.getRank());
     auto tVal = tensor.get(idxs);
     auto [mVal, success] = memref.load(idxs);
     memref.setWritable(false);
 
     st.wellDefined(
-        op.getOperation(), forall(idxs, z3::implies(success, mVal == tVal)));
+        op.getOperation(),
+        Expr::mkForall(idxs, success.implies(mVal == tVal)));
     st.hasQuantifier = true;
     st.regs.add(op.memref(), move(memref));
   }
@@ -431,9 +432,9 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
 
   // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
-  vector<expr> idxs = createIndexVars(dims.size());
-  auto [expr, success] = m.load(idxs);
-  Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), expr);
+  vector<Expr> idxs = createIndexVars(dims.size());
+  auto [Expr, success] = m.load(idxs);
+  Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), Expr);
 
   st.regs.add(op.getResult(), t_res);
   st.wellDefined(op.getOperation(), m.isInBounds());
@@ -445,7 +446,7 @@ template<>
 optional<string> encodeOp(State &st, mlir::linalg::IndexOp op) {
   uint64_t i = op.dim();
   assert(i < st.linalgGenericScopes.top().indVars.size());
-  expr idxvar = st.linalgGenericScopes.top().indVars[i];
+  Expr idxvar = st.linalgGenericScopes.top().indVars[i];
   st.regs.add(op, Index(idxvar));
   return {};
 }
@@ -508,7 +509,7 @@ optional<string> encodeOp(State &st, mlir::MulFOp op) {
 }
 
 static void addIntOrIndex(
-    State &st, mlir::Value res, const expr &e, bool isIndex) {
+    State &st, mlir::Value res, const Expr &e, bool isIndex) {
   if (isIndex)
     st.regs.add(res, Index(e));
   else
@@ -542,8 +543,8 @@ optional<string> encodeOp(State &st, mlir::MulIOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
   auto src = st.regs.getExpr(op.getOperand());
-  assert(src.is_bv());
-  unsigned srcWidth = src.get_sort().bv_size();
+  assert(src.sort().isBV());
+  unsigned srcWidth = src.sort().bitwidth();
 
   unsigned destWidth = 0;
   if (auto dstty = op.getType().dyn_cast<mlir::IntegerType>())
@@ -553,11 +554,11 @@ optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
     destWidth = Index::BITS;
   }
 
-  expr casted = src;
+  Expr casted = src;
   if (srcWidth > destWidth)
     casted = src.extract(destWidth - 1, 0);
   else if (srcWidth < destWidth)
-    casted = z3::concat(mkBV(0, destWidth - srcWidth), casted);
+    casted = Expr::mkBV(0, destWidth - srcWidth).concat(casted);
   st.regs.add(op, Integer(casted));
   return {};
 }
@@ -579,7 +580,7 @@ optional<string> encodeOp(State &st, mlir::AffineApplyOp op) {
 
   auto res = encodeAffineExpr(m.getResult(0), indices, symbols);
   if (!res)
-    return "unsupported affine expr";
+    return "unsupported affine Expr";
   st.regs.add(op, Index(move(*res)));
   return {};
 }
@@ -648,7 +649,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
       return "unsupported element type";
 
     vector<vector<uint64_t>> sparseIndices;
-    vector<smt::expr> sparseValues;
+    vector<smt::Expr> sparseValues;
 
     auto sparseIndBeg = sparseIndexValues.begin();
     while (sparseIndBeg != sparseIndexValues.end()) {
@@ -732,7 +733,7 @@ vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
   mlir::AffineMap map = op.getLoopsToShapesMap();
   // numDims: # of induction variables
   unsigned numDims = map.getNumDims();
-  // numRes: # of output affine exprs
+  // numRes: # of output affine Exprs
   // For example, given two affine maps
   //   (i, j, k) -> (i, j)
   //   (i, j, k) -> (i, k)
@@ -786,10 +787,10 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
   for (unsigned idx = 0; idx < numRes; ++idx) {
     auto ae = encodeAffineExpr(map.getResult(idx), indVarBounds, {});
     if (!ae)
-      return "unsupported affine expr";
+      return "unsupported affine Expr";
 
-    expr size = (expr)viewSizes[idx];
-    expr inbounds = z3::implies(z3::ugt(size, 0), z3::ult(*ae, size));
+    Expr size = (Expr)viewSizes[idx];
+    Expr inbounds = size.isNonZero().implies(ae->ult(size));
     st.wellDefined(op.getOperation(), move(inbounds));
   }
 
@@ -802,7 +803,7 @@ static optional<string> initInputStateForLoopBody(
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
   auto &block = *op.region().begin();
 
-  const vector<expr> &inductionVars = st.linalgGenericScopes.top().indVars;
+  const vector<Expr> &inductionVars = st.linalgGenericScopes.top().indVars;
 
   // Fill in args
   assert(op.getInputOperands().size() + op.getNumOutputs() ==
@@ -829,17 +830,17 @@ static optional<string> initInputStateForLoopBody(
         st.regs.add(block.getArgument(arg_i), t_input.get({Index::zero()}),
                     elemty);
       } else {
-        vector<expr> affine_exprs;
+        vector<Expr> affine_Exprs;
         for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
           auto ae_res = encodeAffineExpr(inputMap.getResult(i), inductionVars, {});
           if (!ae_res)
-            RET_STR_WITH_PREFIX("unsupported affine expr ",
+            RET_STR_WITH_PREFIX("unsupported affine Expr ",
                                 inputMap.getResult(i));
 
-          affine_exprs.emplace_back(move(*ae_res));
+          affine_Exprs.emplace_back(move(*ae_res));
         }
 
-        auto t_elem = t_input.get(affine_exprs);
+        auto t_elem = t_input.get(affine_Exprs);
         st.regs.add(block.getArgument(arg_i), t_elem, elemty);
       }
     } else {
@@ -853,12 +854,12 @@ static optional<string> initInputStateForLoopBody(
 // map := (i, j, k) -> (j, k, i)
 // input := [a, b, c]
 // output := [b, c, a]
-static vector<expr> doMap(
-    const vector<expr> &input, const mlir::AffineMap &map) {
+static vector<Expr> doMap(
+    const vector<Expr> &input, const mlir::AffineMap &map) {
   if (map.isIdentity())
     return input;
 
-  vector<expr> output;
+  vector<Expr> output;
   for (unsigned i = 0; i < map.getNumResults(); ++i) {
     auto ade = map.getResult(i).dyn_cast<mlir::AffineDimExpr>();
     output.push_back(input[ade.getPosition()]);
@@ -866,11 +867,11 @@ static vector<expr> doMap(
   return output;
 }
 
-static vector<expr> addOne(vector<expr> &&vec) {
+static vector<Expr> addOne(vector<Expr> &&vec) {
   for (unsigned i = 0; i < vec.size(); ++i) {
     uint64_t v;
-    if (vec[i].is_bv() && vec[i].is_numeral_u64(v))
-      vec[i] = mkBV(v + 1, vec[i].get_sort().bv_size());
+    if (vec[i].sort().isBV() && vec[i].isUInt(v))
+      vec[i] = Expr::mkBV(v + 1, vec[i].sort().bitwidth());
     else
       vec[i] = vec[i] + 1;
   }
@@ -959,8 +960,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
       vector(linalgInfo.indVars),
       newst.regs.getExpr(sumvar));
 
-  if (llvm::all_of(outputMap.getResults(), [](const mlir::AffineExpr &expr) {
-    auto ac = expr.dyn_cast<mlir::AffineConstantExpr>();
+  if (llvm::all_of(outputMap.getResults(), [](const mlir::AffineExpr &Expr) {
+    auto ac = Expr.dyn_cast<mlir::AffineConstantExpr>();
     return ac && ac.getValue() == 0;
   })) {
     // in:  (i, j) -> (i, j)
@@ -969,7 +970,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
-    vector<expr> tensorSz(1, Index(1));
+    vector<Expr> tensorSz(1, Index(1));
     for (unsigned i = 1; i < outputType.getRank(); ++i)
       tensorSz.push_back(Index(1));
     t_res = Tensor(t_v.sum(), tensorSz);
@@ -983,9 +984,9 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // Gather affine vars that are unused in the output (e.g. j) first.
     vector<bool> isInputIdxUsed(outputMap.getNumInputs());
     for (unsigned j = 0; j < outputMap.getNumResults(); ++j) {
-      auto expr = outputMap.getResult(j);
+      auto Expr = outputMap.getResult(j);
 
-      if (auto ade = expr.dyn_cast<mlir::AffineDimExpr>()) {
+      if (auto ade = Expr.dyn_cast<mlir::AffineDimExpr>()) {
         isInputIdxUsed[ade.getPosition()] = true;
       } else {
         // Output map has an unknown form
@@ -993,8 +994,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
       }
     }
 
-    vector<expr> boundsForRes;
-    vector<expr> indVarsForRes;
+    vector<Expr> boundsForRes;
+    vector<Expr> indVarsForRes;
     for (unsigned j = 0; j < isInputIdxUsed.size(); ++j) {
       if (!isInputIdxUsed[j]) {
         boundsForRes.push_back(linalgInfo.indVarUpperBounds[j]);

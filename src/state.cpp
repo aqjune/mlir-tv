@@ -11,15 +11,15 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream &os, const ValueTy &v) {
   return os;
 }
 
-expr getExpr(const ValueTy &v) {
-  optional<expr> e;
+Expr getExpr(const ValueTy &v) {
+  optional<Expr> e;
   visit([&](auto &&itm) {
-    e = (expr)itm;
+    e = (Expr)itm;
   }, v);
   return move(*e);
 }
 
-ValueTy eval(const ValueTy &v, smt::model m) {
+ValueTy eval(const ValueTy &v, smt::Model m) {
   optional<ValueTy> e;
   visit([&](auto &&itm) {
     e = itm.eval(m);
@@ -43,7 +43,7 @@ void RegFile::add(mlir::Value v, ValueTy &&t) {
   m.insert({v, std::move(t)});
 }
 
-void RegFile::add(mlir::Value v, const expr &e, mlir::Type ty) {
+void RegFile::add(mlir::Value v, const Expr &e, mlir::Type ty) {
   assert(!contains(v));
   if (ty.isa<mlir::Float32Type>())
     m.insert({v, Float(e)});
@@ -60,7 +60,7 @@ bool RegFile::contains(mlir::Value v) const {
   return (bool)m.count(v);
 }
 
-expr RegFile::getExpr(mlir::Value v) const {
+Expr RegFile::getExpr(mlir::Value v) const {
   return ::getExpr(findOrCrash(v));
 }
 
@@ -85,36 +85,36 @@ State::LinalgGenericScope::LinalgGenericScope(
 }
 
 State::State(unsigned int numBlocks, MemEncoding encoding):
-  hasQuantifier(false), precond(mkBool(true)),
+  hasQuantifier(false), precond(Expr::mkBool(true)),
   m(Memory::create(numBlocks, numBlocks, encoding)) {}
 
-void State::addPrecondition(smt::expr &&e) {
-  precond = precond && e;
+void State::addPrecondition(smt::Expr &&e) {
+  precond = precond & e;
 }
 
-void State::wellDefined(mlir::Operation *val, expr &&e) {
+void State::wellDefined(mlir::Operation *val, Expr &&e) {
   auto itr = welldef.find(val);
   if (itr == welldef.end()) {
     welldef.insert({val, move(e)});
   } else {
-    itr->second = itr->second && move(e);
+    itr->second = itr->second & move(e);
   }
 }
 
-expr State::precondition() const {
+Expr State::precondition() const {
   return precond;
 }
 
-expr State::isWellDefined() const {
-  expr e = mkBool(true);
+Expr State::isWellDefined() const {
+  Expr e = Expr::mkBool(true);
   for (auto &itm: welldef) {
-    e = e && itm.second;
+    e = e & itm.second;
   }
   return e;
 }
 
-expr State::isOpWellDefined(mlir::Operation *op) const {
+Expr State::isOpWellDefined(mlir::Operation *op) const {
   if (!welldef.count(op))
-    return mkBool(true);
+    return Expr::mkBool(true);
   return welldef.find(op)->second;
 }

@@ -7,7 +7,6 @@
 #include "value.h"
 #include "vcgen.h"
 
-#include "z3++.h"
 #include <chrono>
 #include <fstream>
 #include <functional>
@@ -69,7 +68,7 @@ static optional<string> checkFunctionSignatures(
 static variant<string, State>
 createInputState(
     mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding,
-    ArgInfo &args, vector<expr> &preconds) {
+    ArgInfo &args, vector<Expr> &preconds) {
   State s(numBlocks, encoding);
   unsigned n = fn.getNumArguments();
 
@@ -128,8 +127,8 @@ createInputState(
   return s;
 }
 
-static pair<z3::check_result, int64_t> solve(
-    z3::solver &solver, const expr &refinement_negated,
+static pair<CheckResult, int64_t> solve(
+    Solver &solver, const Expr &refinement_negated,
     const string &dumpSMTPath, const string &dump_string_to_suffix) {
   solver.reset();
   solver.add(refinement_negated);
@@ -141,7 +140,7 @@ static pair<z3::check_result, int64_t> solve(
   }
 
   auto startTime = chrono::system_clock::now();
-  z3::check_result result = solver.check();
+  CheckResult result = solver.check();
   auto elapsedMillisec =
       chrono::duration_cast<chrono::milliseconds>(
         chrono::system_clock::now() - startTime).count();
@@ -154,21 +153,21 @@ static const char *SMT_LOGIC    = "UFBV";
 
 static Results checkRefinement(
     const ValidationInput &vinput,
-    const State &st_src, const State &st_tgt, expr &&precond,
+    const State &st_src, const State &st_tgt, Expr &&precond,
     int64_t &elapsedMillisec) {
   mlir::FuncOp src = vinput.src;
   mlir::FuncOp tgt = vinput.tgt;
   auto fnname = src.getName().str();
 
-  auto printErrorMsg = [&](z3::solver &s, z3::check_result res, const char *msg,
-                           vector<expr> &&params, VerificationStep step,
+  auto printErrorMsg = [&](Solver &s, CheckResult res, const char *msg,
+                           vector<Expr> &&params, VerificationStep step,
                            unsigned retidx = -1){
-    if (res == z3::unknown) {
+    if (res.isUnknown()) {
       llvm::outs() << "== Result: timeout ==\n";
-    } else if (res == z3::sat) {
+    } else if (res.isSat()) {
       llvm::outs() << "== Result: " << msg << "\n";
       printCounterEx(
-          s.get_model(), params, src, tgt, st_src, st_tgt, step, retidx);
+          s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx);
     } else {
       llvm_unreachable("unexpected result");
     }
@@ -177,16 +176,16 @@ static Results checkRefinement(
       SMT_LOGIC : SMT_LOGIC_QF;
 
   { // 1. Check UB
-    auto s = z3::solver(ctx, logic);
+    Solver s(logic);
     auto not_refines =
-        (st_src.isWellDefined() && !st_tgt.isWellDefined()).simplify();
-    auto res = solve(s, precond && not_refines, vinput.dumpSMTPath,
+        (st_src.isWellDefined() & !st_tgt.isWellDefined()).simplify();
+    auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                      fnname + ".1.ub");
     elapsedMillisec += res.second;
-    if (res.first != z3::unsat) {
+    if (!res.first.isUnsat()) {
       printErrorMsg(s, res.first, "Source is more defined than target", {},
                     VerificationStep::UB);
-      return res.first == z3::sat ? Results::UB : Results::TIMEOUT;
+      return res.first.isSat() ? Results::UB : Results::TIMEOUT;
     }
   }
 
@@ -194,49 +193,49 @@ static Results checkRefinement(
     unsigned numret = st_src.retValues.size();
     assert(numret == st_tgt.retValues.size());
     for (unsigned i = 0; i < numret; ++i) {
-      auto s = z3::solver(ctx, logic);
+      Solver s(logic);
 
-      optional<expr> refines_opt;
-      vector<expr> params;
+      optional<Expr> refines_opt;
+      vector<Expr> params;
       visit([&](auto &&src, auto &&tgt) {
         auto typedTarget = (decltype(src)) tgt;
         tie(refines_opt, params) = src.refines(typedTarget);
       }, st_src.retValues[i], st_tgt.retValues[i]);
 
-      expr refines = move(*refines_opt);
+      Expr refines = move(*refines_opt);
 
       auto not_refines =
-        (st_src.isWellDefined() && st_tgt.isWellDefined() && !refines)
+        (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines)
         .simplify();
-      auto res = solve(s, precond && not_refines, vinput.dumpSMTPath,
+      auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                       fnname + ".2.retval." + to_string(i));
       elapsedMillisec += res.second;
 
-      if (res.first != z3::unsat) {
+      if (!res.first.isUnsat()) {
         string msg = "Return value mismatch";
         if (numret != 1)
           msg = msg + " (" + to_string(i + 1) + "/" + to_string(numret) + ")";
 
         printErrorMsg(s, res.first, msg.c_str(), move(params),
                       VerificationStep::RetValue, i);
-        return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
+        return res.first.isSat() ? Results::RETVALUE : Results::TIMEOUT;
       }
     }
   }
 
   if (st_src.m->getNumBlocks() > 0 ||
       st_tgt.m->getNumBlocks() > 0) { // 3. Check memory refinement
-    auto s = z3::solver(ctx, logic);
+    Solver s(logic);
     auto [refines, params] = st_src.m->refines(*st_tgt.m);
     auto not_refines =
-      (st_src.isWellDefined() && st_tgt.isWellDefined() && !refines).simplify();
-    auto res = solve(s, precond && not_refines, vinput.dumpSMTPath,
+      (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines).simplify();
+    auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                      fnname + ".3.memory");
     elapsedMillisec += res.second;
-    if (res.first != z3::unsat) {
+    if (!res.first.isUnsat()) {
       printErrorMsg(s, res.first, "Memory mismatch", move(params),
                     VerificationStep::Memory);
-      return res.first == z3::sat ? Results::RETVALUE : Results::TIMEOUT;
+      return res.first.isSat() ? Results::RETVALUE : Results::TIMEOUT;
     }
   }
 
@@ -250,7 +249,7 @@ static void raiseUnsupported(const string &msg) {
 
 static State encodeFinalState(
     const ValidationInput &vinput, bool printOps, bool issrc, ArgInfo &args,
-    vector<expr> &preconds) {
+    vector<Expr> &preconds) {
   mlir::FuncOp fn = issrc ? vinput.src : vinput.tgt;
 
   auto st_or_err = createInputState(
@@ -269,14 +268,14 @@ static State encodeFinalState(
 
 // 'conjunction' overlaps with std::conjunction
 // Will move this function to Expr::and someday
-expr exprAnd(const std::vector<expr>& v) {
-  expr e = mkBool(true);
+Expr exprAnd(const vector<Expr>& v) {
+  Expr e = Expr::mkBool(true);
   for (auto &e2: v)
     e = e2 & e;
   return e;
 }
 
-static tuple<State, State, expr> encodeFinalStates(
+static tuple<State, State, Expr> encodeFinalStates(
     const ValidationInput &vinput, bool printOps) {
   auto src = vinput.src, tgt = vinput.tgt;
 
@@ -284,13 +283,13 @@ static tuple<State, State, expr> encodeFinalStates(
     raiseUnsupported(*errmsg);
 
   ArgInfo args;
-  vector<expr> preconds;
+  vector<Expr> preconds;
 
   State st_src = encodeFinalState(vinput, printOps, true,  args, preconds);
   State st_tgt = encodeFinalState(vinput, printOps, false, args, preconds);
 
-  expr precond =
-      exprAnd(preconds) && st_src.precondition() && st_tgt.precondition();
+  Expr precond =
+      exprAnd(preconds) & st_src.precondition() & st_tgt.precondition();
   precond = precond.simplify();
 
   return {move(st_src), move(st_tgt), move(precond)};
@@ -316,17 +315,17 @@ static void checkIsSrcAlwaysUB(
   aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL);
 
   ArgInfo args_dummy;
-  vector<expr> preconds;
+  vector<Expr> preconds;
   auto st = encodeFinalState(vinput, false, true, args_dummy, preconds);
 
   auto logic = st.hasQuantifier ? SMT_LOGIC : SMT_LOGIC_QF;
-  auto solver = z3::solver(ctx, logic);
+  Solver s(logic);
   auto not_ub = st.isWellDefined().simplify();
-  auto smtres = solve(solver, exprAnd(preconds) && not_ub, vinput.dumpSMTPath,
+  auto smtres = solve(s, exprAnd(preconds) & not_ub, vinput.dumpSMTPath,
                       fnname + ".notub");
   elapsedMillisec += smtres.second;
 
-  if (smtres.first == z3::unsat) {
+  if (smtres.first.isUnsat()) {
     llvm::outs() << "== Result: correct (source is always undefined) ==\n";
   } else if (wasSuccess) {
     llvm::outs() << "== Result: correct ==\n";
