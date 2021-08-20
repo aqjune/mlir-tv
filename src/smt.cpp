@@ -242,11 +242,27 @@ Expr::Expr() {
 void Expr::setZ3Expr(optional<z3::expr> &&z3_expr) {
   this->z3_expr = move(z3_expr);
 }
+
+z3::expr_vector toZ3ExprVector(const vector<Expr> &vec) {
+  z3::expr_vector z3_exprs(*sctx.z3_ctx);
+  for_each(vec.begin(), vec.end(),
+    [z3_exprs](auto e) mutable { z3_exprs.push_back(*e.z3_expr); });
+
+  return z3_exprs;
+}
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
 void Expr::setCVC5Expr(optional<cvc5::api::Term> &&cvc5_expr) {
   this->cvc5_expr = move(cvc5_expr);
+}
+
+vector<cvc5::api::Term> toCVC5ExprVector(const vector<Expr> &vec) {
+  vector<cvc5::api::Term> cvc5_exprs;
+  for_each(vec.begin(), vec.end(),
+    [cvc5_exprs](auto e) mutable { cvc5_exprs.push_back(*e.cvc5_expr); });
+
+  return cvc5_exprs;
 }
 #endif // SOLVER_CVC5
 
@@ -257,6 +273,59 @@ Expr Expr::simplify() const {
   }));
   TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this](auto &ctx) {
     return ctx.simplify(*this->cvc5_expr);
+  }));
+
+  return e;
+}
+
+Expr Expr::substitute(const std::vector<Expr> &vars, const std::vector<Expr> &values) const {
+  Expr e;
+  TRY_SET_Z3_EXPR(fmap(this->z3_expr, [vars, values](auto e) {    
+    return e.substitute(toZ3ExprVector(vars), toZ3ExprVector(values));
+  }));
+  TRY_SET_CVC5_EXPR(fmap(this->cvc5_expr, [vars, values](auto e) {    
+    return e.substitute(toCVC5ExprVector(vars), toCVC5ExprVector(values));
+  }));
+
+  return e;
+}
+
+Expr Expr::implies(const Expr &rhs) const {
+  Expr e;
+  TRY_SET_Z3_EXPR(fmap(this->z3_expr, [rhs](auto z3_lhs) {
+    return z3::implies(z3_lhs, *rhs.z3_expr);
+  }));
+  TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, rhs](auto &ctx) { 
+    return ctx.mkTerm(cvc5::api::IMPLIES, *this->cvc5_expr, *rhs.cvc5_expr);
+  }));
+
+  return e;
+}
+
+Expr Expr::select(const Expr &idx) const {
+  Expr e;
+  TRY_SET_Z3_EXPR(fmap(this->z3_expr, [idx](auto z3_arr) {
+    return z3::select(z3_arr, *idx.z3_expr);
+  }));
+  TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, idx](auto &ctx) { 
+    return ctx.mkTerm(cvc5::api::SELECT,
+      *this->cvc5_expr, *idx.cvc5_expr);
+  }));
+
+  return e;
+}
+
+Expr Expr::select(const std::vector<Expr> &indices) const {
+  Expr e;
+  TRY_SET_Z3_EXPR(fmap(this->z3_expr, [indices](auto z3_arr) {
+    return z3::select(z3_arr, toZ3ExprVector(indices));
+  }));
+  TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, indices](auto &ctx) {
+    // TOFIX: should work differently on lambda.select()
+    return accumulate(indices.cbegin(), indices.cend(), *this->cvc5_expr,
+      [&ctx](auto acc, const auto idx) {
+        return ctx.mkTerm(cvc5::api::SELECT, acc, *idx.cvc5_expr);
+      });
   }));
 
   return e;
@@ -283,7 +352,7 @@ Expr Expr::urem(const Expr &rhs) const {
     return z3::urem(e, *rhs.z3_expr); 
   }));
   TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, rhs](auto &ctx) { 
-    return ctx.mkTerm(cvc5::api::Kind::BITVECTOR_UREM,
+    return ctx.mkTerm(cvc5::api::BITVECTOR_UREM,
       *this->cvc5_expr, *rhs.cvc5_expr);
   }));
   
@@ -296,7 +365,7 @@ Expr Expr::udiv(const Expr& rhs) const {
     return z3::udiv(e, *rhs.z3_expr); 
   }));
   TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, rhs](auto &ctx) { 
-    return ctx.mkTerm(cvc5::api::Kind::BITVECTOR_UDIV,
+    return ctx.mkTerm(cvc5::api::BITVECTOR_UDIV,
       *this->cvc5_expr, *rhs.cvc5_expr);
   }));
   
@@ -309,7 +378,7 @@ Expr Expr::ult(const Expr& rhs) const {
     return z3::ult(e, *rhs.z3_expr); 
   }));
   TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, rhs](auto &ctx) { 
-    return ctx.mkTerm(cvc5::api::Kind::BITVECTOR_ULT,
+    return ctx.mkTerm(cvc5::api::BITVECTOR_ULT,
       *this->cvc5_expr, *rhs.cvc5_expr);
   }));
   
@@ -322,7 +391,7 @@ Expr Expr::ugt(const Expr& rhs) const {
     return z3::ugt(e, *rhs.z3_expr); 
   }));
   TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, rhs](auto &ctx) { 
-    return ctx.mkTerm(cvc5::api::Kind::BITVECTOR_UGT,
+    return ctx.mkTerm(cvc5::api::BITVECTOR_UGT,
       *this->cvc5_expr, *rhs.cvc5_expr);
   }));
   
@@ -333,7 +402,7 @@ Expr Expr::operator+(const Expr &rhs) {
   Expr e;
   TRY_SET_Z3_EXPR(fmap(this->z3_expr, [rhs](auto e) { return e + *rhs.z3_expr; }));
   TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, rhs](auto &ctx) { 
-    return ctx.mkTerm(cvc5::api::Kind::BITVECTOR_ADD,
+    return ctx.mkTerm(cvc5::api::BITVECTOR_ADD,
       *this->cvc5_expr, *rhs.cvc5_expr);
   }));
   
@@ -344,7 +413,7 @@ Expr Expr::operator-(const Expr &rhs) {
   Expr e;
   TRY_SET_Z3_EXPR(fmap(this->z3_expr, [rhs](auto e) { return e - *rhs.z3_expr; }));
   TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, rhs](auto &ctx) { 
-    return ctx.mkTerm(cvc5::api::Kind::BITVECTOR_SUB,
+    return ctx.mkTerm(cvc5::api::BITVECTOR_SUB,
       *this->cvc5_expr, *rhs.cvc5_expr);
   }));
   
@@ -355,7 +424,7 @@ Expr Expr::operator*(const Expr &rhs) {
   Expr e;
   TRY_SET_Z3_EXPR(fmap(this->z3_expr, [rhs](auto e) { return e * *rhs.z3_expr; }));
   TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, rhs](auto &ctx) { 
-    return ctx.mkTerm(cvc5::api::Kind::BITVECTOR_MULT,
+    return ctx.mkTerm(cvc5::api::BITVECTOR_MULT,
       *this->cvc5_expr, *rhs.cvc5_expr);
   }));
   
@@ -368,10 +437,10 @@ Expr Expr::operator&(const Expr &rhs) {
   TRY_SET_Z3_EXPR(fmap(this->z3_expr, [rhs](auto e) { return e & *rhs.z3_expr; }));
   TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, rhs](auto &ctx) {
     if (this->cvc5_expr->isBooleanValue()) {
-      return ctx.mkTerm(cvc5::api::Kind::AND,
+      return ctx.mkTerm(cvc5::api::AND,
         *this->cvc5_expr, *rhs.cvc5_expr);
     } else {
-      return ctx.mkTerm(cvc5::api::Kind::BITVECTOR_AND,
+      return ctx.mkTerm(cvc5::api::BITVECTOR_AND,
         *this->cvc5_expr, *rhs.cvc5_expr);
     }
   }));
@@ -385,10 +454,10 @@ Expr Expr::operator|(const Expr &rhs) {
   TRY_SET_Z3_EXPR(fmap(this->z3_expr, [rhs](auto e) { return e | *rhs.z3_expr; }));
   TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [this, rhs](auto &ctx) {
     if (this->cvc5_expr->isBooleanValue()) {
-      return ctx.mkTerm(cvc5::api::Kind::OR,
+      return ctx.mkTerm(cvc5::api::OR,
         *this->cvc5_expr, *rhs.cvc5_expr);
     } else {
-      return ctx.mkTerm(cvc5::api::Kind::BITVECTOR_OR,
+      return ctx.mkTerm(cvc5::api::BITVECTOR_OR,
         *this->cvc5_expr, *rhs.cvc5_expr);
     }
   }));
@@ -444,6 +513,79 @@ Expr Expr::mkBool(const bool val) {
   }));
 
   return e;
+}
+
+Expr Expr::mkLambda(const Expr &var, const Expr &body) {
+  Expr e;
+  TRY_SET_Z3_EXPR(fmap(body.z3_expr, [var](auto &z3_expr) {
+    return z3::lambda(*var.z3_expr, z3_expr);
+  }));
+  TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [var, body](auto &ctx) {
+    return ctx.mkTerm(cvc5::api::LAMBDA, *var.cvc5_expr, *body.cvc5_expr);
+  }));
+
+  return e;
+}
+
+Expr Expr::mkLambda(const std::vector<Expr> &vars, const Expr &body) {
+  Expr e;
+  TRY_SET_Z3_EXPR(fmap(body.z3_expr, [vars](auto &z3_expr) {
+    return z3::lambda(toZ3ExprVector(vars), z3_expr);
+  }));
+  TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [vars, body](auto &ctx) {
+    auto cvc5_vars = ctx.mkTerm(cvc5::api::BOUND_VAR_LIST, toCVC5ExprVector(vars));
+    return ctx.mkTerm(cvc5::api::LAMBDA, cvc5_vars, *body.cvc5_expr);
+  }));
+
+  return e;
+}
+
+Expr Expr::mkForall(const std::vector<Expr> &vars, const Expr &body) {
+  Expr e;
+  TRY_SET_Z3_EXPR(fmap(body.z3_expr, [vars](auto &z3_expr) {
+    return z3::forall(toZ3ExprVector(vars), z3_expr);
+  }));
+  TRY_SET_CVC5_EXPR(fupdate(sctx.cvc5_ctx, [vars, body](auto &ctx) {
+    auto cvc5_vars = ctx.mkTerm(cvc5::api::BOUND_VAR_LIST, toCVC5ExprVector(vars));
+    return ctx.mkTerm(cvc5::api::FORALL, cvc5_vars, *body.cvc5_expr);
+  }));
+
+  return e;
+}
+
+Expr Expr::mk1DIdx(const std::vector<Expr> &indices, const std::vector<Expr> &dims) {
+  assert(indices.size() == dims.size());
+
+  Expr linear_idx = indices[0];
+  for (size_t i = 1; i < indices.size(); i++) {
+    linear_idx = linear_idx * dims[i] + indices[i];
+  }
+
+  return linear_idx;
+}
+
+Expr Expr::mkFitsInDims(const std::vector<Expr> &indices, const std::vector<Expr> &sizes) {
+  assert(indices.size() == sizes.size());
+
+  Expr fits = mkBool(true);
+  for (size_t i = 0; i < indices.size(); i++) {
+    auto idx = indices[i];
+    auto size = sizes[i];
+    fits = fits & idx.ult(size);
+  }
+
+  return fits;
+}
+
+std::vector<Expr> Expr::mkSimplifiedList(const std::vector<Expr> &exprs) {
+  std::vector<Expr> simplified_exprs;
+  simplified_exprs.reserve(exprs.size());
+
+  transform(exprs.cbegin(), exprs.cend(), back_inserter(simplified_exprs),
+    [](const auto expr) { return expr.simplify(); }
+  );
+
+  return simplified_exprs;
 }
 
 Sort::Sort() {

@@ -76,15 +76,21 @@ private:
 #ifdef SOLVER_Z3
   std::optional<z3::expr> z3_expr;
   void setZ3Expr(std::optional<z3::expr> &&z3_expr);
+  friend z3::expr_vector toZ3ExprVector(const std::vector<Expr> &vec);
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
   std::optional<cvc5::api::Term> cvc5_expr;
   void setCVC5Expr(std::optional<cvc5::api::Term> &&cvc5_expr);
+  friend std::vector<cvc5::api::Term> toCVC5ExprVector(const std::vector<Expr> &vec);
 #endif // SOLVER_CVC5
 
 public:
   Expr simplify() const;
+  Expr substitute(const std::vector<Expr> &vars, const std::vector<Expr> &values) const;
+  Expr implies(const Expr &rhs) const;
+  Expr select(const Expr &idx) const;
+  Expr select(const std::vector<Expr> &indices) const;
   std::vector<Expr> toNDIndices(const std::vector<Expr> &dims) const;
 
   Expr urem(const Expr &rhs) const;
@@ -102,6 +108,13 @@ public:
   static Expr mkVar(const Sort &s, const std::string &name);
   static Expr mkBV(const uint64_t val, const size_t sz);
   static Expr mkBool(const bool val);
+
+  static Expr mkLambda(const Expr &var, const Expr &body);
+  static Expr mkLambda(const std::vector<Expr> &vars, const Expr &body);
+  static Expr mkForall(const std::vector<Expr> &vars, const Expr &body);
+  static Expr mk1DIdx(const std::vector<Expr> &indices, const std::vector<Expr> &dims);
+  static Expr mkFitsInDims(const std::vector<Expr> &indices, const std::vector<Expr> &sizes);
+  static std::vector<Expr> mkSimplifiedList(const std::vector<Expr> &exprs);
 };
 
 class Sort {
