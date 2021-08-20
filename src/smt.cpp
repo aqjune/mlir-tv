@@ -21,20 +21,10 @@
 
 using namespace std;
 
-namespace {
-z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec) {
-  z3::expr_vector ev(*smt::sctx.z3);
-  for (auto &e: vec)
-    ev.push_back(e);
-  return ev;
-}
 
-z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec) {
-  z3::expr_vector ev(*smt::sctx.z3);
-  for (auto &e: vec)
-    ev.push_back(e.getZ3Expr());
-  return ev;
-}
+namespace {
+z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec);
+z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec);
 }
 
 namespace smt {
@@ -694,6 +684,22 @@ bool Store::operator()(const Expr &expr) const {
 }
 }
 } // namespace smt
+
+namespace {
+z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec) {
+  z3::expr_vector ev(*smt::sctx.z3);
+  for (auto &e: vec)
+    ev.push_back(e);
+  return ev;
+}
+
+z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec) {
+  z3::expr_vector ev(*smt::sctx.z3);
+  for (auto &e: vec)
+    ev.push_back(e.getZ3Expr());
+  return ev;
+}
+}
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
   // FIXME
