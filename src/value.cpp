@@ -204,12 +204,13 @@ Expr Tensor::getWellDefined() const {
   Expr size = get1DSize();
   if (size.isNumeral())
     return Expr::mkBool(true);
-  auto Expr = size.ule(MAX_TENSOR_SIZE);
+
+  auto e = size.ule(MAX_TENSOR_SIZE);
   for (auto dim: dims) {
     if (dim.isNumeral()) continue;
-    Expr = Expr & dim.ule(MAX_DIM_SIZE);
+    e = e & dim.ule(MAX_DIM_SIZE);
   }
-  return Expr.simplify();
+  return e.simplify();
 }
 
 Expr Tensor::get(const vector<Expr> &idxs) const {
@@ -591,12 +592,13 @@ Expr MemRef::getWellDefined() const {
   Expr size = get1DSize();
   if (size.isNumeral())
     return Expr::mkBool(true);
-  auto Expr = size.ule(MAX_MEMREF_SIZE);
+
+  auto e = size.ule(MAX_MEMREF_SIZE);
   for (auto dim: dims) {
     if (dim.isNumeral()) continue;
-    Expr = Expr & dim.ule(MAX_DIM_SIZE);
+    e = e & dim.ule(MAX_DIM_SIZE);
   }
-  return Expr.simplify();
+  return e.simplify();
 }
 
 optional<tuple<vector<Expr>, MemRef::Layout, smt::Sort>>

@@ -156,6 +156,7 @@ private:
 public:
   unsigned bitwidth() const;
   bool isArray() const;
+  Sort getArrayDomain() const;
   bool isBV() const;
 
   static Sort bvSort(size_t bw);

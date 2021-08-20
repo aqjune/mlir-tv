@@ -22,7 +22,7 @@ z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec) {
 
 namespace smt {
 
-Context sctx;
+Context sctx(true);
 
 vector<Expr> from1DIdx(
     Expr idx1d,
@@ -44,8 +44,11 @@ vector<Expr> from1DIdx(
 
 Expr get1DSize(const vector<Expr> &dims) {
   Expr szaccml = Index::one();
-  for (auto &d: dims)
+  for (auto &d: dims) {
+    assert(d.sort().isBV());
     szaccml = szaccml * d;
+  }
+
   szaccml = szaccml.simplify();
   return szaccml;
 }
@@ -298,7 +301,7 @@ Expr Expr::store(const Expr &idx, const Expr &val) const {
 }
 
 Expr Expr::store(uint64_t idx, const Expr &val) const {
-  return store(mkBV(idx, sort().bitwidth()), val);
+  return store(mkBV(idx, sort().getArrayDomain().bitwidth()), val);
 }
 
 Expr Expr::extract(unsigned hbit, unsigned lbit) const {
@@ -461,7 +464,7 @@ Expr Expr::mkLambda(const Expr &var, const Expr &body) {
 
 Expr Expr::mkLambda(const vector<Expr> &vars, const Expr &body) {
   auto z3_expr = fmap(body.z3_expr, [&](auto &z3body){ 
-    return z3::forall(toZ3ExprVector(vars), z3body);
+    return z3::lambda(toZ3ExprVector(vars), z3body);
   });
 
   return Expr(move(z3_expr));
@@ -493,6 +496,14 @@ Expr Expr::mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed) {
 
 Sort::Sort(std::optional<z3::sort> &&z3_sort) {
   this->z3_sort = std::move(z3_sort);
+}
+
+Sort Sort::getArrayDomain() const {
+  auto z3_sort_dom = fmap(z3_sort, [&](const z3::sort &sz3) {
+    return sz3.array_domain();
+  });
+
+  return Sort(move(z3_sort_dom));
 }
 
 bool Sort::isBV() const {
