@@ -19,21 +19,6 @@
 #endif
 
 namespace smt {
-
-class Context {
-public:
-  std::optional<z3::context> z3;
-
-  Context() {}
-  Context(bool use_z3) {
-    if (use_z3) {
-      this->z3.emplace();
-    }
-  }
-};
-
-extern Context sctx;
-
 class Expr;
 class FnDecl;
 class Model;
@@ -135,7 +120,6 @@ public:
   static Expr mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed);
 
 
-  friend Context;
   friend FnDecl;
   friend Model;
   friend Solver;
@@ -226,6 +210,10 @@ public:
   CheckResult check();
   Model getModel() const;
 };
+
+void useZ3();
+void useCVC5();
+void setTimeout(const uint64_t ms);
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e);
