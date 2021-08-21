@@ -75,9 +75,24 @@ public:
   // Encode the refinement relation between src (other) and tgt (this) memory
   virtual std::pair<smt::Expr, std::vector<smt::Expr>>
     refines(const Memory &other) const = 0;
+
+  virtual Memory *clone() const = 0;
 };
 
-class SingleArrayMemory: public Memory {
+// A CRTP class for Memory.
+template<class Derived>
+class MemoryCRTP : public Memory {
+public:
+  // Inherit Memory's constructors.
+  using Memory::Memory;
+
+  virtual Memory *clone() const override {
+    /// Call Derived's copy constructor.
+    return new Derived(static_cast<Derived const&>(*this));
+  }
+};
+
+class SingleArrayMemory: public MemoryCRTP<SingleArrayMemory> {
   smt::Expr arrayMaps; // bv(bits)::sort() -> (Index::sort() -> Float::sort())
   smt::Expr writableMaps; // bv(bits)::sort() -> bool::sort()
   smt::Expr numelemMaps; // bv(bits)::sort() -> Index::sort()
@@ -112,7 +127,7 @@ public:
 
 // A class that implements the memory model described in CAV'21 (An SMT
 // Encoding of LLVM's Memory Model for Bounded Translation Validation)
-class MultipleArrayMemory: public Memory {
+class MultipleArrayMemory: public MemoryCRTP<MultipleArrayMemory> {
   std::vector<smt::Expr> arrays;  // vector<(Index::sort() -> Float::sort())>
   std::vector<smt::Expr> writables; // vector<Bool::sort()>
   std::vector<smt::Expr> numelems;  // vector<Index::sort>

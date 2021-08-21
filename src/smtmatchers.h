@@ -9,7 +9,10 @@ namespace matchers {
 
 class Matcher {
 protected:
-  Expr createExpr(std::optional<z3::expr> &&ze) const;
+  Expr newExpr() const { return Expr(); }
+#ifdef SOLVER_Z3
+  void setZ3(Expr &e, std::optional<z3::expr> &&ze) const;
+#endif
 };
 
 class Any: Matcher {
