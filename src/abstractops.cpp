@@ -58,7 +58,7 @@ Expr fpConst(double f) {
 vector<double> fpPossibleConsts(const Expr &e) {
   vector<double> vec;
   for (auto &[k, v]: fpconst_absrepr) {
-    if (v.structurallyEq(e))
+    if (v.isIdentical(e))
       vec.push_back(k);
   }
   return vec;
@@ -90,7 +90,7 @@ Expr sum(const Expr &a, const Expr &n) {
   // TODO: check that a.Sort is Index::Sort() -> Float::Sort()
 
   FnDecl sumfn(a.sort(), Float::sort(), "smt_sum");
-  auto i = Index("idx");
+  auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
   Expr zero = mkZeroElemFromArr(a);
   return sumfn(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
@@ -100,8 +100,9 @@ Expr dot(const Expr &a, const Expr &b, const Expr &n) {
   if (alDot == AbsLevelDot::FULLY_ABS) {
     usedOps.dot = true;
     // TODO: check that a.get_Sort() == b.get_Sort()
-    auto i = (Expr)Index("idx");
-    FnDecl dotfn({a.sort(), b.sort()}, Float::sort(), "smt_dot");
+    auto i = (Expr)Index::var("idx", VarType::BOUND);
+    FnDecl dotfn({a.sort().toFnSort(), b.sort().toFnSort()},
+        Float::sort(), "smt_dot");
 
     Expr ai = a.select(i), bi = b.select(i);
     Expr zero = mkZeroElemFromArr(a);
@@ -111,7 +112,7 @@ Expr dot(const Expr &a, const Expr &b, const Expr &n) {
   } else if (alDot == AbsLevelDot::SUM_MUL) {
     usedOps.mul = usedOps.sum = true;
     // TODO: check that a.get_Sort() == b.get_Sort()
-    auto i = (Expr)Index("idx");
+    auto i = (Expr)Index::var("idx", VarType::BOUND);
     Expr ai = a.select(i), bi = b.select(i);
     return sum(Expr::mkLambda(i, fpMul(ai, bi)), n);
   }

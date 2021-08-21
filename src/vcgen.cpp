@@ -1,5 +1,6 @@
 #include "abstractops.h"
 #include "encode.h"
+#include "memory.h"
 #include "print.h"
 #include "smt.h"
 #include "state.h"
@@ -67,9 +68,9 @@ static optional<string> checkFunctionSignatures(
 
 static variant<string, State>
 createInputState(
-    mlir::FuncOp fn, unsigned int numBlocks, MemEncoding encoding,
+    mlir::FuncOp fn, std::unique_ptr<Memory> &&initMem,
     ArgInfo &args, vector<Expr> &preconds) {
-  State s(numBlocks, encoding);
+  State s(move(initMem));
   unsigned n = fn.getNumArguments();
 
   for (unsigned i = 0; i < n; ++i) {
@@ -93,6 +94,7 @@ createInputState(
       auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
       if (!dimsAndElemTy)
         RET_STR("Unsupported Tensor element type: " << arg.getType());
+
       auto tensor = Tensor("arg" + to_string(arg.getArgNumber()),
         dimsAndElemTy->first,
         dimsAndElemTy->second);
@@ -103,6 +105,7 @@ createInputState(
       auto dimsAndLayoutAndElemTy = MemRef::getDimsAndLayoutAndElemTy(ty);
       if (!dimsAndLayoutAndElemTy)
         RET_STR("Unsupported MemRef element type: " << arg.getType());
+
       // TODO : out of bounds pointer is allowed?
       auto memref = MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
         get<0>(*dimsAndLayoutAndElemTy),
@@ -114,10 +117,12 @@ createInputState(
       s.regs.add(arg, move(memref));
 
     } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
-      s.regs.add(arg, Index("arg" + to_string(arg.getArgNumber())));
+      s.regs.add(arg,
+        Index::var("arg" + to_string(arg.getArgNumber()), VarType::UNBOUND));
 
     } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
-      s.regs.add(arg, Float("arg" + to_string(arg.getArgNumber())));
+      s.regs.add(arg,
+          Float::var("arg" + to_string(arg.getArgNumber()), VarType::UNBOUND));
 
     } else {
       RET_STR("Unsupported type: " << arg.getType());
@@ -130,13 +135,24 @@ createInputState(
 static pair<CheckResult, int64_t> solve(
     Solver &solver, const Expr &refinement_negated,
     const string &dumpSMTPath, const string &dump_string_to_suffix) {
-  solver.reset();
+  //solver.reset();
   solver.add(refinement_negated);
 
   if (!dumpSMTPath.empty()) {
-    ofstream fout(dumpSMTPath + "." + dump_string_to_suffix);
-    fout << refinement_negated;
-    fout.close();
+#if SOLVER_Z3
+    if (refinement_negated.hasZ3Expr()) {
+      ofstream fout(dumpSMTPath + ".z3." + dump_string_to_suffix + ".smt2");
+      fout << refinement_negated.getZ3Expr();
+      fout.close();
+    }
+#endif
+#if SOLVER_CVC5
+    if (refinement_negated.hasCVC5Term()) {
+      ofstream fout(dumpSMTPath + ".cvc5." + dump_string_to_suffix + ".smt2");
+      fout << refinement_negated.getCVC5Term();
+      fout.close();
+    }
+#endif
   }
 
   auto startTime = chrono::system_clock::now();
@@ -164,7 +180,7 @@ static Results checkRefinement(
                            unsigned retidx = -1){
     if (res.isUnknown()) {
       llvm::outs() << "== Result: timeout ==\n";
-    } else if (res.isSat()) {
+    } else if (res.hasSat()) {
       llvm::outs() << "== Result: " << msg << "\n";
       printCounterEx(
           s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx);
@@ -182,10 +198,14 @@ static Results checkRefinement(
     auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                      fnname + ".1.ub");
     elapsedMillisec += res.second;
-    if (!res.first.isUnsat()) {
+    if (res.first.isInconsistent()) {
+      llvm::outs() << "== Result: inconsistent output!!"
+                      " either MLIR-TV or SMT solver has a bug ==\n";
+      return Results::INCONSISTENT;
+    } else if (!res.first.hasUnsat()) {
       printErrorMsg(s, res.first, "Source is more defined than target", {},
                     VerificationStep::UB);
-      return res.first.isSat() ? Results::UB : Results::TIMEOUT;
+      return res.first.hasSat() ? Results::UB : Results::TIMEOUT;
     }
   }
 
@@ -211,14 +231,18 @@ static Results checkRefinement(
                       fnname + ".2.retval." + to_string(i));
       elapsedMillisec += res.second;
 
-      if (!res.first.isUnsat()) {
+      if (res.first.isInconsistent()) {
+        llvm::outs() << "== Result: inconsistent output!!"
+                        " either MLIR-TV or SMT solver has a bug ==\n";
+        return Results::INCONSISTENT;
+      } else if (!res.first.hasUnsat()) {
         string msg = "Return value mismatch";
         if (numret != 1)
           msg = msg + " (" + to_string(i + 1) + "/" + to_string(numret) + ")";
 
         printErrorMsg(s, res.first, msg.c_str(), move(params),
                       VerificationStep::RetValue, i);
-        return res.first.isSat() ? Results::RETVALUE : Results::TIMEOUT;
+        return res.first.hasSat() ? Results::RETVALUE : Results::TIMEOUT;
       }
     }
   }
@@ -232,10 +256,14 @@ static Results checkRefinement(
     auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                      fnname + ".3.memory");
     elapsedMillisec += res.second;
-    if (!res.first.isUnsat()) {
+    if (res.first.isInconsistent()) {
+      llvm::outs() << "== Result: inconsistent output!!"
+                      " either MLIR-TV or SMT solver has a bug ==\n";
+      return Results::INCONSISTENT;
+    } else if (!res.first.hasUnsat()) {
       printErrorMsg(s, res.first, "Memory mismatch", move(params),
                     VerificationStep::Memory);
-      return res.first.isSat() ? Results::RETVALUE : Results::TIMEOUT;
+      return res.first.hasSat() ? Results::RETVALUE : Results::TIMEOUT;
     }
   }
 
@@ -248,12 +276,11 @@ static void raiseUnsupported(const string &msg) {
 }
 
 static State encodeFinalState(
-    const ValidationInput &vinput, bool printOps, bool issrc, ArgInfo &args,
-    vector<Expr> &preconds) {
+    const ValidationInput &vinput, unique_ptr<Memory> &&initMem,
+    bool printOps, bool issrc, ArgInfo &args, vector<Expr> &preconds) {
   mlir::FuncOp fn = issrc ? vinput.src : vinput.tgt;
 
-  auto st_or_err = createInputState(
-      fn, vinput.numBlocks, vinput.encoding, args, preconds);
+  auto st_or_err = createInputState(fn, move(initMem), args, preconds);
   if (holds_alternative<string>(st_or_err))
     raiseUnsupported(get<string>(st_or_err));
   auto st = get<State>(st_or_err);
@@ -285,8 +312,17 @@ static tuple<State, State, Expr> encodeFinalStates(
   ArgInfo args;
   vector<Expr> preconds;
 
-  State st_src = encodeFinalState(vinput, printOps, true,  args, preconds);
-  State st_tgt = encodeFinalState(vinput, printOps, false, args, preconds);
+  // Set max. local blocks as num global blocks
+  unique_ptr<Memory> initMemSrc(
+      Memory::create(vinput.numBlocks, vinput.numBlocks, vinput.encoding));
+  // Due to how CVC5 treats unbound vars, the initial memory must be precisely
+  // copied
+  unique_ptr<Memory> initMemTgt(initMemSrc->clone());
+
+  State st_src = encodeFinalState(
+      vinput, move(initMemSrc), printOps, true,  args, preconds);
+  State st_tgt = encodeFinalState(
+      vinput, move(initMemTgt), printOps, false, args, preconds);
 
   Expr precond =
       exprAnd(preconds) & st_src.precondition() & st_tgt.precondition();
@@ -316,7 +352,10 @@ static void checkIsSrcAlwaysUB(
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
-  auto st = encodeFinalState(vinput, false, true, args_dummy, preconds);
+  auto st = encodeFinalState(vinput,
+      unique_ptr<Memory>(
+        Memory::create(vinput.numBlocks, vinput.numBlocks, vinput.encoding)),
+      false, true, args_dummy, preconds);
 
   auto logic = st.hasQuantifier ? SMT_LOGIC : SMT_LOGIC_QF;
   Solver s(logic);
@@ -325,7 +364,10 @@ static void checkIsSrcAlwaysUB(
                       fnname + ".notub");
   elapsedMillisec += smtres.second;
 
-  if (smtres.first.isUnsat()) {
+  if (smtres.first.isInconsistent()) {
+    llvm::outs() << "== Result: inconsistent output!!"
+                    " either MLIR-TV or SMT solver has a bug ==\n";
+  } else if (smtres.first.hasUnsat()) {
     llvm::outs() << "== Result: correct (source is always undefined) ==\n";
   } else if (wasSuccess) {
     llvm::outs() << "== Result: correct ==\n";
@@ -344,7 +386,9 @@ static Results validate(ValidationInput vinput) {
   aop::setAbstractionLevel(aop::AbsLevelDot::FULLY_ABS);
   auto res = tryValidation(vinput, true, elapsedMillisec);
 
-  if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
+  if (res.code == Results::INCONSISTENT)
+    return res;
+  else if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
     // Check whether it is always UB
     checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, elapsedMillisec);
     return res;

@@ -4,49 +4,64 @@
 #include "utils.h"
 
 #ifdef SOLVER_Z3
-  #define TRY_SET_Z3_EXPR(fn) e.setZ3Expr(fn)
-  #define TRY_SET_Z3_SORT(fn) s.setZ3Sort(fn)
+  #define SET_Z3(e, v) e.setZ3(v)
 #else
-  #define TRY_SET_Z3_EXPR(fn)
-  #define TRY_SET_Z3_SORT(fn)
+  #define SET_Z3(e, v)
 #endif
 
 #ifdef SOLVER_CVC5
-  #define TRY_SET_CVC5_EXPR(fn) e.setCVC5Expr(fn)
-  #define TRY_SET_CVC5_SORT(fn) s.setCVC5Sort(fn)
+  #define SET_CVC5(e, v) e.setCVC5(v)
 #else
-  #define TRY_SET_CVC5_EXPR(fn)
-  #define TRY_SET_CVC5_SORT(fn)
+  #define SET_CVC5(e, v)
 #endif
 
 using namespace std;
 
 
 namespace {
+#ifdef SOLVER_Z3
 z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec);
 z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec);
+z3::sort_vector toZ3SortVector(const vector<smt::Sort> &vec);
+#endif
+
+#ifdef SOLVER_CVC5
+vector<cvc5::api::Term> toCVC5TermVector(const vector<smt::Expr> &vec);
+vector<cvc5::api::Sort> toCVC5SortVector(const vector<smt::Sort> &vec);
+#endif
+
+
+template<class T>
+void writeOrCheck(optional<T> &org, T &&t) {
+  if (org)
+    assert(*org == t);
+  else
+    org.emplace(move(t));
+}
 }
 
 namespace smt {
-class Context {
+class Context: public Object<z3::context, cvc5::api::Solver> {
 private:
   uint64_t fresh_var_counter;
 
 public:
-  IF_Z3_ENABLED(optional<z3::context> z3);
-  IF_CVC5_ENABLED(optional<cvc5::api::Solver> cvc5);
-
   uint64_t timeout_ms;
 
   Context() {
-    IF_Z3_ENABLED(this->z3.reset());
-    IF_CVC5_ENABLED(this->cvc5.reset());
     fresh_var_counter = 0;
     timeout_ms = 10000;
   }
 
   IF_Z3_ENABLED(void useZ3() { this->z3.emplace(); })
-  IF_CVC5_ENABLED(void useCVC5() { this->cvc5.emplace(); })
+#ifdef SOLVER_CVC5
+  void useCVC5() {
+    this->cvc5.emplace();
+    this->cvc5->setLogic("HO_AUFBV");
+    this->cvc5->setOption("tlimit", to_string(timeout_ms));
+    this->cvc5->setOption("produce-models", "true");
+  }
+#endif
 
   string getFreshName(string prefix) {
     return prefix.append("#" + to_string(fresh_var_counter++));
@@ -61,12 +76,11 @@ vector<Expr> from1DIdx(
   assert(dims.size() > 0);
   vector<Expr> idxs;
 
+  // Start from the lowest dimension
   for (size_t ii = dims.size(); ii > 0; --ii) {
     size_t i = ii - 1;
-    // TODO: migrate constant foldings & simplifications
-    auto a = idx1d.urem(dims[i]), b = idx1d.udiv(dims[i]);
-    idxs.emplace_back(a);
-    idx1d = b;
+    idxs.emplace_back(i == 0 ? idx1d : idx1d.urem(dims[i]));
+    idx1d = idx1d.udiv(dims[i]);
   }
 
   reverse(idxs.begin(), idxs.end());
@@ -88,7 +102,7 @@ vector<Expr> simplifyList(const vector<Expr> &exprs) {
   vector<Expr> v;
   v.reserve(exprs.size());
   for (auto &e: exprs)
-    v.push_back(move(e.simplify()));
+    v.push_back(e.simplify());
   return v;
 }
 
@@ -116,33 +130,6 @@ Expr fitsInDims(
   return cond;
 }
 
-FnDecl::FnDecl(const Sort &domain, const Sort &range, string &&name) {
-  if (domain.z3_sort)
-    z3_fdecl = sctx.z3->function(name.c_str(), *domain.z3_sort, *range.z3_sort);
-}
-
-FnDecl::FnDecl(
-    const vector<Sort> &domain,
-    const Sort &range,
-    string &&name) {
-  if (range.z3_sort) {
-    z3::sort_vector v(*sctx.z3);
-    for (const auto &s: domain)
-      v.push_back(*s.z3_sort);
-    z3_fdecl = sctx.z3->function(name.c_str(), v, *range.z3_sort);
-  }
-}
-
-Expr FnDecl::apply(const std::vector<Expr> &args) const {
-  // FIXME: z3 can be disabled
-  return {(*z3_fdecl)(toZ3ExprVector(args))};
-}
-
-Expr FnDecl::apply(const Expr &arg) const {
-  // FIXME: z3 can be disabled
-  return {(*z3_fdecl)(*arg.z3_expr)};
-}
-
 
 string or_omit(const Expr &e) {
   string s;
@@ -161,6 +148,7 @@ string or_omit(const Expr &e) {
 }
 
 string or_omit(const vector<Expr> &evec) {
+  // FIXME: consider CVC5 as well
   string s;
   llvm::raw_string_ostream rso(s);
   rso << "(";
@@ -176,22 +164,76 @@ string or_omit(const vector<Expr> &evec) {
   return s;
 }
 
-Expr::Expr(optional<z3::expr> &&z3_expr) {
-  this->z3_expr = move(z3_expr);
+
+// ------- FnDecl -------
+
+FnDecl::FnDecl(const Sort &domain, const Sort &range, string &&name):
+  FnDecl(vector<Sort>({domain}), range, move(name)) {}
+
+FnDecl::FnDecl(
+    const vector<Sort> &domain,
+    const Sort &range,
+    string &&name) {
+  IF_Z3_ENABLED(if (range.z3) {
+    z3 = sctx.z3->function(name.c_str(), toZ3SortVector(domain), *range.z3);
+  });
+  IF_CVC5_ENABLED(if (range.cvc5) {
+    cvc5 = sctx.cvc5->declareFun(name, toCVC5SortVector(domain), *range.cvc5);
+  });
 }
 
-z3::expr Expr::getZ3Expr() const {
-  return *z3_expr;
+Expr FnDecl::apply(const std::vector<Expr> &args) const {
+  Expr e;
+  SET_Z3(e, (*z3)(toZ3ExprVector(args)));
+  SET_CVC5(e, fupdate2(sctx.cvc5, cvc5, [&args](auto &solver, auto fdecl) {
+    auto args_cvc5 = toCVC5TermVector(args);
+    args_cvc5.insert(args_cvc5.begin(), fdecl);
+    return solver.mkTerm(cvc5::api::APPLY_UF, args_cvc5);
+  }));
+  return e;
 }
+
+Expr FnDecl::apply(const Expr &arg) const {
+  return apply(vector{arg});
+}
+
+
+// ------- Expr -------
+
+#ifdef SOLVER_Z3
+z3::expr Expr::getZ3Expr() const {
+  return *z3;
+}
+
+bool Expr::hasZ3Expr() const {
+  return (bool)z3;
+}
+#endif
+
+#ifdef SOLVER_CVC5
+cvc5::api::Term Expr::getCVC5Term() const {
+  return *cvc5;
+}
+
+bool Expr::hasCVC5Term() const {
+  return (bool)cvc5;
+}
+#endif
 
 Expr Expr::simplify() const {
-  auto z3_expr = fmap(this->z3_expr, [](auto e) { return e.simplify(); });
-
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [](auto e) { return e.simplify(); }));
+  SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5, [](auto &ctx, auto e) {
+    return ctx.simplify(e);
+  }));
+  return e;
 }
 
 Sort Expr::sort() const {
-  return Sort(fmap(z3_expr, [](auto e) { return e.get_sort(); }));
+  Sort s;
+  SET_Z3(s, fmap(z3, [](auto e) { return e.get_sort(); }));
+  SET_CVC5(s, fmap(cvc5, [](auto e) { return e.getSort(); }));
+  return s;
 }
 
 vector<Expr> Expr::toNDIndices(const vector<Expr> &dims) const {
@@ -210,153 +252,244 @@ vector<Expr> Expr::toNDIndices(const vector<Expr> &dims) const {
 }
 
 bool Expr::isUInt(uint64_t &v) const {
-  bool flag = false;
-  if (this->z3_expr)
-    flag = this->z3_expr->is_numeral_u64(v);
-  return flag;
+  optional<uint64_t> res;
+
+#ifdef SOLVER_Z3
+  {
+    uint64_t tmp;
+    if (this->z3 && this->z3->is_numeral_u64(tmp))
+      writeOrCheck(res, move(tmp));
+  }
+#endif
+#ifdef SOLVER_CVC5
+  if (this->cvc5 && this->cvc5->isUInt64Value())
+    writeOrCheck(res, this->cvc5->getUInt64Value());
+#endif
+
+  if (res)
+    v = *res;
+  return res.has_value();
 }
 
 bool Expr::isInt(int64_t &v) const {
-  bool flag = false;
-  if (this->z3_expr)
-    flag = this->z3_expr->is_numeral_i64(v);
-  return flag;
+  optional<int64_t> res;
+
+#ifdef SOLVER_Z3
+  {
+    int64_t tmp;
+    if (this->z3 && this->z3->is_numeral_i64(tmp))
+      writeOrCheck(res, move(tmp));
+  }
+#endif
+#ifdef SOLVER_CVC5
+  if (this->cvc5 && this->cvc5->isInt64Value())
+    writeOrCheck(res, this->cvc5->getInt64Value());
+#endif
+
+  if (res)
+    v = *res;
+  return res.has_value();
 }
 
 bool Expr::isNumeral() const {
-  // FIXME
-  optional<bool> z3res;
-  if (z3_expr)
-    z3res = z3_expr->is_numeral();
-  return *z3res;
+  bool res = false;
+  IF_Z3_ENABLED(res |= z3 && z3->is_numeral());
+  IF_CVC5_ENABLED(res |= cvc5 && cvc5->isIntegerValue());
+  return res;
 }
 
 bool Expr::isFalse() const {
-  // FIXME
-  optional<bool> z3res;
-  if (z3_expr)
-    z3res = z3_expr->is_false();
-  return *z3res;
+  bool res = false;
+  IF_Z3_ENABLED(res |= z3 && z3->is_false());
+  IF_CVC5_ENABLED(
+      res |= cvc5 && cvc5->isBooleanValue() && !cvc5->getBooleanValue());
+  return res;
 }
 
 #define EXPR_BVOP_UINT64(NAME) \
 Expr Expr:: NAME (uint64_t arg) const {\
   return NAME(mkBV(arg, sort().bitwidth())); \
 }
+#define SET_Z3_USEOP(e, rhs, op) \
+  SET_Z3(e, fmap(this->z3, [&rhs](auto e2) { \
+    return z3::op(e2, *rhs.z3); \
+  }))
+#define SET_Z3_USEOP_CONST(e, rhs_const, op) \
+  SET_Z3(e, fmap(this->z3, [&rhs_const](auto e2) { \
+    return z3::op(e2, rhs_const); \
+  }))
+
+#define SET_CVC5_USEOP(e, rhs, op) \
+  SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5, [&rhs](auto &solver, auto e2) { \
+    return solver.mkTerm(cvc5::api::op, e2, *rhs.cvc5); \
+  }))
+
 
 EXPR_BVOP_UINT64(urem)
 Expr Expr::urem(const Expr &rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
-    return z3::urem(e, *rhs.z3_expr); 
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, urem);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_UREM);
+  return e;
 }
 
 EXPR_BVOP_UINT64(udiv)
 Expr Expr::udiv(const Expr& rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
-    return z3::udiv(e, *rhs.z3_expr); 
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, udiv);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_UDIV);
+  return e;
 }
 
 EXPR_BVOP_UINT64(mod)
 Expr Expr::mod(const Expr& rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
-    return z3::mod(e, *rhs.z3_expr); 
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, mod);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_SMOD);
+  return e;
 }
 
 EXPR_BVOP_UINT64(ult)
 Expr Expr::ult(const Expr& rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
-    return z3::ult(e, *rhs.z3_expr); 
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, ult);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_ULT);
+  return e;
 }
 
 EXPR_BVOP_UINT64(ule)
 Expr Expr::ule(const Expr& rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
-    return z3::ule(e, *rhs.z3_expr); 
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, ule);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_ULE);
+  return e;
 }
 
 EXPR_BVOP_UINT64(ugt)
 Expr Expr::ugt(const Expr& rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
-    return z3::ugt(e, *rhs.z3_expr); 
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, ugt);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_UGT);
+  return e;
 }
 
 EXPR_BVOP_UINT64(uge)
 Expr Expr::uge(const Expr& rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) {
-    return z3::uge(e, *rhs.z3_expr);
-  });
-
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, uge);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_UGE);
+  return e;
 }
 
 Expr Expr::select(const Expr &idx) const {
-  auto z3_expr = fmap(this->z3_expr, [&idx](auto e) { 
-    return z3::select(e, *idx.z3_expr); 
-  });
-  
-  return Expr(move(z3_expr));
+  return select(vector{idx});
 }
 
 Expr Expr::select(const vector<Expr> &idxs) const {
-  auto z3_expr = fmap(this->z3_expr, [&idxs](auto e) { 
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [&idxs](auto e) {
     return z3::select(e, toZ3ExprVector(idxs)); 
-  });
-  
-  return Expr(move(z3_expr));
+  }));
+  SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
+      [&idxs](auto &solver, auto e) {
+    if (e.getSort().isArray()) {
+      assert(idxs.size() == 1);
+      return solver.mkTerm(cvc5::api::SELECT, e, *idxs[0].cvc5);
+    } else {
+      auto v = toCVC5TermVector(idxs);
+      v.insert(v.begin(), e);
+      return solver.mkTerm(cvc5::api::APPLY_UF, v);
+    }
+  }));
+  return e;
 }
 
+#ifdef SOLVER_CVC5
+static cvc5::api::Term mkCVC5Lambda(
+    const cvc5::api::Term &var, const cvc5::api::Term &body) {
+  auto vlist = sctx.cvc5->mkTerm(cvc5::api::BOUND_VAR_LIST, {var});
+  return sctx.cvc5->mkTerm(cvc5::api::LAMBDA, vlist, body);
+}
+#endif
+
 Expr Expr::store(const Expr &idx, const Expr &val) const {
-  auto z3_expr = fmap(this->z3_expr, [&idx, &val](auto e) { 
-    return z3::store(e, *idx.z3_expr, *val.z3_expr); 
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [&idx, &val](auto e) {
+    return z3::store(e, *idx.z3, *val.z3);
+  }));
+  SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
+      [&idx, &val](auto &solver, auto e) { // e: array or lambda
+    if (e.getSort().isArray())
+      return solver.mkTerm(cvc5::api::STORE, e, *idx.cvc5, *val.cvc5);
+    else {
+      auto dummy_var = solver.mkVar(idx.cvc5->getSort());
+      auto oldval = solver.mkTerm(cvc5::api::APPLY_UF, e, dummy_var);
+      auto lambda_body =
+          solver.mkTerm(cvc5::api::ITE,
+            solver.mkTerm(cvc5::api::EQUAL, dummy_var, *idx.cvc5),
+            *val.cvc5, oldval);
+      return mkCVC5Lambda(dummy_var, lambda_body);
+    }
+  }));
+  return e;
 }
 
 Expr Expr::store(uint64_t idx, const Expr &val) const {
   return store(mkBV(idx, sort().getArrayDomain().bitwidth()), val);
 }
 
+Expr Expr::getMSB() const {
+  auto bw = sort().bitwidth() - 1;
+  return extract(bw, bw);
+}
+
 Expr Expr::extract(unsigned hbit, unsigned lbit) const {
-  auto z3_expr = fmap(this->z3_expr, [&hbit, &lbit](auto e) { 
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [&hbit, &lbit](auto e) {
     return e.extract(hbit, lbit); 
-  });
-  
-  return Expr(move(z3_expr));
+  }));
+  SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
+      [hbit, lbit](auto &solver, auto e) {
+    return solver.mkTerm(
+        solver.mkOp(cvc5::api::BITVECTOR_EXTRACT, hbit, lbit), e);
+  }));
+  return e;
 }
 
 Expr Expr::concat(const Expr &lowbits) const {
-  auto z3_expr = fmap(this->z3_expr, [&](auto e) { 
-    return z3::concat(e, *lowbits.z3_expr); 
-  });
+  Expr e;
+  SET_Z3_USEOP(e, lowbits, concat);
+  SET_CVC5_USEOP(e, lowbits, BITVECTOR_CONCAT);
+  return e;
+}
 
-  return Expr(move(z3_expr));
+Expr Expr::zext(unsigned bits) const {
+  Expr e;
+  SET_Z3_USEOP_CONST(e, bits, zext);
+  SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
+      [&bits](auto &solver, auto e) {
+    return solver.mkTerm(
+      solver.mkOp(cvc5::api::BITVECTOR_ZERO_EXTEND, bits), e);
+  }));
+  return e;
+}
+
+Expr Expr::sext(unsigned bits) const {
+  Expr e;
+  SET_Z3_USEOP_CONST(e, bits, sext);
+  SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
+      [&bits](auto &solver, auto e) {
+    return solver.mkTerm(
+      solver.mkOp(cvc5::api::BITVECTOR_SIGN_EXTEND, bits), e);
+  }));
+  return e;
 }
 
 Expr Expr::implies(const Expr &rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
-    return z3::implies(e, *rhs.z3_expr); 
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, implies);
+  SET_CVC5_USEOP(e, rhs, IMPLIES);
+  return e;
 }
 
 Expr Expr::isNonZero() const {
@@ -365,286 +498,407 @@ Expr Expr::isNonZero() const {
 
 EXPR_BVOP_UINT64(operator+)
 Expr Expr::operator+(const Expr &rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e + *rhs.z3_expr; });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, operator+);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_ADD);
+  return e;
 }
 
 EXPR_BVOP_UINT64(operator-)
 Expr Expr::operator-(const Expr &rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e - *rhs.z3_expr; });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, operator-);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_SUB);
+  return e;
 }
 
 EXPR_BVOP_UINT64(operator*)
 Expr Expr::operator*(const Expr &rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { return e * *rhs.z3_expr; });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, operator*);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_MULT);
+  return e;
 }
 
 Expr Expr::operator&(const Expr &rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
-    if (e.is_bool()) 
-      return e && *rhs.z3_expr;
-    else
-      return e & *rhs.z3_expr;
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, operator&);
+  if (sort().isBV()) {
+    SET_CVC5_USEOP(e, rhs, BITVECTOR_AND);
+  } else {
+    SET_CVC5_USEOP(e, rhs, AND);
+  }
+  return e;
 }
 
 Expr Expr::operator|(const Expr &rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
-    if (e.is_bool()) 
-      return e || *rhs.z3_expr;
-    else
-      return e | *rhs.z3_expr;
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, operator|);
+  if (sort().isBV()) {
+    SET_CVC5_USEOP(e, rhs, BITVECTOR_OR);
+  } else {
+    SET_CVC5_USEOP(e, rhs, OR);
+  }
+  return e;
 }
 
 EXPR_BVOP_UINT64(operator==)
 Expr Expr::operator==(const Expr &rhs) const {
-  auto z3_expr = fmap(this->z3_expr, [&rhs](auto e) { 
-    return e == *rhs.z3_expr;
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3_USEOP(e, rhs, operator==);
+  SET_CVC5_USEOP(e, rhs, EQUAL);
+  return e;
 }
 
 Expr Expr::operator!() const {
-  auto z3_expr = fmap(this->z3_expr, [&](auto e) { 
-    return !e;
-  });
-  
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [&](auto e) { return !e; }));
+  SET_CVC5(e, fmap(this->cvc5, [&](auto e) { return e.notTerm(); }));
+  return e;
 }
 
 Expr Expr::substitute(
     const std::vector<Expr> &vars,
     const std::vector<Expr> &values) const {
-  auto z3_expr = fmap(this->z3_expr, [&vars, &values](auto e) { 
-    vector<z3::expr> z3vars, z3values;
-    for (auto &var: vars)
-      z3vars.push_back(*var.z3_expr);
-    for (auto &val: values)
-      z3values.push_back(*val.z3_expr);
-    return e.substitute(toZ3ExprVector(z3vars), toZ3ExprVector(z3values));
-  });
+  Expr e;
+#ifdef SOLVER_Z3
+  e.setZ3(fmap(this->z3, [&vars, &values](auto e) {
+    return e.substitute(toZ3ExprVector(vars), toZ3ExprVector(values));
+  }));
+#endif
 
-  return Expr(move(z3_expr));
+#ifdef SOLVER_CVC5
+  e.setCVC5(fmap(this->cvc5, [&vars, &values](auto e) {
+    return e.substitute(toCVC5TermVector(vars), toCVC5TermVector(values));
+  }));
+#endif
+
+  return e;
 }
 
-bool Expr::structurallyEq(const Expr &e2) const {
-  // FIXME: z3 can be disabled
-  return (Z3_ast)*z3_expr == (Z3_ast)*e2.z3_expr;
+bool Expr::isIdentical(const Expr &e2, bool is_or) const {
+  bool res = !is_or;
+  bool temp;
+  IF_Z3_ENABLED(
+    temp = z3 && (Z3_ast)*z3 == (Z3_ast)*e2.z3;
+    res = is_or ? (res || temp) : (res && temp));
+  IF_CVC5_ENABLED(
+    temp = cvc5 && cvc5->getId() == e2.cvc5->getId();
+    res = is_or ? (res || temp) : (res && temp));
+  return res;
 }
 
 
-Expr Expr::mkFreshVar(const Sort &s, std::string_view prefix) {
-  auto z3_expr = fupdate(sctx.z3, [s, prefix](auto &ctx){ 
-    auto ast = Z3_mk_fresh_const(ctx, prefix.data(), *s.z3_sort);
-    return z3::expr(ctx, ast);
-  });
-
-  return Expr(move(z3_expr));
+Expr Expr::mkFreshVar(const Sort &s, const std::string &prefix) {
+  Expr e;
+  SET_Z3(e, fupdate2(sctx.z3, s.z3, [&prefix](auto &ctx, auto &z3sort){
+    return z3::expr(ctx, Z3_mk_fresh_const(ctx, prefix.data(), z3sort));
+  }));
+  SET_CVC5(e, fupdate2(sctx.cvc5, s.cvc5, [&prefix](auto &ctx, auto &cvc5sort){
+    return ctx.mkConst(cvc5sort, sctx.getFreshName(prefix));
+  }));
+  return e;
 }
 
-Expr Expr::mkVar(const Sort &s, std::string_view name) {
-  auto z3_expr = fupdate(sctx.z3, [s, name](auto &ctx){ 
-    return ctx.constant(name.data(), *s.z3_sort);
-  });
-
-  return Expr(move(z3_expr));
+Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
+  Expr e;
+  SET_Z3(e, fupdate2(sctx.z3, s.z3, [&name](auto &ctx, auto &sortz3){
+    return ctx.constant(name.data(), sortz3);
+  }));
+  SET_CVC5(e, fupdate2(sctx.cvc5, s.cvc5,
+      [&name, &boundVar](auto &ctx, auto &cvc5sort){
+    if (boundVar)
+      return ctx.mkVar(cvc5sort, name);
+    else
+      return ctx.mkConst(cvc5sort, name);
+  }));
+  return e;
 }
 
 Expr Expr::mkBV(const uint64_t val, const size_t sz) {
-  auto z3_expr = fupdate(sctx.z3, [val, sz](auto &ctx){ 
+  Expr e;
+  SET_Z3(e, fupdate(sctx.z3, [val, sz](auto &ctx){
     return ctx.bv_val(val, sz); 
-  });
-
-  return Expr(move(z3_expr));
+  }));
+  SET_CVC5(e, fupdate(sctx.cvc5, [val, sz](auto &ctx){
+    return ctx.mkBitVector(sz, val);
+  }));
+  return e;
 }
 
 Expr Expr::mkBool(const bool val) {
-  auto z3_expr = fupdate(sctx.z3, [val](auto &ctx){ 
+  Expr e;
+  SET_Z3(e, fupdate(sctx.z3, [val](auto &ctx){
     return ctx.bool_val(val); 
-  });
-
-  return Expr(move(z3_expr));
+  }));
+  SET_CVC5(e, fupdate(sctx.cvc5, [val](auto &ctx){
+    return ctx.mkBoolean(val);
+  }));
+  return e;
 }
 
 Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
-  auto z3_expr = fmap(body.z3_expr, [&](auto &z3body){ 
+  Expr e;
+  SET_Z3(e, fmap(body.z3, [&](auto &z3body){
     return z3::forall(toZ3ExprVector(vars), z3body);
-  });
-
-  return Expr(move(z3_expr));
+  }));
+  SET_CVC5(e, fupdate2(sctx.cvc5, body.cvc5, [&](auto &solver, auto cvc5body){
+    auto cvc5vars = toCVC5TermVector(vars);
+    auto vlist = solver.mkTerm(cvc5::api::BOUND_VAR_LIST, cvc5vars);
+    return solver.mkTerm(cvc5::api::FORALL, vlist, cvc5body);
+  }));
+  return e;
 }
 
 Expr Expr::mkLambda(const Expr &var, const Expr &body) {
-  auto z3_expr = fmap(body.z3_expr, [&](auto &z3body){ 
-    return z3::lambda(*var.z3_expr, z3body);
-  });
-
-  return Expr(move(z3_expr));
+  return mkLambda(vector{var}, body);
 }
 
 Expr Expr::mkLambda(const vector<Expr> &vars, const Expr &body) {
-  auto z3_expr = fmap(body.z3_expr, [&](auto &z3body){ 
+  Expr e;
+  SET_Z3(e, fmap(body.z3, [&](auto &z3body){
     return z3::lambda(toZ3ExprVector(vars), z3body);
-  });
-
-  return Expr(move(z3_expr));
+  }));
+  SET_CVC5(e, fupdate2(sctx.cvc5, body.cvc5, [&](auto &solver, auto cvc5body){
+    auto cvc5vars = toCVC5TermVector(vars);
+    auto vlist = solver.mkTerm(cvc5::api::BOUND_VAR_LIST, cvc5vars);
+    return solver.mkTerm(cvc5::api::LAMBDA, vlist, cvc5body);
+  }));
+  return e;
 }
 
-Expr Expr::mkConstArray(const Sort &domain, const Expr &splatElem) {
-  auto z3_expr = fmap(splatElem.z3_expr, [&](auto &e){ 
-    return z3::const_array(*domain.z3_sort, e); 
-  });
+Expr Expr::mkSplatArray(const Sort &domain, const Expr &splatElem) {
+  Expr e;
+  SET_Z3(e, fmap(splatElem.z3, [&](auto &e){
+    return z3::const_array(*domain.z3, e);
+  }));
 
-  return Expr(move(z3_expr));
+#ifdef SOLVER_CVC5
+  if (splatElem.cvc5 && sctx.cvc5) {
+    auto &solver = *sctx.cvc5;
+    auto &elem = *splatElem.cvc5;
+    // TOOD: How to avoid this constant-ness check?
+    if (elem.isIntegerValue() || elem.isFloatingPointValue() ||
+        elem.isBooleanValue()) {
+      e.setCVC5(solver.mkConstArray(
+        solver.mkArraySort(*domain.cvc5, elem.getSort()), elem));
+    } else {
+      auto dummy_var = solver.mkVar(*domain.cvc5);
+      e.setCVC5(mkCVC5Lambda(dummy_var, elem));
+    }
+  }
+#endif
+  return e;
 }
 
 Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
-  auto z3_expr = fmap(cond.z3_expr, [&](auto &condz3){ 
-    return z3::ite(condz3, *then.z3_expr, *els.z3_expr);
-  });
-
-  return Expr(move(z3_expr));
+  Expr e;
+  SET_Z3(e, fmap(cond.z3, [&](auto &condz3){
+    return z3::ite(condz3, *then.z3, *els.z3);
+  }));
+  SET_CVC5(e, fupdate2(sctx.cvc5, cond.cvc5, [&](auto &solver, auto condcvc) {
+    return solver.mkTerm(cvc5::api::ITE, condcvc, *then.cvc5, *els.cvc5);
+  }));
+  return e;
 }
 
 Expr Expr::mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed) {
-  auto z3_expr = fmap(a.z3_expr, [&](auto &az3){ 
-    return z3::bvadd_no_overflow(az3, *b.z3_expr, is_signed);
-  });
-
-  return Expr(move(z3_expr));
+  return is_signed ?
+      ((a + b).sext(1) == a.sext(1) + b.sext(1)) :
+      ((a.zext(1) + b.zext(1)).getMSB() == 0);
 }
 
-Sort::Sort(std::optional<z3::sort> &&z3_sort) {
-  this->z3_sort = std::move(z3_sort);
-}
+// ------- Sort -------
+
+z3::sort Sort::getZ3Sort() const { return *z3; }
+
+cvc5::api::Sort Sort::getCVC5Sort() const { return *cvc5; }
 
 Sort Sort::getArrayDomain() const {
-  auto z3_sort_dom = fmap(z3_sort, [&](const z3::sort &sz3) {
+  Sort s;
+  SET_Z3(s, fmap(z3, [&](const z3::sort &sz3) {
     return sz3.array_domain();
-  });
-
-  return Sort(move(z3_sort_dom));
+  }));
+  SET_CVC5(s, fupdate2(sctx.cvc5, cvc5, [&](auto &solver, auto cvc5sort) {
+    if (cvc5sort.isFunction()) {
+      auto dom = cvc5sort.getFunctionDomainSorts();
+      assert(dom.size() == 1);
+      return dom[0];
+    }
+    return cvc5sort.getArrayIndexSort();
+  }));
+  return s;
 }
 
 bool Sort::isBV() const {
-  return z3_sort->is_bv();
+  optional<bool> res;
+  IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->is_bv()));
+  IF_CVC5_ENABLED(if(cvc5) writeOrCheck(res, cvc5->isBitVector()));
+  return res && *res;
+}
+
+Sort Sort::toFnSort() const {
+  Sort s;
+  SET_Z3(s, fmap(z3, [](const auto &sz) { return sz; }));
+  SET_CVC5(s, fupdate2(sctx.cvc5, cvc5,
+      [](auto &solver, auto s) {
+    if (s.isArray()) {
+      return solver.mkFunctionSort(
+          s.getArrayIndexSort(), s.getArrayElementSort());
+    }
+    return s;
+  }));
+  return s;
 }
 
 unsigned Sort::bitwidth() const {
-  if (z3_sort)
-    // FIXME: Check whether its size is equivalent to cvc5's size
-    return z3_sort->bv_size();
-  assert(false && "unknown sort");
+  optional<unsigned> res;
+  IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->bv_size()));
+  IF_CVC5_ENABLED(if(cvc5) writeOrCheck(res, cvc5->getBVSize()));
+  return *res;
 }
 
 bool Sort::isArray() const {
-  if (z3_sort)
-    // FIXME: Check whether its size is equivalent to cvc5's size
-    return z3_sort->is_array();
-  assert(false && "unknown sort");
+  optional<bool> res;
+  IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->is_array()));
+  IF_CVC5_ENABLED(if(cvc5) writeOrCheck(res, cvc5->isArray()));
+  return res && *res;
 }
 
 Sort Sort::bvSort(size_t bw) {
-  auto z3_sort = fupdate(sctx.z3, [bw](auto &ctx){ return ctx.bv_sort(bw); });
-
-  return Sort(move(z3_sort));
+  Sort s;
+  SET_Z3(s, fupdate(sctx.z3, [bw](auto &ctx){ return ctx.bv_sort(bw); }));
+  SET_CVC5(s, fupdate(sctx.cvc5, [bw](auto &ctx){
+      return ctx.mkBitVectorSort(bw); }));
+  return s;
 }
 
 Sort Sort::boolSort() {
-  auto z3_sort = fupdate(sctx.z3, [](auto &ctx){ return ctx.bool_sort(); });
-
-  return Sort(move(z3_sort));
+  Sort s;
+  SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.bool_sort(); }));
+  SET_CVC5(s, fupdate(sctx.cvc5, [](auto &c){ return c.getBooleanSort(); }));
+  return s;
 }
 
 Sort Sort::arraySort(const Sort &domain, const Sort &range) {
-  auto z3_sort = fupdate(sctx.z3, [domain, range](auto &ctx){ 
-    return ctx.array_sort(*domain.z3_sort, *range.z3_sort); 
-  });
-
-  return Sort(move(z3_sort));
+  Sort s;
+  SET_Z3(s, fupdate2(sctx.z3, domain.z3, [&range](auto &ctx, auto domz3){
+    return ctx.array_sort(domz3, *range.z3);
+  }));
+  SET_CVC5(s, fupdate2(sctx.cvc5, domain.cvc5,
+      [&range](auto &ctx, auto domcvc5){
+        return ctx.mkArraySort(domcvc5, *range.cvc5);
+    }
+  ));
+  return s;
 }
 
-FnDecl::FnDecl(std::optional<z3::func_decl> &&z3_fdecl) {
-  this->z3_fdecl = std::move(z3_fdecl);
+// ------- CheckResult -------
+
+bool CheckResult::isUnknown() const {
+  return !hasSat() && !hasUnsat();
 }
 
-CheckResult::CheckResult(const optional<z3::check_result> &z3_result) {
-  auto unwrapped_z3_result = z3_result.value_or(z3::check_result::unknown);
-  if (unwrapped_z3_result == z3::check_result::sat) {
-    this->result = CheckResult::SAT;
-  } else if (unwrapped_z3_result == z3::check_result::unsat) {
-    this->result = CheckResult::UNSAT;
-  } else {
-    this->result = CheckResult::UNKNOWN;
-  }
+bool CheckResult::hasSat() const {
+  bool res = false;
+  IF_Z3_ENABLED(res |= z3 && (*z3 == z3::check_result::sat));
+  IF_CVC5_ENABLED(res |= cvc5 && cvc5->isSat());
+  return res;
 }
 
-const bool CheckResult::operator==(const CheckResult &rhs) {
-  return this->result == rhs.result;
+bool CheckResult::hasUnsat() const {
+  bool res = false;
+  IF_Z3_ENABLED(res |= z3 && (*z3 == z3::check_result::unsat));
+  IF_CVC5_ENABLED(res |= cvc5 && cvc5->isUnsat());
+  return res;
 }
 
+bool CheckResult::isInconsistent() const {
+  return hasSat() && hasUnsat();
+}
+
+// ------- Model -------
 
 Expr Model::eval(const Expr &e, bool modelCompletion) const {
-  auto z3e = fmap(z3, [modelCompletion, &e](auto &z3model){
+  Expr newe;
+  SET_Z3(newe, fmap(z3, [modelCompletion, &e](auto &z3model){
     return z3model.eval(e.getZ3Expr(), modelCompletion);
-  });
+  }));
+  /*SET_CVC5(newe, fupdate2(sctx.cvc5, e.cvc5, [&e](auto &solver, auto ec){
+    return solver.getValue(ec);
+  }));*/
 
-  return Expr({move(z3e)});
+  return newe;
 }
 
 Model Model::empty() {
   // FIXME
-  return {*sctx.z3};
+  Model m;
+  SET_Z3(m, {*sctx.z3});
+  return m;
 }
 
+// ------- Solver -------
 
 Solver::Solver(const char *logic) {
+#ifdef SOLVER_Z3
   z3 = fupdate(sctx.z3, [logic](auto &ctx){
     return z3::solver(ctx, logic);
   });
+#endif
+#ifdef SOLVER_CVC5
+  // NOTE: We cannot change CVC5's logic
+  if (sctx.cvc5)
+    sctx.cvc5->resetAssertions();
+#endif
 }
 
 void Solver::add(const Expr &e) {
-  fupdate(z3, [e](auto &solver) { solver.add(*e.z3_expr); return 0; });
+  IF_Z3_ENABLED(fupdate(z3, [&e](auto &solver) {
+    solver.add(*e.z3);
+    return 0;
+  }));
+  IF_CVC5_ENABLED(fupdate(sctx.cvc5, [&e](auto &solver) {
+    solver.assertFormula(*e.cvc5);
+    return 0;
+  }));
 }
 
 void Solver::reset() {
-  fupdate(z3, [](auto &solver) { solver.reset(); return 0; });
+  IF_Z3_ENABLED(fupdate(z3, [](auto &solver) { solver.reset(); return 0; }));
+  IF_CVC5_ENABLED(fupdate(sctx.cvc5, [](auto &solver) {
+    solver.resetAssertions();
+    return 0;
+  }));
 }
 
 CheckResult Solver::check() {
-  auto z3_result = fupdate(z3, [](auto &solver) { return solver.check(); });
-  
-  // TODO: compare with results from other solvers
   // TODO: concurrent run with solvers and return the fastest one?
-  return CheckResult(z3_result);
+  CheckResult cr;
+  SET_Z3(cr, fupdate(z3, [](auto &solver) { return solver.check(); }));
+  SET_CVC5(cr, fupdate(sctx.cvc5,
+      [](auto &solver) { return solver.checkSat(); }));
+  return cr;
 }
 
 Model Solver::getModel() const {
-  auto z3_result = fmap(z3, [](auto &solver) { return solver.get_model(); });
-
-  return Model(move(z3_result));
+  Model m;
+  SET_Z3(m, fmap(z3, [](auto &solver) { return solver.get_model(); }));
+  return m;
 }
+
+
 
 void useZ3() { IF_Z3_ENABLED(sctx.useZ3()); }
 void useCVC5() { IF_CVC5_ENABLED(sctx.useCVC5()); }
 void setTimeout(const uint64_t ms) { sctx.timeout_ms = ms; }
 
+
+
 namespace matchers {
 
-Expr Matcher::createExpr(optional<z3::expr> &&opt) const {
-  return Expr(move(opt));
+void Matcher::setZ3(Expr &e, optional<z3::expr> &&opt) const {
+  e.setZ3(move(opt));
 }
 
 bool ConstSplatArray::operator()(const Expr &expr) const {
@@ -658,8 +912,9 @@ bool ConstSplatArray::operator()(const Expr &expr) const {
   if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_CONST_ARRAY)
     return false;
 
-  z3::expr newe(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0));
-  return subMatcher(createExpr(move(newe)));
+  Expr newe = newExpr();
+  setZ3(newe, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+  return subMatcher(newe);
 }
 
 bool Store::operator()(const Expr &expr) const {
@@ -673,18 +928,17 @@ bool Store::operator()(const Expr &expr) const {
   if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_STORE)
     return false;
 
-  z3::expr arr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0));
-  z3::expr idx(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1));
-  z3::expr val(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 2));
-
-  return arrMatcher(createExpr(move(arr))) &&
-      idxMatcher(createExpr(move(idx))) &&
-      valMatcher(createExpr(move(val)));
+  Expr arr = newExpr(), idx = newExpr(), val = newExpr();
+  setZ3(arr, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+  setZ3(idx, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
+  setZ3(val, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 2)));
+  return arrMatcher(arr) && idxMatcher(idx) && valMatcher(val);
 }
 }
 } // namespace smt
 
 namespace {
+#ifdef SOLVER_Z3
 z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec) {
   z3::expr_vector ev(*smt::sctx.z3);
   for (auto &e: vec)
@@ -698,6 +952,32 @@ z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec) {
     ev.push_back(e.getZ3Expr());
   return ev;
 }
+
+z3::sort_vector toZ3SortVector(const vector<smt::Sort> &vec) {
+  z3::sort_vector ev(*smt::sctx.z3);
+  for (auto &e: vec)
+    ev.push_back(e.getZ3Sort());
+  return ev;
+}
+#endif // end SOLVER_Z3
+
+#ifdef SOLVER_CVC5
+vector<cvc5::api::Term> toCVC5TermVector(const vector<smt::Expr> &vec) {
+  vector<cvc5::api::Term> cvc5_terms;
+  for (const auto e : vec) {
+    cvc5_terms.push_back(e.getCVC5Term());
+  }
+  return cvc5_terms;
+}
+
+vector<cvc5::api::Sort> toCVC5SortVector(const vector<smt::Sort> &vec) {
+  vector<cvc5::api::Sort> cvc5_sorts;
+  for (const auto e : vec) {
+    cvc5_sorts.push_back(e.getCVC5Sort());
+  }
+  return cvc5_sorts;
+}
+#endif // SOLVER_CVC5
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {

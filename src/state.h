@@ -50,7 +50,7 @@ public:
 };
 
 class State {
-private:
+public:
   smt::Expr precond;
   // welldef[i]: is instruction i well-defined?
   llvm::DenseMap<mlir::Operation *, smt::Expr> welldef;
@@ -58,6 +58,7 @@ private:
 public:
   class LinalgGenericScope {
   public:
+    // Bound induction variables.
     std::vector<smt::Expr> indVars;
     // indVars[i] <= indVarUpperBounds[i]
     std::vector<smt::Expr> indVarUpperBounds;
@@ -78,7 +79,7 @@ public:
   bool hasQuantifier;
   std::shared_ptr<Memory> m;
 
-  State(unsigned int numBlocks, MemEncoding encoding);
+  State(std::unique_ptr<Memory> &&initMem);
 
   void addPrecondition(smt::Expr &&e);
   void wellDefined(mlir::Operation *op, smt::Expr &&e);

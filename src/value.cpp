@@ -27,7 +27,7 @@ static vector<Expr> getDims(
     uint64_t sz = shapedTy.getDimSize(i);
     if (sz == (uint64_t)-1ull) {
       if (freshVarForUnknownSize) {
-        dims.emplace_back(Index("dim", true));
+        dims.emplace_back(Index::var("dim", VarType::FRESH));
       } else {
         // TODO: raise assert failure at some point.
         dims.push_back(Index(100));
@@ -39,9 +39,9 @@ static vector<Expr> getDims(
   return dims;
 }
 
-static Expr getConstOrVal(int64_t val, std::string &&name) {
+static Expr getConstOrFreshVar(int64_t val, std::string &&name) {
   return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
-      Index(move(name), true) : Index(val);
+      Index::var(move(name), VarType::FRESH) : Index(val);
 }
 
 static MemRef::Layout
@@ -55,12 +55,13 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<Expr> &dims) {
   llvm::SmallVector<int64_t, 4> strides;
   auto success = mlir::getStridesAndOffset(memRefTy, strides, offset);
   assert(succeeded(success) && "unexpected non-strided memref");
-  Expr layout = getConstOrVal(offset, "offset");
+  Expr layout = getConstOrFreshVar(offset, "offset");
   vector<Expr> indVars;
+
   Expr inbounds = Expr::mkBool(true);
   for (int i = 0; i < strides.size(); i ++) {
-    indVars.push_back(Index("idx" + to_string(i)));
-    layout = layout + getConstOrVal(strides[i], "strides") * indVars[i];
+    indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
+    layout = layout + getConstOrFreshVar(strides[i], "strides") * indVars[i];
     inbounds = inbounds & indVars[i].ult(dims[i]);
   }
 
@@ -69,19 +70,23 @@ getLayout(const mlir::MemRefType &memRefTy, const vector<Expr> &dims) {
 
 Index::Index(unsigned i): e(Expr::mkBV(i, BITS)) {}
 
-Index::Index(std::string &&name, bool freshvar):
-    e(freshvar ?
-      Expr::mkFreshVar(Index::sort(), move(name)) :
-      Expr::mkVar(Index::sort(), move(name))) {}
-
-Index::Index(const Expr &e): e(e) {}
-
 Sort Index::sort() {
   return Sort::bvSort(BITS);
 }
 
 Index Index::one() { return Index(1); }
 Index Index::zero() { return Index(0); }
+Index Index::var(std::string &&name, VarType varty) {
+  switch(varty) {
+  case VarType::BOUND:
+  case VarType::UNBOUND:
+    return {Expr::mkVar(Index::sort(), move(name), varty == VarType::BOUND)};
+  case VarType::FRESH:
+    return {Expr::mkFreshVar(Index::sort(), move(name))};
+  }
+  assert("Unknown case");
+}
+
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
   os << or_omit((Expr)i);
@@ -96,14 +101,23 @@ Index Index::eval(Model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
-Float::Float(std::string &&name): e(Expr::mkVar(Float::sort(), move(name))) {}
-
 Float::Float(double f): e(aop::fpConst(f)) {}
 
 Float::Float(const llvm::APFloat &f): Float(f.convertToDouble()) {}
 
 Sort Float::sort() {
   return aop::fpSort();
+}
+
+Float Float::var(std::string &&name, VarType varty) {
+  switch(varty) {
+  case VarType::BOUND:
+  case VarType::UNBOUND:
+    return {Expr::mkVar(Float::sort(), move(name), varty == VarType::BOUND)};
+  case VarType::FRESH:
+    return {Expr::mkFreshVar(Float::sort(), move(name))};
+  }
+  assert("Unknown case");
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
@@ -136,9 +150,6 @@ Float Float::mul(const Float &b) const {
 }
 
 
-Integer::Integer(std::string &&name, unsigned bw):
-  e(Expr::mkVar(Sort::bvSort(bw), move(name))) {}
-
 Integer::Integer(int64_t i, unsigned bw):
   e(Expr::mkBV(i, bw)) {}
 
@@ -147,6 +158,17 @@ Integer::Integer(const llvm::APInt &api):
 
 Sort Integer::sort(unsigned sz) {
   return Sort::bvSort(sz);
+}
+
+Integer Integer::var(std::string &&name, unsigned bw, VarType varty) {
+  switch(varty) {
+  case VarType::BOUND:
+  case VarType::UNBOUND:
+    return {Expr::mkVar(Sort::bvSort(bw), move(name), varty == VarType::BOUND)};
+  case VarType::FRESH:
+    return {Expr::mkFreshVar(Sort::bvSort(bw), move(name))};
+  }
+  assert("Unknown case");
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
@@ -164,10 +186,10 @@ Integer Integer::eval(Model m) const {
 
 
 Tensor::Tensor(const Expr &splat_elem, const vector<Expr> &dimvec):
-    arr(Expr::mkConstArray(Index::sort(), splat_elem)), dims(dimvec) {}
+    arr(Expr::mkSplatArray(Index::sort(), splat_elem)), dims(dimvec) {}
 
 Tensor::Tensor(const vector<Expr> &elems1d):
-    arr(Expr::mkConstArray(Index::sort(), elems1d[0])),
+    arr(Expr::mkSplatArray(Index::sort(), elems1d[0])),
     dims({ (Expr)Index(elems1d.size()) }) {
   for (unsigned i = 1; i < elems1d.size(); ++i)
     arr = arr.store(i, elems1d[i]);
@@ -182,7 +204,7 @@ Tensor::Tensor(
     const vector<vector<uint64_t>> &indices,
     const vector<Expr> &elems,
     const vector<uint64_t> &dims, const Expr &zero):
-  arr(Expr::mkConstArray(Index::sort(), zero)) {
+  arr(Expr::mkSplatArray(Index::sort(), zero)) {
 
   assert(indices.size() == elems.size());
 
@@ -225,7 +247,7 @@ Tensor Tensor::affine(
     const vector<Expr> &newidxvars,
     vector<Expr> srcidxs,
     vector<Expr> &&newsizes) const {
-  auto idxvar = Index("idx");
+  auto idxvar = Index::var("idx", VarType::BOUND);
   auto indices = from1DIdx(idxvar, newsizes);
 
   for (size_t i = 0; i < srcidxs.size(); ++i) {
@@ -258,7 +280,7 @@ Tensor Tensor::rotateDimensions() const {
   vars.reserve(dims.size());
   tgtvars.reserve(dims.size());
   for (size_t i = 0; i < dims.size(); ++i) {
-    auto v = Index(string("i" + to_string(i)));
+    auto v = Index::var("i" + to_string(i), VarType::BOUND);
     vars.push_back(std::move(v));
   }
   std::copy(++vars.cbegin(), vars.cend(), std::back_inserter(tgtvars));
@@ -280,7 +302,11 @@ Tensor Tensor::conv(const Tensor &filter) const {
   };
 
   // n, h, w, f 
-  auto i = Index("i"), j = Index("j"), k = Index("k"), l = Index("l");
+  auto i = Index::var("i", VarType::BOUND);
+  auto j = Index::var("j", VarType::BOUND);
+  auto k = Index::var("k", VarType::BOUND);
+  auto l = Index::var("l", VarType::BOUND);
+
   auto input_subarr = to1DArrayWithOfs(
       // batch: 0, img size: (h, w), channel: 0~
       {Index::zero(), j, k, Index::zero()},
@@ -307,7 +333,8 @@ Tensor Tensor::matmul(const Tensor &b) const {
   assert(b.dims.size() == 2);
 
   auto bt = b.transpose();
-  auto i = Index("i"), j = Index("j");
+  auto i = Index::var("i", VarType::BOUND);
+  auto j = Index::var("j", VarType::BOUND);
   auto a_row = to1DArrayWithOfs(
       {i, Index::zero()}, {Index::one(), dims[1]});
   auto bt_row = bt.to1DArrayWithOfs(
@@ -326,9 +353,6 @@ Expr Tensor::sum() const {
 }
 
 pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
-  assert(arr.sort().isArray());
-  assert(other.arr.sort().isArray());
-
   // Size mismatch check.
   // If it does, don't return index var.
   size_t sz = getDims().size();
@@ -343,7 +367,7 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
     return {size_match, {}};
 
   // Assume that src and tgt's shape equality is already checked
-  Expr i = Index("i");
+  Expr i = Index::var("i", VarType::UNBOUND);
   vector<Expr> params = {i};
   return {size_match &
       i.ult(::get1DSize(dims)).implies(arr.select(i) == other.arr.select(i)),
@@ -441,7 +465,8 @@ Tensor Tensor::eval(Model m) const {
 
 Tensor Tensor::transpose() const {
   assert(dims.size() == 2);
-  auto i = Index("i"), j = Index("j");
+  auto i = Index::var("i", VarType::BOUND);
+  auto j = Index::var("j", VarType::BOUND);
   return Tensor::mkLambda({dims[1], dims[0]}, {j, i}, get({i, j}));
 }
 
@@ -459,7 +484,7 @@ Tensor Tensor::mkLambda(
   } else
     assert(newdims.size() == indexvars.size());
 
-  auto idx = Index("idx");
+  auto idx = Index::var("idx", VarType::BOUND);
   auto idxExprs = from1DIdx(idx, newdims);
 
   if (!indexvars.empty()) {
@@ -475,7 +500,7 @@ Expr Tensor::to1DArrayWithOfs(
       const vector<Expr> &sizes) const {
   assert(offbegins.size() == sizes.size());
 
-  auto idxvar = Index("idx");
+  auto idxvar = Index::var("idx", VarType::BOUND);
   auto relidxs = from1DIdx(idxvar, sizes);
   vector<Expr> absidxs;
   absidxs.reserve(relidxs.size());
@@ -499,11 +524,11 @@ MemRef::Layout::Layout(const vector<Expr> &dims):
   vector<Expr> indVars, inverseMappings;
 
   for (int i = 0; i < dims.size(); i ++) {
-    indVars.push_back(Index("idx" + to_string(i)));
+    indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
     inbounds = inbounds & indVars[i].ult(dims[i]);
   }
 
-  Expr idx = Index("1DIdx");
+  Expr idx = Index::var("1DIdx", VarType::BOUND);
   vector<Expr> inverseIdxs = from1DIdx(idx, dims);
   for (auto inverse : inverseIdxs)
     inverseMappings.push_back(Expr::mkLambda(idx, inverse));
@@ -575,7 +600,7 @@ MemRef::MemRef(Memory *m,
   const smt::Sort &elemty):
     m(m),
     bid(Expr::mkVar(Sort::bvSort(m->getBIDBits()), (name + "_bid").c_str())),
-    offset(Index((name + "_offset").c_str())),
+    offset(Index::var(name + "_offset", VarType::UNBOUND)),
     dims(dims),
     layout(layout) {}
 

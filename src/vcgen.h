@@ -12,6 +12,7 @@ public:
     TIMEOUT = 101,
     RETVALUE = 102,
     UB = 103,
+    INCONSISTENT = 104
   };
 
   // Returns true if the value equals zero.
@@ -34,7 +35,7 @@ public:
   Code code;
 };
 
-enum VerificationStep {
+enum class VerificationStep {
   UB,
   RetValue,
   Memory

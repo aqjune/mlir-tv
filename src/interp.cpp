@@ -49,7 +49,9 @@ static void runFunction(mlir::FuncOp fn) {
 
   llvm::outs() << "Function " << fn.getName() << "\n\n";
 
-  State s(num_memblocks, memory_encoding);
+  // FIXME: max. # local blocks does not need to be num_memblocks
+  State s(unique_ptr<Memory>{
+      Memory::create(num_memblocks, num_memblocks, memory_encoding)});
   encode(s, fn, false);
   printOperations(smt::Model::empty(), fn, s);
 }

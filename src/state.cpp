@@ -80,13 +80,14 @@ State::LinalgGenericScope::LinalgGenericScope(
     std::vector<Index> &&upperbounds) {
   for (unsigned i = 0; i < upperbounds.size(); ++i) {
     indVarUpperBounds.push_back(upperbounds[i]);
-    indVars.emplace_back(Index("i" + to_string(i), true));
+    indVars.emplace_back(
+        Index::var("i" + to_string(i), VarType::BOUND));
   }
 }
 
-State::State(unsigned int numBlocks, MemEncoding encoding):
+State::State(unique_ptr<Memory> &&initMem):
   hasQuantifier(false), precond(Expr::mkBool(true)),
-  m(Memory::create(numBlocks, numBlocks, encoding)) {}
+  m(move(initMem)) {}
 
 void State::addPrecondition(smt::Expr &&e) {
   precond = precond & e;

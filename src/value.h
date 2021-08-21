@@ -9,6 +9,12 @@
 
 class Memory;
 
+enum class VarType {
+  BOUND, // a bound variable; see Expr::mkVar
+  FRESH, // a fresh, unbound variable
+  UNBOUND
+};
+
 class Index {
   smt::Expr e;
 
@@ -16,8 +22,8 @@ public:
   static const unsigned BITS = 32;
 
   Index(unsigned);
-  Index(std::string &&name, bool freshvar = false);
-  Index(const smt::Expr &e);
+  Index(const smt::Expr &e): e(e) {}
+  Index(smt::Expr &&e): e(std::move(e)) {}
 
   operator smt::Expr() const { return e; }
   Index ofs(int i) const {
@@ -30,8 +36,10 @@ public:
   static smt::Sort sort();
   static Index one();
   static Index zero();
+  static Index var(std::string &&name, enum VarType);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
+  // (refinement, unbound variables used in the refinement formula)
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const Index &other) const;
   Index eval(smt::Model m) const;
@@ -41,7 +49,6 @@ class Float {
   smt::Expr e;
 
 public:
-  Float(std::string &&name);
   Float(const smt::Expr &e): e(e) {}
   Float(const llvm::APFloat &apf);
   Float(double f);
@@ -49,11 +56,13 @@ public:
   operator smt::Expr() const { return e; }
 
   static smt::Sort sort();
+  static Float var(std::string &&name, VarType vty);
 
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
+  // (refinement, {})
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const Float &other) const;
   Float eval(smt::Model m) const;
@@ -63,7 +72,6 @@ class Integer {
   smt::Expr e;
 
 public:
-  Integer(std::string &&name, unsigned bw);
   Integer(const smt::Expr &e): e(e) {}
   Integer(int64_t i, unsigned bw);
   Integer(const llvm::APInt &api);
@@ -71,8 +79,10 @@ public:
   operator smt::Expr() const { return e; }
 
   static smt::Sort sort(unsigned bw);
+  static Integer var(std::string &&name, unsigned bw, VarType vty);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
+  // (refinement, {})
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(const Integer &other)
       const;
   Integer eval(smt::Model m) const;
@@ -155,7 +165,7 @@ public:
       std::vector<smt::Expr> &&indexvars, smt::Expr body);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
-  // Returns (arr[idx] == src.arr[idx], idx var)
+  // Returns (arr[idx] == src.arr[idx], unbound idx vars)
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const Tensor &other) const;
   Tensor eval(smt::Model m) const;
@@ -174,7 +184,7 @@ public:
 
   class Layout {
   public:
-    // Induction variables
+    // Induction variables; they are bound (Expr::mkVar's flag is true)
     // ex) {d0, d1..}
     std::vector<smt::Expr> indVars;
     // Inbounds condition for induction variables
@@ -218,6 +228,7 @@ public:
     const std::vector<smt::Expr> &dims,
     const Layout &layout,
     const smt::Sort &elemty);
+  // Makes an unbound variable.
   MemRef(Memory *m,
     const std::string &name,
     const std::vector<smt::Expr> &dims,
@@ -261,6 +272,7 @@ public:
       int rankDiff = 0);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
+  // (refinement, unbound variables used in the refinement formula)
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const MemRef &other) const;
   MemRef eval(smt::Model m) const;

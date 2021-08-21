@@ -76,10 +76,11 @@ static optional<ValueTy> fromExpr(Expr &&e, mlir::Type ty) {
   return {};
 }
 
-static vector<Expr> createIndexVars(unsigned n) {
+static vector<Expr> createBoundIndexVars(unsigned n) {
   vector<Expr> idxs;
   for (unsigned i = 0; i < n; i ++) {
-    idxs.push_back(Index("i" + std::to_string(i), true));
+    idxs.push_back(
+      Index::var("i" + std::to_string(i), VarType::BOUND));
   }
   return idxs;
 }
@@ -409,7 +410,7 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
     st.regs.add(op.memref(), move(memref));
 
   } else {
-    vector<Expr> idxs = createIndexVars(memrefTy.getRank());
+    vector<Expr> idxs = createBoundIndexVars(memrefTy.getRank());
     auto tVal = tensor.get(idxs);
     auto [mVal, success] = memref.load(idxs);
     memref.setWritable(false);
@@ -432,7 +433,7 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
 
   // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
-  vector<Expr> idxs = createIndexVars(dims.size());
+  vector<Expr> idxs = createBoundIndexVars(dims.size());
   auto [Expr, success] = m.load(idxs);
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), Expr);
 

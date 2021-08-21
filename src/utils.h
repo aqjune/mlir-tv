@@ -19,3 +19,10 @@ auto fupdate(std::optional<T> &x, Fn fn) {
     return std::optional(fn(*x));
   return std::optional<decltype(fn(*x))>();
 }
+
+template<class T1, class T2, class Fn>
+auto fupdate2(std::optional<T1> &x, const std::optional<T2> &x2, Fn fn) {
+  if (x && x2)
+    return std::optional(fn(*x, *x2));
+  return std::optional<decltype(fn(*x, *x2))>();
+}

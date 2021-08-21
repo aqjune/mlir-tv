@@ -36,8 +36,9 @@ Expr Memory::isLocalBlock(const Expr &bid) const {
 
 pair<Expr, vector<Expr>>
 SingleArrayMemory::refines(const Memory &other) const {
-  auto bid = Expr::mkVar(Sort::bvSort(bidBits), "bid");
-  auto offset = Index("offset", true);
+  // Create fresh, unbound variables
+  auto bid = Expr::mkFreshVar(Sort::bvSort(bidBits), "bid");
+  auto offset = Index::var("offset", VarType::FRESH);
 
   auto [srcValue, srcSuccess] = load(bid, offset);
   auto srcWritable = getWritable(bid);
@@ -52,7 +53,8 @@ SingleArrayMemory::refines(const Memory &other) const {
 
 SingleArrayMemory::SingleArrayMemory(
     unsigned int numGlobalBlocks, unsigned int maxLocalBlocks):
-  Memory(numGlobalBlocks, maxLocalBlocks, ulog2(numGlobalBlocks + maxLocalBlocks)),
+  MemoryCRTP(numGlobalBlocks, maxLocalBlocks,
+    ulog2(numGlobalBlocks + maxLocalBlocks)),
   arrayMaps(Expr::mkVar(
       Sort::arraySort(Sort::bvSort(bidBits),
         Sort::arraySort(Index::sort(), Float::sort())),
@@ -101,7 +103,7 @@ Expr SingleArrayMemory::storeArray(
     const Expr &arr, const Expr &bid, const Expr &offset, const Expr &size) {
   auto low = offset;
   auto high = offset + size - 1;
-  auto idx = Index("idx");
+  auto idx = Index::var("idx", VarType::BOUND);
   auto arrayVal = arr.select((Expr)idx - low);
 
   auto block = getMemBlock(bid);
@@ -124,7 +126,8 @@ pair<Expr, Expr> SingleArrayMemory::load(
 
 MultipleArrayMemory::MultipleArrayMemory(
     unsigned int numGlobalBlocks, unsigned int maxLocalBlocks):
-  Memory(numGlobalBlocks, maxLocalBlocks, ulog2(numGlobalBlocks + maxLocalBlocks)) {
+  MemoryCRTP(numGlobalBlocks, maxLocalBlocks,
+    ulog2(numGlobalBlocks + maxLocalBlocks)) {
   for (unsigned i = 0; i < getNumBlocks(); ++i) {
     auto suffix = [&](const string &s) {
       return s + to_string(i);
@@ -218,7 +221,7 @@ Expr MultipleArrayMemory::storeArray(
     const Expr &arr, const Expr &bid, const Expr &offset, const Expr &size) {
   auto low = offset;
   auto high = offset + size - 1;
-  auto idx = Index("idx");
+  auto idx = Index::var("idx", VarType::BOUND);
   auto arrayVal = arr.select((Expr)idx - low);
 
   update(bid, [&](auto ubid) { return &arrays[ubid]; },
@@ -258,8 +261,9 @@ MultipleArrayMemory::refines(const Memory &other0) const {
       *static_cast<const MultipleArrayMemory *>(&other0);
   assert(other.numGlobalBlocks == numGlobalBlocks);
 
-  auto bid = Expr::mkVar(Sort::bvSort(bidBits), "bid");
-  auto offset = Index("offset", true);
+  // Create fresh, unbound variables
+  auto bid = Expr::mkFreshVar(Sort::bvSort(bidBits), "bid");
+  auto offset = Index::var("offset", VarType::FRESH);
 
   auto refines = [this, &other, &bid, &offset](unsigned ubid) {
     auto [srcValue, srcSuccess] = load(ubid, offset);
