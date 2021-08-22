@@ -405,7 +405,8 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
 
   if (memrefTy.getAffineMaps().empty()) {
     // memref with identity map
-    auto success = memref.storeArray(tensor.asArray(), Index::zero(), tensor.get1DSize());
+    auto success = memref.storeArray(tensor.asArray(), Index::zero(),
+        tensor.get1DSize(), false);
     st.wellDefined(op.getOperation(), move(success));
     st.regs.add(op.memref(), move(memref));
 
@@ -413,7 +414,6 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
     vector<Expr> idxs = createBoundIndexVars(memrefTy.getRank());
     auto tVal = tensor.get(idxs);
     auto [mVal, success] = memref.load(idxs);
-    memref.setWritable(false);
 
     st.wellDefined(
         op.getOperation(),

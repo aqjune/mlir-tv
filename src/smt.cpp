@@ -531,6 +531,12 @@ Expr Expr::operator&(const Expr &rhs) const {
   return e;
 }
 
+Expr Expr::operator&(bool rhs) const {
+  if (!rhs)
+    return mkBool(false);
+  return *this;
+}
+
 Expr Expr::operator|(const Expr &rhs) const {
   Expr e;
   SET_Z3_USEOP(e, rhs, operator|);
@@ -540,6 +546,12 @@ Expr Expr::operator|(const Expr &rhs) const {
     SET_CVC5_USEOP(e, rhs, OR);
   }
   return e;
+}
+
+Expr Expr::operator|(bool rhs) const {
+  if (rhs)
+    return mkBool(true);
+  return *this;
 }
 
 EXPR_BVOP_UINT64(operator==)
