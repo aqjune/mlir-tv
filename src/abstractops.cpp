@@ -69,31 +69,37 @@ Expr mkZeroElemFromArr(const Expr &arr) {
   return Expr::mkBV(0, bvsz);
 }
 
+optional<FnDecl> sumfn, dotfn, fpaddfn, fpmulfn;
+
+
 Expr fpAdd(const Expr &f1, const Expr &f2) {
   usedOps.add = true;
   auto fty = f1.sort();
 
-  FnDecl addfn({fty, fty}, fty, "fp_add");
-  return addfn.apply({f1, f2});
+  if (!fpaddfn)
+    fpaddfn.emplace({fty, fty}, fty, "fp_add");
+  return fpaddfn->apply({f1, f2});
 }
 
 Expr fpMul(const Expr &a, const Expr &b) {
   usedOps.mul = true;
 
   // TODO: check that a.get_Sort() == b.get_Sort()
-  FnDecl mulfn({a.sort(), b.sort()}, Float::sort(), "fp_mul");
-  return mulfn.apply({a, b});
+  if (!fpmulfn)
+    fpmulfn.emplace({a.sort(), b.sort()}, Float::sort(), "fp_mul");
+  return fpmulfn->apply({a, b});
 }
 
 Expr sum(const Expr &a, const Expr &n) {
   usedOps.sum = true;
   // TODO: check that a.Sort is Index::Sort() -> Float::Sort()
 
-  FnDecl sumfn(a.sort(), Float::sort(), "smt_sum");
+  if (!sumfn)
+    sumfn.emplace(a.sort(), Float::sort(), "smt_sum");
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
   Expr zero = mkZeroElemFromArr(a);
-  return sumfn(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
+  return (*sumfn)(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
 }
 
 Expr dot(const Expr &a, const Expr &b, const Expr &n) {
@@ -101,12 +107,14 @@ Expr dot(const Expr &a, const Expr &b, const Expr &n) {
     usedOps.dot = true;
     // TODO: check that a.get_Sort() == b.get_Sort()
     auto i = (Expr)Index::var("idx", VarType::BOUND);
-    FnDecl dotfn({a.sort().toFnSort(), b.sort().toFnSort()},
+
+    if (!dotfn)
+      dotfn.emplace({a.sort().toFnSort(), b.sort().toFnSort()},
         Float::sort(), "smt_dot");
 
     Expr ai = a.select(i), bi = b.select(i);
     Expr zero = mkZeroElemFromArr(a);
-    return dotfn.apply({
+    return dotfn->apply({
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero)),
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero))});
   } else if (alDot == AbsLevelDot::SUM_MUL) {
