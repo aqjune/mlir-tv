@@ -184,7 +184,7 @@ FnDecl::FnDecl(
 
 Expr FnDecl::apply(const std::vector<Expr> &args) const {
   Expr e;
-  SET_Z3(e, (*z3)(toZ3ExprVector(args)));
+  SET_Z3(e, fmap(z3, [&args](auto &s) { return s(toZ3ExprVector(args)); }));
   SET_CVC5(e, fupdate2(sctx.cvc5, cvc5, [&args](auto &solver, auto fdecl) {
     auto args_cvc5 = toCVC5TermVector(args);
     args_cvc5.insert(args_cvc5.begin(), fdecl);
@@ -306,6 +306,14 @@ bool Expr::isFalse() const {
   return res;
 }
 
+bool Expr::isTrue() const {
+  bool res = false;
+  IF_Z3_ENABLED(res |= z3 && z3->is_true());
+  IF_CVC5_ENABLED(
+      res |= cvc5 && cvc5->isBooleanValue() && cvc5->getBooleanValue());
+  return res;
+}
+
 #define EXPR_BVOP_UINT64(NAME) \
 Expr Expr:: NAME (uint64_t arg) const {\
   return NAME(mkBV(arg, sort().bitwidth())); \
@@ -335,6 +343,10 @@ Expr Expr::urem(const Expr &rhs) const {
 
 EXPR_BVOP_UINT64(udiv)
 Expr Expr::udiv(const Expr& rhs) const {
+  uint64_t rhsval;
+  if (rhs.isUInt(rhsval) && rhsval == 1)
+    return *this;
+
   Expr e;
   SET_Z3_USEOP(e, rhs, udiv);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_UDIV);
@@ -409,6 +421,12 @@ static cvc5::api::Term mkCVC5Lambda(
     const cvc5::api::Term &var, const cvc5::api::Term &body) {
   auto vlist = sctx.cvc5->mkTerm(cvc5::api::BOUND_VAR_LIST, {var});
   return sctx.cvc5->mkTerm(cvc5::api::LAMBDA, vlist, body);
+}
+
+// Convert arr to lambda idx, arr idx
+static cvc5::api::Term toCVC5Lambda(const cvc5::api::Term &arr) {
+  auto idx = sctx.cvc5->mkVar(arr.getSort().getArrayIndexSort());
+  return mkCVC5Lambda(idx, sctx.cvc5->mkTerm(cvc5::api::SELECT, arr, idx));
 }
 #endif
 
@@ -521,6 +539,11 @@ Expr Expr::operator*(const Expr &rhs) const {
 }
 
 Expr Expr::operator&(const Expr &rhs) const {
+  if (rhs.isFalse() || isTrue())
+    return rhs;
+  else if (rhs.isTrue() || isFalse())
+    return *this;
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator&);
   if (sort().isBV()) {
@@ -538,6 +561,11 @@ Expr Expr::operator&(bool rhs) const {
 }
 
 Expr Expr::operator|(const Expr &rhs) const {
+  if (rhs.isTrue() || isFalse())
+    return rhs;
+  else if (rhs.isFalse() || isTrue())
+    return *this;
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator|);
   if (sort().isBV()) {
@@ -556,6 +584,8 @@ Expr Expr::operator|(bool rhs) const {
 
 EXPR_BVOP_UINT64(operator==)
 Expr Expr::operator==(const Expr &rhs) const {
+  if (isIdentical(rhs, true))
+    return mkBool(true);
   Expr e;
   SET_Z3_USEOP(e, rhs, operator==);
   SET_CVC5_USEOP(e, rhs, EQUAL);
@@ -704,12 +734,24 @@ Expr Expr::mkSplatArray(const Sort &domain, const Expr &splatElem) {
 }
 
 Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
+  if (cond.isTrue())
+    return then;
+  else if (cond.isFalse())
+    return els;
+
   Expr e;
   SET_Z3(e, fmap(cond.z3, [&](auto &condz3){
     return z3::ite(condz3, *then.z3, *els.z3);
   }));
   SET_CVC5(e, fupdate2(sctx.cvc5, cond.cvc5, [&](auto &solver, auto condcvc) {
-    return solver.mkTerm(cvc5::api::ITE, condcvc, *then.cvc5, *els.cvc5);
+    auto thenSort = then.cvc5->getSort();
+    auto elsSort = els.cvc5->getSort();
+    auto thenval = *then.cvc5, elsval = *els.cvc5;
+    if (thenSort.isFunction() && elsSort.isArray())
+      elsval = toCVC5Lambda(elsval);
+    else if (thenSort.isArray() && elsSort.isFunction())
+      thenval = toCVC5Lambda(thenval);
+    return solver.mkTerm(cvc5::api::ITE, condcvc, thenval, elsval);
   }));
   return e;
 }

@@ -87,6 +87,7 @@ public:
   bool isNumeral() const;
   // Returns true if at least one expr in z3, cvc5, ... is constant false.
   bool isFalse() const;
+  bool isTrue() const;
 
   Expr urem(const Expr &rhs) const;
   Expr urem(uint64_t rhs) const;

@@ -194,7 +194,7 @@ static Results checkRefinement(
   { // 1. Check UB
     Solver s(logic);
     auto not_refines =
-        (st_src.isWellDefined() & !st_tgt.isWellDefined());
+        (st_src.isWellDefined() & !st_tgt.isWellDefined()).simplify();
     auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                      fnname + ".1.ub");
     elapsedMillisec += res.second;
