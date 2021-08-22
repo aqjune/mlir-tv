@@ -34,6 +34,10 @@ llvm::cl::opt<unsigned> arg_smt_to("smt-to",
 llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
   llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"));
 
+llvm::cl::opt<bool> arg_cross_check("cross-check",
+  llvm::cl::desc("Run all SMT solvers and cross-check the results. "
+                 "By default, Z3 is only used."));
+
 llvm::cl::opt<bool> split_input_file("split-input-file",
   llvm::cl::desc("Split the input file into pieces and process each chunk independently"),
   llvm::cl::init(false));
@@ -113,7 +117,10 @@ int main(int argc, char* argv[]) {
 
   smt::setTimeout(arg_smt_to.getValue());
   smt::useZ3();
-  smt::useCVC5();
+#ifdef SOLVER_CVC5
+  if (arg_cross_check)
+    smt::useCVC5();
+#endif
 
   MLIRContext context;
   DialectRegistry registry;
