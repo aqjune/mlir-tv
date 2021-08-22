@@ -194,7 +194,7 @@ static Results checkRefinement(
   { // 1. Check UB
     Solver s(logic);
     auto not_refines =
-        (st_src.isWellDefined() & !st_tgt.isWellDefined()).simplify();
+        (st_src.isWellDefined() & !st_tgt.isWellDefined());
     auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                      fnname + ".1.ub");
     elapsedMillisec += res.second;
@@ -318,6 +318,7 @@ static tuple<State, State, Expr> encodeFinalStates(
   // Due to how CVC5 treats unbound vars, the initial memory must be precisely
   // copied
   unique_ptr<Memory> initMemTgt(initMemSrc->clone());
+  initMemTgt->setIsSrc(false);
 
   State st_src = encodeFinalState(
       vinput, move(initMemSrc), printOps, true,  args, preconds);

@@ -80,6 +80,7 @@ Expr SingleArrayMemory::addLocalBlock(
 
   auto bid = Expr::mkBV(numGlobalBlocks + numLocalBlocks, bidBits);
   numelemMaps = numelemMaps.store(bid, numelem);
+  writableMaps = writableMaps.store(bid, writable);
   numLocalBlocks ++;
   return bid;
 }
@@ -100,7 +101,8 @@ Expr SingleArrayMemory::store(
 }
 
 Expr SingleArrayMemory::storeArray(
-    const Expr &arr, const Expr &bid, const Expr &offset, const Expr &size) {
+    const Expr &arr, const Expr &bid, const Expr &offset, const Expr &size,
+    bool ubIfReadonly) {
   auto low = offset;
   auto high = offset + size - 1;
   auto idx = Index::var("idx", VarType::BOUND);
@@ -113,8 +115,8 @@ Expr SingleArrayMemory::storeArray(
   arrayMaps = arrayMaps.store(bid, stored);
 
   return Expr::mkAddNoOverflow(offset, size - 1, false) & // to prevent overflow
-    high.ult(block.numelem) & // high < block.numelem
-    block.writable;
+      high.ult(block.numelem) & // high < block.numelem
+      (block.writable | !ubIfReadonly);
 }
 
 pair<Expr, Expr> SingleArrayMemory::load(
@@ -185,11 +187,12 @@ Expr MultipleArrayMemory::addLocalBlock(
   assert(numLocalBlocks < maxLocalBlocks);
 
   auto bid = numGlobalBlocks + numLocalBlocks;
-  auto suffix = [&](const string &s) { return s + to_string(bid); };
+  auto suffix = [&](const string &s) {
+    return s + to_string(bid) + (isSrc ? "_src" : "_tgt");
+  };
   arrays.push_back(Expr::mkVar(
       Sort::arraySort(Index::sort(), Float::sort()), suffix("array").c_str()));
-  writables.push_back(Expr::mkVar(
-      Sort::boolSort(), suffix("writable").c_str()));
+  writables.push_back(writable);
   numelems.push_back(numelem);
   numLocalBlocks ++;
   return Expr::mkBV(bid, bidBits);
@@ -218,7 +221,8 @@ Expr MultipleArrayMemory::store(const Expr &f32val,
 }
 
 Expr MultipleArrayMemory::storeArray(
-    const Expr &arr, const Expr &bid, const Expr &offset, const Expr &size) {
+    const Expr &arr, const Expr &bid, const Expr &offset, const Expr &size,
+    bool ubIfReadonly) {
   auto low = offset;
   auto high = offset + size - 1;
   auto idx = Index::var("idx", VarType::BOUND);
@@ -232,8 +236,8 @@ Expr MultipleArrayMemory::storeArray(
     });
 
   return Expr::mkAddNoOverflow(offset, size - 1, false) & // to prevent overflow
-    high.ult(getNumElementsOfMemBlock(bid)) & // high < block.numelem
-    getWritable(bid);
+      high.ult(getNumElementsOfMemBlock(bid)) & // high < block.numelem
+      (getWritable(bid) | !ubIfReadonly);
 }
 
 pair<Expr, Expr> MultipleArrayMemory::load(

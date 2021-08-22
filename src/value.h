@@ -253,7 +253,8 @@ public:
 
   std::pair<smt::Expr, smt::Expr> load(const std::vector<smt::Expr> &indices);
   smt::Expr store(const smt::Expr &value, const std::vector<smt::Expr> &indices);
-  smt::Expr storeArray(const smt::Expr &array, const smt::Expr &startOffset, const smt::Expr &size);
+  smt::Expr storeArray(const smt::Expr &array, const smt::Expr &startOffset,
+      const smt::Expr &size, bool ubIfReadonly = true);
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;
   smt::Expr isLocalBlock() const;

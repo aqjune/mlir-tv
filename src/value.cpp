@@ -665,8 +665,10 @@ Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) {
 }
 
 Expr MemRef::storeArray(
-    const Expr &array, const Expr &startOffset, const Expr &size) {
-  return m->storeArray(array, bid, (Expr)offset + startOffset, size);
+    const Expr &array, const Expr &startOffset, const Expr &size,
+    bool ubIfReadonly) {
+  return m->storeArray(array, bid, (Expr)offset + startOffset, size,
+      ubIfReadonly);
 }
 
 Expr MemRef::isInBounds() const {

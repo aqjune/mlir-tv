@@ -27,6 +27,7 @@ protected:
   const unsigned int maxLocalBlocks;
   const unsigned int bidBits;
   unsigned int numLocalBlocks;
+  bool isSrc;
 
 public:
   static Memory * create(
@@ -41,8 +42,11 @@ public:
     numGlobalBlocks(numGlobalBlocks),
     maxLocalBlocks(maxLocalBlocks),
     bidBits(bidBits),
-    numLocalBlocks(0) {}
+    numLocalBlocks(0),
+    isSrc(true) {}
   virtual ~Memory() {}
+
+  void setIsSrc(bool flag) { isSrc = flag; }
 
   unsigned int getBIDBits() const { return bidBits; }
   unsigned int getNumBlocks() const { return numGlobalBlocks + numLocalBlocks; }
@@ -67,7 +71,8 @@ public:
   // Returns: store successful?
   virtual smt::Expr storeArray(
       const smt::Expr &arr, const smt::Expr &bid,
-      const smt::Expr &offset, const smt::Expr &size) = 0;
+      const smt::Expr &offset, const smt::Expr &size,
+      bool ubIfReadonly = true) = 0;
   // Returns: (loaded value, load successful?)
   virtual std::pair<smt::Expr, smt::Expr> load(
       const smt::Expr &bid, const smt::Expr &idx) const = 0;
@@ -115,7 +120,7 @@ public:
       const smt::Expr &f32val, const smt::Expr &bid, const smt::Expr &idx)
       override;
   smt::Expr storeArray(
-      const smt::Expr &arr, const smt::Expr &bid, const smt::Expr &offset, const smt::Expr &size)
+      const smt::Expr &arr, const smt::Expr &bid, const smt::Expr &offset, const smt::Expr &size, bool ubIfReadonly)
       override;
   std::pair<smt::Expr, smt::Expr> load(
       const smt::Expr &bid, const smt::Expr &idx) const override;
@@ -150,7 +155,7 @@ public:
       const smt::Expr &f32val, const smt::Expr &bid, const smt::Expr &idx)
       override;
   smt::Expr storeArray(
-      const smt::Expr &arr, const smt::Expr &bid, const smt::Expr &offset, const smt::Expr &size)
+      const smt::Expr &arr, const smt::Expr &bid, const smt::Expr &offset, const smt::Expr &size, bool ubIfReadonly)
       override;
   std::pair<smt::Expr, smt::Expr> load(
       const smt::Expr &bid, const smt::Expr &idx) const override;
