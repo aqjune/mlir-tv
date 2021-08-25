@@ -147,7 +147,7 @@ static optional<string> encodeOp(State &st, T op);
 
 template<>
 optional<string>
-encodeOp(State &st, mlir::linalg::ConvInputNHWCFilterHWCFOp op) {
+encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op) {
   if (!llvm::all_of(op.dilations(), [](auto i) { return i == 1; }))
     return "dilation isn't one\n";
   else if (!llvm::all_of(op.strides(), [](auto i) { return i == 1; }))
@@ -1115,7 +1115,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::memref::BufferCastOp);
     ENCODE(st, op, mlir::memref::TensorLoadOp);
 
-    ENCODE(st, op, mlir::linalg::ConvInputNHWCFilterHWCFOp);
+    ENCODE(st, op, mlir::linalg::Conv2DNhwcHwcfOp);
     ENCODE(st, op, mlir::linalg::DotOp);
     ENCODE(st, op, mlir::linalg::FillOp);
     ENCODE(st, op, mlir::linalg::GenericOp);
