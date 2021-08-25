@@ -235,12 +235,13 @@ Expr Tensor::getWellDefined() const {
   return e.simplify();
 }
 
-Expr Tensor::get(const vector<Expr> &idxs) const {
-  return arr.select(to1DIdx(idxs, dims));
-}
+pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
+  auto elem = arr.select(to1DIdx(indices, dims));
+  auto inbounds = Expr::mkBool(true);
+  for (unsigned i = 0; i < indices.size(); ++i)
+    inbounds = inbounds & indices[i].ult(dims[i]);
 
-Index Tensor::getDim(uint64_t idx) const {
-  return Index(dims[idx]);
+  return {elem, inbounds.simplify()};
 }
 
 Tensor Tensor::affine(
@@ -264,7 +265,7 @@ Tensor Tensor::affine(
       idxvar,
       Expr::mkIte(
         ((Expr)idxvar).ult(::get1DSize(newsizes)),
-        get(srcidxs),
+        get(srcidxs).first,
         aop::mkZeroElemFromArr(arr)
       ))
   };
@@ -467,7 +468,7 @@ Tensor Tensor::transpose() const {
   assert(dims.size() == 2);
   auto i = Index::var("i", VarType::BOUND);
   auto j = Index::var("j", VarType::BOUND);
-  return Tensor::mkLambda({dims[1], dims[0]}, {j, i}, get({i, j}));
+  return Tensor::mkLambda({dims[1], dims[0]}, {j, i}, get({i, j}).first);
 }
 
 Tensor Tensor::mkLambda(
@@ -513,7 +514,7 @@ Expr Tensor::to1DArrayWithOfs(
       idxvar,
       Expr::mkIte(
         ((Expr)idxvar).ult(::get1DSize(sizes)),
-        get(absidxs),
+        get(absidxs).first,
         aop::mkZeroElemFromArr(arr)));
 }
 
@@ -650,7 +651,7 @@ MemRef::getDimsAndLayoutAndElemTy(
   }
 }
 
-pair<Expr, Expr> MemRef::load(const vector<Expr> &indices) {
+pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto [loaded, success] = m->load(bid, (Expr)offset + idx);
 
@@ -683,10 +684,6 @@ Expr MemRef::isGlobalBlock() const {
 
 Expr MemRef::isLocalBlock() const {
   return m->isLocalBlock(bid);
-}
-
-Index MemRef::getDim(uint64_t idx) const {
-  return Index(dims[idx]);
 }
 
 void MemRef::setWritable(bool writable) {
@@ -744,7 +741,7 @@ MemRef MemRef::eval(Model mdl) const {
   return m2;
 }
 
-pair<Expr, Expr> MemRef::to1DIdxWithLayout(const vector<Expr> &idxs) {
+pair<Expr, Expr> MemRef::to1DIdxWithLayout(const vector<Expr> &idxs) const {
   auto Expr = layout.mapping.select(idxs);
   auto inbounds = layout.inbounds.select(idxs);
   return {Expr, inbounds};

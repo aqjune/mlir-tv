@@ -88,7 +88,16 @@ public:
   Integer eval(smt::Model m) const;
 };
 
-class Tensor {
+class ShapedValue {
+public:
+  virtual std::vector<smt::Expr> getDims() const = 0;
+  virtual std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const = 0;
+
+  Index getDim(uint64_t idx) const { return Index(getDims()[idx]); }
+  smt::Expr get1DSize() const { return smt::get1DSize(getDims()); }
+};
+
+class Tensor: public ShapedValue {
   std::vector<smt::Expr> dims;
   smt::Expr arr;
 
@@ -119,12 +128,9 @@ public:
   //   Expr v = tensor.get(indices)
   //   useAsInt(Integer(v)) // valid only if tensor had integer elems
   //   useAsFloat(Float(v)) // valid only if tensor had float elems
-  smt::Expr get(const std::vector<smt::Expr> &indices) const;
+  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const override;
 
-  smt::Expr get1DSize() const { return smt::get1DSize(dims); }
-
-  Index getDim(uint64_t idx) const;
-  std::vector<smt::Expr> getDims() const { return dims; }
+  std::vector<smt::Expr> getDims() const override { return dims; }
 
   // Return a new tensor T2 s.t.
   //   T2[newidxvars] = this[srcidxs]
@@ -176,7 +182,7 @@ private:
       const std::vector<smt::Expr> &sizes) const;
 };
 
-class MemRef {
+class MemRef: public ShapedValue {
 public:
   // This may be parameterized later..
   static const unsigned MAX_MEMREF_SIZE = 1000000;
@@ -251,7 +257,9 @@ public:
       std::optional<std::vector<smt::Expr>> predefinedDims = {},
       bool freshVarForUnknownSize = true);
 
-  std::pair<smt::Expr, smt::Expr> load(const std::vector<smt::Expr> &indices);
+  std::vector<smt::Expr> getDims() const override { return dims; }
+
+  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const override;
   smt::Expr store(const smt::Expr &value, const std::vector<smt::Expr> &indices);
   smt::Expr storeArray(const smt::Expr &array, const smt::Expr &startOffset,
       const smt::Expr &size, bool ubIfReadonly = true);
@@ -260,9 +268,6 @@ public:
   smt::Expr isLocalBlock() const;
   smt::Expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
-  smt::Expr get1DSize() const { return smt::get1DSize(dims); }
-  Index getDim(uint64_t idx) const;
-  std::vector<smt::Expr> getDims() const { return dims; }
   void setWritable(bool writable);
   void setMemory(Memory *m) { this->m = m; }
 
@@ -288,7 +293,7 @@ private:
   smt::Expr to1DArrayWithOfs(
       const std::vector<smt::Expr> &offbegins,
       const std::vector<smt::Expr> &sizes) const;
-  std::pair<smt::Expr, smt::Expr> to1DIdxWithLayout(const std::vector<smt::Expr> &idxs);
+  std::pair<smt::Expr, smt::Expr> to1DIdxWithLayout(const std::vector<smt::Expr> &idxs) const;
 
   MemRef::Layout createSubViewLayout(const std::vector<smt::Expr> &indVars,
       const std::vector<smt::Expr> &offsets,

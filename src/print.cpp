@@ -62,10 +62,10 @@ void printCounterEx(
         auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
         llvm::outs() << "Index: " << or_omit(indices) << '\n';
         llvm::outs() << "Element (src): "
-                    << or_omit(t_src.get(indices).simplify())
+                    << or_omit(t_src.get(indices).first.simplify())
                     << '\n';
         llvm::outs() << "Element (tgt): "
-                    << or_omit(t_tgt.get(indices).simplify())
+                    << or_omit(t_tgt.get(indices).first.simplify())
                     << '\n';
       }
 
