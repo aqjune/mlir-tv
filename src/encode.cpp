@@ -328,7 +328,7 @@ optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
-  auto [Expr, success] = m.load(indices);
+  auto [Expr, success] = m.get(indices);
   if (auto vt = fromExpr(move(Expr), op.getType())) {
     st.regs.add(op, move(*vt));
     st.wellDefined(op.getOperation(), move(success));
@@ -411,7 +411,7 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   } else {
     vector<Expr> idxs = createBoundIndexVars(memrefTy.getRank());
     auto [tVal, tSuccess] = tensor.get(idxs);
-    auto [mVal, mSuccess] = memref.load(idxs);
+    auto [mVal, mSuccess] = memref.get(idxs);
     auto success = tSuccess & mSuccess;
 
     st.wellDefined(
@@ -433,7 +433,7 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
   vector<Expr> idxs = createBoundIndexVars(dims.size());
-  auto [Expr, success] = m.load(idxs);
+  auto [Expr, success] = m.get(idxs);
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), Expr);
 
   st.regs.add(op.getResult(), t_res);
