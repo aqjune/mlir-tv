@@ -12,6 +12,7 @@
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
+#include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/Parser.h"
@@ -95,6 +96,7 @@ int main(int argc, char* argv[]) {
   registry.insert<linalg::LinalgDialect>();
   registry.insert<memref::MemRefDialect>();
   registry.insert<shape::ShapeDialect>();
+  registry.insert<sparse_tensor::SparseTensorDialect>();
   registry.insert<tensor::TensorDialect>();
   context.appendDialectRegistry(registry);
 

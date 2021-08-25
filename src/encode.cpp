@@ -4,6 +4,7 @@
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
 #include "mlir/Dialect/Shape/IR/Shape.h"
+#include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Matchers.h"
@@ -704,6 +705,14 @@ optional<string> encodeOp(State &st, mlir::shape::ToExtentTensorOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::sparse_tensor::ConvertOp op) {
+  auto tensor = op.getOperand();
+  auto tt = st.regs.get<Tensor>(tensor);
+  st.regs.add(op, move(tt));
+  return {};
+}
+
 vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
   // The size of the loop is calculated (analogous to what
   // LinalgOp::createLoopRanges does).
@@ -1127,6 +1136,8 @@ static optional<string> encodeRegion(
     
     ENCODE(st, op, mlir::shape::ShapeOfOp);
     ENCODE(st, op, mlir::shape::ToExtentTensorOp);
+
+    ENCODE(st, op, mlir::sparse_tensor::ConvertOp);
 
     RET_STR("Unknown op (" << op.getName() << "): " << op);
   }
