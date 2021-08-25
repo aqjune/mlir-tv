@@ -88,6 +88,10 @@ public:
   Integer eval(smt::Model m) const;
 };
 
+// class Shaped {
+//   virtual smt::Expr get(const std::vector<smt::Expr> &indices) const;
+// }
+
 class Tensor {
   std::vector<smt::Expr> dims;
   smt::Expr arr;
@@ -119,7 +123,7 @@ public:
   //   Expr v = tensor.get(indices)
   //   useAsInt(Integer(v)) // valid only if tensor had integer elems
   //   useAsFloat(Float(v)) // valid only if tensor had float elems
-  smt::Expr get(const std::vector<smt::Expr> &indices) const;
+  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const;
 
   smt::Expr get1DSize() const { return smt::get1DSize(dims); }
 

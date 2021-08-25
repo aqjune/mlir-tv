@@ -309,15 +309,13 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
-  if (auto v = fromExpr(t.get(indices), op.getType()))
+  auto [elem, inbounds] = t.get(indices);
+  if (auto v = fromExpr(move(elem), op.getType()))
     st.regs.add(op, move(*v));
   else
     return "unsupported type";
 
-  for (unsigned i = 0; i < indices.size(); ++i)
-    // TODO: revisit this; may not be axis-wise
-    st.wellDefined(op.getOperation(), indices[i].ult(t.getDim(i)));
-
+  st.wellDefined(op.getOperation(), move(inbounds));
   return {};
 }
 
@@ -412,8 +410,9 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
 
   } else {
     vector<Expr> idxs = createBoundIndexVars(memrefTy.getRank());
-    auto tVal = tensor.get(idxs);
-    auto [mVal, success] = memref.load(idxs);
+    auto [tVal, tSuccess] = tensor.get(idxs);
+    auto [mVal, mSuccess] = memref.load(idxs);
+    auto success = tSuccess & mSuccess;
 
     st.wellDefined(
         op.getOperation(),
@@ -800,6 +799,7 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
 
 static optional<string> initInputStateForLoopBody(
     State &st, mlir::linalg::GenericOp op) {
+  // TODO: Currently we do not encode UB in loop body. How to deal with UB properly?
   auto indexingMaps = op.indexing_maps().getValue();
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
   auto &block = *op.region().begin();
@@ -828,8 +828,7 @@ static optional<string> initInputStateForLoopBody(
 
       if (inputMap.getNumResults() == 0) {
         // A tensor with a single element; e.g. tensor<f32>.
-        st.regs.add(block.getArgument(arg_i), t_input.get({Index::zero()}),
-                    elemty);
+        st.regs.add(block.getArgument(arg_i), t_input.get({Index::zero()}).first, elemty);
       } else {
         vector<Expr> affine_Exprs;
         for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
@@ -841,7 +840,7 @@ static optional<string> initInputStateForLoopBody(
           affine_Exprs.emplace_back(move(*ae_res));
         }
 
-        auto t_elem = t_input.get(affine_Exprs);
+        auto [t_elem, inbounds] = t_input.get(affine_Exprs);
         st.regs.add(block.getArgument(arg_i), t_elem, elemty);
       }
     } else {
@@ -1008,7 +1007,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     auto t_sum = Tensor::mkLambda(
           addOne(move(boundsForRes)),
           move(indVarsForRes),
-          t_v.get(linalgInfo.indVars))
+          t_v.get(linalgInfo.indVars).first)
         .sum();
 
     auto outputIndVars = doMap(linalgInfo.indVars, outputMap);

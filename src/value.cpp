@@ -235,8 +235,13 @@ Expr Tensor::getWellDefined() const {
   return e.simplify();
 }
 
-Expr Tensor::get(const vector<Expr> &idxs) const {
-  return arr.select(to1DIdx(idxs, dims));
+pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
+  auto elem = arr.select(to1DIdx(indices, dims));
+  auto inbounds = Expr::mkBool(true);
+  for (unsigned i = 0; i < indices.size(); ++i)
+    inbounds = inbounds & indices[i].ult(dims[i]);
+
+  return {elem, inbounds.simplify()};
 }
 
 Index Tensor::getDim(uint64_t idx) const {
@@ -264,7 +269,7 @@ Tensor Tensor::affine(
       idxvar,
       Expr::mkIte(
         ((Expr)idxvar).ult(::get1DSize(newsizes)),
-        get(srcidxs),
+        get(srcidxs).first,
         aop::mkZeroElemFromArr(arr)
       ))
   };
@@ -467,7 +472,7 @@ Tensor Tensor::transpose() const {
   assert(dims.size() == 2);
   auto i = Index::var("i", VarType::BOUND);
   auto j = Index::var("j", VarType::BOUND);
-  return Tensor::mkLambda({dims[1], dims[0]}, {j, i}, get({i, j}));
+  return Tensor::mkLambda({dims[1], dims[0]}, {j, i}, get({i, j}).first);
 }
 
 Tensor Tensor::mkLambda(
@@ -513,7 +518,7 @@ Expr Tensor::to1DArrayWithOfs(
       idxvar,
       Expr::mkIte(
         ((Expr)idxvar).ult(::get1DSize(sizes)),
-        get(absidxs),
+        get(absidxs).first,
         aop::mkZeroElemFromArr(arr)));
 }
 
