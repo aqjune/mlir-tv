@@ -88,7 +88,7 @@ public:
   Integer eval(smt::Model m) const;
 };
 
-class Shaped {
+class ShapedValue {
 public:
   virtual std::vector<smt::Expr> getDims() const = 0;
   virtual std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const = 0;
@@ -97,7 +97,7 @@ public:
   smt::Expr get1DSize() const { return smt::get1DSize(getDims()); }
 };
 
-class Tensor: public Shaped {
+class Tensor: public ShapedValue {
   std::vector<smt::Expr> dims;
   smt::Expr arr;
 
@@ -182,7 +182,7 @@ private:
       const std::vector<smt::Expr> &sizes) const;
 };
 
-class MemRef: public Shaped {
+class MemRef: public ShapedValue {
 public:
   // This may be parameterized later..
   static const unsigned MAX_MEMREF_SIZE = 1000000;
