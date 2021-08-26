@@ -83,11 +83,12 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
 
 Expr fpMul(const Expr &a, const Expr &b) {
   usedOps.mul = true;
-
   // TODO: check that a.get_Sort() == b.get_Sort()
+  auto exprSort = a.sort();
+
   if (!fpmulfn)
-    fpmulfn.emplace({a.sort(), b.sort()}, Float::sort(), "fp_mul");
-  return fpmulfn->apply({a, b});
+    fpmulfn.emplace({exprSort, exprSort}, Float::sort(), "fp_mul");
+  return fpmulfn->apply({a, b}) + fpmulfn->apply({b, a});
 }
 
 Expr sum(const Expr &a, const Expr &n) {
@@ -107,16 +108,19 @@ Expr dot(const Expr &a, const Expr &b, const Expr &n) {
     usedOps.dot = true;
     // TODO: check that a.get_Sort() == b.get_Sort()
     auto i = (Expr)Index::var("idx", VarType::BOUND);
-
+    auto fnSort = a.sort().toFnSort();
     if (!dotfn)
-      dotfn.emplace({a.sort().toFnSort(), b.sort().toFnSort()},
-        Float::sort(), "smt_dot");
+      dotfn.emplace({fnSort, fnSort}, Float::sort(), "smt_dot");
 
     Expr ai = a.select(i), bi = b.select(i);
     Expr zero = mkZeroElemFromArr(a);
-    return dotfn->apply({
+    Expr lhs = dotfn->apply({
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero)),
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero))});
+    Expr rhs = dotfn->apply({
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero)),
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero))});
+    return lhs + rhs;
   } else if (alDot == AbsLevelDot::SUM_MUL) {
     usedOps.mul = usedOps.sum = true;
     // TODO: check that a.get_Sort() == b.get_Sort()
