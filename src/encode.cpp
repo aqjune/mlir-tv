@@ -149,10 +149,12 @@ static optional<string> encodeOp(State &st, T op);
 template<>
 optional<string>
 encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op) {
-  if (!llvm::all_of(op.dilations(), [](auto i) { return i == 1; }))
-    return "dilation isn't one\n";
-  else if (!llvm::all_of(op.strides(), [](auto i) { return i == 1; }))
-    return "strides isn't one\n";
+  vector<Expr> strides, dilations;
+  // TODO: The result may not fit in Index::BITS
+  for (auto s: op.strides())
+    strides.push_back(Index(s.getSExtValue()));
+  for (auto d: op.dilations())
+    dilations.push_back(Index(d.getSExtValue()));
 
   if (!op.hasTensorSemantics())
     return "tensor semantics is supported only";
@@ -168,7 +170,7 @@ encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op) {
   auto t_input = st.regs.get<Tensor>(input);
   auto t_filter = st.regs.get<Tensor>(filter);
 
-  auto t_res = t_input.conv(t_filter);
+  auto t_res = t_input.conv(t_filter, strides, dilations);
   st.regs.add(op.getResult(0), move(t_res));
 
   return {};

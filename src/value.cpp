@@ -184,6 +184,47 @@ Integer Integer::eval(Model m) const {
   return Integer(m.eval(e, true).simplify());
 }
 
+std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(const ShapedValue &filter,
+    const vector<Expr> &strides,
+    const vector<Expr> &dilations) const {
+  // input: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
+  // filter: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel x Output_channel
+  // output: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Output_channel
+  assert(getDims().size() == filter.getDims().size());
+  assert(getDims().size() > 2);
+  auto dim = getDims().size() - 2;
+
+  // outputIdxs: Batch, Dim_0, Dim_1, ... Dim_{n-1}, Output_channel
+  vector<Expr> outputIdxs;
+  for (unsigned i = 0; i < getDims().size(); i ++)
+    outputIdxs.push_back(Index::var("i" + to_string(i), VarType::BOUND));
+
+  // cubeSize = Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
+  vector<Expr> cubeSize;
+  for (unsigned i = 0; i < dim; i ++)
+    cubeSize.push_back(filter.getDim(i));
+  cubeSize.push_back(filter.getDim(dim));
+  auto cubeIdx = Index::var("cubeIdx", VarType::BOUND);
+  auto cubeIdxs = from1DIdx(cubeIdx, cubeSize);
+
+  vector<Expr> filterIdxs;
+  // filterIdxs: Dim_0, Dim_1, ... Dim_{n-1}, Input_channel, Output_channel
+  for (auto idx: cubeIdxs) filterIdxs.push_back(idx);
+  filterIdxs.push_back(outputIdxs.back());
+
+  vector<Expr> inputIdxs;
+  // inputIdxs: Batch, Dim_0, Dim_1, ... Dim_{n-1}, Input_channel
+  inputIdxs.push_back(outputIdxs.front());
+  for (unsigned i = 0; i < dim; i ++)
+    inputIdxs.push_back(outputIdxs[i + 1] * strides[i] + cubeIdxs[i] * dilations[i]);
+  inputIdxs.push_back(cubeIdxs.back()); // Input_channel
+
+  Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
+  Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
+  Expr outputExpr = aop::dot(inputExpr, filterExpr, ::get1DSize(cubeSize));
+
+  return {move(outputIdxs), move(outputExpr)};
+}
 
 Tensor::Tensor(const Expr &splat_elem, const vector<Expr> &dimvec):
     arr(Expr::mkSplatArray(Index::sort(), splat_elem)), dims(dimvec) {}
@@ -271,57 +312,37 @@ Tensor Tensor::affine(
   };
 }
 
-Tensor Tensor::rotateDimensions() const {
-  vector<Expr> newdims;
-  newdims.reserve(dims.size());
-  newdims.push_back(dims.back());
-  std::copy(dims.cbegin(), --dims.cend(), std::back_inserter(newdims));
-
-  vector<Expr> vars, tgtvars;
-  vars.reserve(dims.size());
-  tgtvars.reserve(dims.size());
-  for (size_t i = 0; i < dims.size(); ++i) {
-    auto v = Index::var("i" + to_string(i), VarType::BOUND);
-    vars.push_back(std::move(v));
+Tensor Tensor::conv(const Tensor &filter,
+    const vector<Expr> strides,
+    const vector<Expr> dilations) const {
+  // output[b, x[0], ..., x[N-1], k] =
+  //     sum_{z[0], ..., z[N-1], q}
+  //         filter[z[0], ..., z[N-1], q, k] *
+  //         input[b,
+  //                      x[0]*strides[0] + dilation_rate[0]*z[0],
+  //                      ...,
+  //                      x[N-1]*strides[N-1] + dilation_rate[N-1]*z[N-1],
+  //                      q]
+  // So we can calculate output dims bounds as follow. (Assuming zero based index)
+  // x[0]*strides[0] + dilation_rate[0]*z[0] < Original_Dim
+  // x[0]*strides[0] + dilation_rate[0] * Filter_Dim - 1 < Original_Dim
+  // x[0] < (Original_Dim + 1 - diltaion_rate[0] * Filter_Dim) / strides[0]
+  // x[0] < ceil((Original_Dim + 1 - diltaion_rate[0] * Filter_Dim) / strides[0])
+  // x[0] < (Original_Dim + 1 - diltaion_rate[0] * Filter_Dim + (strides[0] - 1)).udiv(strides[0])
+  // x[0] < (Original_Dim - diltaion_rate[0] * Filter_Dim + strides[0]).udiv(strides[0])
+  // Output Dim = (Original_Dim - diltaion_rate[0] * Filter_Dim + strides[0]).udiv(strides[0])
+  vector<Expr> outputDims;
+  outputDims.push_back(getDim(0)); // Input Batch Size
+  for (unsigned i = 0; i < getDims().size() - 2; i ++) {
+    Expr originalSize = getDim(i + 1);
+    Expr filterSize = dilations[i] * filter.getDim(i);
+    Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
+    outputDims.push_back(expr);
   }
-  std::copy(++vars.cbegin(), vars.cend(), std::back_inserter(tgtvars));
-  tgtvars.push_back(vars.front());
-  
-  return affine(vars, tgtvars, move(newdims));
-}
+  outputDims.push_back(filter.getDims().back()); // Output Channel
 
-Tensor Tensor::conv(const Tensor &filter) const {
-  vector<Expr> output_dims = {
-    Index::one(), // support an input with batch size > 1
-    dims[1] + 1 - filter.dims[0],
-    dims[2] + 1 - filter.dims[1],
-    filter.dims[3] // channel(dims[3] = filtr.dims[2]) disappears
-  };
-  std::vector<Expr> cube_size = {
-    Index::one(),
-    filter.dims[0], filter.dims[1], filter.dims[2]
-  };
-
-  // n, h, w, f 
-  auto i = Index::var("i", VarType::BOUND);
-  auto j = Index::var("j", VarType::BOUND);
-  auto k = Index::var("k", VarType::BOUND);
-  auto l = Index::var("l", VarType::BOUND);
-
-  auto input_subarr = to1DArrayWithOfs(
-      // batch: 0, img size: (h, w), channel: 0~
-      {Index::zero(), j, k, Index::zero()},
-      cube_size);
-
-  auto filter_arr = filter.rotateDimensions()
-      .to1DArrayWithOfs({l, Index::zero(), Index::zero(), Index::zero()},
-        cube_size);
-
-  // TODO: switch dot <-> dot2 after determining the abstraction level
-  auto res = aop::dot(input_subarr, filter_arr,
-      cube_size[0] * cube_size[1] * cube_size[2] * cube_size[3]);
-
-  return Tensor::mkLambda(move(output_dims), {i, j, k, l}, move(res));
+  auto [indices, res] = ShapedValue::conv(filter, strides, dilations);
+  return Tensor::mkLambda(move(outputDims), move(indices), move(res));
 }
 
 Tensor Tensor::reshape(const vector<Expr> &newdims) const {
