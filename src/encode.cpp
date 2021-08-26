@@ -827,9 +827,16 @@ vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
     if (!r)
       continue;
 
-    auto t = st.regs.get<Tensor>(opOperand->get());
-    for (int64_t i = 0, e = r; i < e; ++i) {
-      viewSizes.push_back(t.getDim(i));
+    if (opOperand->get().getType().isa<mlir::TensorType>()) {
+      auto t = st.regs.get<Tensor>(opOperand->get());
+      for (int64_t i = 0, e = r; i < e; ++i) {
+        viewSizes.push_back(t.getDim(i));
+      }
+    } else if (opOperand->get().getType().isa<mlir::MemRefType>()) {
+      auto t = st.regs.get<MemRef>(opOperand->get());
+      for (int64_t i = 0, e = r; i < e; ++i) {
+        viewSizes.push_back(t.getDim(i));
+      }
     }
   }
 
@@ -881,9 +888,17 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
     if (!r)
       continue;
 
-    auto t = st.regs.get<Tensor>(opOperand->get());
+    auto value = st.regs.findOrCrash(opOperand->get());
+    ShapedValue *t;
+    if (holds_alternative<MemRef>(value)) {
+      t = &get<MemRef>(value);
+    } else if(holds_alternative<Tensor>(value)) {
+      t = &get<Tensor>(value);
+    } else {
+      return "Unsupported ShapedValue";
+    }
     for (int64_t i = 0, e = r; i < e; ++i) {
-      viewSizes.push_back(t.getDim(i));
+      viewSizes.push_back(t->getDim(i));
     }
   }
 
@@ -946,6 +961,24 @@ static optional<string> initInputStateForLoopBody(
         auto [t_elem, inbounds] = t_input.get(affine_Exprs);
         st.regs.add(block.getArgument(arg_i), t_elem, elemty);
       }
+    } else if (auto memrefty = op_i.getType().dyn_cast<mlir::MemRefType>()) {
+      // A MemRef value.
+      // TODO: currently we support float32 element type
+      MemRef m_input = st.regs.get<MemRef>(op_i);
+
+      vector<Expr> affine_Exprs;
+      for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
+        auto ae_res = encodeAffineExpr(inputMap.getResult(i), inductionVars, {});
+        if (!ae_res)
+          RET_STR_WITH_PREFIX("unsupported affine expr ",
+                              inputMap.getResult(i));
+
+        affine_Exprs.emplace_back(move(*ae_res));
+      }
+
+      // TODO: We do not encode UB in loops currently. How to deal with this?
+      auto [m_elem, success] = m_input.get(affine_Exprs);
+      st.regs.add(block.getArgument(arg_i), Float(m_elem));
     } else {
       return "unsupported block argument type";
     }
@@ -983,7 +1016,7 @@ static vector<Expr> addOne(vector<Expr> &&vec) {
 
 static optional<string> encodeParallelLoopBodyAndOutput(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
-    const mlir::TensorType &outputType, optional<Tensor> &t_res) {
+    const mlir::ShapedType &outputType, optional<Tensor> &t_res) {
   // Encode the loop body
   // TODO: deal with merging UBs and memorys
   auto &ops = block.getOperations();
@@ -1016,7 +1049,7 @@ static optional<string> encodeParallelLoopBodyAndOutput(
 static optional<string> encodeReductionLoopBodyAndOutput(
     State &newst, mlir::Block &block,
     const mlir::ArrayRef<mlir::Attribute> &indexingMaps,
-    const mlir::TensorType &outputType, optional<Tensor> &t_res) {
+    const mlir::ShapedType &outputType, optional<Tensor> &t_res) {
   // Deal with simple reduction loops.
   // TODO: support more kinds of reduction loops!
   string errmsg = "permutated output map or simple reduction form is"
@@ -1118,8 +1151,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
 
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
-  if (!op.hasTensorSemantics())
-    return "tensor semantics is supported only";
+  if (!(op.hasTensorSemantics() || op.hasBufferSemantics()))
+    return "tensor/buffer semantics is supported only";
 
   if (op.getNumOutputs() != 1)
     return "a single output is supported only";
@@ -1136,7 +1169,9 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   if (llvm::any_of(op.iterator_types(), [](mlir::Attribute attr) {
     auto str = attr.cast<mlir::StringAttr>().getValue();
     return str != mlir::getParallelIteratorTypeName() &&
-           str != mlir::getReductionIteratorTypeName();
+           str != mlir::getReductionIteratorTypeName() &&
+           // TODO (makesource)
+           str != mlir::getWindowIteratorTypeName();
   }))
     return "unsupported iterator type";
 
@@ -1156,7 +1191,7 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   auto indexingMaps = op.indexing_maps().getValue();
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
   auto outputType = op.getOutputOperand(0)->get().getType()
-      .cast<mlir::TensorType>();
+      .cast<mlir::ShapedType>();
 
   if (outputMap.isPermutation()) {
     if (auto errmsg = encodeParallelLoopBodyAndOutput(newst, block, outputMap,
@@ -1172,13 +1207,21 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   assert(t_res->getDims().size() != 0);
   newst.linalgGenericScopes.pop();
 
-  if (op.getNumResults() != 0) {
-    // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
-    // aqjune talked with mlir people and confirmed
-    assert(op.getNumResults() == 1);
-    st.regs.add(op.getResult(0), move(*t_res));
+  if (op.hasTensorSemantics()) {
+    if (op.getNumResults() != 0) {
+      // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
+      // aqjune talked with mlir people and confirmed
+      assert(op.getNumResults() == 1);
+      st.regs.add(op.getResult(0), move(*t_res));
+    }
+    return {};
+  } else if (op.hasBufferSemantics()) {
+    auto m_res = st.regs.get<MemRef>(op.getOutputOperand(0)->get());
+    auto success = m_res.storeArray(t_res->asArray(), Index::zero(), t_res->get1DSize());
+    st.wellDefined(op, move(success));
+    return {};
   }
-  return {};
+  llvm_unreachable("Unknown linalg::genric semantics");
 }
 
 
