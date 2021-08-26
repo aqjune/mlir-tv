@@ -7,13 +7,13 @@
   #define SET_Z3(e, v) e.setZ3(v)
 #else
   #define SET_Z3(e, v)
-#endif
+#endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
   #define SET_CVC5(e, v) e.setCVC5(v)
 #else
   #define SET_CVC5(e, v)
-#endif
+#endif // SOLVER_CVC5
 
 using namespace std;
 
@@ -23,12 +23,12 @@ namespace {
 z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec);
 z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec);
 z3::sort_vector toZ3SortVector(const vector<smt::Sort> &vec);
-#endif
+#endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
 vector<cvc5::api::Term> toCVC5TermVector(const vector<smt::Expr> &vec);
 vector<cvc5::api::Sort> toCVC5SortVector(const vector<smt::Sort> &vec);
-#endif
+#endif // SOLVER_CVC5
 
 
 template<class T>
@@ -41,7 +41,8 @@ void writeOrCheck(optional<T> &org, T &&t) {
 }
 
 namespace smt {
-class Context: public Object<z3::context, cvc5::api::Solver> {
+class Context: public Object<T_Z3(std::optional<z3::context>),
+                              T_CVC5(std::optional<cvc5::api::Solver>)> {
 private:
   uint64_t fresh_var_counter;
 
@@ -61,7 +62,7 @@ public:
     this->cvc5->setOption("tlimit", to_string(timeout_ms));
     this->cvc5->setOption("produce-models", "true");
   }
-#endif
+#endif // SOLVER_CVC5
 
   string getFreshName(string prefix) {
     return prefix.append("#" + to_string(fresh_var_counter++));
@@ -208,7 +209,7 @@ z3::expr Expr::getZ3Expr() const {
 bool Expr::hasZ3Expr() const {
   return (bool)z3;
 }
-#endif
+#endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
 cvc5::api::Term Expr::getCVC5Term() const {
@@ -218,7 +219,7 @@ cvc5::api::Term Expr::getCVC5Term() const {
 bool Expr::hasCVC5Term() const {
   return (bool)cvc5;
 }
-#endif
+#endif // SOLVER_CVC5
 
 Expr Expr::simplify() const {
   Expr e;
@@ -260,11 +261,11 @@ bool Expr::isUInt(uint64_t &v) const {
     if (this->z3 && this->z3->is_numeral_u64(tmp))
       writeOrCheck(res, move(tmp));
   }
-#endif
+#endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
   if (this->cvc5 && this->cvc5->isUInt64Value())
     writeOrCheck(res, this->cvc5->getUInt64Value());
-#endif
+#endif // SOLVER_CVC5
 
   if (res)
     v = *res;
@@ -280,11 +281,11 @@ bool Expr::isInt(int64_t &v) const {
     if (this->z3 && this->z3->is_numeral_i64(tmp))
       writeOrCheck(res, move(tmp));
   }
-#endif
+#endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
   if (this->cvc5 && this->cvc5->isInt64Value())
     writeOrCheck(res, this->cvc5->getInt64Value());
-#endif
+#endif // SOLVER_CVC5
 
   if (res)
     v = *res;
@@ -428,7 +429,7 @@ static cvc5::api::Term toCVC5Lambda(const cvc5::api::Term &arr) {
   auto idx = sctx.cvc5->mkVar(arr.getSort().getArrayIndexSort());
   return mkCVC5Lambda(idx, sctx.cvc5->mkTerm(cvc5::api::SELECT, arr, idx));
 }
-#endif
+#endif // SOLVER_CVC5
 
 Expr Expr::store(const Expr &idx, const Expr &val) const {
   Expr e;
@@ -607,13 +608,13 @@ Expr Expr::substitute(
   e.setZ3(fmap(this->z3, [&vars, &values](auto e) {
     return e.substitute(toZ3ExprVector(vars), toZ3ExprVector(values));
   }));
-#endif
+#endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
   e.setCVC5(fmap(this->cvc5, [&vars, &values](auto e) {
     return e.substitute(toCVC5TermVector(vars), toCVC5TermVector(values));
   }));
-#endif
+#endif // SOLVER_CVC5
 
   return e;
 }
@@ -729,7 +730,7 @@ Expr Expr::mkSplatArray(const Sort &domain, const Expr &splatElem) {
       e.setCVC5(mkCVC5Lambda(dummy_var, elem));
     }
   }
-#endif
+#endif // SOLVER_CVC5
   return e;
 }
 
@@ -764,9 +765,9 @@ Expr Expr::mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed) {
 
 // ------- Sort -------
 
-z3::sort Sort::getZ3Sort() const { return *z3; }
+IF_Z3_ENABLED(z3::sort Sort::getZ3Sort() const { return *z3; })
 
-cvc5::api::Sort Sort::getCVC5Sort() const { return *cvc5; }
+IF_CVC5_ENABLED(cvc5::api::Sort Sort::getCVC5Sort() const { return *cvc5; })
 
 Sort Sort::getArrayDomain() const {
   Sort s;
@@ -878,11 +879,56 @@ Expr Model::eval(const Expr &e, bool modelCompletion) const {
   SET_Z3(newe, fmap(z3, [modelCompletion, &e](auto &z3model){
     return z3model.eval(e.getZ3Expr(), modelCompletion);
   }));
-  /*SET_CVC5(newe, fupdate2(sctx.cvc5, e.cvc5, [&e](auto &solver, auto ec){
+  SET_CVC5(newe, fupdate2(sctx.cvc5, e.cvc5, [&e](auto &solver, auto ec){
+    // getValue() creates a new BV, so the model gets invalidated
+    // re-running checkSat() is very expensive, but this is so far
+    // the only way to retrieve the values
+    solver.checkSat();
     return solver.getValue(ec);
-  }));*/
+  }));
 
   return newe;
+}
+
+vector<Expr> Model::eval(const vector<Expr> &exprs, bool modelCompletion) const {
+  vector<Expr> values;
+  values.reserve(exprs.size());
+#ifdef SOLVER_CVC5
+  auto cvc5_values = fupdate(sctx.cvc5, [exprs](auto &solver) {
+    // see the comment at Expr Model::eval(const Expr &e, bool modelCompletion)
+    solver.checkSat();
+    auto cvc5_exprs = toCVC5TermVector(exprs);
+    // reverse to use faster pop_back()
+    reverse(cvc5_exprs.begin(), cvc5_exprs.end());
+    return solver.getValue(cvc5_exprs);
+  });
+#endif // SOLVER_CVC5
+
+  for (auto &e : exprs) {
+  #ifdef SOLVER_Z3
+    auto z3_value = fmap(z3, [modelCompletion, e](auto &z3model) {
+      return z3model.eval(e.getZ3Expr(), modelCompletion);
+    });
+  #endif // SOLVER_Z3
+
+  #ifdef SOLVER_CVC5
+    optional<cvc5::api::Term> cvc5_value;
+    if (cvc5_values) {
+      // iterate in reverse order
+      cvc5_value = move(cvc5_values->back());
+      cvc5_values->pop_back();
+    } else {
+      cvc5_value.reset();
+    }
+  #endif // SOLVER_CVC5
+
+    Expr value;
+    SET_Z3(value, move(z3_value));
+    SET_CVC5(value, move(cvc5_value));
+    values.push_back(move(value));
+  }
+
+  return values;
 }
 
 Model Model::empty() {
@@ -899,12 +945,22 @@ Solver::Solver(const char *logic) {
   z3 = fupdate(sctx.z3, [logic](auto &ctx){
     return z3::solver(ctx, logic);
   });
-#endif
+#endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
-  // NOTE: We cannot change CVC5's logic
+  // We can't create new solver since it won't be compatible with
+  // the variables created by previous solver
   if (sctx.cvc5)
-    sctx.cvc5->resetAssertions();
-#endif
+    sctx.cvc5->push();
+#endif // SOLVER_CVC5
+}
+
+Solver::~Solver() {
+#ifdef SOLVER_CVC5
+  // We can't destroy solver since it will invalidate every variable
+  // it has created
+  if (sctx.cvc5)
+    sctx.cvc5->pop();
+#endif // SOLVER_CVC5
 }
 
 void Solver::add(const Expr &e) {
@@ -950,13 +1006,15 @@ void setTimeout(const uint64_t ms) { sctx.timeout_ms = ms; }
 
 
 namespace matchers {
-
+#ifdef SOLVER_Z3
 void Matcher::setZ3(Expr &e, optional<z3::expr> &&opt) const {
   e.setZ3(move(opt));
 }
+#endif // SOLVER_Z3
 
 bool ConstSplatArray::operator()(const Expr &expr) const {
   // FIXME: cvc5
+#ifdef SOLVER_Z3
   auto e = expr.getZ3Expr();
   if (!e.is_app())
     return false;
@@ -965,14 +1023,16 @@ bool ConstSplatArray::operator()(const Expr &expr) const {
   Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
   if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_CONST_ARRAY)
     return false;
+#endif // SOLVER_Z3
 
   Expr newe = newExpr();
-  setZ3(newe, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+  IF_Z3_ENABLED(setZ3(newe, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0))));
   return subMatcher(newe);
 }
 
 bool Store::operator()(const Expr &expr) const {
   // FIXME: cvc5
+#ifdef SOLVER_Z3
   auto e = expr.getZ3Expr();
   if (!e.is_app())
     return false;
@@ -981,11 +1041,14 @@ bool Store::operator()(const Expr &expr) const {
   Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
   if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_STORE)
     return false;
+#endif // SOLVER_Z3
 
   Expr arr = newExpr(), idx = newExpr(), val = newExpr();
+#ifdef SOLVER_Z3
   setZ3(arr, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
   setZ3(idx, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
   setZ3(val, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 2)));
+#endif // SOLVER_Z3
   return arrMatcher(arr) && idxMatcher(idx) && valMatcher(val);
 }
 }
@@ -1018,6 +1081,7 @@ z3::sort_vector toZ3SortVector(const vector<smt::Sort> &vec) {
 #ifdef SOLVER_CVC5
 vector<cvc5::api::Term> toCVC5TermVector(const vector<smt::Expr> &vec) {
   vector<cvc5::api::Term> cvc5_terms;
+  cvc5_terms.reserve(vec.size());
   for (const auto e : vec) {
     cvc5_terms.push_back(e.getCVC5Term());
   }
@@ -1026,6 +1090,7 @@ vector<cvc5::api::Term> toCVC5TermVector(const vector<smt::Expr> &vec) {
 
 vector<cvc5::api::Sort> toCVC5SortVector(const vector<smt::Sort> &vec) {
   vector<cvc5::api::Sort> cvc5_sorts;
+  cvc5_sorts.reserve(vec.size());
   for (const auto e : vec) {
     cvc5_sorts.push_back(e.getCVC5Sort());
   }
@@ -1044,7 +1109,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
 
 std::ostream& operator<<(std::ostream& os, const smt::Expr &e) {
   // FIXME
-  os << e.getZ3Expr();
+  IF_Z3_ENABLED(os << e.getZ3Expr());
   return os;
 }
 

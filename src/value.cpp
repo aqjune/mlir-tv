@@ -455,11 +455,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 };
 
 Tensor Tensor::eval(Model m) const {
-  vector<Expr> dims_ev;
-  dims_ev.reserve(dims.size());
-  for (auto &d: dims)
-    dims_ev.push_back(m.eval(d, true).simplify());
-
+  vector<Expr> dims_ev = smt::simplifyList(m.eval(dims));
   return { move(dims_ev), m.eval(arr, true).simplify() };
 }
 

@@ -7,15 +7,21 @@
 #ifdef SOLVER_Z3
   #include "z3++.h"
   #define IF_Z3_ENABLED(stmt) stmt
+  #define T_Z3(T) T
 #else
   #define IF_Z3_ENABLED(stmt)
+  // unused
+  #define T_Z3(T) bool
 #endif
 
 #ifdef SOLVER_CVC5
   #include "cvc5/cvc5.h"
   #define IF_CVC5_ENABLED(stmt) stmt
+  #define T_CVC5(T) T
 #else
   #define IF_CVC5_ENABLED(stmt)
+  // unused
+  #define T_CVC5(T) bool
 #endif
 
 namespace smt {
@@ -50,17 +56,18 @@ public:
   Object() {}
 
 #ifdef SOLVER_Z3
-  std::optional<T_Z3> z3;
-  void setZ3(std::optional<T_Z3> &&e) { z3 = std::move(e); }
+  T_Z3 z3;
+  void setZ3(T_Z3 &&e) { z3 = std::move(e); }
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-  std::optional<T_CVC5> cvc5;
-  void setCVC5(std::optional<T_CVC5> &&e) { cvc5 = std::move(e); }
-#endif
+  T_CVC5 cvc5;
+  void setCVC5(T_CVC5 &&e) { cvc5 = std::move(e); }
+#endif // SOLVER_CVC5
 };
 
-class Expr: private Object<z3::expr, cvc5::api::Term> {
+class Expr : private Object<T_Z3(std::optional<z3::expr>),
+                            T_CVC5(std::optional<cvc5::api::Term>)> {
 private:
   Expr() {}
 
@@ -68,11 +75,11 @@ public:
 #ifdef SOLVER_Z3
   z3::expr getZ3Expr() const;
   bool hasZ3Expr() const;
-#endif
+#endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
   cvc5::api::Term getCVC5Term() const;
   bool hasCVC5Term() const;
-#endif
+#endif // SOLVER_CVC5
 
   Expr simplify() const;
   Sort sort() const;
@@ -170,7 +177,8 @@ public:
   friend matchers::Matcher;
 };
 
-class FnDecl: private Object<z3::func_decl, cvc5::api::Term> {
+class FnDecl : private Object<T_Z3(std::optional<z3::func_decl>),
+                              T_CVC5(std::optional<cvc5::api::Term>)> {
 private:
   FnDecl() {}
 
@@ -186,13 +194,14 @@ public:
   friend Expr;
 };
 
-class Sort: private Object<z3::sort, cvc5::api::Sort> {
+class Sort : private Object<T_Z3(std::optional<z3::sort>),
+                            T_CVC5(std::optional<cvc5::api::Sort>)> {
 private:
   Sort() {}
 
 public:
   IF_Z3_ENABLED(z3::sort getZ3Sort() const);
-  IF_Z3_ENABLED(cvc5::api::Sort getCVC5Sort() const);
+  IF_CVC5_ENABLED(cvc5::api::Sort getCVC5Sort() const);
 
   unsigned bitwidth() const;
   bool isArray() const;
@@ -211,7 +220,8 @@ public:
   friend FnDecl;
 };
 
-class CheckResult : private Object<z3::check_result, cvc5::api::Result> {
+class CheckResult : private Object<T_Z3(std::optional<z3::check_result>),
+                                    T_CVC5(std::optional<cvc5::api::Result>)> {
 private:
   CheckResult() {}
 
@@ -239,6 +249,7 @@ private:
 
 public:
   Expr eval(const Expr &e, bool modelCompletion = false) const;
+  std::vector<Expr> eval(const std::vector<Expr> &exprs, bool modelCompletion = false) const;
 
   static Model empty();
 
@@ -255,6 +266,7 @@ private:
 public:
   Solver(const char *logic);
   Solver(const Solver &) = delete;
+  ~Solver();
 
   void add(const Expr &e);
   void reset();
