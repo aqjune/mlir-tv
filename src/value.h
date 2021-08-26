@@ -93,8 +93,15 @@ public:
   virtual std::vector<smt::Expr> getDims() const = 0;
   virtual std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const = 0;
 
+  // Basic dimension operation
   Index getDim(uint64_t idx) const { return Index(getDims()[idx]); }
   smt::Expr get1DSize() const { return smt::get1DSize(getDims()); }
+
+  // Linalg convoluion operation
+  // (indices, expr)
+  std::pair<std::vector<smt::Expr>, smt::Expr> conv(const ShapedValue &filter,
+      const std::vector<smt::Expr> &strides,
+      const std::vector<smt::Expr> &dilations) const;
 };
 
 class Tensor: public ShapedValue {
@@ -141,12 +148,10 @@ public:
       std::vector<smt::Expr> srcidxs,
       std::vector<smt::Expr> &&newsizes) const;
 
-  // Return a new tensor T2 s.t.
-  //   T2[i1][i2]..[iN] = this[i2]..[iN][i1]
-  Tensor rotateDimensions() const;
-
   // Return a new tensor which is convolution of this tensor and filter.
-  Tensor conv(const Tensor &filter) const;
+  Tensor conv(const Tensor &filter,
+      const std::vector<smt::Expr> strides,
+      const std::vector<smt::Expr> dilations) const;
 
   Tensor reshape(const std::vector<smt::Expr> &ns2) const;
 
