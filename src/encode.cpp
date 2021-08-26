@@ -177,6 +177,27 @@ encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op) {
 }
 
 template<>
+optional<string>
+encodeOp(State &st, mlir::linalg::ConvOp op) {
+  vector<Expr> strides, dilations;
+  for (unsigned i = 0; i < op.getNumSpatialDimensions(); i ++) {
+    strides.push_back(Index(op.getStride(i)));
+    dilations.push_back(Index(op.getDilation(i)));
+  }
+  auto input = st.regs.get<MemRef>(op.input());
+  auto filter = st.regs.get<MemRef>(op.filter());
+  auto output = st.regs.get<MemRef>(op.output());
+
+  if (!output.getPrecondition().isIdentical(Expr::mkBool(true)))
+    return "Currently output MemRef should have plain layout..";
+
+  auto success = output.conv(input, filter, strides, dilations);
+  // add well defined
+  st.wellDefined(op, move(success));
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   auto res = op.getResult();
   auto ty = res.getType().dyn_cast<mlir::TensorType>();
@@ -1196,6 +1217,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::memref::TensorStoreOp);
 
     ENCODE(st, op, mlir::linalg::Conv2DNhwcHwcfOp);
+    ENCODE(st, op, mlir::linalg::ConvOp);
     ENCODE(st, op, mlir::linalg::DotOp);
     ENCODE(st, op, mlir::linalg::FillOp);
     ENCODE(st, op, mlir::linalg::GenericOp);

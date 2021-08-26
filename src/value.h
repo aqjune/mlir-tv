@@ -288,6 +288,12 @@ public:
       const std::vector<smt::Expr> &strides,
       int rankDiff = 0);
 
+  // Store results which is convolution of input, filter and return wellDefined.
+  smt::Expr conv(const MemRef &input,
+      const MemRef &filter,
+      const std::vector<smt::Expr> strides,
+      const std::vector<smt::Expr> dilations);
+
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
   // (refinement, unbound variables used in the refinement formula)
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
@@ -309,4 +315,6 @@ private:
   MemRef::Layout createSubViewLayout(const std::vector<smt::Expr> &indVars,
       const std::vector<smt::Expr> &offsets,
       const std::vector<smt::Expr> &strides);
+
+  std::vector<smt::Expr> getInverseIndices(const smt::Expr &idx) const;
 };

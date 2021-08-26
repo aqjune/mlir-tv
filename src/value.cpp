@@ -718,6 +718,23 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
   }
 }
 
+Expr MemRef::conv(const MemRef &input,
+    const MemRef &filter,
+    const std::vector<smt::Expr> strides,
+    const std::vector<smt::Expr> dilations) {
+  auto [indices, expr] = ((ShapedValue *) &input)->conv(filter, strides, dilations);
+
+  // we splat results into 1D memory layout
+  auto idx = Index::var("outputIdx", VarType::BOUND);
+  auto outputIndices = getInverseIndices(idx);
+  auto outputExpr = expr.substitute(indices, outputIndices);
+  auto outputArray = Expr::mkLambda(idx, outputExpr);
+
+  // store output memref
+  auto success = storeArray(outputArray, Index::zero(), get1DSize());
+  return success;
+}
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   assert(m.dims.size() > 0);
   os << "(bid: " << or_omit(m.bid)
@@ -769,4 +786,12 @@ MemRef::Layout MemRef::createSubViewLayout(
   auto transformedLayout = layout.mapping.select(idxs);
   auto transformedInbounds = layout.inbounds.select(idxs);
   return Layout(transformedIndVars, transformedLayout, transformedInbounds);
+}
+
+vector<Expr> MemRef::getInverseIndices(const Expr &idx) const {
+  vector<Expr> indices;
+  for (unsigned i = 0; i < dims.size(); i ++)
+    indices.push_back(layout.inverseMappings[i].select(idx));
+
+  return indices;
 }
