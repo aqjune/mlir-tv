@@ -2,7 +2,6 @@
 
 #include "smt.h"
 #include <optional>
-#include "z3++.h"
 
 namespace smt {
 namespace matchers {

@@ -6,7 +6,6 @@
 
 #include <vector>
 #include "mlir/IR/BuiltinOps.h"
-#include "z3++.h"
 
 void printOperations(smt::Model m, mlir::FuncOp fn, const State &st);
 
