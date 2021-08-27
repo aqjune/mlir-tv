@@ -237,6 +237,8 @@ public:
       indVars(copy.indVars), inbounds(copy.inbounds),
       mapping(copy.mapping), inverseMappings(copy.inverseMappings),
       precondition(copy.precondition) {}
+
+    std::vector<smt::Expr> getInverseIndices(const smt::Expr &idx) const;
   };
 
   MemRef(Memory *m,
@@ -267,6 +269,9 @@ public:
       getLayout(mlir::MemRefType memRefTy, const std::vector<smt::Expr> &dims);
   static std::optional<smt::Sort> getElemTy(mlir::MemRefType memRefTy);
 
+  // Property getters
+  smt::Expr getBID() const { return bid; }
+  Index getOffset() const { return offset; }
   std::vector<smt::Expr> getDims() const override { return dims; }
 
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const override;
@@ -277,8 +282,6 @@ public:
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;
   smt::Expr isLocalBlock() const;
-  smt::Expr getBID() const { return bid; }
-  Index getOffset() const { return offset; }
   void setWritable(bool writable);
   void setMemory(Memory *m) { this->m = m; }
 
@@ -315,6 +318,4 @@ private:
   MemRef::Layout createSubViewLayout(const std::vector<smt::Expr> &indVars,
       const std::vector<smt::Expr> &offsets,
       const std::vector<smt::Expr> &strides);
-
-  std::vector<smt::Expr> getInverseIndices(const smt::Expr &idx) const;
 };

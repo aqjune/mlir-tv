@@ -722,11 +722,11 @@ Expr MemRef::conv(const MemRef &input,
     const MemRef &filter,
     const std::vector<smt::Expr> strides,
     const std::vector<smt::Expr> dilations) {
-  auto [indices, expr] = ((ShapedValue *) &input)->conv(filter, strides, dilations);
+  auto [indices, expr] = input.ShapedValue::conv(filter, strides, dilations);
 
   // we splat results into 1D memory layout
   auto idx = Index::var("outputIdx", VarType::BOUND);
-  auto outputIndices = getInverseIndices(idx);
+  auto outputIndices = layout.getInverseIndices(idx);
   auto outputExpr = expr.substitute(indices, outputIndices);
   auto outputArray = Expr::mkLambda(idx, outputExpr);
 
@@ -788,10 +788,10 @@ MemRef::Layout MemRef::createSubViewLayout(
   return Layout(transformedIndVars, transformedLayout, transformedInbounds);
 }
 
-vector<Expr> MemRef::getInverseIndices(const Expr &idx) const {
+vector<Expr> MemRef::Layout::getInverseIndices(const Expr &idx) const {
   vector<Expr> indices;
-  for (unsigned i = 0; i < dims.size(); i ++)
-    indices.push_back(layout.inverseMappings[i].select(idx));
+  for (auto inverse: inverseMappings)
+    indices.push_back(inverse.select(idx));
 
   return indices;
 }
