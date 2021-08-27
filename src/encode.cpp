@@ -188,7 +188,7 @@ encodeOp(State &st, mlir::linalg::ConvOp op) {
   auto filter = st.regs.get<MemRef>(op.filter());
   auto output = st.regs.get<MemRef>(op.output());
 
-  if (!output.getPrecondition().isIdentical(Expr::mkBool(true)))
+  if (!output.getPrecondition().isTrue())
     return "Currently output MemRef should have plain layout..";
 
   auto success = output.conv(input, filter, strides, dilations);
