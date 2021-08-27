@@ -4,15 +4,15 @@
 #include "utils.h"
 
 #ifdef SOLVER_Z3
-  #define SET_Z3(e, v) e.setZ3(v)
+#define SET_Z3(e, v) e.setZ3(v)
 #else
-  #define SET_Z3(e, v)
+#define SET_Z3(e, v)
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-  #define SET_CVC5(e, v) e.setCVC5(v)
+#define SET_CVC5(e, v) e.setCVC5(v)
 #else
-  #define SET_CVC5(e, v)
+#define SET_CVC5(e, v)
 #endif // SOLVER_CVC5
 
 using namespace std;
@@ -41,8 +41,7 @@ void writeOrCheck(optional<T> &org, T &&t) {
 }
 
 namespace smt {
-class Context: public Object<T_Z3(std::optional<z3::context>),
-                              T_CVC5(std::optional<cvc5::api::Solver>)> {
+class Context: public Object<T_Z3(z3::context), T_CVC5(cvc5::api::Solver)> {
 private:
   uint64_t fresh_var_counter;
 
@@ -905,22 +904,20 @@ vector<Expr> Model::eval(const vector<Expr> &exprs, bool modelCompletion) const 
 #endif // SOLVER_CVC5
 
   for (auto &e : exprs) {
-  #ifdef SOLVER_Z3
+#ifdef SOLVER_Z3
     auto z3_value = fmap(z3, [modelCompletion, e](auto &z3model) {
       return z3model.eval(e.getZ3Expr(), modelCompletion);
     });
-  #endif // SOLVER_Z3
+#endif // SOLVER_Z3
 
-  #ifdef SOLVER_CVC5
+#ifdef SOLVER_CVC5
     optional<cvc5::api::Term> cvc5_value;
     if (cvc5_values) {
       // iterate in reverse order
       cvc5_value = move(cvc5_values->back());
       cvc5_values->pop_back();
-    } else {
-      cvc5_value.reset();
     }
-  #endif // SOLVER_CVC5
+#endif // SOLVER_CVC5
 
     Expr value;
     SET_Z3(value, move(z3_value));

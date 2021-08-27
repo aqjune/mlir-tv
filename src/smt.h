@@ -56,18 +56,17 @@ public:
   Object() {}
 
 #ifdef SOLVER_Z3
-  T_Z3 z3;
-  void setZ3(T_Z3 &&e) { z3 = std::move(e); }
+  std::optional<T_Z3> z3;
+  void setZ3(std::optional<T_Z3> &&e) { z3 = std::move(e); }
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-  T_CVC5 cvc5;
-  void setCVC5(T_CVC5 &&e) { cvc5 = std::move(e); }
+  std::optional<T_CVC5> cvc5;
+  void setCVC5(std::optional<T_CVC5> &&e) { cvc5 = std::move(e); }
 #endif // SOLVER_CVC5
 };
 
-class Expr : private Object<T_Z3(std::optional<z3::expr>),
-                            T_CVC5(std::optional<cvc5::api::Term>)> {
+class Expr : private Object<T_Z3(z3::expr), T_CVC5(cvc5::api::Term)> {
 private:
   Expr() {}
 
@@ -177,8 +176,7 @@ public:
   friend matchers::Matcher;
 };
 
-class FnDecl : private Object<T_Z3(std::optional<z3::func_decl>),
-                              T_CVC5(std::optional<cvc5::api::Term>)> {
+class FnDecl : private Object<T_Z3(z3::func_decl), T_CVC5(cvc5::api::Term)> {
 private:
   FnDecl() {}
 
@@ -194,8 +192,7 @@ public:
   friend Expr;
 };
 
-class Sort : private Object<T_Z3(std::optional<z3::sort>),
-                            T_CVC5(std::optional<cvc5::api::Sort>)> {
+class Sort : private Object<T_Z3(z3::sort), T_CVC5(cvc5::api::Sort)> {
 private:
   Sort() {}
 
@@ -220,8 +217,8 @@ public:
   friend FnDecl;
 };
 
-class CheckResult : private Object<T_Z3(std::optional<z3::check_result>),
-                                    T_CVC5(std::optional<cvc5::api::Result>)> {
+class CheckResult : private Object<T_Z3(z3::check_result),
+                                    T_CVC5(cvc5::api::Result)> {
 private:
   CheckResult() {}
 
