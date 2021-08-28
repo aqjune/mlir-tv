@@ -13,7 +13,8 @@ static string freshName(string prefix) {
 }
 
 vector<Expr> ShapedValue::getDims(
-    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize) {
+    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize,
+    optional<vector<Expr>> &&valsForUnknownSz) {
   vector<Expr> dims;
 
   uint64_t rank = shapedTy.getRank();
@@ -29,6 +30,8 @@ vector<Expr> ShapedValue::getDims(
     if (sz == (uint64_t)-1ull) {
       if (freshVarForUnknownSize) {
         dims.emplace_back(Index::var("dim", VarType::FRESH));
+      } else if (valsForUnknownSz) {
+        dims.emplace_back(move((*valsForUnknownSz)[unknownVarIdx++]));
       } else {
         llvm_unreachable("Don't know what to do with a dimension of "
                          "an unknown size");

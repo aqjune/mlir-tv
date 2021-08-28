@@ -334,6 +334,48 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
   return {};
 }
 
+static variant<string, MemRef> createNewLocalBlk(
+    Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
+  auto elemtyOrNull = MemRef::getElemTy(memrefTy);
+  auto layoutOrNull = MemRef::getLayout(memrefTy, dims);
+  if (!elemtyOrNull)
+    return "unsupported element type";
+  else if (!layoutOrNull)
+    return "unsupported layout";
+
+  // Add a new local block
+  auto bid = m->addLocalBlock(smt::get1DSize(dims), Expr::mkBool(writable));
+  // Create MemRef which points to the newly created block
+  auto memref =
+      MemRef(m, bid, Index::zero(), dims, move(*layoutOrNull),
+             move(*elemtyOrNull));
+
+  return {move(memref)};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::memref::AllocOp op) {
+  auto memrefTy = op.getType().cast<mlir::MemRefType>();
+  if (!memrefTy.getAffineMaps().empty())
+    return "unsupported memref type for alloc: it has an affine map";
+
+  auto dsizes = op.dynamicSizes();
+  vector<Expr> dszExprs;
+  for (const auto &sz: dsizes) {
+    dszExprs.push_back(st.regs.get<Index>(sz));
+  }
+  auto dims = ShapedValue::getDims(memrefTy, false, move(dszExprs));
+
+  auto memrefOrErr = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true);
+  if (holds_alternative<string>(memrefOrErr))
+    return get<0>(move(memrefOrErr));
+  auto memref = get<1>(move(memrefOrErr));
+
+  st.regs.add(op, move(memref));
+
+  return {};
+}
+
 template<>
 optional<string> encodeOp(State &st, mlir::memref::LoadOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
@@ -403,19 +445,11 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto memrefTy = op.memref().getType().cast<mlir::MemRefType>();
   auto dims = tensor.getDims();
 
-  auto elemtyOrNull = MemRef::getElemTy(memrefTy);
-  auto layoutOrNull = MemRef::getLayout(memrefTy, dims);
-  if (!elemtyOrNull)
-    return "unsupported element type";
-  else if (!layoutOrNull)
-    return "unsupported layout";
-
-  // Add a new local block
-  auto bid = st.m->addLocalBlock(smt::get1DSize(dims), Expr::mkBool(false));
-  // Create MemRef which points to the newly created block
-  auto memref =
-      MemRef(st.m.get(), bid, Index::zero(), dims, move(*layoutOrNull),
-             move(*elemtyOrNull));
+  // Create a read-only block.
+  auto memrefOrErr = createNewLocalBlk(st.m.get(), move(dims), memrefTy, false);
+  if (holds_alternative<string>(memrefOrErr))
+    return get<0>(move(memrefOrErr));
+  auto memref = get<1>(move(memrefOrErr));
 
   if (memrefTy.getAffineMaps().empty()) {
     // memref with identity map
@@ -1128,6 +1162,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
 
+    ENCODE(st, op, mlir::memref::AllocOp);
     ENCODE(st, op, mlir::memref::LoadOp);
     ENCODE(st, op, mlir::memref::StoreOp);
     ENCODE(st, op, mlir::memref::SubViewOp);

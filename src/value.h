@@ -91,10 +91,13 @@ public:
 
 class ShapedValue {
 public:
-  // If (freshVarForUnknownSizes, valsForUnknownSz) is false, shapedTy must not
-  // have any unknown dimension size.
+  // If (freshVarForUnknownSizes, valsForUnknownSz) is
+  // (1) (false, nullopt): shapedTy must not have an unknown sized dimension
+  // (2) (true, _): unknown sized dimensions are assigned fresh variables
+  // (3) (false, some(exprs)): unknown sized dimensions are assigned exprs[0..]
   static std::vector<smt::Expr> getDims(
-      const mlir::ShapedType &shapedTy, bool freshVarForUnknownSizes = true);
+      const mlir::ShapedType &shapedTy, bool freshVarForUnknownSizes = true,
+      std::optional<std::vector<smt::Expr>> &&valsForUnknownSz = std::nullopt);
 
   virtual std::vector<smt::Expr> getDims() const = 0;
   virtual std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const = 0;

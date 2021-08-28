@@ -1,3 +1,5 @@
+// VERIFY
+
 func @fold_expand_collapse(%arg0 : tensor<?x4xf32>) -> tensor<?x4xf32>
 {
   %0 = linalg.tensor_expand_shape %arg0 [[0, 1], [2]]
