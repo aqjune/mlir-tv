@@ -106,6 +106,13 @@ vector<Expr> simplifyList(const vector<Expr> &exprs) {
   return v;
 }
 
+vector<Expr> makeCube(Expr &&e, unsigned rank) {
+  vector<Expr> vec(1, Index(1));
+  for (unsigned i = 1; i < rank; ++i)
+    vec.push_back(Index(1));
+  return vec;
+}
+
 Expr to1DIdx(
     const vector<Expr> &idxs,
     const vector<Expr> &dims) {

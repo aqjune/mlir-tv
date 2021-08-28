@@ -39,6 +39,9 @@ std::vector<Expr> from1DIdx(
     Expr idx1d, const std::vector<Expr> &dims);
 std::vector<Expr> simplifyList(const std::vector<Expr> &exprs);
 
+// If rank is 0, this returns {sz}.
+std::vector<Expr> makeCube(Expr &&sz, unsigned rank);
+
 Expr to1DIdx(const std::vector<Expr> &idxs,
                 const std::vector<Expr> &dims);
 Expr fitsInDims(const std::vector<Expr> &idxs,

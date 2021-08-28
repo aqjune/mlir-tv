@@ -210,11 +210,24 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
-  auto res = Tensor::getDimsAndElemTy(op.getResultType());
-  if (!res)
-    return "unsupported type";
+  mlir::RankedTensorType resTy = op.getResultType();
 
-  st.regs.add(op.getResult(), t.reshape(res->first));
+  auto reassocExprs = op.getReassociationIndices();
+  assert(reassocExprs.size() == resTy.getRank());
+
+  // If the collapsed size does not match op.getResultType(), it is UB.
+  vector<Expr> newDims;
+  for (unsigned i = 0; i < reassocExprs.size(); ++i) {
+    Expr size = Index::one();
+    for (auto &idx: reassocExprs[i])
+      size = size * t.getDim(idx);
+
+    if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
+      st.wellDefined(op.getOperation(), size == resTy.getDimSize(i));
+    newDims.push_back(move(size));
+  }
+
+  st.regs.add(op.getResult(), t.reshape(newDims));
   return {};
 }
 
@@ -222,10 +235,9 @@ template<>
 optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
 
-  auto res = Tensor::getDimsAndElemTy(op.getResultType());
-  if (!res)
-    return "unsupported type";
-  auto newdims = move(res->first);
+  // The fresh variables created by ShapedValue::getDims will be ignored
+  // by the for loop below.
+  auto newdims = ShapedValue::getDims(op.getResultType(), true);
   auto indices = op.getReassociationIndices();
 
   unsigned i = 0;
@@ -237,9 +249,9 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
     int unknown_dim = -1;
     int64_t const_size = 1;
     for (auto id: ids) {
-      if (op.getResultType().getDimSize(id) == -1) {
+      if (op.getResultType().getDimSize(id) == mlir::TensorType::kDynamicSize) {
         if (unknown_dim != -1)
-          return "has more than one unknown size in one group";
+          return "it has more than one unknown dimension size in one group";
         unknown_dim = i;
       } else {
         const_size *= op.getResultType().getDimSize(id);
@@ -248,7 +260,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
     }
 
     if (unknown_dim == -1)
-      // Nothing to do
+      // Nothing to do; it is already well-defined
       continue;
 
     if (Index::BITS < 64 && const_size >= (1ull << Index::BITS))
@@ -389,20 +401,21 @@ template<>
 optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto tensor = st.regs.get<Tensor>(op.getOperand());
   auto memrefTy = op.memref().getType().cast<mlir::MemRefType>();
-  auto predefinedDims = tensor.getDims();
-  auto dimsAndLayoutAndElemTy = MemRef::
-    getDimsAndLayoutAndElemTy(memrefTy, move(predefinedDims));
-  if (!dimsAndLayoutAndElemTy)
-    return "unsupported type";
+  auto dims = tensor.getDims();
 
-  auto dims = get<0>(*dimsAndLayoutAndElemTy);
-  auto layout = get<1>(*dimsAndLayoutAndElemTy);
-  auto elemty = get<2>(*dimsAndLayoutAndElemTy);
-  // Add new local block
+  auto elemtyOrNull = MemRef::getElemTy(memrefTy);
+  auto layoutOrNull = MemRef::getLayout(memrefTy, dims);
+  if (!elemtyOrNull)
+    return "unsupported element type";
+  else if (!layoutOrNull)
+    return "unsupported layout";
+
+  // Add a new local block
   auto bid = st.m->addLocalBlock(smt::get1DSize(dims), Expr::mkBool(false));
-  auto offset = Index::zero();
-  // Create MemRef which points newly created block id
-  auto memref = MemRef(st.m.get(), bid, offset, dims, layout, elemty);
+  // Create MemRef which points to the newly created block
+  auto memref =
+      MemRef(st.m.get(), bid, Index::zero(), dims, move(*layoutOrNull),
+             move(*elemtyOrNull));
 
   if (memrefTy.getAffineMaps().empty()) {
     // memref with identity map
@@ -477,21 +490,22 @@ optional<string> encodeOp(State &st, mlir::linalg::DotOp op) {
 
   auto inputOps = op.getInputOperands();
   auto outputTy = op.getType(0).dyn_cast<mlir::TensorType>();
+
+  auto outputDim = ShapedValue::getDims(outputTy, false);
+  if (outputDim.size() != 1)
+    return "unknown dot format; isn't the result tensor having one element?";
+
   if (outputTy.getElementType() !=
       inputOps[0]->get().getType().dyn_cast<mlir::TensorType>()
           .getElementType())
     return "casting is not supported";
-
-  auto resty = Tensor::getDimsAndElemTy(outputTy);
-  if (!resty)
-    return "unsupported type";
 
   auto t1 = st.regs.get<Tensor>(inputOps[0]->get());
   auto t2 = st.regs.get<Tensor>(inputOps[1]->get());
   st.wellDefined(op.getOperation(), t1.get1DSize() == t2.get1DSize());
 
   auto res = t1.dot(t2);
-  st.regs.add(op.getResult(0), Tensor(res, resty->first));
+  st.regs.add(op.getResult(0), Tensor(move(res), move(outputDim)));
   return {};
 }
 
@@ -615,16 +629,14 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
     if (!denseAttr.isSplat())
       return "a fp splat constant tensor is supported only";
 
-    auto resty = Tensor::getDimsAndElemTy(
-        op.getType().cast<mlir::TensorType>());
-    if (!resty)
-      return "unsupported type";
-
+    // A constant tensor's type cannot have unknown dimensions
+    auto dims = ShapedValue::getDims(
+        op.getType().cast<mlir::TensorType>(), false);
     auto v = attrToValueTy(denseAttr.getSplatValue());
     if (!v)
       return "unsupported constant";
 
-    st.regs.add(op, Tensor(getExpr(*v), resty->first));
+    st.regs.add(op, Tensor(getExpr(*v), move(dims)));
     return {};
 
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
@@ -981,10 +993,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
-    vector<Expr> tensorSz(1, Index(1));
-    for (unsigned i = 1; i < outputType.getRank(); ++i)
-      tensorSz.push_back(Index(1));
-    t_res = Tensor(t_v.sum(), tensorSz);
+    t_res = Tensor(t_v.sum(), makeCube(Index(1), outputType.getRank()));
     return {};
   } else {
     // in:  (i, j) -> (i, j)

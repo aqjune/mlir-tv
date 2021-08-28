@@ -88,8 +88,14 @@ public:
   Integer eval(smt::Model m) const;
 };
 
+
 class ShapedValue {
 public:
+  // If (freshVarForUnknownSizes, valsForUnknownSz) is false, shapedTy must not
+  // have any unknown dimension size.
+  static std::vector<smt::Expr> getDims(
+      const mlir::ShapedType &shapedTy, bool freshVarForUnknownSizes = true);
+
   virtual std::vector<smt::Expr> getDims() const = 0;
   virtual std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const = 0;
 
@@ -117,7 +123,7 @@ public:
   static const unsigned MAX_DIM_SIZE = 25;
 
   // A splat tensor.
-  Tensor(const smt::Expr &splat_elem, const std::vector<smt::Expr> &dims);
+  Tensor(smt::Expr &&splat_elem, std::vector<smt::Expr> &&dims);
   // A sparse tensor.
   Tensor(const std::vector<std::vector<uint64_t>> &indices,
          const std::vector<smt::Expr> &elems,
@@ -138,6 +144,8 @@ public:
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const override;
 
   std::vector<smt::Expr> getDims() const override { return dims; }
+
+  size_t getRank() const { return dims.size(); }
 
   // Return a new tensor T2 s.t.
   //   T2[newidxvars] = this[srcidxs]
@@ -163,11 +171,6 @@ public:
   smt::Expr sum() const;
 
   operator smt::Expr() const { return arr; }
-
-  // If tensorTy is unsupported, return nullopt
-  static std::optional<std::pair<std::vector<smt::Expr>, smt::Sort>>
-      getDimsAndElemTy(mlir::TensorType tensorTy,
-                       bool freshVarForUnknownSize = true);
 
   static std::optional<smt::Sort> getElemTy(mlir::TensorType tensorTy);
 
@@ -257,10 +260,9 @@ public:
   smt::Expr getWellDefined() const;
 
   // If memRefTy is unsupported, return nullopt
-  static std::optional<std::tuple<std::vector<smt::Expr>, Layout, smt::Sort>>
-    getDimsAndLayoutAndElemTy(mlir::MemRefType memRefTy,
-      std::optional<std::vector<smt::Expr>> predefinedDims = {},
-      bool freshVarForUnknownSize = true);
+  static std::optional<Layout>
+      getLayout(mlir::MemRefType memRefTy, const std::vector<smt::Expr> &dims);
+  static std::optional<smt::Sort> getElemTy(mlir::MemRefType memRefTy);
 
   std::vector<smt::Expr> getDims() const override { return dims; }
 

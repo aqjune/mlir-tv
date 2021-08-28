@@ -89,29 +89,36 @@ createInputState(
       continue;
     }
 
-    // Encode each arguments of source.
+    // Encode arguments of the source function.
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
-      auto dimsAndElemTy = Tensor::getDimsAndElemTy(ty);
-      if (!dimsAndElemTy)
+      // Create fresh variables for unknown dimension sizes
+      auto dims = ShapedValue::getDims(ty);
+      auto elemtyOrNull = Tensor::getElemTy(ty);
+      if (!elemtyOrNull)
         RET_STR("Unsupported Tensor element type: " << arg.getType());
 
       auto tensor = Tensor("arg" + to_string(arg.getArgNumber()),
-        dimsAndElemTy->first,
-        dimsAndElemTy->second);
+          dims, *elemtyOrNull);
       preconds.push_back(tensor.getWellDefined());
       s.regs.add(arg, move(tensor));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
-      auto dimsAndLayoutAndElemTy = MemRef::getDimsAndLayoutAndElemTy(ty);
-      if (!dimsAndLayoutAndElemTy)
+      // Create fresh variables for unknown dimension sizes
+      auto dims = ShapedValue::getDims(ty);
+      auto elemtyOrNull = MemRef::getElemTy(ty);
+      auto layoutOrNull = MemRef::getLayout(ty, dims);
+
+      if (!elemtyOrNull) {
         RET_STR("Unsupported MemRef element type: " << arg.getType());
+      } else if (!layoutOrNull) {
+        RET_STR("Unsupported MemRef layout: " << arg.getType());
+      }
 
       // TODO : out of bounds pointer is allowed?
       auto memref = MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
-        get<0>(*dimsAndLayoutAndElemTy),
-        get<1>(*dimsAndLayoutAndElemTy),
-        get<2>(*dimsAndLayoutAndElemTy));
-      // memref from function argument must point global memblock.
+          dims, *layoutOrNull, *elemtyOrNull);
+
+      // Function argument MemRefs must point to global memblocks.
       preconds.push_back(memref.isGlobalBlock());
       preconds.push_back(memref.getWellDefined());
       s.regs.add(arg, move(memref));

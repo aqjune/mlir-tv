@@ -12,8 +12,8 @@ static string freshName(string prefix) {
   return prefix + to_string(count ++);
 }
 
-static vector<Expr> getDims(
-    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize = false) {
+vector<Expr> ShapedValue::getDims(
+    const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize) {
   vector<Expr> dims;
 
   uint64_t rank = shapedTy.getRank();
@@ -23,14 +23,15 @@ static vector<Expr> getDims(
   }
 
   dims.reserve(rank);
+  unsigned unknownVarIdx = 0;
   for (auto i = 0; i < rank; ++i) {
     uint64_t sz = shapedTy.getDimSize(i);
     if (sz == (uint64_t)-1ull) {
       if (freshVarForUnknownSize) {
         dims.emplace_back(Index::var("dim", VarType::FRESH));
       } else {
-        // TODO: raise assert failure at some point.
-        dims.push_back(Index(100));
+        llvm_unreachable("Don't know what to do with a dimension of "
+                         "an unknown size");
       }
     } else
       dims.push_back(Index(sz));
@@ -42,30 +43,6 @@ static vector<Expr> getDims(
 static Expr getConstOrFreshVar(int64_t val, std::string &&name) {
   return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
       Index::var(move(name), VarType::FRESH) : Index(val);
-}
-
-static MemRef::Layout
-getLayout(const mlir::MemRefType &memRefTy, const vector<Expr> &dims) {
-  auto affineMaps = memRefTy.getAffineMaps();
-
-  if (affineMaps.empty())
-    return MemRef::Layout(dims);
-
-  int64_t offset;
-  llvm::SmallVector<int64_t, 4> strides;
-  auto success = mlir::getStridesAndOffset(memRefTy, strides, offset);
-  assert(succeeded(success) && "unexpected non-strided memref");
-  Expr layout = getConstOrFreshVar(offset, "offset");
-  vector<Expr> indVars;
-
-  Expr inbounds = Expr::mkBool(true);
-  for (int i = 0; i < strides.size(); i ++) {
-    indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
-    layout = layout + getConstOrFreshVar(strides[i], "strides") * indVars[i];
-    inbounds = inbounds & indVars[i].ult(dims[i]);
-  }
-
-  return MemRef::Layout(indVars, layout, inbounds);
 }
 
 Index::Index(unsigned i): e(Expr::mkBV(i, BITS)) {}
@@ -226,8 +203,9 @@ std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(const ShapedValue
   return {move(outputIdxs), move(outputExpr)};
 }
 
-Tensor::Tensor(const Expr &splat_elem, const vector<Expr> &dimvec):
-    arr(Expr::mkSplatArray(Index::sort(), splat_elem)), dims(dimvec) {}
+Tensor::Tensor(Expr &&splat_elem, vector<Expr> &&dimvec):
+    arr(Expr::mkSplatArray(Index::sort(), move(splat_elem))),
+    dims(move(dimvec)) {}
 
 Tensor::Tensor(const vector<Expr> &elems1d):
     arr(Expr::mkSplatArray(Index::sort(), elems1d[0])),
@@ -394,15 +372,6 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
   return {size_match &
       i.ult(::get1DSize(dims)).implies(arr.select(i) == other.arr.select(i)),
     params};
-}
-
-optional<pair<vector<Expr>, smt::Sort>>
-Tensor::getDimsAndElemTy(
-    mlir::TensorType tensorTy, bool freshVarForUnknownSize) {
-  auto ety = getElemTy(tensorTy);
-  if (!ety)
-    return {};
-  return {{::getDims(tensorTy, freshVarForUnknownSize), *ety}};
 }
 
 optional<smt::Sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
@@ -644,28 +613,42 @@ Expr MemRef::getWellDefined() const {
   return e.simplify();
 }
 
-optional<tuple<vector<Expr>, MemRef::Layout, smt::Sort>>
-MemRef::getDimsAndLayoutAndElemTy(
-    mlir::MemRefType memRefTy,
-    optional<vector<Expr>> predefinedDims,
-    bool freshVarForUnknownSize) {
-  // Step1. check element type
+optional<smt::Sort> MemRef::getElemTy(mlir::MemRefType memRefTy) {
   auto elemty = memRefTy.getElementType();
   if (!elemty.isa<mlir::Float32Type>())
     // Currently we only support f32 element type.
     return {};
 
-  auto elemty2 = Float::sort();
+  return Float::sort();
+}
 
-  // Step2. check affine map
-  if (mlir::isStrided(memRefTy)) {
-    auto dims = predefinedDims.value_or(::getDims(memRefTy, freshVarForUnknownSize));
-    auto layout = ::getLayout(memRefTy, dims);
-    return {{dims, layout, elemty2}};
-  } else {
+optional<MemRef::Layout> MemRef::getLayout(
+    mlir::MemRefType memRefTy, const vector<Expr> &dims) {
+  if (!mlir::isStrided(memRefTy)) {
     // Currently we only support strided Memref.
     return {};
   }
+
+  auto affineMaps = memRefTy.getAffineMaps();
+
+  if (affineMaps.empty())
+    return MemRef::Layout(dims);
+
+  int64_t offset;
+  llvm::SmallVector<int64_t, 4> strides;
+  auto success = mlir::getStridesAndOffset(memRefTy, strides, offset);
+  assert(succeeded(success) && "unexpected non-strided memref");
+  Expr layout = getConstOrFreshVar(offset, "offset");
+  vector<Expr> indVars;
+
+  Expr inbounds = Expr::mkBool(true);
+  for (int i = 0; i < strides.size(); i ++) {
+    indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
+    layout = layout + getConstOrFreshVar(strides[i], "strides") * indVars[i];
+    inbounds = inbounds & indVars[i].ult(dims[i]);
+  }
+
+  return MemRef::Layout(indVars, layout, inbounds);
 }
 
 pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
