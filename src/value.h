@@ -270,9 +270,10 @@ public:
   std::vector<smt::Expr> getDims() const override { return dims; }
 
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const override;
-  smt::Expr store(const smt::Expr &value, const std::vector<smt::Expr> &indices);
+  smt::Expr store(const smt::Expr &value, const std::vector<smt::Expr> &indices)
+      const;
   smt::Expr storeArray(const smt::Expr &array, const smt::Expr &startOffset,
-      const smt::Expr &size, bool ubIfReadonly = true);
+      const smt::Expr &size, bool ubIfReadonly = true) const;
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;
   smt::Expr isLocalBlock() const;

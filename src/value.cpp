@@ -661,7 +661,7 @@ pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
   return {loaded, (success & inbounds).simplify()};
 }
 
-Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) {
+Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto success = m->store(value, bid, (Expr)offset + idx);
 
@@ -670,7 +670,7 @@ Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) {
 
 Expr MemRef::storeArray(
     const Expr &array, const Expr &startOffset, const Expr &size,
-    bool ubIfReadonly) {
+    bool ubIfReadonly) const {
   return m->storeArray(array, bid, (Expr)offset + startOffset, size,
       ubIfReadonly);
 }

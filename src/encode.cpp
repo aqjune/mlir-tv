@@ -439,6 +439,31 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
   return {};
 }
 
+static void storeTensorTo(
+    State &st, mlir::Operation *op, Tensor &&tensor, const MemRef &memref,
+    mlir::MemRefType memrefTy) {
+  if (memrefTy.getAffineMaps().empty()) {
+    // memref with identity map
+    auto success = memref.storeArray(tensor.asArray(), Index::zero(),
+        tensor.get1DSize(), false);
+    st.wellDefined(op, move(success));
+
+  } else {
+    // TODO: can we further optimize this if we know that memref is a
+    // freshly created block?
+    // We may not need to preserve the 'previous' bytes.
+
+    vector<Expr> idxs = createBoundIndexVars(memrefTy.getRank());
+    auto [tVal, tSuccess] = tensor.get(idxs);
+    auto [mVal, mSuccess] = memref.get(idxs);
+    auto success = tSuccess & mSuccess;
+
+    // TODO: clarify whether this is precondition or UB.
+    st.wellDefined(op, Expr::mkForall(idxs, success.implies(mVal == tVal)));
+    st.hasQuantifier = true;
+  }
+}
+
 template<>
 optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
   auto tensor = st.regs.get<Tensor>(op.getOperand());
@@ -451,25 +476,9 @@ optional<string> encodeOp(State &st, mlir::memref::BufferCastOp op) {
     return get<0>(move(memrefOrErr));
   auto memref = get<1>(move(memrefOrErr));
 
-  if (memrefTy.getAffineMaps().empty()) {
-    // memref with identity map
-    auto success = memref.storeArray(tensor.asArray(), Index::zero(),
-        tensor.get1DSize(), false);
-    st.wellDefined(op.getOperation(), move(success));
-    st.regs.add(op.memref(), move(memref));
+  storeTensorTo(st, op.getOperation(), move(tensor), memref, memrefTy);
+  st.regs.add(op.memref(), move(memref));
 
-  } else {
-    vector<Expr> idxs = createBoundIndexVars(memrefTy.getRank());
-    auto [tVal, tSuccess] = tensor.get(idxs);
-    auto [mVal, mSuccess] = memref.get(idxs);
-    auto success = tSuccess & mSuccess;
-
-    st.wellDefined(
-        op.getOperation(),
-        Expr::mkForall(idxs, success.implies(mVal == tVal)));
-    st.hasQuantifier = true;
-    st.regs.add(op.memref(), move(memref));
-  }
   return {};
 }
 
@@ -488,6 +497,22 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
 
   st.regs.add(op.getResult(), t_res);
   st.wellDefined(op.getOperation(), m.isInBounds());
+
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::memref::TensorStoreOp op) {
+  auto t = st.regs.get<Tensor>(op.tensor());
+  auto m = st.regs.get<MemRef>(op.memref());
+
+  // Src and tgt's shapes & element types must match
+  // Memref may have its layout, though.
+  for (unsigned i = 0; i < t.getRank(); ++i)
+    st.wellDefined(op.getOperation(), (Expr)t.getDim(i) == (Expr)m.getDim(i));
+
+  storeTensorTo(st, op.getOperation(), move(t), m,
+      op.memref().getType().cast<mlir::MemRefType>());
 
   return {};
 }
@@ -1168,6 +1193,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::memref::SubViewOp);
     ENCODE(st, op, mlir::memref::BufferCastOp);
     ENCODE(st, op, mlir::memref::TensorLoadOp);
+    ENCODE(st, op, mlir::memref::TensorStoreOp);
 
     ENCODE(st, op, mlir::linalg::Conv2DNhwcHwcfOp);
     ENCODE(st, op, mlir::linalg::DotOp);
