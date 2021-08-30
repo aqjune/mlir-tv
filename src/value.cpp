@@ -689,8 +689,26 @@ Expr MemRef::isLocalBlock() const {
   return m->isLocalBlock(bid);
 }
 
+smt::Expr MemRef::noalias(const MemRef &other) const {
+  if (!isIdentityMap() || !other.isIdentityMap())
+    assert("Noalias check with arbitrary layout memref is not supported yet");
+
+  auto l1 = (Expr) offset;
+  auto r1 = (Expr) offset +  get1DSize() - 1;
+  auto l2 = (Expr) other.offset;
+  auto r2 = (Expr) other.offset + other.get1DSize()- 1;
+
+  // Case 1. bid != other.bid
+  // Case 2. bid == other.bid && (r2 < l1 || r1 < l2)
+  return !(bid == other.bid) | (bid == other.bid & (r2.ult(l1) | r1.ult(l2)));
+}
+
 void MemRef::setWritable(bool writable) {
   m->setWritable(bid, writable);
+}
+
+bool MemRef::isIdentityMap() const {
+  return layout.precondition.isTrue();
 }
 
 MemRef MemRef::subview(const vector<Expr> &offsets,
@@ -732,7 +750,7 @@ Expr MemRef::conv(const MemRef &input,
 
   // store output memref
   auto success = isInBounds() & input.isInBounds() & filter.isInBounds() &
-    storeArray(outputArray, Index::zero(), get1DSize());
+    noalias(input) & noalias(filter) & storeArray(outputArray, Index::zero(), get1DSize());
 
   return success;
 }

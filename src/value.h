@@ -221,6 +221,7 @@ public:
     // Precondition for inverse mapping function.
     // If we cannot give exact definition of inverseMappings, then give its meaning with forall quantifier.
     // This will be added to state's precondition only when inverseMappings are used explicitly.
+    // If the layout has simple identity mapping, this will be constantly true.
     // ex) forall indVars, if (indVars are inbounds) then inverse0(mapping(d0, d1)) = d0 && inverse1(mapping(d0, d1)) = d1
     smt::Expr precondition;
 
@@ -282,8 +283,10 @@ public:
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;
   smt::Expr isLocalBlock() const;
+  smt::Expr noalias(const MemRef &other) const;
   void setWritable(bool writable);
   void setMemory(Memory *m) { this->m = m; }
+  bool isIdentityMap() const;
 
   // Return a new memerf which is subview of source memref.
   MemRef subview(const std::vector<smt::Expr> &offsets,
