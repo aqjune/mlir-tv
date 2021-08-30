@@ -678,7 +678,7 @@ Expr MemRef::storeArray(
 Expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(bid);
   auto memrefSize = get1DSize();
-  return numelem.uge(memrefSize) & ((Expr)offset).ult(numelem - memrefSize);
+  return numelem.uge(memrefSize) & ((Expr)offset).ule(numelem - memrefSize);
 }
 
 Expr MemRef::isGlobalBlock() const {
@@ -731,7 +731,9 @@ Expr MemRef::conv(const MemRef &input,
   auto outputArray = Expr::mkLambda(idx, outputExpr);
 
   // store output memref
-  auto success = storeArray(outputArray, Index::zero(), get1DSize());
+  auto success = isInBounds() & input.isInBounds() & filter.isInBounds() &
+    storeArray(outputArray, Index::zero(), get1DSize());
+
   return success;
 }
 
