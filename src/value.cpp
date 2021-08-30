@@ -657,7 +657,6 @@ optional<MemRef::Layout> MemRef::getLayout(
 pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto [loaded, success] = m->load(bid, (Expr)offset + idx);
-
   return {loaded, (success & inbounds).simplify()};
 }
 
@@ -696,12 +695,13 @@ void MemRef::setWritable(bool writable) {
 MemRef MemRef::subview(const vector<Expr> &offsets,
     const vector<Expr> &sizes,
     const vector<Expr> &strides,
+    const llvm::SmallDenseSet<unsigned> &unusedDims,
     int rankDiff) {
   if (rankDiff > 0) {
     vector<Expr> indVars, reducedSizes;
     for (unsigned i = 0; i < sizes.size(); i++) {
       uint64_t size_cst;
-      if (rankDiff > 0 && sizes[i].isUInt(size_cst) && size_cst == 1) {
+      if (rankDiff > 0 && unusedDims.contains(i)) {
         //statically known to be 1
         indVars.push_back(Index::zero());
         rankDiff --;
@@ -710,6 +710,7 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
         reducedSizes.push_back(sizes[i]);
       }
     }
+
     auto subviewLayout = createSubViewLayout(indVars, offsets, strides);
     return MemRef(m, bid, offset, reducedSizes, subviewLayout, Float::sort());
   } else {
@@ -755,7 +756,7 @@ MemRef::Layout MemRef::createSubViewLayout(
     const vector<Expr> &offsets,
     const vector<Expr> &strides) {
   // Before : <(d0, d1) -> (d0 * s0 + d1)>,
-  // After: <(d0, d1) -> ((indVars[0] + offsets[0]) * strides[0] * s0 + (indVars[1] + offsets[1]) * strides[1])>
+  // After: <(d0, d1) -> ((indVars[0] * strides[0] + offsets[0]) * s0 + indVars[1] * strides[1] + offsets[1])>
   // indVars[i] can be Index::zero() if reducing the dimension.
   assert(layout.indVars.size() == indVars.size());
   assert(layout.indVars.size() == offsets.size());
@@ -763,7 +764,7 @@ MemRef::Layout MemRef::createSubViewLayout(
 
   vector<Expr> idxs, transformedIndVars;
   for (unsigned i = 0; i < layout.indVars.size(); i ++) {
-    idxs.push_back((indVars[i] + offsets[i]) * strides[i]);
+    idxs.push_back(indVars[i] * strides[i] + offsets[i]);
     if (!indVars[i].isNumeral()) transformedIndVars.push_back(indVars[i]);
   }
   auto transformedLayout = layout.mapping.select(idxs);

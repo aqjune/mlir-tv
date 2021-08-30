@@ -434,7 +434,26 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
   auto src = st.regs.get<MemRef>(op.source());
   int rankDiff = op.getSourceType().getRank() - op.getType().getRank();
   assert(rankDiff >= 0); // only reducing rank is allowed
-  auto memref = src.subview(offsets, sizes, strides, rankDiff);
+
+  // This reduction logic mainly from MLIR SubViewOp verify function.
+  // See 'Dialect/MemRef/IR/MemRefOps.cpp'.
+  auto expectedType = mlir::memref::SubViewOp::inferResultType(
+      op.getSourceType(), extractFromI64ArrayAttr(op.static_offsets()),
+      extractFromI64ArrayAttr(op.static_sizes()),
+      extractFromI64ArrayAttr(op.static_strides()));
+
+  auto originalShapedType = expectedType.cast<mlir::ShapedType>();
+  auto candidateReducedShapedType = op.getType().cast<mlir::ShapedType>();
+  auto optionalUnusedDimsMask = mlir::computeRankReductionMask(
+    originalShapedType.getShape(),
+    candidateReducedShapedType.getShape()
+  );
+
+  if (!optionalUnusedDimsMask.hasValue())
+    return "Subview result size mismatch";
+
+  auto unusedDims = optionalUnusedDimsMask.getValue();
+  auto memref = src.subview(offsets, sizes, strides, unusedDims, rankDiff);
   st.regs.add(op.getResult(), move(memref));
   return {};
 }

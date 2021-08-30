@@ -286,6 +286,7 @@ public:
   MemRef subview(const std::vector<smt::Expr> &offsets,
       const std::vector<smt::Expr> &sizes,
       const std::vector<smt::Expr> &strides,
+      const llvm::SmallDenseSet<unsigned> &unusedDims,
       int rankDiff = 0);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
