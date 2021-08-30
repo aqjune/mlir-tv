@@ -694,13 +694,13 @@ smt::Expr MemRef::noalias(const MemRef &other) const {
     assert("Noalias check with arbitrary layout memref is not supported yet");
 
   auto l1 = (Expr) offset;
-  auto r1 = (Expr) offset +  get1DSize() - 1;
+  auto r1 = (Expr) offset + get1DSize();
   auto l2 = (Expr) other.offset;
-  auto r2 = (Expr) other.offset + other.get1DSize()- 1;
+  auto r2 = (Expr) other.offset + other.get1DSize();
 
   // Case 1. bid != other.bid
-  // Case 2. bid == other.bid && (r2 < l1 || r1 < l2)
-  return !(bid == other.bid) | (bid == other.bid & (r2.ult(l1) | r1.ult(l2)));
+  // Case 2. bid == other.bid && (r2 <= l1 || r1 <= l2)
+  return !(bid == other.bid) | (bid == other.bid & (r2.ule(l1) | r1.ule(l2)));
 }
 
 void MemRef::setWritable(bool writable) {
