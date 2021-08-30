@@ -221,6 +221,7 @@ public:
     // Precondition for inverse mapping function.
     // If we cannot give exact definition of inverseMappings, then give its meaning with forall quantifier.
     // This will be added to state's precondition only when inverseMappings are used explicitly.
+    // If the layout has simple identity mapping, this will be constantly true.
     // ex) forall indVars, if (indVars are inbounds) then inverse0(mapping(d0, d1)) = d0 && inverse1(mapping(d0, d1)) = d1
     smt::Expr precondition;
 
@@ -237,6 +238,8 @@ public:
       indVars(copy.indVars), inbounds(copy.inbounds),
       mapping(copy.mapping), inverseMappings(copy.inverseMappings),
       precondition(copy.precondition) {}
+
+    std::vector<smt::Expr> getInverseIndices(const smt::Expr &idx) const;
   };
 
   MemRef(Memory *m,
@@ -267,6 +270,9 @@ public:
       getLayout(mlir::MemRefType memRefTy, const std::vector<smt::Expr> &dims);
   static std::optional<smt::Sort> getElemTy(mlir::MemRefType memRefTy);
 
+  // Property getters
+  smt::Expr getBID() const { return bid; }
+  Index getOffset() const { return offset; }
   std::vector<smt::Expr> getDims() const override { return dims; }
 
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const override;
@@ -277,16 +283,22 @@ public:
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;
   smt::Expr isLocalBlock() const;
-  smt::Expr getBID() const { return bid; }
-  Index getOffset() const { return offset; }
+  smt::Expr noalias(const MemRef &other) const;
   void setWritable(bool writable);
   void setMemory(Memory *m) { this->m = m; }
+  bool isIdentityMap() const;
 
   // Return a new memerf which is subview of source memref.
   MemRef subview(const std::vector<smt::Expr> &offsets,
       const std::vector<smt::Expr> &sizes,
       const std::vector<smt::Expr> &strides,
       int rankDiff = 0);
+
+  // Store results which is convolution of input, filter and return wellDefined.
+  smt::Expr conv(const MemRef &input,
+      const MemRef &filter,
+      const std::vector<smt::Expr> strides,
+      const std::vector<smt::Expr> dilations);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
   // (refinement, unbound variables used in the refinement formula)

@@ -678,7 +678,7 @@ Expr MemRef::storeArray(
 Expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(bid);
   auto memrefSize = get1DSize();
-  return numelem.uge(memrefSize) & ((Expr)offset).ult(numelem - memrefSize);
+  return numelem.uge(memrefSize) & ((Expr)offset).ule(numelem - memrefSize);
 }
 
 Expr MemRef::isGlobalBlock() const {
@@ -689,8 +689,26 @@ Expr MemRef::isLocalBlock() const {
   return m->isLocalBlock(bid);
 }
 
+smt::Expr MemRef::noalias(const MemRef &other) const {
+  if (!isIdentityMap() || !other.isIdentityMap())
+    assert("Noalias check with arbitrary layout memref is not supported yet");
+
+  auto l1 = (Expr) offset;
+  auto r1 = (Expr) offset + get1DSize();
+  auto l2 = (Expr) other.offset;
+  auto r2 = (Expr) other.offset + other.get1DSize();
+
+  // Case 1. bid != other.bid
+  // Case 2. bid == other.bid && (r2 <= l1 || r1 <= l2)
+  return !(bid == other.bid) | (bid == other.bid & (r2.ule(l1) | r1.ule(l2)));
+}
+
 void MemRef::setWritable(bool writable) {
   m->setWritable(bid, writable);
+}
+
+bool MemRef::isIdentityMap() const {
+  return layout.precondition.isTrue();
 }
 
 MemRef MemRef::subview(const vector<Expr> &offsets,
@@ -716,6 +734,25 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
     auto subviewLayout = createSubViewLayout(layout.indVars, offsets, strides);
     return MemRef(m, bid, offset, sizes, subviewLayout, Float::sort());
   }
+}
+
+Expr MemRef::conv(const MemRef &input,
+    const MemRef &filter,
+    const std::vector<smt::Expr> strides,
+    const std::vector<smt::Expr> dilations) {
+  auto [indices, expr] = input.ShapedValue::conv(filter, strides, dilations);
+
+  // we splat results into 1D memory layout
+  auto idx = Index::var("outputIdx", VarType::BOUND);
+  auto outputIndices = layout.getInverseIndices(idx);
+  auto outputExpr = expr.substitute(indices, outputIndices);
+  auto outputArray = Expr::mkLambda(idx, outputExpr);
+
+  // store output memref
+  auto success = isInBounds() & input.isInBounds() & filter.isInBounds() &
+    noalias(input) & noalias(filter) & storeArray(outputArray, Index::zero(), get1DSize());
+
+  return success;
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
@@ -769,4 +806,12 @@ MemRef::Layout MemRef::createSubViewLayout(
   auto transformedLayout = layout.mapping.select(idxs);
   auto transformedInbounds = layout.inbounds.select(idxs);
   return Layout(transformedIndVars, transformedLayout, transformedInbounds);
+}
+
+vector<Expr> MemRef::Layout::getInverseIndices(const Expr &idx) const {
+  vector<Expr> indices;
+  for (auto inverse: inverseMappings)
+    indices.push_back(inverse.select(idx));
+
+  return indices;
 }
