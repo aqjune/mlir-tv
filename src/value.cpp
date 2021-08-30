@@ -711,10 +711,10 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
       }
     }
 
-    auto subviewLayout = createSubViewLayout(indVars, offsets, strides);
+    auto subviewLayout = createSubViewLayout(indVars, offsets, strides, sizes);
     return MemRef(m, bid, offset, reducedSizes, subviewLayout, Float::sort());
   } else {
-    auto subviewLayout = createSubViewLayout(layout.indVars, offsets, strides);
+    auto subviewLayout = createSubViewLayout(layout.indVars, offsets, strides, sizes);
     return MemRef(m, bid, offset, sizes, subviewLayout, Float::sort());
   }
 }
@@ -754,20 +754,25 @@ pair<Expr, Expr> MemRef::to1DIdxWithLayout(const vector<Expr> &idxs) const {
 MemRef::Layout MemRef::createSubViewLayout(
     const vector<Expr> &indVars,
     const vector<Expr> &offsets,
-    const vector<Expr> &strides) {
+    const vector<Expr> &strides,
+    const vector<Expr> &sizes) {
   // Before : <(d0, d1) -> (d0 * s0 + d1)>,
   // After: <(d0, d1) -> ((indVars[0] * strides[0] + offsets[0]) * s0 + indVars[1] * strides[1] + offsets[1])>
   // indVars[i] can be Index::zero() if reducing the dimension.
   assert(layout.indVars.size() == indVars.size());
   assert(layout.indVars.size() == offsets.size());
   assert(layout.indVars.size() == strides.size());
+  assert(layout.indVars.size() == sizes.size());
 
   vector<Expr> idxs, transformedIndVars;
+  Expr inbounds = Expr::mkBool(true);
   for (unsigned i = 0; i < layout.indVars.size(); i ++) {
     idxs.push_back(indVars[i] * strides[i] + offsets[i]);
+    inbounds = inbounds & indVars[i].ult(sizes[i]);
+
     if (!indVars[i].isNumeral()) transformedIndVars.push_back(indVars[i]);
   }
   auto transformedLayout = layout.mapping.select(idxs);
-  auto transformedInbounds = layout.inbounds.select(idxs);
+  auto transformedInbounds = layout.inbounds.select(idxs) & inbounds;
   return Layout(transformedIndVars, transformedLayout, transformedInbounds);
 }

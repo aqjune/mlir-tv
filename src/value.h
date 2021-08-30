@@ -309,5 +309,6 @@ private:
 
   MemRef::Layout createSubViewLayout(const std::vector<smt::Expr> &indVars,
       const std::vector<smt::Expr> &offsets,
-      const std::vector<smt::Expr> &strides);
+      const std::vector<smt::Expr> &strides,
+      const std::vector<smt::Expr> &sizes);
 };
