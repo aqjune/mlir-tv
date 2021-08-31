@@ -1170,7 +1170,6 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     auto str = attr.cast<mlir::StringAttr>().getValue();
     return str != mlir::getParallelIteratorTypeName() &&
            str != mlir::getReductionIteratorTypeName() &&
-           // TODO (makesource)
            str != mlir::getWindowIteratorTypeName();
   }))
     return "unsupported iterator type";

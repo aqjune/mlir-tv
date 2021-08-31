@@ -201,9 +201,7 @@ std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(const ShapedValue
 
   Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
   Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
-  // TODO (makesource) support commutative dot operation
-  // Expr outputExpr = aop::dot(inputExpr, filterExpr, ::get1DSize(cubeSize));
-  Expr outputExpr = aop::dot(filterExpr, inputExpr, ::get1DSize(cubeSize));
+  Expr outputExpr = aop::dot(inputExpr, filterExpr, ::get1DSize(cubeSize));
 
   return {move(outputIdxs), move(outputExpr)};
 }
