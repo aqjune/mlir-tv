@@ -657,6 +657,7 @@ optional<MemRef::Layout> MemRef::getLayout(
 pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto [loaded, success] = m->load(bid, (Expr)offset + idx);
+
   return {loaded, (success & inbounds).simplify()};
 }
 
