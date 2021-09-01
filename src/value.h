@@ -292,6 +292,7 @@ public:
   MemRef subview(const std::vector<smt::Expr> &offsets,
       const std::vector<smt::Expr> &sizes,
       const std::vector<smt::Expr> &strides,
+      const llvm::SmallDenseSet<unsigned> &unusedDims,
       int rankDiff = 0);
 
   // Store results which is convolution of input, filter and return wellDefined.
@@ -320,5 +321,6 @@ private:
 
   MemRef::Layout createSubViewLayout(const std::vector<smt::Expr> &indVars,
       const std::vector<smt::Expr> &offsets,
-      const std::vector<smt::Expr> &strides);
+      const std::vector<smt::Expr> &strides,
+      const std::vector<smt::Expr> &sizes);
 };
