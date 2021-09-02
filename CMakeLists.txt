@@ -38,7 +38,7 @@ else()
     list(APPEND LIB_LIST
         MLIRViewLikeInterface MLIRInferTypeOpInterface MLIRControlFlowInterfaces MLIRSideEffectInterfaces
         MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRAffine MLIRMemRef
-        MLIRShape MLIRMath MLIRSparseTensor
+        MLIRShape MLIRMath MLIRSparseTensor MLIRSCF
         MLIRStandard MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport
         LLVMSupport LLVMDemangle pthread m curses)
     if (APPLE) # Apple LLD does not support 'group' flags
