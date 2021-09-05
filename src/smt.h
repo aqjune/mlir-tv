@@ -169,8 +169,13 @@ public:
   static Expr mkLambda(const std::vector<Expr> &vars, const Expr &body);
   static Expr mkSplatArray(const Sort &domain, const Expr &splatElem);
   static Expr mkIte(const Expr &cond, const Expr &then, const Expr &els);
+  static Expr mkEmptyBag(const Sort &domain);
+  static Expr mkBag(const Expr &element);
+  static Expr mkUnion(const Expr &bag1, const Expr &bag2);
 
   static Expr mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed);
+
+  static Expr mkMixedExpr(const Expr &z3, const Expr &cvc5);
 
 
   friend FnDecl;

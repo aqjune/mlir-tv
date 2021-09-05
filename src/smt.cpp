@@ -57,7 +57,7 @@ public:
 #ifdef SOLVER_CVC5
   void useCVC5() {
     this->cvc5.emplace();
-    this->cvc5->setLogic("HO_AUFBV");
+    this->cvc5->setLogic("HO_ALL");
     this->cvc5->setOption("tlimit", to_string(timeout_ms));
     this->cvc5->setOption("produce-models", "true");
   }
@@ -763,10 +763,42 @@ Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
   return e;
 }
 
+Expr Expr::mkEmptyBag(const Sort &domain) {
+  Expr e;
+  SET_CVC5(e, fupdate2(sctx.cvc5, domain.cvc5, [&](auto &solver, auto domcvc) {
+    auto bag = solver.mkBagSort(domcvc);
+    return solver.mkEmptyBag(bag);
+  }));
+  return e;
+}
+
+Expr Expr::mkBag(const Expr &element) {
+  Expr e;
+  SET_CVC5(e, fupdate2(sctx.cvc5, element.cvc5, [&](auto &solver, auto element) {
+    return solver.mkTerm(cvc5::api::MK_BAG, element, solver.mkInteger(1));
+  }));
+  return e;
+}
+
+Expr Expr::mkUnion(const Expr &bag1, const Expr &bag2) {
+  Expr e;
+  SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
+    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *bag1.cvc5, *bag2.cvc5);
+  }));
+  return e;
+}
+
 Expr Expr::mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed) {
   return is_signed ?
       ((a + b).sext(1) == a.sext(1) + b.sext(1)) :
       ((a.zext(1) + b.zext(1)).getMSB() == 0);
+}
+
+Expr Expr::mkMixedExpr(const Expr &z3, const Expr &cvc5) {
+  Expr e;
+  SET_Z3(e, *z3.z3);
+  SET_CVC5(e, *cvc5.cvc5);
+  return e;
 }
 
 // ------- Sort -------
@@ -989,9 +1021,16 @@ void Solver::reset() {
 CheckResult Solver::check() {
   // TODO: concurrent run with solvers and return the fastest one?
   CheckResult cr;
-  SET_Z3(cr, fupdate(z3, [](auto &solver) { return solver.check(); }));
-  SET_CVC5(cr, fupdate(sctx.cvc5,
-      [](auto &solver) { return solver.checkSat(); }));
+  SET_Z3(cr, fupdate(z3, [](auto &solver) {
+    auto r = solver.check();
+    cout << "Z3 Result: " << r << "\n";
+    return r;
+  }));
+  SET_CVC5(cr, fupdate(sctx.cvc5, [](auto &solver) {
+    auto r = solver.checkSat();
+    cout << "CVC5  Result: " << r << "\n";
+    return r;
+  }));
   return cr;
 }
 
@@ -1114,6 +1153,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
 std::ostream& operator<<(std::ostream& os, const smt::Expr &e) {
   // FIXME
   IF_Z3_ENABLED(os << e.getZ3Expr());
+  // IF_CVC5_ENABLED(os << e.getCVC5Term());
   return os;
 }
 
