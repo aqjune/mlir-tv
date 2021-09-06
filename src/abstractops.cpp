@@ -99,20 +99,16 @@ Expr sum(const Expr &a, const Expr &n) {
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
   Expr zero = mkZeroElemFromArr(a);
-  Expr res = (*sumfn)(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
+  return (*sumfn)(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
+}
 
-  #ifdef SOLVER_CVC5
-    if (alDot == AbsLevelDot::SUM_MUL) {
-      // Is it possible to encode sum operation as type of BAGs?
-      auto empty = Expr::mkEmptyBag(Float::sort());
-      for (unsigned i = 0; i < 100; i ++)
-        empty = Expr::mkUnion(empty, Expr::mkBag(a.select(Index(i))));
+Expr associativeSum(const Expr &a, const Expr &n) {
+  // Is it possible to encode sum operation as type of BAGs?
+  auto empty = Expr::mkEmptyBag(Float::sort());
+  for (unsigned i = 0; i < 100; i ++)
+    empty = Expr::mkUnion(empty, Expr::mkBag(a.select(Index(i))));
 
-      return Expr::mkMixedExpr(res, empty.simplify());
-    }
-  #endif // SOLVER_CVC5
-
-  return res;
+  return empty.simplify();
 }
 
 Expr dot(const Expr &a, const Expr &b, const Expr &n) {
@@ -139,6 +135,10 @@ Expr dot(const Expr &a, const Expr &b, const Expr &n) {
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     Expr ai = a.select(n - 1 - i), bi = b.select(n - 1 - i);
     return sum(Expr::mkLambda(i, fpMul(ai, bi)), n);
+  } else if (alDot == AbsLevelDot::ASSOCIATIVE_SUM_MUL) {
+    auto i = (Expr)Index::var("idx", VarType::BOUND);
+    Expr ai = a.select(n - 1 - i), bi = b.select(n - 1 - i);
+    return associativeSum(Expr::mkLambda(i, fpMul(ai, bi)), n);
   }
   llvm_unreachable("Unknown abstraction level for dot");
 }

@@ -15,7 +15,8 @@ UsedAbstractOps getUsedAbstractOps();
 
 enum class AbsLevelDot {
   FULLY_ABS = 0, // Dot is a fully unknown function
-  SUM_MUL   = 1  // Dot is a summation of pairwisely multiplied values
+  SUM_MUL   = 1,  // Dot is a summation of pairwisely multiplied values
+  ASSOCIATIVE_SUM_MUL = 2 // Dot is summation of pairwisely multiplied values and summation is associative.
 };
 
 // This resets the used abstract ops record.
