@@ -1,0 +1,162 @@
+name: CI
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+  # check PRs
+  pull_request:
+    branches:
+      - master
+
+  # check pushes
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    container:
+      image: strikef/mlir-tv-ci-base:latest
+      credentials:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+    
+    steps:
+      - name: Fetch mlir-tv cache
+        id: src-cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            /src/mlir-tv
+            !/src/mlir-tv/build/Testing
+          key: cache-${{ secrets.CACHE_VERSION }}-${{ github.sha }}
+
+      # if cache miss
+      - name: Create /src if not exists
+        if: steps.src-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir /src
+      # endif cache miss
+
+      - name: Checkout this repo
+        uses: actions/checkout@v2
+        with:
+          path: mlir-tv
+
+      - name: Move repo to absolute location
+        run: |
+          mv mlir-tv /src/mlir-tv
+
+      - name: Build mlir-tv
+        run: |
+          cd /src/mlir-tv
+          cmake -B build -G Ninja \
+            -DMLIR_DIR=/opt/llvm -DZ3_DIR=/opt/z3 -DCVC5_DIR=/opt/cvc5 \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+  build-Z3-only:
+    runs-on: ubuntu-20.04
+    container:
+      image: strikef/mlir-tv-ci-base:latest
+      credentials:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+    
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v2
+        with:
+          path: mlir-tv
+
+      - name: Build mlir-tv
+        run: |
+          cd mlir-tv
+          cmake -B build -G Ninja \
+            -DMLIR_DIR=/opt/llvm -DZ3_DIR=/opt/z3
+          cmake --build build
+
+  build-CVC5-only:
+    runs-on: ubuntu-20.04
+    container:
+      image: strikef/mlir-tv-ci-base:latest
+      credentials:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+    
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v2
+        with:
+          path: mlir-tv
+
+      - name: Build mlir-tv
+        run: |
+          cd mlir-tv
+          cmake -B build -G Ninja \
+            -DMLIR_DIR=/opt/llvm -DCVC5_DIR=/opt/cvc5
+          cmake --build build
+
+  opts-test:
+    needs: build
+    runs-on: ubuntu-20.04
+    container:
+      image: strikef/mlir-tv-ci-base:latest
+      credentials:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+    steps:
+      - name: Fetch mlir-tv cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            /src/mlir-tv
+            !/src/mlir-tv/build/Testing
+          key: cache-${{ secrets.CACHE_VERSION }}-${{ github.sha }}
+      
+      - name: Run ctest
+        run: |
+          cd /src/mlir-tv/build
+          . /venv/bin/activate
+          ctest -R Opts
+
+      - name: Upload test log
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: opts-test
+          path: /src/mlir-tv/build/Testing/Temporary/LastTest.log
+
+  litmus-test:
+    runs-on: ubuntu-20.04
+    needs: build
+    container:
+      image: strikef/mlir-tv-ci-base:latest
+      credentials:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+    
+    steps:
+      - name: Fetch mlir-tv cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            /src/mlir-tv
+            !/src/mlir-tv/build/Testing
+          key: cache-${{ secrets.CACHE_VERSION }}-${{ github.sha }}
+      
+      - name: Run ctest
+        run: |
+          cd /src/mlir-tv/build
+          . /venv/bin/activate
+          ctest -R Litmus
+
+      - name: Upload test log
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: litmus-test
+          path: /src/mlir-tv/build/Testing/Temporary/LastTest.log

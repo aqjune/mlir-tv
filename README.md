@@ -51,7 +51,8 @@ mlir-interp <.mlir>
 cd build
 # A detailed log is written to build/Testing/Temporary/LastTest.log
 # If you want detailed output on the terminal, please add -V
-ctest -R Unit
+# ctest -R Unit # Currently unavailable
 ctest -R Opts # Test IR transformation passes
+ctest -R Long # Test passes that take a lot of time
 ctest -R Litmus # Test litmus only
 ```
