@@ -1083,16 +1083,23 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   using mlir::matchers::m_Val;
   // Support this form:
   //   ...
-  //   %sum = addf %v, %arg_out
+  //   %sum = addf %v, %arg_out or  %sum = addf %arg_out, %v
   //   yield %sum
   auto lastarg = block.getArgument(block.getNumArguments() - 1);
   assert(!newst.regs.contains(lastarg));
 
-  auto p = m_Op<mlir::linalg::YieldOp>(
+  auto p1 = m_Op<mlir::linalg::YieldOp>(
+      m_Op<mlir::AddFOp>(m_Val(lastarg), m_Any()));
+  auto p2 = m_Op<mlir::linalg::YieldOp>(
       m_Op<mlir::AddFOp>(m_Any(), m_Val(lastarg)));
-  if (!p.match(&ops.back()))
+
+  mlir::Value sumvar;
+  if (p1.match(&ops.back()))
+    sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(1);
+  else if (p2.match(&ops.back()))
+    sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(0);
+  else
     return errmsg;
-  auto sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(0);
 
   unsigned cnt = 0;
   for (auto &op: ops) {
