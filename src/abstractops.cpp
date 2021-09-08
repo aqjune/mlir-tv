@@ -32,6 +32,8 @@ void setAbstractionLevel(AbsLevelDot ad) {
   fpconst_absrepr_num = 0;
 }
 
+AbsLevelDot getAbstractionLevel() { return alDot; }
+
 
 Sort fpSort() {
   return Sort::bvSort(FP_BITS);

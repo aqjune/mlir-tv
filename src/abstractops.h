@@ -21,6 +21,7 @@ enum class AbsLevelDot {
 
 // This resets the used abstract ops record.
 void setAbstractionLevel(AbsLevelDot);
+AbsLevelDot getAbstractionLevel();
 
 smt::Sort fpSort();
 smt::Expr fpConst(double f);
@@ -31,6 +32,7 @@ smt::Expr mkZeroElemFromArr(const smt::Expr &arr);
 smt::Expr fpAdd(const smt::Expr &f1, const smt::Expr &f2);
 smt::Expr fpMul(const smt::Expr &f1, const smt::Expr &f2);
 smt::Expr sum(const smt::Expr &arr, const smt::Expr &n);
+smt::Expr associativeSum(const smt::Expr &arr, const smt::Expr &n);
 smt::Expr dot(const smt::Expr &arr1, const smt::Expr &arr2, const smt::Expr &n);
 
 };
