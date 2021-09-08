@@ -463,7 +463,7 @@ Expr Expr::store(uint64_t idx, const Expr &val) const {
   return store(mkBV(idx, sort().getArrayDomain().bitwidth()), val);
 }
 
-Expr Expr::add(const Expr &elem) const {
+Expr Expr::insert(const Expr &elem) const {
   Expr e;
   // Z3 doesn't support multiset theory. So here we encode it using const array.
   SET_Z3(e, fmap(z3, [&](auto arrayz3) {

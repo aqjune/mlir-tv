@@ -121,7 +121,7 @@ public:
   Expr store(uint64_t idx, const Expr &val) const;
 
   /* Bag(multiSets) operations */
-  Expr add(const Expr &elem) const;
+  Expr insert(const Expr &elem) const;
 
   Expr extract(unsigned hbit, unsigned lbit) const;
   Expr getMSB() const;

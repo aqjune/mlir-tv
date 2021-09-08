@@ -111,7 +111,7 @@ Expr associativeSum(const Expr &a, const Expr &n) {
 
   auto bag = Expr::mkEmptyBag(Float::sort());
   for (unsigned i = 0; i < length; i ++)
-    bag = bag.add(a.select(Index(i)));
+    bag = bag.insert(a.select(Index(i)));
 
   return bag.simplify();
 }
