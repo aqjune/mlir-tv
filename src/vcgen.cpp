@@ -44,6 +44,7 @@ public:
 
   MemEncoding encoding;
   unsigned int numBlocks;
+  bool associativeSum;
 };
 
 };
@@ -396,20 +397,24 @@ static Results validate(ValidationInput vinput) {
 
   if (res.code == Results::INCONSISTENT)
     return res;
-  else if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
+  else if (res.code == Results::SUCCESS) {
     // Check whether it is always UB
     checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, elapsedMillisec);
     return res;
   }
 
   auto usedOps = aop::getUsedAbstractOps();
-  if (usedOps.dot && usedOps.sum && usedOps.mul) {
+  if (usedOps.dot && vinput.associativeSum) {
+    // dot = mul + associative sum
+    aop::setAbstractionLevel(aop::AbsLevelDot::ASSOCIATIVE_SUM_MUL);
+  } else if (usedOps.dot && usedOps.sum && usedOps.mul) {
     // dot = mul + sum
     aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL);
     if (!vinput.dumpSMTPath.empty())
       vinput.dumpSMTPath += "_noabs";
-  } else
+  } else {
     return res;
+  }
 
   // Try more precise encoding
   llvm::outs()
@@ -427,7 +432,9 @@ static Results validate(ValidationInput vinput) {
 
 Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
-    const string &dumpSMTPath, unsigned int numBlocks, MemEncoding encoding) {
+    const string &dumpSMTPath,
+    unsigned int numBlocks, MemEncoding encoding,
+    bool associativeSum) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -454,6 +461,7 @@ Results validate(
     vinput.dumpSMTPath = dumpSMTPath;
     vinput.numBlocks = numBlocks;
     vinput.encoding = encoding;
+    vinput.associativeSum = associativeSum;
 
     verificationResult.merge(validate(vinput));
   }

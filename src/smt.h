@@ -170,8 +170,7 @@ public:
   static Expr mkSplatArray(const Sort &domain, const Expr &splatElem);
   static Expr mkIte(const Expr &cond, const Expr &then, const Expr &els);
   static Expr mkEmptyBag(const Sort &domain);
-  static Expr mkBag(const Expr &element);
-  static Expr mkUnion(const Expr &bag1, const Expr &bag2);
+  static Expr mkBagAdd(const Expr &bag, const Expr &elem);
 
   static Expr mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed);
 

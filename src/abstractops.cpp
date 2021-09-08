@@ -103,10 +103,13 @@ Expr sum(const Expr &a, const Expr &n) {
 }
 
 Expr associativeSum(const Expr &a, const Expr &n) {
-  // Is it possible to encode sum operation as type of BAGs?
+  uint64_t length;
+  if (!n.isUInt(length))
+    assert("Only static length array is supported.");
+
   auto empty = Expr::mkEmptyBag(Float::sort());
-  for (unsigned i = 0; i < 100; i ++)
-    empty = Expr::mkUnion(empty, Expr::mkBag(a.select(Index(i))));
+  for (unsigned i = 0; i < length; i ++)
+    empty = Expr::mkBagAdd(empty, a.select(Index(i)));
 
   return empty.simplify();
 }
@@ -133,11 +136,11 @@ Expr dot(const Expr &a, const Expr &b, const Expr &n) {
     usedOps.mul = usedOps.sum = true;
     // TODO: check that a.get_Sort() == b.get_Sort()
     auto i = (Expr)Index::var("idx", VarType::BOUND);
-    Expr ai = a.select(n - 1 - i), bi = b.select(n - 1 - i);
+    Expr ai = a.select(i), bi = b.select(i);
     return sum(Expr::mkLambda(i, fpMul(ai, bi)), n);
   } else if (alDot == AbsLevelDot::ASSOCIATIVE_SUM_MUL) {
     auto i = (Expr)Index::var("idx", VarType::BOUND);
-    Expr ai = a.select(n - 1 - i), bi = b.select(n - 1 - i);
+    Expr ai = a.select(i), bi = b.select(i);
     return associativeSum(Expr::mkLambda(i, fpMul(ai, bi)), n);
   }
   llvm_unreachable("Unknown abstraction level for dot");

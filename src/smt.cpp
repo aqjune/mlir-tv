@@ -765,6 +765,8 @@ Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
 
 Expr Expr::mkEmptyBag(const Sort &domain) {
   Expr e;
+  // Z3 doesn't support multiset theory. So here we encode it using const array.
+  SET_Z3(e, Expr::mkSplatArray(domain, Index::zero()).z3);
   SET_CVC5(e, fupdate2(sctx.cvc5, domain.cvc5, [&](auto &solver, auto domcvc) {
     auto bag = solver.mkBagSort(domcvc);
     return solver.mkEmptyBag(bag);
@@ -772,18 +774,16 @@ Expr Expr::mkEmptyBag(const Sort &domain) {
   return e;
 }
 
-Expr Expr::mkBag(const Expr &element) {
+Expr Expr::mkBagAdd(const Expr &bag, const Expr &elem) {
   Expr e;
-  SET_CVC5(e, fupdate2(sctx.cvc5, element.cvc5, [&](auto &solver, auto element) {
-    return solver.mkTerm(cvc5::api::MK_BAG, element, solver.mkInteger(1));
+  // Z3 doesn't support multiset theory. So here we encode it using const array.
+  SET_Z3(e, fmap(bag.z3, [&](auto arrayz3) {
+    auto idx = *elem.z3;
+    return z3::store(arrayz3, idx, z3::select(arrayz3, idx) + 1);
   }));
-  return e;
-}
-
-Expr Expr::mkUnion(const Expr &bag1, const Expr &bag2) {
-  Expr e;
   SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
-    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *bag1.cvc5, *bag2.cvc5);
+    auto newBag = solver.mkTerm(cvc5::api::MK_BAG, *elem.cvc5, solver.mkInteger(1));
+    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *bag.cvc5, newBag);
   }));
   return e;
 }
@@ -1021,16 +1021,8 @@ void Solver::reset() {
 CheckResult Solver::check() {
   // TODO: concurrent run with solvers and return the fastest one?
   CheckResult cr;
-  SET_Z3(cr, fupdate(z3, [](auto &solver) {
-    auto r = solver.check();
-    cout << "Z3 Result: " << r << "\n";
-    return r;
-  }));
-  SET_CVC5(cr, fupdate(sctx.cvc5, [](auto &solver) {
-    auto r = solver.checkSat();
-    cout << "CVC5  Result: " << r << "\n";
-    return r;
-  }));
+  SET_Z3(cr, fupdate(z3, [](auto &solver) { return solver.check(); }));
+  SET_CVC5(cr, fupdate(sctx.cvc5, [](auto &solver) { return solver.checkSat(); }));
   return cr;
 }
 

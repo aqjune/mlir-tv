@@ -44,4 +44,5 @@ enum class VerificationStep {
 Results validate(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const std::string &dump_smt_to,
     unsigned int numBlocks,
-    MemEncoding encoding);
+    MemEncoding encoding,
+    bool associativeSum);
