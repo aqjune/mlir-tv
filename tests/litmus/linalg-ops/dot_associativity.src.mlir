@@ -3,8 +3,7 @@
 // This optimization does not correct in floating point arithmetic but in practice it's correct
 // To verify this, we can give "associative" options to mlir-tv.
 // Then it checks equality between two input arguments based on multiset theroy.
-// `./build/mlir-tv tests/litmus/linalg-ops/dot_associativity.src.mlir tests/litmus/linalg-ops/dot_associativity.tgt.mlir --cross-check --associative`
-// (Here we need cross-check option because only cvc5 support this multiset theory)
+// `./build/mlir-tv tests/litmus/linalg-ops/dot_associativity.src.mlir tests/litmus/linalg-ops/dot_associativity.tgt.mlir --associative`
 
 func @f() -> tensor<f32> {
   %i = linalg.init_tensor []: tensor<f32>
