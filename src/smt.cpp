@@ -1016,7 +1016,8 @@ CheckResult Solver::check() {
   // TODO: concurrent run with solvers and return the fastest one?
   CheckResult cr;
   SET_Z3(cr, fupdate(z3, [](auto &solver) { return solver.check(); }));
-  SET_CVC5(cr, fupdate(sctx.cvc5, [](auto &solver) { return solver.checkSat(); }));
+  SET_CVC5(cr, fupdate(sctx.cvc5,
+      [](auto &solver) { return solver.checkSat(); }));
   return cr;
 }
 
