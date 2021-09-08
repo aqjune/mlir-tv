@@ -114,10 +114,14 @@ public:
   Expr uge(const Expr &rhs) const;
   Expr uge(uint64_t rhs) const;
 
+  /* Array operations */
   Expr select(const Expr &idx) const;
   Expr select(const std::vector<Expr> &idxs) const;
   Expr store(const Expr &idx, const Expr &val) const;
   Expr store(uint64_t idx, const Expr &val) const;
+
+  /* Bag(multiSets) operations */
+  Expr add(const Expr &elem) const;
 
   Expr extract(unsigned hbit, unsigned lbit) const;
   Expr getMSB() const;
@@ -170,11 +174,8 @@ public:
   static Expr mkSplatArray(const Sort &domain, const Expr &splatElem);
   static Expr mkIte(const Expr &cond, const Expr &then, const Expr &els);
   static Expr mkEmptyBag(const Sort &domain);
-  static Expr mkBagAdd(const Expr &bag, const Expr &elem);
 
   static Expr mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed);
-
-  static Expr mkMixedExpr(const Expr &z3, const Expr &cvc5);
 
 
   friend FnDecl;

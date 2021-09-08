@@ -107,11 +107,11 @@ Expr associativeSum(const Expr &a, const Expr &n) {
   if (!n.isUInt(length))
     assert("Only static length array is supported.");
 
-  auto empty = Expr::mkEmptyBag(Float::sort());
+  auto bag = Expr::mkEmptyBag(Float::sort());
   for (unsigned i = 0; i < length; i ++)
-    empty = Expr::mkBagAdd(empty, a.select(Index(i)));
+    bag = bag.add(a.select(Index(i)));
 
-  return empty.simplify();
+  return bag.simplify();
 }
 
 Expr dot(const Expr &a, const Expr &b, const Expr &n) {

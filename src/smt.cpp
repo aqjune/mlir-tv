@@ -463,6 +463,21 @@ Expr Expr::store(uint64_t idx, const Expr &val) const {
   return store(mkBV(idx, sort().getArrayDomain().bitwidth()), val);
 }
 
+Expr Expr::add(const Expr &elem) const {
+  Expr e;
+  // Z3 doesn't support multiset theory. So here we encode it using const array.
+  SET_Z3(e, fmap(z3, [&](auto arrayz3) {
+    auto idx = *elem.z3;
+    return z3::store(arrayz3, idx, z3::select(arrayz3, idx) + 1);
+  }));
+  SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
+    auto newBag = solver.mkTerm(cvc5::api::MK_BAG, *elem.cvc5, solver.mkInteger(1));
+    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *cvc5, newBag);
+  }));
+  return e;
+}
+
+
 Expr Expr::getMSB() const {
   auto bw = sort().bitwidth() - 1;
   return extract(bw, bw);
@@ -774,31 +789,10 @@ Expr Expr::mkEmptyBag(const Sort &domain) {
   return e;
 }
 
-Expr Expr::mkBagAdd(const Expr &bag, const Expr &elem) {
-  Expr e;
-  // Z3 doesn't support multiset theory. So here we encode it using const array.
-  SET_Z3(e, fmap(bag.z3, [&](auto arrayz3) {
-    auto idx = *elem.z3;
-    return z3::store(arrayz3, idx, z3::select(arrayz3, idx) + 1);
-  }));
-  SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
-    auto newBag = solver.mkTerm(cvc5::api::MK_BAG, *elem.cvc5, solver.mkInteger(1));
-    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *bag.cvc5, newBag);
-  }));
-  return e;
-}
-
 Expr Expr::mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed) {
   return is_signed ?
       ((a + b).sext(1) == a.sext(1) + b.sext(1)) :
       ((a.zext(1) + b.zext(1)).getMSB() == 0);
-}
-
-Expr Expr::mkMixedExpr(const Expr &z3, const Expr &cvc5) {
-  Expr e;
-  SET_Z3(e, *z3.z3);
-  SET_CVC5(e, *cvc5.cvc5);
-  return e;
 }
 
 // ------- Sort -------
