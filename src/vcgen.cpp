@@ -397,14 +397,14 @@ static Results validate(ValidationInput vinput) {
 
   if (res.code == Results::INCONSISTENT)
     return res;
-  else if (res.code == Results::SUCCESS) {
+  else if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
     // Check whether it is always UB
     checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, elapsedMillisec);
     return res;
   }
 
   auto usedOps = aop::getUsedAbstractOps();
-  if (usedOps.dot && vinput.associativeSum) {
+  if (vinput.associativeSum) {
     // dot = mul + associative sum
     aop::setAbstractionLevel(aop::AbsLevelDot::ASSOCIATIVE_SUM_MUL);
   } else if (usedOps.dot && usedOps.sum && usedOps.mul) {

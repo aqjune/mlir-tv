@@ -1,4 +1,4 @@
-// UNSUPPORTED
+// VERIFY-INCORRECT
 
 // This optimization does not correct in floating point arithmetic but in practice it's correct
 // To verify this, we can give "associative" options to mlir-tv.
