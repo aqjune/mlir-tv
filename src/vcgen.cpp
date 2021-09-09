@@ -406,7 +406,7 @@ static Results validate(ValidationInput vinput) {
 
   if (res.code == Results::INCONSISTENT)
     return res;
-  else if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
+  else if (res.code == Results::SUCCESS) {
     // Check whether it is always UB
     checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, false,
         elapsedMillisec);

@@ -1,4 +1,4 @@
-// VERIFY-INCORRECT
+// UNSUPPORTED
 
 // Even if fp addition is not associative in the precise definition of floating
 // point arithmetics, people might want to allow rewritings based on it for
