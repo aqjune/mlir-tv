@@ -20,17 +20,22 @@ const unsigned FP_BITS = 4;
 namespace aop {
 
 static AbsLevelDot alDot;
+static bool isAddAssociative;
 static UsedAbstractOps usedOps;
 
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
-void setAbstractionLevel(AbsLevelDot ad) {
+void setAbstractionLevel(AbsLevelDot ad, bool addAssoc) {
   alDot = ad;
+  isAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
   fpconst_absrepr.clear();
   fpconst_absrepr_num = 0;
 }
+
+bool getAddAssociativity() { return isAddAssociative; }
+AbsLevelDot getDotAbstractionLevel() { return alDot; }
 
 
 Sort fpSort() {
@@ -103,6 +108,18 @@ Expr sum(const Expr &a, const Expr &n) {
   return (*sumfn)(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
 }
 
+Expr associativeSum(const Expr &a, const Expr &n) {
+  uint64_t length;
+  if (!n.isUInt(length))
+    assert("Only an array of constant length is supported.");
+
+  auto bag = Expr::mkEmptyBag(Float::sort());
+  for (unsigned i = 0; i < length; i ++)
+    bag = bag.insert(a.select(Index(i)));
+
+  return bag.simplify();
+}
+
 Expr dot(const Expr &a, const Expr &b, const Expr &n) {
   if (alDot == AbsLevelDot::FULLY_ABS) {
     usedOps.dot = true;
@@ -126,7 +143,12 @@ Expr dot(const Expr &a, const Expr &b, const Expr &n) {
     // TODO: check that a.get_Sort() == b.get_Sort()
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     Expr ai = a.select(i), bi = b.select(i);
-    return sum(Expr::mkLambda(i, fpMul(ai, bi)), n);
+    Expr arr = Expr::mkLambda(i, fpMul(ai, bi));
+
+    if (isAddAssociative)
+      return associativeSum(arr, n);
+    else
+      return sum(arr, n);
   }
   llvm_unreachable("Unknown abstraction level for dot");
 }

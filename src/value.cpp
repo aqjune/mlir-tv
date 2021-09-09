@@ -352,7 +352,10 @@ Expr Tensor::dot(const Tensor &t2) const {
 }
 
 Expr Tensor::sum() const {
-  return aop::sum(arr, get1DSize());
+  if (aop::getAddAssociativity())
+    return aop::associativeSum(arr, get1DSize());
+  else
+    return aop::sum(arr, get1DSize());
 }
 
 pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {

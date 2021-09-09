@@ -48,6 +48,11 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
                  " (default=8)"),
   llvm::cl::init(8), llvm::cl::value_desc("number"));
 
+llvm::cl::opt<bool> arg_associative_sum("associative",
+  llvm::cl::desc("Assume that floating point add is associative "
+                 "(experimental)"),
+  llvm::cl::init(false));
+
 llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
   llvm::cl::desc("Type of memref memory model (default=MULTIPLE)"),
   llvm::cl::init(MemEncoding::MULTIPLE_ARRAY), llvm::cl::Hidden,
@@ -77,7 +82,11 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   }
 
   return validate(ir_before, ir_after,
-    arg_dump_smt_to.getValue(), num_memblocks.getValue(), memory_encoding.getValue()).code;
+    arg_dump_smt_to.getValue(),
+    num_memblocks.getValue(),
+    memory_encoding.getValue(),
+    arg_associative_sum.getValue()
+    ).code;
 }
 
 static unsigned splitAndValidateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,

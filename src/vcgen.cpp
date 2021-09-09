@@ -44,6 +44,7 @@ public:
 
   MemEncoding encoding;
   unsigned int numBlocks;
+  bool associativeAdd;
 };
 
 };
@@ -171,13 +172,14 @@ static pair<CheckResult, int64_t> solve(
   return {result, elapsedMillisec};
 }
 
-static const char *SMT_LOGIC_QF = "QF_UFBV";
-static const char *SMT_LOGIC    = "UFBV";
+static const char *SMT_LOGIC_QF  = "QF_UFBV";
+static const char *SMT_LOGIC     = "UFBV";
+static const char *SMT_LOGIC_ALL = "ALL";
 
 static Results checkRefinement(
     const ValidationInput &vinput,
     const State &st_src, const State &st_tgt, Expr &&precond,
-    int64_t &elapsedMillisec) {
+    bool useAllLogic, int64_t &elapsedMillisec) {
   mlir::FuncOp src = vinput.src;
   mlir::FuncOp tgt = vinput.tgt;
   auto fnname = src.getName().str();
@@ -195,8 +197,9 @@ static Results checkRefinement(
       llvm_unreachable("unexpected result");
     }
   };
-  const char *logic = (st_src.hasQuantifier || st_tgt.hasQuantifier) ?
-      SMT_LOGIC : SMT_LOGIC_QF;
+  const char *logic = useAllLogic ? SMT_LOGIC_ALL :
+      ((st_src.hasQuantifier || st_tgt.hasQuantifier) ?
+        SMT_LOGIC : SMT_LOGIC_QF);
 
   { // 1. Check UB
     Solver s(logic);
@@ -340,14 +343,17 @@ static tuple<State, State, Expr> encodeFinalStates(
 }
 
 static Results tryValidation(
-    const ValidationInput &vinput, bool printOps, int64_t &elapsedMillisec) {
+    const ValidationInput &vinput, bool printOps, bool useAllLogic,
+    int64_t &elapsedMillisec) {
   auto enc = encodeFinalStates(vinput, true);
   return checkRefinement(
-        vinput, get<0>(enc), get<1>(enc), move(get<2>(enc)), elapsedMillisec);
+        vinput, get<0>(enc), get<1>(enc), move(get<2>(enc)), useAllLogic,
+        elapsedMillisec);
 }
 
 static void checkIsSrcAlwaysUB(
-    const ValidationInput &vinput, bool wasSuccess, int64_t &elapsedMillisec) {
+    const ValidationInput &vinput, bool wasSuccess, bool useAllLogic,
+    int64_t &elapsedMillisec) {
   static bool isCalled = false;
   assert(!isCalled);
   isCalled = true;
@@ -356,7 +362,7 @@ static void checkIsSrcAlwaysUB(
 
   // Set the abstract level to be as concrete as possible because we may not
   // be able to detect always-UB cases
-  aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL);
+  aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, vinput.associativeAdd);
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
@@ -365,7 +371,8 @@ static void checkIsSrcAlwaysUB(
         Memory::create(vinput.numBlocks, vinput.numBlocks, vinput.encoding)),
       false, true, args_dummy, preconds);
 
-  auto logic = st.hasQuantifier ? SMT_LOGIC : SMT_LOGIC_QF;
+  auto logic = useAllLogic ? SMT_LOGIC_ALL :
+      (st.hasQuantifier ? SMT_LOGIC : SMT_LOGIC_QF);
   Solver s(logic);
   auto not_ub = st.isWellDefined().simplify();
   auto smtres = solve(s, exprAnd(preconds) & not_ub, vinput.dumpSMTPath,
@@ -391,25 +398,33 @@ static Results validate(ValidationInput vinput) {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
 
-  aop::setAbstractionLevel(aop::AbsLevelDot::FULLY_ABS);
-  auto res = tryValidation(vinput, true, elapsedMillisec);
+  // Don't enable add associativity even if vinput.associativeAdd is true
+  // because simply encoding it as UF is more efficient.
+  aop::setAbstractionLevel(
+      aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false);
+  auto res = tryValidation(vinput, true, false, elapsedMillisec);
 
   if (res.code == Results::INCONSISTENT)
     return res;
-  else if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
+  else if (res.code == Results::SUCCESS) {
     // Check whether it is always UB
-    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, elapsedMillisec);
+    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, false,
+        elapsedMillisec);
     return res;
   }
 
   auto usedOps = aop::getUsedAbstractOps();
-  if (usedOps.dot && usedOps.sum && usedOps.mul) {
-    // dot = mul + sum
-    aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL);
+  bool assocAdd = vinput.associativeAdd;
+  // dot = mul + sum?
+  bool useSumMulForDot = usedOps.dot && usedOps.sum && usedOps.mul;
+
+  if (assocAdd || useSumMulForDot) {
+    aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, assocAdd);
     if (!vinput.dumpSMTPath.empty())
       vinput.dumpSMTPath += "_noabs";
-  } else
+  } else {
     return res;
+  }
 
   // Try more precise encoding
   llvm::outs()
@@ -417,17 +432,21 @@ static Results validate(ValidationInput vinput) {
       << "  Giving more precise semantics to abstractly defined ops...\n"
       << "===============================================================\n\n";
 
-  res = tryValidation(vinput, false, elapsedMillisec);
+  bool useAllLogic = assocAdd;
+  res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
   if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
     // Check whether it is always UB
-    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, elapsedMillisec);
+    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, useAllLogic,
+                       elapsedMillisec);
   return res;
 }
 
 
 Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
-    const string &dumpSMTPath, unsigned int numBlocks, MemEncoding encoding) {
+    const string &dumpSMTPath,
+    unsigned int numBlocks, MemEncoding encoding,
+    bool associativeAdd) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -454,6 +473,7 @@ Results validate(
     vinput.dumpSMTPath = dumpSMTPath;
     vinput.numBlocks = numBlocks;
     vinput.encoding = encoding;
+    vinput.associativeAdd = associativeAdd;
 
     verificationResult.merge(validate(vinput));
   }

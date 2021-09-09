@@ -57,7 +57,8 @@ public:
 #ifdef SOLVER_CVC5
   void useCVC5() {
     this->cvc5.emplace();
-    this->cvc5->setLogic("HO_AUFBV");
+    // TODO: Conditionally use HO_AUFBV
+    this->cvc5->setLogic("HO_ALL");
     this->cvc5->setOption("tlimit", to_string(timeout_ms));
     this->cvc5->setOption("produce-models", "true");
   }
@@ -463,6 +464,21 @@ Expr Expr::store(uint64_t idx, const Expr &val) const {
   return store(mkBV(idx, sort().getArrayDomain().bitwidth()), val);
 }
 
+Expr Expr::insert(const Expr &elem) const {
+  Expr e;
+  // Z3 doesn't support multisets. We encode it using a const array.
+  SET_Z3(e, fmap(z3, [&](auto arrayz3) {
+    auto idx = *elem.z3;
+    return z3::store(arrayz3, idx, z3::select(arrayz3, idx) + 1);
+  }));
+  SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
+    auto newBag = solver.mkTerm(cvc5::api::MK_BAG, *elem.cvc5, solver.mkInteger(1));
+    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *cvc5, newBag);
+  }));
+  return e;
+}
+
+
 Expr Expr::getMSB() const {
   auto bw = sort().bitwidth() - 1;
   return extract(bw, bw);
@@ -759,6 +775,17 @@ Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
     else if (thenSort.isArray() && elsSort.isFunction())
       thenval = toCVC5Lambda(thenval);
     return solver.mkTerm(cvc5::api::ITE, condcvc, thenval, elsval);
+  }));
+  return e;
+}
+
+Expr Expr::mkEmptyBag(const Sort &domain) {
+  Expr e;
+  // Z3 doesn't support multisets. We encode it using a const array.
+  SET_Z3(e, Expr::mkSplatArray(domain, Index::zero()).z3);
+  SET_CVC5(e, fupdate2(sctx.cvc5, domain.cvc5, [&](auto &solver, auto domcvc) {
+    auto bag = solver.mkBagSort(domcvc);
+    return solver.mkEmptyBag(bag);
   }));
   return e;
 }
@@ -1114,6 +1141,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
 std::ostream& operator<<(std::ostream& os, const smt::Expr &e) {
   // FIXME
   IF_Z3_ENABLED(os << e.getZ3Expr());
+  // IF_CVC5_ENABLED(os << e.getCVC5Term());
   return os;
 }
 
