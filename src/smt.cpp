@@ -57,6 +57,7 @@ public:
 #ifdef SOLVER_CVC5
   void useCVC5() {
     this->cvc5.emplace();
+    // TODO: Conditionally use HO_AUFBV
     this->cvc5->setLogic("HO_ALL");
     this->cvc5->setOption("tlimit", to_string(timeout_ms));
     this->cvc5->setOption("produce-models", "true");

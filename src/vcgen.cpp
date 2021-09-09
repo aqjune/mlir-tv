@@ -172,13 +172,14 @@ static pair<CheckResult, int64_t> solve(
   return {result, elapsedMillisec};
 }
 
-static const char *SMT_LOGIC_QF = "ALL";
-static const char *SMT_LOGIC    = "ALL";
+static const char *SMT_LOGIC_QF  = "QF_UFBV";
+static const char *SMT_LOGIC     = "UFBV";
+static const char *SMT_LOGIC_ALL = "ALL";
 
 static Results checkRefinement(
     const ValidationInput &vinput,
     const State &st_src, const State &st_tgt, Expr &&precond,
-    int64_t &elapsedMillisec) {
+    bool useAllLogic, int64_t &elapsedMillisec) {
   mlir::FuncOp src = vinput.src;
   mlir::FuncOp tgt = vinput.tgt;
   auto fnname = src.getName().str();
@@ -196,8 +197,9 @@ static Results checkRefinement(
       llvm_unreachable("unexpected result");
     }
   };
-  const char *logic = (st_src.hasQuantifier || st_tgt.hasQuantifier) ?
-      SMT_LOGIC : SMT_LOGIC_QF;
+  const char *logic = useAllLogic ? SMT_LOGIC_ALL :
+      ((st_src.hasQuantifier || st_tgt.hasQuantifier) ?
+        SMT_LOGIC : SMT_LOGIC_QF);
 
   { // 1. Check UB
     Solver s(logic);
@@ -341,14 +343,17 @@ static tuple<State, State, Expr> encodeFinalStates(
 }
 
 static Results tryValidation(
-    const ValidationInput &vinput, bool printOps, int64_t &elapsedMillisec) {
+    const ValidationInput &vinput, bool printOps, bool useAllLogic,
+    int64_t &elapsedMillisec) {
   auto enc = encodeFinalStates(vinput, true);
   return checkRefinement(
-        vinput, get<0>(enc), get<1>(enc), move(get<2>(enc)), elapsedMillisec);
+        vinput, get<0>(enc), get<1>(enc), move(get<2>(enc)), useAllLogic,
+        elapsedMillisec);
 }
 
 static void checkIsSrcAlwaysUB(
-    const ValidationInput &vinput, bool wasSuccess, int64_t &elapsedMillisec) {
+    const ValidationInput &vinput, bool wasSuccess, bool useAllLogic,
+    int64_t &elapsedMillisec) {
   static bool isCalled = false;
   assert(!isCalled);
   isCalled = true;
@@ -366,7 +371,8 @@ static void checkIsSrcAlwaysUB(
         Memory::create(vinput.numBlocks, vinput.numBlocks, vinput.encoding)),
       false, true, args_dummy, preconds);
 
-  auto logic = st.hasQuantifier ? SMT_LOGIC : SMT_LOGIC_QF;
+  auto logic = useAllLogic ? SMT_LOGIC_ALL :
+      (st.hasQuantifier ? SMT_LOGIC : SMT_LOGIC_QF);
   Solver s(logic);
   auto not_ub = st.isWellDefined().simplify();
   auto smtres = solve(s, exprAnd(preconds) & not_ub, vinput.dumpSMTPath,
@@ -393,16 +399,17 @@ static Results validate(ValidationInput vinput) {
   });
 
   // Don't enable add associativity even if vinput.associativeAdd is true
-  // because simply encoding it as UF is faster.
+  // because simply encoding it as UF is more efficient.
   aop::setAbstractionLevel(
       aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false);
-  auto res = tryValidation(vinput, true, elapsedMillisec);
+  auto res = tryValidation(vinput, true, false, elapsedMillisec);
 
   if (res.code == Results::INCONSISTENT)
     return res;
   else if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
     // Check whether it is always UB
-    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, elapsedMillisec);
+    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, false,
+        elapsedMillisec);
     return res;
   }
 
@@ -425,10 +432,12 @@ static Results validate(ValidationInput vinput) {
       << "  Giving more precise semantics to abstractly defined ops...\n"
       << "===============================================================\n\n";
 
-  res = tryValidation(vinput, false, elapsedMillisec);
+  bool useAllLogic = assocAdd;
+  res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
   if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
     // Check whether it is always UB
-    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, elapsedMillisec);
+    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, useAllLogic,
+                       elapsedMillisec);
   return res;
 }
 
