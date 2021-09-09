@@ -352,7 +352,7 @@ Expr Tensor::dot(const Tensor &t2) const {
 }
 
 Expr Tensor::sum() const {
-  if (aop::getAbstractionLevel() == aop::AbsLevelDot::ASSOCIATIVE_SUM_MUL)
+  if (aop::getAddAssociativity())
     return aop::associativeSum(arr, get1DSize());
   else
     return aop::sum(arr, get1DSize());

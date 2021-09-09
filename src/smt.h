@@ -120,7 +120,7 @@ public:
   Expr store(const Expr &idx, const Expr &val) const;
   Expr store(uint64_t idx, const Expr &val) const;
 
-  /* Bag(multiSets) operations */
+  /* Bag(multiset) operations */
   Expr insert(const Expr &elem) const;
 
   Expr extract(unsigned hbit, unsigned lbit) const;

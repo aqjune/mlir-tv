@@ -44,7 +44,7 @@ public:
 
   MemEncoding encoding;
   unsigned int numBlocks;
-  bool associativeSum;
+  bool associativeAdd;
 };
 
 };
@@ -357,7 +357,7 @@ static void checkIsSrcAlwaysUB(
 
   // Set the abstract level to be as concrete as possible because we may not
   // be able to detect always-UB cases
-  aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL);
+  aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, vinput.associativeAdd);
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
@@ -392,7 +392,10 @@ static Results validate(ValidationInput vinput) {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
 
-  aop::setAbstractionLevel(aop::AbsLevelDot::FULLY_ABS);
+  // Don't enable add associativity even if vinput.associativeAdd is true
+  // because simply encoding it as UF is faster.
+  aop::setAbstractionLevel(
+      aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false);
   auto res = tryValidation(vinput, true, elapsedMillisec);
 
   if (res.code == Results::INCONSISTENT)
@@ -404,12 +407,12 @@ static Results validate(ValidationInput vinput) {
   }
 
   auto usedOps = aop::getUsedAbstractOps();
-  if (vinput.associativeSum) {
-    // dot = mul + associative sum
-    aop::setAbstractionLevel(aop::AbsLevelDot::ASSOCIATIVE_SUM_MUL);
-  } else if (usedOps.dot && usedOps.sum && usedOps.mul) {
-    // dot = mul + sum
-    aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL);
+  bool assocAdd = vinput.associativeAdd;
+  // dot = mul + sum?
+  bool useSumMulForDot = usedOps.dot && usedOps.sum && usedOps.mul;
+
+  if (assocAdd || useSumMulForDot) {
+    aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, assocAdd);
     if (!vinput.dumpSMTPath.empty())
       vinput.dumpSMTPath += "_noabs";
   } else {
@@ -434,7 +437,7 @@ Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
     unsigned int numBlocks, MemEncoding encoding,
-    bool associativeSum) {
+    bool associativeAdd) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -461,7 +464,7 @@ Results validate(
     vinput.dumpSMTPath = dumpSMTPath;
     vinput.numBlocks = numBlocks;
     vinput.encoding = encoding;
-    vinput.associativeSum = associativeSum;
+    vinput.associativeAdd = associativeAdd;
 
     verificationResult.merge(validate(vinput));
   }

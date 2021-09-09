@@ -49,7 +49,8 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::init(8), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<bool> arg_associative_sum("associative",
-  llvm::cl::desc("Give associative property to floating point summation. (experimental)"),
+  llvm::cl::desc("Assume that floating point add is associative "
+                 "(experimental)"),
   llvm::cl::init(false));
 
 llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",

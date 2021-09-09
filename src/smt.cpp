@@ -465,7 +465,7 @@ Expr Expr::store(uint64_t idx, const Expr &val) const {
 
 Expr Expr::insert(const Expr &elem) const {
   Expr e;
-  // Z3 doesn't support multiset theory. So here we encode it using const array.
+  // Z3 doesn't support multisets. We encode it using a const array.
   SET_Z3(e, fmap(z3, [&](auto arrayz3) {
     auto idx = *elem.z3;
     return z3::store(arrayz3, idx, z3::select(arrayz3, idx) + 1);
@@ -780,7 +780,7 @@ Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
 
 Expr Expr::mkEmptyBag(const Sort &domain) {
   Expr e;
-  // Z3 doesn't support multiset theory. So here we encode it using const array.
+  // Z3 doesn't support multisets. We encode it using a const array.
   SET_Z3(e, Expr::mkSplatArray(domain, Index::zero()).z3);
   SET_CVC5(e, fupdate2(sctx.cvc5, domain.cvc5, [&](auto &solver, auto domcvc) {
     auto bag = solver.mkBagSort(domcvc);
