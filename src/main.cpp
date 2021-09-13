@@ -1,6 +1,7 @@
 #include "memory.h"
 #include "smt.h"
 #include "vcgen.h"
+#include "value.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -50,6 +51,16 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
 
 llvm::cl::opt<bool> arg_associative_sum("associative",
   llvm::cl::desc("Assume that floating point add is associative "
+                 "(experimental)"),
+  llvm::cl::init(false));
+
+llvm::cl::opt<bool> arg_add_identity("add-identity",
+  llvm::cl::desc("Assume that fpadd 0.0 is an identity operation "
+                 "(experimental)"),
+  llvm::cl::init(false));
+
+llvm::cl::opt<bool> arg_mul_identity("mul-identity",
+  llvm::cl::desc("Assume that fpmul 1.0 is an identity operation "
                  "(experimental)"),
   llvm::cl::init(false));
 
@@ -131,6 +142,13 @@ int main(int argc, char* argv[]) {
   if (arg_cross_check)
     smt::useCVC5();
 #endif
+
+  if (arg_add_identity) {
+    Float::useAddIdentity();
+  }
+  if (arg_mul_identity) {
+    Float::useMulIdentity();
+  }
 
   MLIRContext context;
   DialectRegistry registry;

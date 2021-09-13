@@ -7,6 +7,9 @@
 using namespace smt;
 using namespace std;
 
+bool Float::add_identity;
+bool Float::mul_identity;
+
 static string freshName(string prefix) {
   static int count = 0;
   return prefix + to_string(count ++);
@@ -122,13 +125,32 @@ Float Float::eval(Model m) const {
 }
 
 Float Float::add(const Float &b) const {
+  if (add_identity) {
+    // note: returning this or b leads to copying!
+    if (this->e.isIdentical(Float(0.0), false)) {
+      return b;
+    } else if (b.e.isIdentical(Float(0.0), false)) {
+      return *this;
+    }
+  }
+  // fold_add_identity is not set to true
+  // or both expressions are not 0.0
   return Float(aop::fpAdd(e, b.e));
 }
 
 Float Float::mul(const Float &b) const {
+  if (mul_identity) {
+    // note: returning this or b leads to copying!
+    if (this->e.isIdentical(Float(1.0), false)) {
+      return b;
+    } else if (b.e.isIdentical(Float(1.0), false)) {
+      return *this;
+    }
+  }
+  // fold_mul_identity is not set to true
+  // or both expressions are not 1.0
   return Float(aop::fpMul(e, b.e));
 }
-
 
 Integer::Integer(int64_t i, unsigned bw):
   e(Expr::mkBV(i, bw)) {}

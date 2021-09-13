@@ -644,15 +644,20 @@ Expr Expr::substitute(
 bool Expr::isIdentical(const Expr &e2, bool is_or) const {
   bool res = !is_or;
   bool temp;
+
   IF_Z3_ENABLED(
-    temp = z3 && (Z3_ast)*z3 == (Z3_ast)*e2.z3;
-    res = is_or ? (res || temp) : (res && temp));
+    if (z3) {
+      temp = (Z3_ast)*z3 == (Z3_ast)*e2.z3;
+      res = is_or ? (res || temp) : (res && temp);
+    })
+  
   IF_CVC5_ENABLED(
-    temp = cvc5 && cvc5->getId() == e2.cvc5->getId();
-    res = is_or ? (res || temp) : (res && temp));
+    if (cvc5) {
+      temp = cvc5->getId() == e2.cvc5->getId();
+      res = is_or ? (res || temp) : (res && temp);
+    })
   return res;
 }
-
 
 Expr Expr::mkFreshVar(const Sort &s, const std::string &prefix) {
   Expr e;

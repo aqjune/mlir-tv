@@ -46,6 +46,8 @@ public:
 };
 
 class Float {
+  static bool add_identity;
+  static bool mul_identity;
   smt::Expr e;
 
 public:
@@ -66,6 +68,9 @@ public:
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const Float &other) const;
   Float eval(smt::Model m) const;
+
+  static void useAddIdentity() { add_identity = true; }
+  static void useMulIdentity() { mul_identity = true; }
 };
 
 class Integer {
