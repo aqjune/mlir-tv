@@ -49,11 +49,13 @@ Expr fpConst(double f) {
     return itr->second;
 
   uint64_t absval;
-  if (f == 0.0)
+  if (f == 0.0) {
     absval = 0; // This is consistent with what mkZeroElemFromArr assumes
-  else {
-    assert(1 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
-    absval = 1 + fpconst_absrepr_num++;
+  } else if (f == 1.0) {
+    absval = 1;
+  } else {
+    assert(2 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
+    absval = 2 + fpconst_absrepr_num++;
   }
   Expr e = Expr::mkBV(absval, FP_BITS);
   fpconst_absrepr.emplace(f, e);
