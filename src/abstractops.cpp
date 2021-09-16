@@ -49,11 +49,13 @@ Expr fpConst(double f) {
     return itr->second;
 
   uint64_t absval;
-  if (f == 0.0)
+  if (f == 0.0) {
     absval = 0; // This is consistent with what mkZeroElemFromArr assumes
-  else {
-    assert(1 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
-    absval = 1 + fpconst_absrepr_num++;
+  } else if (f == 1.0) {
+    absval = 1;
+  } else {
+    assert(2 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
+    absval = 2 + fpconst_absrepr_num++;
   }
   Expr e = Expr::mkBV(absval, FP_BITS);
   fpconst_absrepr.emplace(f, e);
@@ -76,7 +78,6 @@ Expr mkZeroElemFromArr(const Expr &arr) {
 
 optional<FnDecl> sumfn, dotfn, fpaddfn, fpmulfn;
 
-
 Expr fpAdd(const Expr &f1, const Expr &f2) {
   usedOps.add = true;
   auto fty = f1.sort();
@@ -93,7 +94,16 @@ Expr fpMul(const Expr &a, const Expr &b) {
 
   if (!fpmulfn)
     fpmulfn.emplace({exprSort, exprSort}, Float::sort(), "fp_mul");
-  return fpmulfn->apply({a, b}) + fpmulfn->apply({b, a});
+
+  auto fp_id = Float(1.0);
+  // if a or b is 1.0, the return value need not to be
+  // an abstract and pairwise commutative value.
+  // therefore it returns b or a, not b+b or a+a.
+  return Expr::mkIte(a == fp_id, b,                   // if a == 1.0, then
+    Expr::mkIte(b == fp_id, a,                        // elif b == 1.0 , then
+      fpmulfn->apply({a, b}) + fpmulfn->apply({b, a}) // else
+    )
+  );
 }
 
 Expr sum(const Expr &a, const Expr &n) {
