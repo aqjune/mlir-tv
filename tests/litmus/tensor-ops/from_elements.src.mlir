@@ -1,3 +1,5 @@
+// VERIFY
+
 func @from_elem() -> tensor<3xf32>
 {
   %c1 = constant 3.0 : f32

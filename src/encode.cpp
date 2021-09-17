@@ -366,49 +366,49 @@ optional<string> encodeOp(State &st, mlir::tensor::FromElementsOp op) {
   return {};
 }
 
-template<>
-optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
-  vector<uint64_t> offsets, sizes, strides;
-  auto src = st.regs.get<Tensor>(op.getOperand(0));
-  for (auto s: op.static_offsets()){
-    offsets.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
-  }
-  for (auto s: op.static_sizes()) {
-    sizes.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
-  }
-  for(auto s: op.static_strides()) {
-    strides.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
-  }
-  auto res = op.getResult();
-  auto resType = res.getType().dyn_cast<mlir::ShapedType>();
-  vector<uint64_t> dims;
-  for (unsigned i = 0; i < resType.getRank(); i++)
-    dims.push_back(resType.getDimSize(i));
+// template<>
+// optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
+//   vector<uint64_t> offsets, sizes, strides;
+//   auto src = st.regs.get<Tensor>(op.getOperand(0));
+//   for (auto s: op.static_offsets()){
+//     offsets.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
+//   }
+//   for (auto s: op.static_sizes()) {
+//     sizes.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
+//   }
+//   for(auto s: op.static_strides()) {
+//     strides.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
+//   }
+//   auto res = op.getResult();
+//   auto resType = res.getType().dyn_cast<mlir::ShapedType>();
+//   vector<uint64_t> dims;
+//   for (unsigned i = 0; i < resType.getRank(); i++)
+//     dims.push_back(resType.getDimSize(i));
 
-  auto zero = getZero(resType.getElementType());
-  if (!zero)
-    return "unsupported element type";
-  vector<vector<uint64_t>> indices;
-  vector<smt::Expr> values;
-  // currently only for 2 dimension
-  for(unsigned i=0; i < dims[0]; i++) {
-    for(unsigned j=0; j< dims[1]; j++) {
-      vector<uint64_t> curIdx;
-      vector<Expr> srcIdx;
-      curIdx.push_back(i);
-      curIdx.push_back(j);
-      auto xIdx = Index(offsets[0] + strides[0]*i);
-      auto yIdx = Index(offsets[1] + strides[1]*j);
-      srcIdx.push_back(xIdx);
-      srcIdx.push_back(yIdx);
-      auto value = src.get(srcIdx); // UB?
-      indices.push_back(curIdx);
-      values.push_back(value.first);
-    }
-  }
-  st.regs.add(res, Tensor(indices, values, dims, *zero));
-  return {};
-}
+//   auto zero = getZero(resType.getElementType());
+//   if (!zero)
+//     return "unsupported element type";
+//   vector<vector<uint64_t>> indices;
+//   vector<smt::Expr> values;
+//   // currently only for 2 dimension
+//   for(unsigned i=0; i < dims[0]; i++) {
+//     for(unsigned j=0; j< dims[1]; j++) {
+//       vector<uint64_t> curIdx;
+//       vector<Expr> srcIdx;
+//       curIdx.push_back(i);
+//       curIdx.push_back(j);
+//       auto xIdx = Index(offsets[0] + strides[0]*i);
+//       auto yIdx = Index(offsets[1] + strides[1]*j);
+//       srcIdx.push_back(xIdx);
+//       srcIdx.push_back(yIdx);
+//       auto value = src.get(srcIdx); // UB?
+//       indices.push_back(curIdx);
+//       values.push_back(value.first);
+//     }
+//   }
+//   st.regs.add(res, Tensor(indices, values, dims, *zero));
+//   return {};
+// }
 
 static variant<string, MemRef> createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
@@ -1331,7 +1331,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
     ENCODE(st, op, mlir::tensor::FromElementsOp);
-    ENCODE(st, op, mlir::tensor::ExtractSliceOp);
+    // ENCODE(st, op, mlir::tensor::ExtractSliceOp);
 
     ENCODE(st, op, mlir::memref::AllocOp);
     ENCODE(st, op, mlir::memref::LoadOp);
