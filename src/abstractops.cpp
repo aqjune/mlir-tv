@@ -74,7 +74,7 @@ Expr mkZeroElemFromArr(const Expr &arr) {
   return Expr::mkBV(0, bvsz);
 }
 
-optional<FnDecl> sumfn, dotfn, fpaddfn, fpmulfn;
+optional<FnDecl> sumfn, dotfn, fpaddfn, fpmulfn, hashfn;
 
 
 Expr fpAdd(const Expr &f1, const Expr &f2) {
@@ -113,11 +113,13 @@ Expr associativeSum(const Expr &a, const Expr &n) {
   if (!n.isUInt(length))
     assert("Only an array of constant length is supported.");
 
-  auto bag = Expr::mkEmptyBag(Float::sort());
-  for (unsigned i = 0; i < length; i ++)
-    bag = bag.insert(a.select(Index(i)));
+  if (!hashfn)
+    hashfn.emplace(Float::sort(), Index::sort(), "hash");
 
-  return bag.simplify();
+  auto hash = hashfn->apply(a.select(Index(0)));
+  for (unsigned i = 1; i < length; i ++)
+    hash = hash + hashfn->apply(a.select(Index(i)));
+  return hash.simplify();
 }
 
 Expr dot(const Expr &a, const Expr &b, const Expr &n) {
