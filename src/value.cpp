@@ -211,9 +211,10 @@ Tensor::Tensor(Expr &&splat_elem, vector<Expr> &&dimvec):
     dims(move(dimvec)) {}
 
 Tensor::Tensor(const vector<Expr> &elems1d):
-    arr(Expr::mkSplatArray(Index::sort(), elems1d[0])),
+    arr(Expr::mkFreshVar(Sort::arraySort(Index::sort(), elems1d[0].sort()),
+        "tensor_val")),
     dims({ (Expr)Index(elems1d.size()) }) {
-  for (unsigned i = 1; i < elems1d.size(); ++i)
+  for (unsigned i = 0; i < elems1d.size(); ++i)
     arr = arr.store(i, elems1d[i]);
 }
 
