@@ -1,4 +1,5 @@
-// UNSUPPORTED
+// VERIFY
+// ARGS: --associative
 
 // Even if fp addition is not associative in the precise definition of floating
 // point arithmetics, people might want to allow rewritings based on it for
@@ -6,8 +7,6 @@
 // To conditionally allow this, we add --associative option to mlir-tv.
 // Given the flag, mlir-tv checks the equality between two input arguments of
 // dot based on multiset theroy (to be precise, the argument of 'sum').
-//
-// Run this example with: `./build/mlir-tv tests/litmus/linalg-ops/dot_associativity.src.mlir tests/litmus/linalg-ops/dot_associativity.tgt.mlir --associative`
 
 func @f() -> tensor<f32> {
   %i = linalg.init_tensor []: tensor<f32>
