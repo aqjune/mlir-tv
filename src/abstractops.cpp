@@ -84,7 +84,7 @@ Expr mkZeroElemFromArr(const Expr &arr) {
   return Expr::mkBV(0, bvsz);
 }
 
-optional<FnDecl> sumfn, assoc_sumfn, dotfn, fpaddfn, fpmulfn, hashfn;
+optional<FnDecl> sumfn, assoc_sumfn, dotfn, fpaddfn, fpmulfn;
 
 Expr fpAdd(const Expr &f1, const Expr &f2) {
   usedOps.add = true;
@@ -179,7 +179,7 @@ Expr getAssociativePrecondition() {
         bVal = bVal + hashfn.apply(b.select(Index(i)));
 
       // precond: sumfn(A) != sumfn(B) -> hashfn(A) != hashfn(B)
-      // This means if two summations are different, we can find concrete hash function that satisfies different hash value.
+      // This means if two summations are different, we can find concrete hash function that hashes into different value.
       auto associativity = (!(asum == bsum)).implies(!(aVal == bVal));
       precond = precond & associativity;
     }
