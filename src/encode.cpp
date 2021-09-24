@@ -355,6 +355,17 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::tensor::FromElementsOp op) {
+  vector<Expr> elems;
+  for (unsigned i = 0; i < op.getNumOperands(); ++i)
+    elems.push_back(st.regs.getExpr(op.getOperand(i)));
+
+  auto res = Tensor(elems);
+  st.regs.add(op.getResult(), move(res));
+  return {};
+}
+
 static variant<string, MemRef> createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
   auto elemtyOrNull = MemRef::getElemTy(memrefTy);
@@ -781,6 +792,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
         return "unsupported element";
       sparseValues.push_back(getExpr(*e));
     }
+    st.hasConstArray = true;
     st.regs.add(op, Tensor(sparseIndices, sparseValues, dims, *zero));
     return {};
   }
@@ -1275,6 +1287,7 @@ static optional<string> encodeRegion(
 
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
+    ENCODE(st, op, mlir::tensor::FromElementsOp);
 
     ENCODE(st, op, mlir::memref::AllocOp);
     ENCODE(st, op, mlir::memref::LoadOp);

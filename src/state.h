@@ -53,6 +53,11 @@ class State {
 public:
   smt::Expr precond;
   // welldef[i]: is instruction i well-defined?
+  // The negated form of UB is tracked because the neg. of value refinement is:
+  // 'src.no-ub /\ tgt.no-ub /\ src.retvalue != tgt.retvalue'.
+  // We'll need to implement our own version of peephole optimizations on Z3
+  // expr some day (or simply use Alive2's one), and this form will be helpful
+  // then.
   llvm::DenseMap<mlir::Operation *, smt::Expr> welldef;
 
 public:
@@ -71,12 +76,8 @@ public:
   // Return value tuples
   std::vector<ValueTy> retValues;
 
-  // The negated form of UB is tracked because the neg. of value refinement is:
-  // 'src.no-ub /\ tgt.no-ub /\ src.retvalue != tgt.retvalue'.
-  // We'll need to implement our own version of peephole optimizations on Z3
-  // expr some day (or simply use Alive2's one), and this form will be helpful
-  // then.
   bool hasQuantifier;
+  bool hasConstArray;
   std::shared_ptr<Memory> m;
 
   State(std::unique_ptr<Memory> &&initMem);
