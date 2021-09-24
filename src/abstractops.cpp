@@ -76,7 +76,7 @@ Expr mkZeroElemFromArr(const Expr &arr) {
   return Expr::mkBV(0, bvsz);
 }
 
-optional<FnDecl> sumfn, dotfn, fpaddfn, fpmulfn;
+optional<FnDecl> sumfn, assoc_sumfn, dotfn, fpaddfn, fpmulfn;
 
 Expr fpAdd(const Expr &f1, const Expr &f2) {
   usedOps.add = true;
@@ -127,7 +127,11 @@ Expr associativeSum(const Expr &a, const Expr &n) {
   for (unsigned i = 0; i < length; i ++)
     bag = bag.insert(a.select(Index(i)));
 
-  return bag.simplify();
+  bag = bag.simplify();
+
+  if (!assoc_sumfn)
+    assoc_sumfn.emplace(bag.sort(), Float::sort(), "smt_assoc_sum");
+  return (*assoc_sumfn)(bag);
 }
 
 Expr dot(const Expr &a, const Expr &b, const Expr &n) {

@@ -360,7 +360,7 @@ optional<string> encodeOp(State &st, mlir::tensor::FromElementsOp op) {
   vector<Expr> elems;
   for (unsigned i = 0; i < op.getNumOperands(); ++i)
     elems.push_back(st.regs.getExpr(op.getOperand(i)));
-  
+
   auto res = Tensor(elems);
   st.regs.add(op.getResult(), move(res));
   return {};
@@ -792,6 +792,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
         return "unsupported element";
       sparseValues.push_back(getExpr(*e));
     }
+    st.hasConstArray = true;
     st.regs.add(op, Tensor(sparseIndices, sparseValues, dims, *zero));
     return {};
   }

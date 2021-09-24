@@ -10,8 +10,10 @@ import os
 import re
 import signal
 
-def _executeCommand(dir_tv: str, dir_src: str, dir_tgt: str, timeout: int = 10000) -> Tuple[str, str, int]:
-    command: list[str] = [dir_tv, f"-smt-to={timeout}", dir_src, dir_tgt]
+def _executeCommand(dir_tv: str, dir_src: str, dir_tgt: str,
+                    args = []) -> Tuple[str, str, int]:
+    timeout: int = 10000
+    command: list[str] = [dir_tv, f"-smt-to={timeout}", dir_src, dir_tgt] + args
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8") as proc:
         exitCode = proc.wait()
 
@@ -125,6 +127,7 @@ class ExpectTest(ExitCodeDependentTestBase):
 class SrcTgtPairTest(TestFormat):
     __suffix_src: str = ".src.mlir"
     __suffix_tgt: str = ".tgt.mlir"
+    __args_regex = re.compile(r"^// ?ARGS ?: ?(.*)$")
     __verify_regex = re.compile(r"^// ?VERIFY$")
     __verify_incorrect_regex = re.compile(r"^// ?VERIFY-INCORRECT$")
     __unsupported_regex = re.compile(r"^// ?UNSUPPORTED$")
@@ -158,6 +161,7 @@ class SrcTgtPairTest(TestFormat):
             return lit.Test.SKIPPED, ""
 
         skip_identity_check: bool = False
+        custom_args: str = []
         test: TestBase = NoTest()
         with open(tc_src, 'r') as src_file:
             for line in src_file.readlines():
@@ -172,6 +176,8 @@ class SrcTgtPairTest(TestFormat):
                     test = ExpectTest(msg)
                 elif self.__no_identity_regex.match(line):
                     skip_identity_check = True
+                elif self.__args_regex.match(line):
+                    custom_args = self.__args_regex.match(line).group(1).split()
                 elif not line.strip(): # empty line: no more test keyword
                     break
 
@@ -184,4 +190,5 @@ class SrcTgtPairTest(TestFormat):
             if tgt_identity[0] != lit.Test.PASS:
                 return tgt_identity
 
-        return test.check_exit_code(*_executeCommand(self._dir_tv, tc_src, tc_tgt))
+        return test.check_exit_code(*_executeCommand(
+            self._dir_tv, tc_src, tc_tgt, custom_args))
