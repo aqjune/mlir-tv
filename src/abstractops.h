@@ -24,9 +24,9 @@ AbsLevelDot getAbstractionLevelOfDot();
 bool getAddAssociativity();
 
 smt::Sort fpSort();
-smt::Expr fpConst(float f);
+smt::Expr fpConst(double f);
 // Return the set of possible FP constants for 'e'.
-std::vector<float> fpPossibleConsts(const smt::Expr &e);
+std::vector<double> fpPossibleConsts(const smt::Expr &e);
 
 smt::Expr mkZeroElemFromArr(const smt::Expr &arr);
 smt::Expr fpAdd(const smt::Expr &f1, const smt::Expr &f2);

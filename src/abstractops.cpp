@@ -12,14 +12,24 @@ static string freshName(string prefix) {
 }
 
 namespace {
-// Abstract representation of fp constants.
-map<float, Expr> fpconst_absrepr;
-unsigned fpconst_absrepr_num;
-
 // TODO: this must be properly set
 // What we need to do is to statically find how many 'different' fp values a
 // program may observe.
+// FP_BITS must be geq than 3 (otherwise it can't handle 'reserved' values)
 const unsigned FP_BITS = 32;
+
+// NaNs and Infs must not be used as key
+// because they break the entire map.
+// So we keep them in separate variables
+optional<Expr> fpconst_nan_pos;
+optional<Expr> fpconst_nan_neg;
+optional<Expr> fpconst_inf_pos;
+optional<Expr> fpconst_inf_neg;
+
+// Abstract representation of fp constants other than NaN.
+map<float, Expr> fpconst_absrepr;
+
+unsigned fpconst_absrepr_num;
 }
 
 namespace aop {
@@ -51,6 +61,26 @@ Sort fpSort() {
 }
 
 Expr fpConst(float f) {
+  // NaNs and Infs are handled using separate variable
+  if (isnanf(f)) {
+    if (!fpconst_nan_pos)
+      fpconst_nan_pos = Expr::mkBV(3, FP_BITS);
+    return *fpconst_nan_pos;
+  }
+
+  if (isinff(f)) {
+    if (signbit(f)) {
+      if (!fpconst_inf_neg)
+        fpconst_inf_neg = Expr::mkBV(5, FP_BITS);
+      return *fpconst_inf_neg;
+    }
+    else {
+      if (!fpconst_inf_pos)
+        fpconst_inf_pos = Expr::mkBV(4, FP_BITS);
+      return *fpconst_inf_pos;
+    }
+  }
+
   // We don't explicitly encode f
   auto itr = fpconst_absrepr.find(f);
   if (itr != fpconst_absrepr.end())
@@ -61,17 +91,25 @@ Expr fpConst(float f) {
     absval = 0; // This is consistent with what mkZeroElemFromArr assumes
   } else if (f == 1.0) {
     absval = 1;
+  } else if (f == -0.0) {
+    absval = 2;
   } else {
+<<<<<<< HEAD
     assert((unsigned long long)(2 + fpconst_absrepr_num) < (1ull << FP_BITS));
     absval = 2 + fpconst_absrepr_num++;
+=======
+    // #x3~5 is reserved for NaN and Inf
+    assert(6 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
+    absval = 6 + fpconst_absrepr_num++;
+>>>>>>> ac98261 (Update)
   }
   Expr e = Expr::mkBV(absval, FP_BITS);
   fpconst_absrepr.emplace(f, e);
   return e;
 }
 
-vector<float> fpPossibleConsts(const Expr &e) {
-  vector<float> vec;
+vector<double> fpPossibleConsts(const Expr &e) {
+  vector<double> vec;
   for (auto &[k, v]: fpconst_absrepr) {
     if (v.isIdentical(e))
       vec.push_back(k);
@@ -92,7 +130,28 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
 
   if (!fpaddfn)
     fpaddfn.emplace({fty, fty}, fty, "fp_add");
-  return fpaddfn->apply({f1, f2});
+
+  auto fp_id = Float(-0.0);
+  auto fp_inf_pos = Float(INFINITY);
+  auto fp_inf_neg = Float(-INFINITY);
+  auto fp_nan = Float(nanf("0"));
+
+  return Expr::mkIte(f1 == fp_id, f2,         // -0.0 + x -> x
+    Expr::mkIte(f2 == fp_id, f1,              // x + -0.0 -> x
+      Expr::mkIte(f1 == fp_nan, f1,           // NaN + x -> NaN
+        Expr::mkIte(f2 == fp_nan, f2,         // x + NaN -> NaN
+    // inf + -inf -> NaN, -inf + inf -> NaN
+    // IEEE 754-2019 section 7.2 'Invalid operation'
+    Expr::mkIte((f1 == fp_inf_pos & f2 == fp_inf_neg) |
+                (f1 == fp_inf_neg & f2 == fp_inf_pos), fp_nan,
+    // inf + x -> inf, -inf + x -> -inf (both commutative)
+    // IEEE 754-2019 section 6.1 'Infinity arithmetic'
+    Expr::mkIte(f1 == fp_inf_pos | f1 == fp_inf_neg, f1,
+      Expr::mkIte(f2 == fp_inf_pos | f2 == fp_inf_neg, f2,
+    // if both operands do not fall into any of the cases above,
+    // use fp_add for abstract representation
+    fpaddfn->apply({f1, f2})
+  )))))));
 }
 
 Expr fpMul(const Expr &f1, const Expr &f2) {

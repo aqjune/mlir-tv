@@ -81,9 +81,9 @@ Index Index::eval(Model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
-Float::Float(float f): e(aop::fpConst(f)) {}
+Float::Float(double f): e(aop::fpConst(f)) {}
 
-Float::Float(const llvm::APFloat &f): Float(f.convertToFloat()) {}
+Float::Float(const llvm::APFloat &f): Float(f.convertToDouble()) {}
 
 Sort Float::sort() {
   return aop::fpSort();

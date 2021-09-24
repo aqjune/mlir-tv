@@ -51,7 +51,7 @@ class Float {
 public:
   Float(const smt::Expr &e): e(e) {}
   Float(const llvm::APFloat &apf);
-  Float(float f);
+  Float(double f);
 
   operator smt::Expr() const { return e; }
 
