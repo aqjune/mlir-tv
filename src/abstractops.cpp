@@ -6,6 +6,11 @@
 using namespace smt;
 using namespace std;
 
+static string freshName(string prefix) {
+  static int count = 0;
+  return prefix + to_string(count ++);
+}
+
 namespace {
 // Abstract representation of fp constants.
 map<double, Expr> fpconst_absrepr;
@@ -22,6 +27,7 @@ namespace aop {
 static AbsLevelDot alDot;
 static bool isAddAssociative;
 static UsedAbstractOps usedOps;
+static vector<tuple<Expr, Expr, Expr>> staticArrays;
 
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
@@ -32,6 +38,8 @@ void setAbstractionLevel(AbsLevelDot ad, bool addAssoc) {
 
   fpconst_absrepr.clear();
   fpconst_absrepr_num = 0;
+
+  staticArrays.clear();
 }
 
 bool getAddAssociativity() { return isAddAssociative; }
@@ -115,23 +123,12 @@ Expr sum(const Expr &a, const Expr &n) {
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
   Expr zero = mkZeroElemFromArr(a);
-  return (*sumfn)(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
-}
+  Expr result = (*sumfn)(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
 
-Expr associativeSum(const Expr &a, const Expr &n) {
-  uint64_t length;
-  if (!n.isUInt(length))
-    assert("Only an array of constant length is supported.");
+  if (n.isNumeral())
+    staticArrays.push_back({a, n, result});
 
-  auto bag = Expr::mkEmptyBag(Float::sort());
-  for (unsigned i = 0; i < length; i ++)
-    bag = bag.insert(a.select(Index(i)));
-
-  bag = bag.simplify();
-
-  if (!assoc_sumfn)
-    assoc_sumfn.emplace(bag.sort(), Float::sort(), "smt_assoc_sum");
-  return (*assoc_sumfn)(bag);
+  return result;
 }
 
 Expr dot(const Expr &a, const Expr &b, const Expr &n) {
@@ -159,12 +156,36 @@ Expr dot(const Expr &a, const Expr &b, const Expr &n) {
     Expr ai = a.select(i), bi = b.select(i);
     Expr arr = Expr::mkLambda(i, fpMul(ai, bi));
 
-    if (isAddAssociative)
-      return associativeSum(arr, n);
-    else
-      return sum(arr, n);
+    return sum(arr, n);
   }
   llvm_unreachable("Unknown abstraction level for dot");
+}
+
+Expr getAssociativePrecondition() {
+  Expr precond = Expr::mkBool(true);
+  for (unsigned i = 0; i < staticArrays.size(); i ++) {
+    for (unsigned j = i + 1; j < staticArrays.size(); j ++) {
+      auto [a, an, asum] = staticArrays[i];
+      auto [b, bn, bsum] = staticArrays[j];
+      uint64_t alen, blen;
+      if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
+      FnDecl hashfn(Float::sort(), Index::sort(), freshName("hash"));
+
+      auto aVal = hashfn.apply(a.select(Index(0)));
+      for (unsigned i = 1; i < alen; i ++)
+        aVal = aVal + hashfn.apply(a.select(Index(i)));
+      auto bVal = hashfn.apply(b.select(Index(0)));
+      for (unsigned i = 1; i < blen; i ++)
+        bVal = bVal + hashfn.apply(b.select(Index(i)));
+
+      // precond: sumfn(A) != sumfn(B) -> hashfn(A) != hashfn(B)
+      // This means if two summations are different, we can find concrete hash function that hashes into different value.
+      auto associativity = (!(asum == bsum)).implies(!(aVal == bVal));
+      precond = precond & associativity;
+    }
+  }
+  precond = precond.simplify();
+  return precond;
 }
 
 }
