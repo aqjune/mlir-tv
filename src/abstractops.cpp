@@ -95,21 +95,21 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
   return fpaddfn->apply({f1, f2});
 }
 
-Expr fpMul(const Expr &a, const Expr &b) {
+Expr fpMul(const Expr &f1, const Expr &f2) {
   usedOps.mul = true;
   // TODO: check that a.get_Sort() == b.get_Sort()
-  auto exprSort = a.sort();
+  auto exprSort = f1.sort();
 
   if (!fpmulfn)
     fpmulfn.emplace({exprSort, exprSort}, Float::sort(), "fp_mul");
 
   auto fp_id = Float(1.0);
-  // if a or b is 1.0, the return value need not to be
+  // if neither a nor b is 1.0, the result should be
   // an abstract and pairwise commutative value.
-  // therefore it returns b or a, not b+b or a+a.
-  return Expr::mkIte(a == fp_id, b,                   // if a == 1.0, then
-    Expr::mkIte(b == fp_id, a,                        // elif b == 1.0 , then
-      fpmulfn->apply({a, b}) + fpmulfn->apply({b, a}) // else
+  // therefore we return fp_mul(f1, f2) + fp_mul(f2, f1)
+  return Expr::mkIte(f1 == fp_id, f2,                     // if f1 == 1.0, then f2
+    Expr::mkIte(f2 == fp_id, f1,                          // elif f2 == 1.0 , then f1
+      fpmulfn->apply({f1, f2}) + fpmulfn->apply({f2, f1}) // else fp_mul(f1, f2) + fp_mul(f2, f1)
     )
   );
 }
