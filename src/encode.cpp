@@ -366,6 +366,64 @@ optional<string> encodeOp(State &st, mlir::tensor::FromElementsOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
+  vector<uint64_t> offsets, sizes, strides;
+  auto src = st.regs.get<Tensor>(op.getOperand(0));
+  for (auto s: op.static_offsets()){
+    offsets.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
+  }
+  for (auto s: op.static_sizes()) {
+    sizes.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
+  }
+  for(auto s: op.static_strides()) {
+    strides.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
+  }
+
+  assert(offsets.size() == sizes.size() && sizes.size() == strides.size());
+
+  auto res = op.getResult();
+  auto resType = res.getType().dyn_cast<mlir::ShapedType>();
+  vector<uint64_t> dims;
+  for (unsigned i = 0; i < resType.getRank(); i++)
+    dims.push_back(resType.getDimSize(i));
+
+  auto zero = getZero(resType.getElementType());
+  if (!zero)
+    return "unsupported element type";
+  vector<vector<uint64_t>> indices;
+  vector<smt::Expr> values;
+  auto length = 1;
+  for(auto d: dims) {
+    length *= d;
+  }
+  // currently only for 2 dimension
+  for(unsigned i=0; i < length; i++) {
+      vector<uint64_t> curIdx;
+      vector<Expr> srcIdx;
+      auto divider = length;
+      auto idx = i;
+      for(auto d :dims) {
+        divider /= d;
+        curIdx.push_back(idx / divider);
+        idx %= divider;
+      }
+
+      divider = length;
+      idx = i;
+      for(auto j=0; j<dims.size(); j++) {
+        divider /= dims[j];
+        srcIdx.push_back(Index(offsets[j] + strides[j] * (idx/divider)));
+        idx %= divider;
+      }
+      auto value = src.get(srcIdx);
+      indices.push_back(curIdx);
+      values.push_back(value.first);
+  }
+  st.regs.add(res, Tensor(indices, values, dims, *zero));
+  return {};
+}
+
 static variant<string, MemRef> createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
   auto elemtyOrNull = MemRef::getElemTy(memrefTy);
@@ -1288,6 +1346,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
     ENCODE(st, op, mlir::tensor::FromElementsOp);
+    ENCODE(st, op, mlir::tensor::ExtractSliceOp);
 
     ENCODE(st, op, mlir::memref::AllocOp);
     ENCODE(st, op, mlir::memref::LoadOp);
