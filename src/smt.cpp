@@ -117,6 +117,10 @@ vector<Expr> makeCube(Expr &&e, unsigned rank) {
 Expr to1DIdx(
     const vector<Expr> &idxs,
     const vector<Expr> &dims) {
+  // to handle `tensor.extract %t[] : tensor<f32>` case.
+  if (idxs.size() == 0)
+    return Index::zero();
+
   assert(idxs.size() == dims.size());
   auto idx = idxs[0];
 

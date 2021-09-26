@@ -144,6 +144,7 @@ int main(int argc, char* argv[]) {
   registry.insert<sparse_tensor::SparseTensorDialect>();
   registry.insert<tensor::TensorDialect>();
   context.appendDialectRegistry(registry);
+  context.allowUnregisteredDialects();
 
   string errorMessage;
   auto src_file = openInputFile(filename_src, &errorMessage);
