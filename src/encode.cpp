@@ -370,6 +370,10 @@ template<>
 optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   vector<uint64_t> offsets, sizes, strides;
   auto src = st.regs.get<Tensor>(op.getOperand(0));
+  auto srcType = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>();
+  auto res = op.getResult();
+  auto resType = res.getType().dyn_cast<mlir::ShapedType>();
+
   for (auto s: op.static_offsets()){
     offsets.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
   }
@@ -380,47 +384,68 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
     strides.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
   }
 
-  assert(offsets.size() == sizes.size() && sizes.size() == strides.size());
 
-  auto res = op.getResult();
-  auto resType = res.getType().dyn_cast<mlir::ShapedType>();
-  vector<uint64_t> dims;
-  for (unsigned i = 0; i < resType.getRank(); i++)
-    dims.push_back(resType.getDimSize(i));
+  vector<uint64_t> srcDims, resDims;
+  for (unsigned i = 0; i < srcType.getRank(); i++) {
+    srcDims.push_back(srcType.getDimSize(i));
+  }
+  
+  auto j=0;
+  for (unsigned i = 0; i < resType.getRank(); i++) {
+    while(sizes[j] != 1) {
+      j++;
+    }
+    // assert(sizes[j] == resType.getDimSize(i));
+    resDims.push_back(resType.getDimSize(i));
+    j++;
+  }
+
+  assert(offsets.size() == sizes.size() && sizes.size() == strides.size() && srcDims.size() == strides.size());
 
   auto zero = getZero(resType.getElementType());
   if (!zero)
     return "unsupported element type";
+
   vector<vector<uint64_t>> indices;
   vector<smt::Expr> values;
-  auto length = 1;
-  for(auto d: dims) {
-    length *= d;
+
+  auto resSize = 1;
+  auto srcSize = 1;
+  for(auto d: resDims) {
+    resSize *= d;
   }
-  // currently only for 2 dimension
-  for(unsigned i=0; i < length; i++) {
+  for(auto d: srcDims) {
+    srcSize *= d;
+  }
+
+  for(unsigned i=0; i < resSize; i++) {
       vector<uint64_t> curIdx;
       vector<Expr> srcIdx;
-      auto divider = length;
+      
+      // index of result Tensor
+      auto divider = resSize;
       auto idx = i;
-      for(auto d :dims) {
+      for(auto d :resDims) {
         divider /= d;
         curIdx.push_back(idx / divider);
         idx %= divider;
       }
 
-      divider = length;
+      // index for the src Tensor
+      divider = resSize;
       idx = i;
-      for(auto j=0; j<dims.size(); j++) {
-        divider /= dims[j];
+      for(auto j=0; j<resDims.size(); j++) {
+        divider /= resDims[j];
         srcIdx.push_back(Index(offsets[j] + strides[j] * (idx/divider)));
         idx %= divider;
       }
+
       auto value = src.get(srcIdx);
       indices.push_back(curIdx);
       values.push_back(value.first);
   }
-  st.regs.add(res, Tensor(indices, values, dims, *zero));
+
+  st.regs.add(res, Tensor(indices, values, resDims, *zero));
   return {};
 }
 
