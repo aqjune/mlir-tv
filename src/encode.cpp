@@ -414,9 +414,6 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   for(auto d: resDims) {
     resSize *= d;
   }
-  for(auto d: srcDims) {
-    srcSize *= d;
-  }
 
   for(unsigned i=0; i < resSize; i++) {
       vector<uint64_t> curIdx;
@@ -434,8 +431,8 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
       // index for the src Tensor
       divider = resSize;
       idx = i;
-      for(auto j=0; j<resDims.size(); j++) {
-        divider /= resDims[j];
+      for(auto j=0; j<srcDims.size(); j++) {
+        divider /= sizes[j];
         srcIdx.push_back(Index(offsets[j] + strides[j] * (idx/divider)));
         idx %= divider;
       }
@@ -444,7 +441,6 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
       indices.push_back(curIdx);
       values.push_back(value.first);
   }
-
   st.regs.add(res, Tensor(indices, values, resDims, *zero));
   return {};
 }
