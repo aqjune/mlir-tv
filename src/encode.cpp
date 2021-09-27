@@ -410,7 +410,6 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   vector<smt::Expr> values;
 
   auto resSize = 1;
-  auto srcSize = 1;
   for(auto d: resDims) {
     resSize *= d;
   }
