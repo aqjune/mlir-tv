@@ -336,6 +336,21 @@ optional<string> encodeOp(State &st, mlir::tensor::DimOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::tensor::InsertOp op) {
+  auto val = st.regs.get<Float>(op.scalar());
+  auto dest = st.regs.get<Tensor>(op.dest());
+
+  vector<Expr> indices;
+  for (auto idx0: op.indices())
+    indices.emplace_back(st.regs.get<Index>(idx0));
+
+  auto [tensor, inbounds] = dest.insert(val, indices);
+  st.regs.add(op, move(tensor));
+  st.wellDefined(op.getOperation(), move(inbounds));
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
@@ -1286,6 +1301,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::AffineApplyOp);
 
     ENCODE(st, op, mlir::tensor::DimOp);
+    ENCODE(st, op, mlir::tensor::InsertOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
     ENCODE(st, op, mlir::tensor::FromElementsOp);
 
