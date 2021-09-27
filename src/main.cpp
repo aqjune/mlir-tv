@@ -39,10 +39,6 @@ llvm::cl::opt<bool> arg_cross_check("cross-check",
   llvm::cl::desc("Run all SMT solvers and cross-check the results. "
                  "By default, Z3 is only used."));
 
-llvm::cl::opt<bool> split_input_file("split-input-file",
-  llvm::cl::desc("Split the input file into pieces and process each chunk independently"),
-  llvm::cl::init(false));
-
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::desc("Number of memory blocks required to validate translation"
                  " (default=8)"),
@@ -89,35 +85,6 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     ).code;
 }
 
-static unsigned splitAndValidateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
-    unique_ptr<llvm::MemoryBuffer> tgtBuffer,
-    MLIRContext *context) {
-  const char splitMarker[] = "// -----";
-
-  SmallVector<llvm::StringRef, 8> sourceBuffers, targetBuffers;
-  auto *srcMemBuffer = srcBuffer.get();
-  auto *tgtMemBuffer = tgtBuffer.get();
-  srcMemBuffer->getBuffer().split(sourceBuffers, splitMarker);
-  tgtMemBuffer->getBuffer().split(targetBuffers, splitMarker);
-
-  if (sourceBuffers.size() != targetBuffers.size()) {
-    return 65;
-  }
-
-  unsigned retcode = 0;
-  for (int i = 0; i < sourceBuffers.size(); i ++) {
-    auto sourceSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(sourceBuffers[i]);
-    auto targetSubMemBuffer = llvm::MemoryBuffer::getMemBufferCopy(targetBuffers[i]);
-
-    retcode = max(retcode,
-        validateBuffer(move(sourceSubMemBuffer), move(targetSubMemBuffer),
-                       context));
-  }
-
-  // If any fails, then return a failure of the tool.
-  return retcode;
-}
-
 int main(int argc, char* argv[]) {
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
   llvm::PrettyStackTraceProgram X(argc, argv);
@@ -159,14 +126,8 @@ int main(int argc, char* argv[]) {
     return 66;
   }
 
-  unsigned verificationResult;
-  if (split_input_file) {
-    verificationResult = splitAndValidateBuffer(
-        move(src_file), move(tgt_file), &context);
-  } else {
-    verificationResult = validateBuffer(
-        move(src_file), move(tgt_file), &context);
-  }
+  unsigned verificationResult = validateBuffer(
+      move(src_file), move(tgt_file), &context);
 
   return verificationResult;
 }
