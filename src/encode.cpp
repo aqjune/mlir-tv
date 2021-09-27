@@ -427,6 +427,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
         idx %= divider;
       }
 
+
       // index for the src Tensor
       divider = resSize;
       idx = i;
