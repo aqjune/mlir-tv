@@ -276,6 +276,9 @@ bool Expr::isUInt(uint64_t &v) const {
 #ifdef SOLVER_CVC5
   if (this->cvc5 && this->cvc5->isUInt64Value())
     writeOrCheck(res, this->cvc5->getUInt64Value());
+  else if (this->cvc5 && this->cvc5->isBitVectorValue())
+    writeOrCheck(res, std::stoull(this->cvc5->getBitVectorValue(10)));
+
 #endif // SOLVER_CVC5
 
   if (res)
@@ -296,6 +299,9 @@ bool Expr::isInt(int64_t &v) const {
 #ifdef SOLVER_CVC5
   if (this->cvc5 && this->cvc5->isInt64Value())
     writeOrCheck(res, this->cvc5->getInt64Value());
+  else if (this->cvc5 && this->cvc5->isBitVectorValue())
+    writeOrCheck(res, std::stoll(this->cvc5->getBitVectorValue(10)));
+
 #endif // SOLVER_CVC5
 
   if (res)
@@ -306,7 +312,7 @@ bool Expr::isInt(int64_t &v) const {
 bool Expr::isNumeral() const {
   bool res = false;
   IF_Z3_ENABLED(res |= z3 && z3->is_numeral());
-  IF_CVC5_ENABLED(res |= cvc5 && cvc5->isIntegerValue());
+  IF_CVC5_ENABLED(res |= cvc5 && (cvc5->isIntegerValue() || cvc5->isBitVectorValue()));
   return res;
 }
 
