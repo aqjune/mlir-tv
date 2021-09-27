@@ -392,10 +392,10 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   
   auto j=0;
   for (unsigned i = 0; i < resType.getRank(); i++) {
-    while(sizes[j] != 1) {
+    while(sizes[j] == 1) {
       j++;
     }
-    // assert(sizes[j] == resType.getDimSize(i));
+    assert(sizes[j] == resType.getDimSize(i));
     resDims.push_back(resType.getDimSize(i));
     j++;
   }
