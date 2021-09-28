@@ -390,6 +390,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
     srcDims.push_back(srcType.getDimSize(i));
   }
   
+  // check if output tensor matches size
   auto j=0;
   for (unsigned i = 0; i < resType.getRank(); i++) {
     while(sizes[j] == 1) {
@@ -402,46 +403,27 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
 
   assert(offsets.size() == sizes.size() && sizes.size() == strides.size() && srcDims.size() == strides.size());
 
-  auto zero = getZero(resType.getElementType());
-  if (!zero)
-    return "unsupported element type";
-
   vector<vector<uint64_t>> indices;
   vector<smt::Expr> values;
 
-  auto resSize = 1;
+  vector<smt::Expr> dims;
   for(auto d: resDims) {
-    resSize *= d;
+    dims.push_back(Index(d));
   }
 
-  for(unsigned i=0; i < resSize; i++) {
-      vector<uint64_t> curIdx;
-      vector<Expr> srcIdx;
-      
-      // index of result Tensor
-      auto divider = resSize;
-      auto idx = i;
-      for(auto d :resDims) {
-        divider /= d;
-        curIdx.push_back(idx / divider);
-        idx %= divider;
-      }
+  vector<smt::Expr> inIdxs, outIdxs;
+  inIdxs = createBoundIndexVars(resDims.size());
 
-
-      // index for the src Tensor
-      divider = resSize;
-      idx = i;
-      for(auto j=0; j<srcDims.size(); j++) {
-        divider /= sizes[j];
-        srcIdx.push_back(Index(offsets[j] + strides[j] * (idx/divider)));
-        idx %= divider;
-      }
-
-      auto value = src.get(srcIdx);
-      indices.push_back(curIdx);
-      values.push_back(value.first);
+  unsigned idx = 0;
+  for(unsigned i = 0; i < srcDims.size(); i++) {
+    if(sizes[i] == 1) {
+      outIdxs.push_back(Index(offsets[i]));
+    }
+    else {
+      outIdxs.push_back(((inIdxs[idx++] * strides[i])) + offsets[i]);
+    }
   }
-  st.regs.add(res, Tensor(indices, values, resDims, *zero));
+  st.regs.add(res, Tensor::mkLambda(move(dims), move(inIdxs), src.get(outIdxs).first));
   return {};
 }
 
