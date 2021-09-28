@@ -383,32 +383,44 @@ optional<string> encodeOp(State &st, mlir::tensor::FromElementsOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
-  vector<uint64_t> offsets, sizes, strides;
+  vector<Expr> offsets, sizes, strides;
   auto src = st.regs.get<Tensor>(op.getOperand(0));
   auto srcType = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>();
   auto res = op.getResult();
   auto resType = res.getType().dyn_cast<mlir::ShapedType>();
 
-  for (auto s: op.static_offsets()){
-    offsets.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
+  auto varIdx = 0;
+  for (auto s: extractFromI64ArrayAttr(op.static_offsets())){
+    if(s ==-0x8000000000000000)
+      offsets.push_back(st.regs.get<Index>(op.offsets()[varIdx++]));
+    else
+      offsets.push_back(Index(s));
   }
-  for (auto s: op.static_sizes()) {
-    sizes.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
+  varIdx = 0;
+  for (auto s: extractFromI64ArrayAttr(op.static_sizes())) {
+    if(s ==-0x8000000000000000)
+      sizes.push_back(st.regs.get<Index>(op.sizes()[varIdx++]));
+    else
+      sizes.push_back(Index(s));
   }
-  for(auto s: op.static_strides()) {
-    strides.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
+  varIdx = 0;
+  for(auto s: extractFromI64ArrayAttr(op.static_strides())) {
+    if(s ==-0x8000000000000000)
+      strides.push_back(st.regs.get<Index>(op.strides()[varIdx++]));
+    else
+      strides.push_back(Index(s));
   }
 
   vector<smt::Expr> dims; 
 
   unsigned j=0;
   for (unsigned i = 0; i < resType.getRank(); i++) {
-    while(sizes[j] == 1) {
+    while((sizes[j] == Index(1)).isTrue()) {
       j++;
     }
 
     // check if output tensor matches size
-    assert(sizes[j] == resType.getDimSize(i));
+    assert((sizes[j] == Index(resType.getDimSize(i))).isTrue());
 
     dims.push_back(Index(resType.getDimSize(i)));
     j++;
@@ -421,7 +433,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
 
   unsigned idx = 0;
   for(unsigned i = 0; i < srcType.getRank(); i++) {
-    if(sizes[i] == 1) {
+    if((sizes[i] == Index(1)).isTrue()) {
       outIdxs.push_back(Index(offsets[i]));
     }
     else {
