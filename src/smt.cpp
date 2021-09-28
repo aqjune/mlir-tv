@@ -38,6 +38,25 @@ void writeOrCheck(optional<T> &org, T &&t) {
   else
     org.emplace(move(t));
 }
+
+uint64_t to_uint64(string &&str) {
+  istringstream ss(str);
+  uint64_t tmp;
+  ss >> tmp;
+  return tmp;
+}
+
+int64_t to_int64(string &&str) {
+  uint64_t i = to_uint64(move(str));
+  // Don't do (int64_t)i; it may raise UB
+  union {
+    uint64_t x;
+    int64_t y;
+  } u;
+  u.x = i;
+  return u.y;
+}
+
 }
 
 namespace smt {
@@ -277,7 +296,7 @@ bool Expr::isUInt(uint64_t &v) const {
   if (this->cvc5 && this->cvc5->isUInt64Value())
     writeOrCheck(res, this->cvc5->getUInt64Value());
   else if (this->cvc5 && this->cvc5->isBitVectorValue())
-    writeOrCheck(res, std::stoull(this->cvc5->getBitVectorValue(10)));
+    writeOrCheck(res, to_uint64(this->cvc5->getBitVectorValue(10)));
 
 #endif // SOLVER_CVC5
 
@@ -300,7 +319,7 @@ bool Expr::isInt(int64_t &v) const {
   if (this->cvc5 && this->cvc5->isInt64Value())
     writeOrCheck(res, this->cvc5->getInt64Value());
   else if (this->cvc5 && this->cvc5->isBitVectorValue())
-    writeOrCheck(res, std::stoll(this->cvc5->getBitVectorValue(10)));
+    writeOrCheck(res, to_int64(this->cvc5->getBitVectorValue(10)));
 
 #endif // SOLVER_CVC5
 
