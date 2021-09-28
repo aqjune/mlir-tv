@@ -49,7 +49,7 @@ static optional<Expr> getZero(mlir::Type eltType) {
 static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   auto ty = a.getType();
   if (ty.isa<mlir::FloatType>()) {
-    return Float(a.dyn_cast<mlir::FloatAttr>().getValueAsDouble());
+    return Float(a.dyn_cast<mlir::FloatAttr>().getValue().convertToFloat());
   } else if (ty.isa<mlir::IntegerType>()) {
     if (64 < ty.getIntOrFloatBitWidth())
       // size is too large

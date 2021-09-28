@@ -13,7 +13,7 @@ static string freshName(string prefix) {
 
 namespace {
 // Abstract representation of fp constants.
-map<double, Expr> fpconst_absrepr;
+map<float, Expr> fpconst_absrepr;
 unsigned fpconst_absrepr_num;
 
 // TODO: this must be properly set
@@ -50,7 +50,7 @@ Sort fpSort() {
   return Sort::bvSort(FP_BITS);
 }
 
-Expr fpConst(double f) {
+Expr fpConst(float f) {
   // We don't explicitly encode f
   auto itr = fpconst_absrepr.find(f);
   if (itr != fpconst_absrepr.end())
@@ -70,8 +70,8 @@ Expr fpConst(double f) {
   return e;
 }
 
-vector<double> fpPossibleConsts(const Expr &e) {
-  vector<double> vec;
+vector<float> fpPossibleConsts(const Expr &e) {
+  vector<float> vec;
   for (auto &[k, v]: fpconst_absrepr) {
     if (v.isIdentical(e))
       vec.push_back(k);
