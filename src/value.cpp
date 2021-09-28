@@ -267,6 +267,21 @@ pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
   return {elem, inbounds.simplify()};
 }
 
+pair<Tensor, Expr> Tensor::insert(const smt::Expr &value,
+    const std::vector<smt::Expr> &indices) const {
+  auto inbounds = Expr::mkBool(true);
+  for (unsigned i = 0; i < indices.size(); ++i)
+    inbounds = inbounds & indices[i].ult(dims[i]);
+
+  auto idxvar = Index::var("idx", VarType::BOUND);
+  auto cond = (Expr)idxvar == to1DIdx(indices, dims);
+  auto originValue = get(from1DIdx(idxvar, dims)).first;
+
+  auto newdims = dims;
+  auto lambda = Expr::mkLambda(idxvar, Expr::mkIte(cond, value, originValue));
+  return {{move(newdims), move(lambda)}, inbounds};
+}
+
 Tensor Tensor::affine(
     const vector<Expr> &newidxvars,
     vector<Expr> srcidxs,

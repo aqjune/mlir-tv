@@ -150,6 +150,10 @@ public:
 
   size_t getRank() const { return dims.size(); }
 
+  // Return <a new tensor T2, inbounds>
+  // T2[idx] = idx == indices ? value : this[idx]
+  std::pair<Tensor, smt::Expr> insert(const smt::Expr &value, const std::vector<smt::Expr> &indices) const;
+
   // Return a new tensor T2 s.t.
   //   T2[newidxvars] = this[srcidxs]
   // For example, if newidxvars = [x, y, z] and srcidxs = [x, y + z],
