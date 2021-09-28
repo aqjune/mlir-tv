@@ -399,29 +399,25 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
     strides.push_back(s.dyn_cast<mlir::IntegerAttr>().getInt());
   }
 
+  vector<smt::Expr> dims; 
 
-  vector<uint64_t> resDims;
-  
-  // check if output tensor matches size
-  auto j=0;
+  unsigned j=0;
   for (unsigned i = 0; i < resType.getRank(); i++) {
     while(sizes[j] == 1) {
       j++;
     }
+
+    // check if output tensor matches size
     assert(sizes[j] == resType.getDimSize(i));
-    resDims.push_back(resType.getDimSize(i));
+
+    dims.push_back(Index(resType.getDimSize(i)));
     j++;
   }
 
   assert(offsets.size() == sizes.size() && sizes.size() == strides.size() && srcType.getRank() == strides.size());
 
-  vector<smt::Expr> dims;
-  for(auto d: resDims) {
-    dims.push_back(Index(d));
-  }
-
   vector<smt::Expr> inIdxs, outIdxs;
-  inIdxs = createBoundIndexVars(resDims.size());
+  inIdxs = createBoundIndexVars(resType.getRank());
 
   unsigned idx = 0;
   for(unsigned i = 0; i < srcType.getRank(); i++) {
@@ -432,6 +428,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
       outIdxs.push_back(((inIdxs[idx++] * strides[i])) + offsets[i]);
     }
   }
+
   st.regs.add(res, Tensor::mkLambda(move(dims), move(inIdxs), src.get(outIdxs).first));
   return {};
 }
