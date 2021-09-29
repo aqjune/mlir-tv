@@ -409,12 +409,12 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   unsigned j=0;
   for (unsigned i = 0; i < resType.getRank(); i++) {
     uint64_t v;
-    while(sizes[j].isUInt(v) && v == 1) {
+    // lowers dimension if size is 1
+    while((sizes[j].isUInt(v) && v == 1) && resType.getDimSize(i) != -1) {
       j++;
     }
     // check if output tensor matches size or size is unknown
     assert(resType.getDimSize(i) == v || resType.getDimSize(i) == -1);
-
     dims.push_back(Index(resType.getDimSize(i)));
     j++;
   }
@@ -427,7 +427,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   unsigned idx = 0;
   for(unsigned i = 0; i < srcType.getRank(); i++) {
     uint64_t v;
-    if(sizes[i].isUInt(v) && v == 1) {
+    if(idx >= resType.getRank() || ((sizes[i].isUInt(v) && v == 1) && resType.getDimSize(idx) != -1)) {
       outIdxs.push_back(offsets[i]);
     }
     else {
