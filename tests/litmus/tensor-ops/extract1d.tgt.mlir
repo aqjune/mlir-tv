@@ -1,5 +1,3 @@
-// VERIFY
-
 func @extract() -> tensor<2xf32>
 {
   %v = constant sparse<[[1],[2]],[2.0, 3.0]> : tensor<3xf32>
