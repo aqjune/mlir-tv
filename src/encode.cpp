@@ -389,29 +389,26 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   auto res = op.getResult();
   auto resType = res.getType().dyn_cast<mlir::ShapedType>();
   auto varIdx = 0;
-  for (auto s: extractFromI64ArrayAttr(op.static_offsets())){
-    if (s ==-0x8000000000000000)
-      offsets.push_back(st.regs.get<Index>(op.offsets()[varIdx++]));
-    else
-      offsets.push_back(Index(s));
+#define ADD(vec, s) { \
+    vec.push_back(s.is<mlir::Value>() ? \
+    st.regs.get<Index>(s.get<mlir::Value>()) : \
+    Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
   }
-  varIdx = 0;
-  for (auto s: extractFromI64ArrayAttr(op.static_sizes())) {
-    if (s ==-0x8000000000000000)
-      sizes.push_back(st.regs.get<Index>(op.sizes()[varIdx++]));
-    else
-      sizes.push_back(Index(s));
+  for(auto s: op.getMixedStrides()) {
+    ADD(strides, s);
   }
-  varIdx = 0;
-  for(auto s: extractFromI64ArrayAttr(op.static_strides())) {
-    if (s ==-0x8000000000000000)
-      strides.push_back(st.regs.get<Index>(op.strides()[varIdx++]));
-    else
-      strides.push_back(Index(s));
+  for(auto s: op.getMixedSizes()) {
+    ADD(sizes, s);
   }
+  for(auto s: op.getMixedOffsets()) {
+    ADD(offsets, s);
+  }
+#undef ADD
+
+  assert(offsets.size() == sizes.size() && sizes.size() == strides.size());
 
   vector<smt::Expr> dims; 
-
+  
   unsigned j=0;
   for (unsigned i = 0; i < resType.getRank(); i++) {
     uint64_t v;
@@ -425,8 +422,6 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
     dims.push_back(Index(resType.getDimSize(i)));
     j++;
   }
-
-  assert(offsets.size() == sizes.size() && sizes.size() == strides.size() && srcType.getRank() == strides.size());
 
   vector<smt::Expr> inIdxs, outIdxs;
   inIdxs = createBoundIndexVars(resType.getRank());
