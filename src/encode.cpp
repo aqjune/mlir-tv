@@ -389,26 +389,22 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   auto res = op.getResult();
   auto resType = res.getType().dyn_cast<mlir::ShapedType>();
   auto varIdx = 0;
-#define ADD(vec, s) { \
-    vec.push_back(s.is<mlir::Value>() ? \
-    st.regs.get<Index>(s.get<mlir::Value>()) : \
-    Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
+#define GETOP(vec, ee) { \
+    for(auto s: op.getMixed ## ee()) { \
+      vec.push_back(s.is<mlir::Value>() ? \
+      st.regs.get<Index>(s.get<mlir::Value>()) : \
+      Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
+    } \
   }
-  for(auto s: op.getMixedStrides()) {
-    ADD(strides, s);
-  }
-  for(auto s: op.getMixedSizes()) {
-    ADD(sizes, s);
-  }
-  for(auto s: op.getMixedOffsets()) {
-    ADD(offsets, s);
-  }
-#undef ADD
+  GETOP(strides, Strides);
+  GETOP(sizes, Sizes);
+  GETOP(offsets, Offsets);
+#undef GETOP
 
   assert(offsets.size() == sizes.size() && sizes.size() == strides.size());
 
   vector<smt::Expr> dims; 
-  
+
   unsigned j=0;
   for (unsigned i = 0; i < resType.getRank(); i++) {
     uint64_t v;
