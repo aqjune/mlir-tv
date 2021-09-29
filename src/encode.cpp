@@ -413,8 +413,8 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
       j++;
     }
     // check if output tensor matches size or size is unknown
-    assert(!sizes[j].isUInt(v) || v == resType.getDimSize(i));
-    
+    assert(resType.getDimSize(i) == v || resType.getDimSize(i) == -1);
+
     dims.push_back(Index(resType.getDimSize(i)));
     j++;
   }
@@ -434,7 +434,6 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
       outIdxs.push_back(((inIdxs[idx++] * strides[i])) + offsets[i]);
     }
   }
-
   st.regs.add(res, Tensor::mkLambda(move(dims), move(inIdxs), src.get(outIdxs).first));
   return {};
 }
