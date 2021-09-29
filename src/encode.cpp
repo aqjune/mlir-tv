@@ -389,39 +389,41 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   auto res = op.getResult();
   auto resType = res.getType().dyn_cast<mlir::ShapedType>();
   auto varIdx = 0;
-#define GETOP(vec, ee) { \
+#define GETOPS(vec, ee) { \
     for(auto s: op.getMixed ## ee()) { \
       vec.push_back(s.is<mlir::Value>() ? \
       st.regs.get<Index>(s.get<mlir::Value>()) : \
       Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
     } \
   }
-  GETOP(strides, Strides);
-  GETOP(sizes, Sizes);
-  GETOP(offsets, Offsets);
-#undef GETOP
+  GETOPS(strides, Strides);
+  GETOPS(sizes, Sizes);
+  GETOPS(offsets, Offsets);
+#undef GETOPS
 
-  assert(offsets.size() == sizes.size() && sizes.size() == strides.size());
+  assert(offsets.size() == sizes.size() && sizes.size() == strides.size()  && strides.size() == srcType.getRank());
 
   vector<smt::Expr> dims; 
 
+  // push output dimensions to dims
   unsigned j=0;
   for (unsigned i = 0; i < resType.getRank(); i++) {
     uint64_t v;
     while(sizes[j].isUInt(v) && v == 1) {
       j++;
     }
-
-    // check if output tensor matches size
-    assert((sizes[j] == Index(resType.getDimSize(i))).isTrue());
-
+    // check if output tensor matches size or size is unknown
+    assert(!sizes[j].isUInt(v) || v == resType.getDimSize(i));
+    
     dims.push_back(Index(resType.getDimSize(i)));
     j++;
   }
 
   vector<smt::Expr> inIdxs, outIdxs;
+  // indices that is going to be read from the output tensor
   inIdxs = createBoundIndexVars(resType.getRank());
 
+  // map the output tensor indices to source tensor indices
   unsigned idx = 0;
   for(unsigned i = 0; i < srcType.getRank(); i++) {
     uint64_t v;
