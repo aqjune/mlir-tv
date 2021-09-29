@@ -381,6 +381,63 @@ optional<string> encodeOp(State &st, mlir::tensor::FromElementsOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
+  vector<Expr> offsets, sizes, strides;
+  auto src = st.regs.get<Tensor>(op.getOperand(0));
+  auto srcType = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>();
+  auto res = op.getResult();
+  auto resType = res.getType().dyn_cast<mlir::ShapedType>();
+
+#define GET_OP(vec, ee) { \
+    for (auto s: op.getMixed ## ee()) { \
+      vec.push_back(s.is<mlir::Value>() ? \
+      st.regs.get<Index>(s.get<mlir::Value>()) : \
+      Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
+    } \
+  }
+  GET_OP(strides, Strides);
+  GET_OP(sizes, Sizes);
+  GET_OP(offsets, Offsets);
+#undef GET_OP
+
+  assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
+      strides.size() == srcType.getRank());
+
+  vector<Expr> dims;
+
+  // push output dimensions to dims
+  unsigned j = 0;
+  for (unsigned i = 0; i < resType.getRank(); i++) {
+    uint64_t v;
+    // lowers dimension if size is 1
+    while ((sizes[j].isUInt(v) && v == 1) && resType.getDimSize(i) != -1) {
+      j++;
+    }
+    // check if output tensor matches size or size is unknown
+    assert(resType.getDimSize(i) == v || resType.getDimSize(i) == -1);
+    dims.push_back(Index(resType.getDimSize(i)));
+    j++;
+  }
+
+  vector<Expr> inIdxs, outIdxs;
+  // indices that is going to be read from the output tensor
+  inIdxs = createBoundIndexVars(resType.getRank());
+
+  // map the output tensor indices to source tensor indices
+  unsigned idx = 0;
+  for (unsigned i = 0; i < srcType.getRank(); i++) {
+    uint64_t v;
+    bool isDimSizeOne = idx >= resType.getRank() ||
+        ((sizes[i].isUInt(v) && v == 1) && resType.getDimSize(idx) != -1);
+    outIdxs.push_back(isDimSizeOne ?
+        offsets[i] : ((inIdxs[idx++] * strides[i])) + offsets[i]);
+  }
+  st.regs.add(res,
+      Tensor::mkLambda(move(dims), move(inIdxs), src.get(outIdxs).first));
+  return {};
+}
+
 static variant<string, MemRef> createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
   auto elemtyOrNull = MemRef::getElemTy(memrefTy);
@@ -465,7 +522,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
-  vector<smt::Expr> sizes, offsets, strides;
+  vector<Expr> sizes, offsets, strides;
 
   for (unsigned i = 0; i < op.getSourceType().getRank(); i++) {
 #define ADD(vec, ee) { \
@@ -789,7 +846,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
       return "unsupported element type";
 
     vector<vector<uint64_t>> sparseIndices;
-    vector<smt::Expr> sparseValues;
+    vector<Expr> sparseValues;
 
     auto sparseIndBeg = sparseIndexValues.begin();
     while (sparseIndBeg != sparseIndexValues.end()) {
@@ -1304,6 +1361,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::InsertOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
     ENCODE(st, op, mlir::tensor::FromElementsOp);
+    ENCODE(st, op, mlir::tensor::ExtractSliceOp);
 
     ENCODE(st, op, mlir::memref::AllocOp);
     ENCODE(st, op, mlir::memref::LoadOp);
