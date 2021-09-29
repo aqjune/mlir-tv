@@ -389,17 +389,17 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   auto res = op.getResult();
   auto resType = res.getType().dyn_cast<mlir::ShapedType>();
   auto varIdx = 0;
-#define GETOPS(vec, ee) { \
+#define GET_OP(vec, ee) { \
     for(auto s: op.getMixed ## ee()) { \
       vec.push_back(s.is<mlir::Value>() ? \
       st.regs.get<Index>(s.get<mlir::Value>()) : \
       Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
     } \
   }
-  GETOPS(strides, Strides);
-  GETOPS(sizes, Sizes);
-  GETOPS(offsets, Offsets);
-#undef GETOPS
+  GET_OP(strides, Strides);
+  GET_OP(sizes, Sizes);
+  GET_OP(offsets, Offsets);
+#undef GET_OP
 
   assert(offsets.size() == sizes.size() && sizes.size() == strides.size()  && strides.size() == srcType.getRank());
 
