@@ -207,21 +207,21 @@ std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(const ShapedValue
 }
 
 Tensor::Tensor(Expr &&splat_elem, vector<Expr> &&dimvec):
-    arr(Expr::mkSplatArray(Index::sort(), move(splat_elem))),
-    dims(move(dimvec)) {}
+    dims(move(dimvec)),
+    arr(Expr::mkSplatArray(Index::sort(), move(splat_elem))) {}
 
 Tensor::Tensor(const vector<Expr> &elems1d):
+    dims({ (Expr)Index(elems1d.size()) }),
     arr(Expr::mkFreshVar(Sort::arraySort(Index::sort(), elems1d[0].sort()),
-        "tensor_val")),
-    dims({ (Expr)Index(elems1d.size()) }) {
+        "tensor_val")) {
   for (unsigned i = 0; i < elems1d.size(); ++i)
     arr = arr.store(i, elems1d[i]);
 }
 
 Tensor::Tensor(string &&name, const vector<Expr> &dimvec,
                const smt::Sort &elemty):
-  arr(Expr::mkVar(Sort::arraySort(Index::sort(), elemty), move(name))),
-  dims(dimvec) {}
+  dims(dimvec),
+  arr(Expr::mkVar(Sort::arraySort(Index::sort(), elemty), move(name))) {}
 
 Tensor::Tensor(
     const vector<vector<uint64_t>> &indices,
