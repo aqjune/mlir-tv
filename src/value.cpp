@@ -735,7 +735,6 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
   if (rankDiff > 0) {
     vector<Expr> indVars, reducedSizes;
     for (unsigned i = 0; i < sizes.size(); i++) {
-      uint64_t size_cst;
       if (rankDiff > 0 && unusedDims.contains(i)) {
         //statically known to be 1
         indVars.push_back(Index::zero());

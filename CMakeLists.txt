@@ -26,6 +26,8 @@ add_library(${PROJECT_LIB} STATIC
     src/value.cpp
     src/vcgen.cpp)
 
+# PRIVATE vs. PUBLIC: see https://stackoverflow.com/a/23995391/1488216
+target_compile_options(${PROJECT_LIB} PRIVATE "-Werror=unused")
 # Check for MLIR installation
 if(NOT MLIR_DIR)
     message(FATAL_ERROR "path to MLIR must be provided!")

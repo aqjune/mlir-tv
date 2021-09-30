@@ -20,7 +20,6 @@ using namespace std;
 
 namespace {
 #ifdef SOLVER_Z3
-z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec);
 z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec);
 z3::sort_vector toZ3SortVector(const vector<smt::Sort> &vec);
 #endif // SOLVER_Z3
@@ -1121,13 +1120,6 @@ bool Store::operator()(const Expr &expr) const {
 
 namespace {
 #ifdef SOLVER_Z3
-z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec) {
-  z3::expr_vector ev(*smt::sctx.z3);
-  for (auto &e: vec)
-    ev.push_back(e);
-  return ev;
-}
-
 z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec) {
   z3::expr_vector ev(*smt::sctx.z3);
   for (auto &e: vec)

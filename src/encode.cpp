@@ -1022,7 +1022,6 @@ static optional<string> initInputStateForLoopBody(
     State &st, mlir::linalg::GenericOp op) {
   // TODO: Currently we do not encode UB in loop body. How to deal with UB properly?
   auto indexingMaps = op.indexing_maps().getValue();
-  auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
   auto &block = *op.region().begin();
 
   const vector<Expr> &inductionVars = st.linalgGenericScopes.top().indVars;
