@@ -960,20 +960,20 @@ Expr Model::eval(const Expr &e, bool modelCompletion) const {
 vector<Expr> Model::eval(const vector<Expr> &exprs, bool modelCompletion) const {
   vector<Expr> values;
   values.reserve(exprs.size());
+
 #ifdef SOLVER_CVC5
   auto cvc5_values = fupdate(sctx.cvc5, [exprs](auto &solver) {
     // see the comment at Expr Model::eval(const Expr &e, bool modelCompletion)
     solver.checkSat();
     auto cvc5_exprs = toCVC5TermVector(exprs);
-    // reverse to use faster pop_back()
-    reverse(cvc5_exprs.begin(), cvc5_exprs.end());
     return solver.getValue(cvc5_exprs);
   });
 #endif // SOLVER_CVC5
 
-  for (auto &e : exprs) {
+  for (size_t i = 0; i < exprs.size(); ++i) {
 #ifdef SOLVER_Z3
-    auto z3_value = fmap(z3, [modelCompletion, e](auto &z3model) {
+    auto &e = exprs[i];
+    auto z3_value = fmap(z3, [modelCompletion, &e](auto &z3model) {
       return z3model.eval(e.getZ3Expr(), modelCompletion);
     });
 #endif // SOLVER_Z3
@@ -981,9 +981,7 @@ vector<Expr> Model::eval(const vector<Expr> &exprs, bool modelCompletion) const 
 #ifdef SOLVER_CVC5
     optional<cvc5::api::Term> cvc5_value;
     if (cvc5_values) {
-      // iterate in reverse order
-      cvc5_value = move(cvc5_values->back());
-      cvc5_values->pop_back();
+      cvc5_value = move((*cvc5_values)[i]);
     }
 #endif // SOLVER_CVC5
 
