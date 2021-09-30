@@ -25,7 +25,7 @@ vector<Expr> ShapedValue::getDims(
 
   dims.reserve(rank);
   unsigned unknownVarIdx = 0;
-  for (auto i = 0; i < rank; ++i) {
+  for (unsigned i = 0; i < rank; ++i) {
     uint64_t sz = shapedTy.getDimSize(i);
     if (sz == (uint64_t)-1ull) {
       if (freshVarForUnknownSize) {
@@ -530,7 +530,7 @@ MemRef::Layout::Layout(const vector<Expr> &dims):
     precondition(Expr::mkBool(true)) {
   vector<Expr> indVars, inverseMappings;
 
-  for (int i = 0; i < dims.size(); i ++) {
+  for (unsigned i = 0; i < dims.size(); i ++) {
     indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
     inbounds = inbounds & indVars[i].ult(dims[i]);
   }
@@ -663,7 +663,7 @@ optional<MemRef::Layout> MemRef::getLayout(
   vector<Expr> indVars;
 
   Expr inbounds = Expr::mkBool(true);
-  for (int i = 0; i < strides.size(); i ++) {
+  for (unsigned i = 0; i < strides.size(); i ++) {
     indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
     layout = layout + getConstOrFreshVar(strides[i], "strides") * indVars[i];
     inbounds = inbounds & indVars[i].ult(dims[i]);
