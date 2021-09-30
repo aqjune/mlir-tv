@@ -1031,8 +1031,8 @@ static optional<string> initInputStateForLoopBody(
          indexingMaps.size());
 
   // Output variables are not encoded! Reduction loops are dealt specially
-  for (unsigned arg_i = 0; arg_i + (size_t)op.getNumOutputs() < indexingMaps.size();
-       ++arg_i) {
+  size_t numout = (size_t)op.getNumOutputs();
+  for (size_t arg_i = 0; arg_i + numout < indexingMaps.size(); ++arg_i) {
     auto inputMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
     auto op_i = op.getInputOperand(arg_i)->get();
 
