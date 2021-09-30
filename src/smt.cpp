@@ -45,6 +45,7 @@ uint64_t to_uint64(string &&str) {
   return tmp;
 }
 
+[[maybe_unused]]
 int64_t to_int64(string &&str) {
   uint64_t i = to_uint64(move(str));
   // Don't do (int64_t)i; it may raise UB
