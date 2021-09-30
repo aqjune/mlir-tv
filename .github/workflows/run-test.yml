@@ -60,7 +60,7 @@ jobs:
           echo "::set-output name=unused-vars::$(cat build.log | grep "[-Wunused-variable]")"
 
       - name: Fail the CI if there's unused variable(s)
-        if: steps.check-unused.outputs.unused-vars != ""
+        if: steps.check-unused.outputs.unused-vars != ''
         uses: actions/github-script@v5
         with:
           script: |
