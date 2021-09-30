@@ -49,22 +49,27 @@ jobs:
         run: |
           mv mlir-tv /src/mlir-tv
 
-      - name: Build mlir-tv
-        id: build
+      - name: Check for unused variables
+        id: check-unused
         run: |
           cd /src/mlir-tv
           cmake -B build -G Ninja \
             -DMLIR_DIR=/opt/llvm -DZ3_DIR=/opt/z3 -DCVC5_DIR=/opt/cvc5 \
             -DCMAKE_BUILD_TYPE=Release
-          cmake --build build | tee build.log
+          cmake --build build --target mlirtvobj | tee build.log
           echo "::set-output name=unused-vars::$(cat build.log | grep "[-Wunused-variable]")"
 
       - name: Fail the CI if there's unused variable(s)
-        if: steps.build.outputs.unused-vars != ""
+        if: steps.check-unused.outputs.unused-vars != ""
         uses: actions/github-script@v5
         with:
           script: |
             core.setFailed('Found unused variables!')
+
+      - name: Build mlir-tv
+        if: success()
+        run: |
+          cmake --build build --target mlir-tv
 
   build-Z3-only:
     runs-on: ubuntu-20.04
