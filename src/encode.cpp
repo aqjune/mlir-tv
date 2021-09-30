@@ -234,7 +234,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
   mlir::RankedTensorType resTy = op.getResultType();
 
   auto reassocExprs = op.getReassociationIndices();
-  assert(reassocExprs.size() == resTy.getRank());
+  assert(reassocExprs.size() == (size_t)resTy.getRank());
 
   // If the collapsed size does not match op.getResultType(), it is UB.
   vector<Expr> newDims;
@@ -284,7 +284,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op) {
       // Nothing to do; it is already well-defined
       continue;
 
-    if (Index::BITS < 64 && const_size >= (1ull << Index::BITS))
+    if (Index::BITS < 64 && (size_t)const_size >= (1ull << Index::BITS))
       return "tensor size is too large";
 
     // If the original size isn't divisible, raise UB
@@ -402,7 +402,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
 #undef GET_OP
 
   assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
-      strides.size() == srcType.getRank());
+      strides.size() == (size_t)srcType.getRank());
 
   vector<Expr> dims;
 
@@ -415,7 +415,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
       j++;
     }
     // check if output tensor matches size or size is unknown
-    assert(resType.getDimSize(i) == v || resType.getDimSize(i) == -1);
+    assert((uint64_t)resType.getDimSize(i) == v || resType.getDimSize(i) == -1);
     dims.push_back(Index(resType.getDimSize(i)));
     j++;
   }
@@ -896,7 +896,7 @@ optional<string> encodeOp(State &st, mlir::shape::ToExtentTensorOp op) {
 
   auto tt = st.regs.get<Tensor>(op.getOperand());
   assert(tt.getDims().size() ==
-         op.getType().cast<mlir::TensorType>().getRank());
+         (size_t)op.getType().cast<mlir::TensorType>().getRank());
   st.regs.add(op, tt);
   return {};
 }
@@ -1031,8 +1031,8 @@ static optional<string> initInputStateForLoopBody(
          indexingMaps.size());
 
   // Output variables are not encoded! Reduction loops are dealt specially
-  for (unsigned arg_i = 0; arg_i + op.getNumOutputs() < indexingMaps.size();
-       ++arg_i) {
+  size_t numout = (size_t)op.getNumOutputs();
+  for (size_t arg_i = 0; arg_i + numout < indexingMaps.size(); ++arg_i) {
     auto inputMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
     auto op_i = op.getInputOperand(arg_i)->get();
 

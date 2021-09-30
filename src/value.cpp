@@ -25,7 +25,7 @@ vector<Expr> ShapedValue::getDims(
 
   dims.reserve(rank);
   unsigned unknownVarIdx = 0;
-  for (auto i = 0; i < rank; ++i) {
+  for (unsigned i = 0; i < rank; ++i) {
     uint64_t sz = shapedTy.getDimSize(i);
     if (sz == (uint64_t)-1ull) {
       if (freshVarForUnknownSize) {
@@ -207,21 +207,21 @@ std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(const ShapedValue
 }
 
 Tensor::Tensor(Expr &&splat_elem, vector<Expr> &&dimvec):
-    arr(Expr::mkSplatArray(Index::sort(), move(splat_elem))),
-    dims(move(dimvec)) {}
+    dims(move(dimvec)),
+    arr(Expr::mkSplatArray(Index::sort(), move(splat_elem))) {}
 
 Tensor::Tensor(const vector<Expr> &elems1d):
+    dims({ (Expr)Index(elems1d.size()) }),
     arr(Expr::mkFreshVar(Sort::arraySort(Index::sort(), elems1d[0].sort()),
-        "tensor_val")),
-    dims({ (Expr)Index(elems1d.size()) }) {
+        "tensor_val")) {
   for (unsigned i = 0; i < elems1d.size(); ++i)
     arr = arr.store(i, elems1d[i]);
 }
 
 Tensor::Tensor(string &&name, const vector<Expr> &dimvec,
                const smt::Sort &elemty):
-  arr(Expr::mkVar(Sort::arraySort(Index::sort(), elemty), move(name))),
-  dims(dimvec) {}
+  dims(dimvec),
+  arr(Expr::mkVar(Sort::arraySort(Index::sort(), elemty), move(name))) {}
 
 Tensor::Tensor(
     const vector<vector<uint64_t>> &indices,
@@ -380,7 +380,7 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
 
   Expr size_match = Expr::mkBool(true);
   for (size_t i = 0; i < sz; ++i)
-    size_match = size_match & (Expr)other.getDim(i) == (Expr)getDim(i);
+    size_match = size_match & ((Expr)other.getDim(i) == (Expr)getDim(i));
   size_match = size_match.simplify();
   if (size_match.isFalse())
     return {size_match, {}};
@@ -530,7 +530,7 @@ MemRef::Layout::Layout(const vector<Expr> &dims):
     precondition(Expr::mkBool(true)) {
   vector<Expr> indVars, inverseMappings;
 
-  for (int i = 0; i < dims.size(); i ++) {
+  for (size_t i = 0; i < dims.size(); i ++) {
     indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
     inbounds = inbounds & indVars[i].ult(dims[i]);
   }
@@ -568,7 +568,7 @@ MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
       auto inverse = Expr::mkLambda(indVars[i], inverseFn(indVars[i]));
       inverseMappings.push_back(inverse);
 
-      condition = condition & inverse.select(layoutFnExpr) == indVars[i];
+      condition = condition & (inverse.select(layoutFnExpr) == indVars[i]);
     }
     this->inbounds = Expr::mkLambda(indVars, inbounds);
     this->mapping = Expr::mkLambda(indVars, layoutFnExpr);
@@ -584,7 +584,7 @@ MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
       auto inverse = Expr::mkLambda(indVars[i], inverseFn(indVars[i]));
       inverseMappings.push_back(inverse);
 
-      condition = condition & inverse.select(layout) == indVars[i];
+      condition = condition & (inverse.select(layout) == indVars[i]);
     }
     this->inbounds = Expr::mkLambda(indVars, inbounds);
     this->mapping = Expr::mkLambda(indVars, layout);
@@ -663,7 +663,7 @@ optional<MemRef::Layout> MemRef::getLayout(
   vector<Expr> indVars;
 
   Expr inbounds = Expr::mkBool(true);
-  for (int i = 0; i < strides.size(); i ++) {
+  for (size_t i = 0; i < strides.size(); i ++) {
     indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
     layout = layout + getConstOrFreshVar(strides[i], "strides") * indVars[i];
     inbounds = inbounds & indVars[i].ult(dims[i]);
@@ -718,7 +718,7 @@ smt::Expr MemRef::noalias(const MemRef &other) const {
 
   // Case 1. bid != other.bid
   // Case 2. bid == other.bid && (r2 <= l1 || r1 <= l2)
-  return !(bid == other.bid) | (bid == other.bid & (r2.ule(l1) | r1.ule(l2)));
+  return (!(bid == other.bid)) | ((bid == other.bid) & (r2.ule(l1) | r1.ule(l2)));
 }
 
 void MemRef::setWritable(bool writable) {
