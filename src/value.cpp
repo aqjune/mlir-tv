@@ -380,7 +380,7 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
 
   Expr size_match = Expr::mkBool(true);
   for (size_t i = 0; i < sz; ++i)
-    size_match = size_match & (Expr)other.getDim(i) == (Expr)getDim(i);
+    size_match = size_match & ((Expr)other.getDim(i) == (Expr)getDim(i));
   size_match = size_match.simplify();
   if (size_match.isFalse())
     return {size_match, {}};
@@ -567,7 +567,7 @@ MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
       auto inverse = Expr::mkLambda(indVars[i], inverseFn(indVars[i]));
       inverseMappings.push_back(inverse);
 
-      condition = condition & inverse.select(layoutFnExpr) == indVars[i];
+      condition = condition & (inverse.select(layoutFnExpr) == indVars[i]);
     }
     this->inbounds = Expr::mkLambda(indVars, inbounds);
     this->mapping = Expr::mkLambda(indVars, layoutFnExpr);
@@ -583,7 +583,7 @@ MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
       auto inverse = Expr::mkLambda(indVars[i], inverseFn(indVars[i]));
       inverseMappings.push_back(inverse);
 
-      condition = condition & inverse.select(layout) == indVars[i];
+      condition = condition & (inverse.select(layout) == indVars[i]);
     }
     this->inbounds = Expr::mkLambda(indVars, inbounds);
     this->mapping = Expr::mkLambda(indVars, layout);
@@ -716,7 +716,7 @@ smt::Expr MemRef::noalias(const MemRef &other) const {
 
   // Case 1. bid != other.bid
   // Case 2. bid == other.bid && (r2 <= l1 || r1 <= l2)
-  return !(bid == other.bid) | (bid == other.bid & (r2.ule(l1) | r1.ule(l2)));
+  return (!(bid == other.bid)) | ((bid == other.bid) & (r2.ule(l1) | r1.ule(l2)));
 }
 
 void MemRef::setWritable(bool writable) {
