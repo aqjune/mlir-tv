@@ -480,13 +480,14 @@ Tensor Tensor::mkLambda(
     std::vector<Expr> &&newdims, std::vector<Expr> &&indexvars,
     Expr body) {
   if (indexvars.size() == 0) {
-    int64_t i;
     // If indexvars is empty, let's assume that the tensor has only one
     // element.
     if (newdims.size() == 0) {
       newdims.push_back(Index(1));
-    } else
+    } else {
+      [[maybe_unused]] int64_t i;
       assert(newdims.size() == 1 && newdims[0].isInt(i) && i == 1);
+    }
   } else
     assert(newdims.size() == indexvars.size());
 
@@ -655,7 +656,8 @@ optional<MemRef::Layout> MemRef::getLayout(
 
   int64_t offset;
   llvm::SmallVector<int64_t, 4> strides;
-  auto success = mlir::getStridesAndOffset(memRefTy, strides, offset);
+  [[maybe_unused]] auto success =
+      mlir::getStridesAndOffset(memRefTy, strides, offset);
   assert(succeeded(success) && "unexpected non-strided memref");
   Expr layout = getConstOrFreshVar(offset, "offset");
   vector<Expr> indVars;

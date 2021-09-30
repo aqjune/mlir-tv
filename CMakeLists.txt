@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.15.0)
 project(mlir-tv VERSION 0.1.0)
 set (CMAKE_CXX_STANDARD 17)
 
+string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+
 set(MLIR_DIR CACHE PATH "MLIR installation top-level directory")
 set(Z3_DIR CACHE PATH "Z3 installation top-level directory")
 set(CVC5_DIR CACHE PATH "CVC5 installation top-level directory")
