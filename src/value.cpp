@@ -64,7 +64,7 @@ Index Index::var(std::string &&name, VarType varty) {
   case VarType::FRESH:
     return {Expr::mkFreshVar(Index::sort(), move(name))};
   }
-  assert("Unknown case");
+  llvm_unreachable("Unknown case");
 }
 
 
@@ -97,7 +97,7 @@ Float Float::var(std::string &&name, VarType varty) {
   case VarType::FRESH:
     return {Expr::mkFreshVar(Float::sort(), move(name))};
   }
-  assert("Unknown case");
+  llvm_unreachable("Unknown case");
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
@@ -148,7 +148,7 @@ Integer Integer::var(std::string &&name, unsigned bw, VarType varty) {
   case VarType::FRESH:
     return {Expr::mkFreshVar(Sort::bvSort(bw), move(name))};
   }
-  assert("Unknown case");
+  llvm_unreachable("Unknown case");
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
