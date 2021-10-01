@@ -12,14 +12,25 @@ static string freshName(string prefix) {
 }
 
 namespace {
-// Abstract representation of fp constants.
+// Keep 'special' fp constants in separate variables
+optional<Expr> fpconst_nan;
+optional<Expr> fpconst_inf_pos;
+optional<Expr> fpconst_inf_neg;
+// Abstract representation of valid fp constants.
 map<float, Expr> fpconst_absrepr;
 unsigned fpconst_absrepr_num;
 
+const unsigned SIGN_BITS = 1;
+const unsigned TYPE_BITS = 2;
 // TODO: this must be properly set
 // What we need to do is to statically find how many 'different' fp values a
 // program may observe.
-const unsigned FP_BITS = 4;
+const unsigned VALUE_BITS = 32;
+const unsigned FP_BITS = SIGN_BITS + TYPE_BITS + VALUE_BITS;
+const uint64_t MAX_VALUE = 1ull << (uint64_t)VALUE_BITS;
+const uint64_t INF_VALUE = 1ull << (uint64_t)VALUE_BITS;
+const uint64_t NAN_VALUE = 2ull << (uint64_t)VALUE_BITS;
+const uint64_t SIGNED_VALUE = 1ull << (uint64_t)(TYPE_BITS + VALUE_BITS);
 }
 
 namespace aop {
@@ -51,23 +62,44 @@ Sort fpSort() {
 }
 
 Expr fpConst(float f) {
+  // NaNs and Infs are stored in separate variable
+  if (isnanf(f)) {
+    if (!fpconst_nan)
+      fpconst_nan = Expr::mkBV(NAN_VALUE, FP_BITS);
+    return *fpconst_nan;
+  }
+
+  if (isinff(f)) {
+    if (!fpconst_inf_pos)
+        fpconst_inf_pos = Expr::mkBV(INF_VALUE, FP_BITS);
+    if (!fpconst_inf_neg)
+        fpconst_inf_neg = Expr::mkBV(SIGNED_VALUE + INF_VALUE, FP_BITS);
+    
+    return signbit(f) ? *fpconst_inf_neg : *fpconst_inf_pos;
+  }
+
   // We don't explicitly encode f
   auto itr = fpconst_absrepr.find(f);
   if (itr != fpconst_absrepr.end())
     return itr->second;
 
   uint64_t absval;
+  float abs_f = abs(f);
   if (f == 0.0) {
     absval = 0; // This is consistent with what mkZeroElemFromArr assumes
   } else if (f == 1.0) {
     absval = 1;
   } else {
-    assert(2 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
+    assert(2 + fpconst_absrepr_num < MAX_VALUE);
     absval = 2 + fpconst_absrepr_num++;
   }
-  Expr e = Expr::mkBV(absval, FP_BITS);
-  fpconst_absrepr.emplace(f, e);
-  return e;
+
+  Expr e_pos = Expr::mkBV(absval, FP_BITS);
+  fpconst_absrepr.emplace(abs_f, e_pos);
+  Expr e_neg = Expr::mkBV(SIGNED_VALUE + absval, FP_BITS);
+  fpconst_absrepr.emplace(-abs_f, e_neg);
+  
+  return signbit(f) ? e_neg : e_pos;
 }
 
 vector<float> fpPossibleConsts(const Expr &e) {
