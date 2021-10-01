@@ -19,7 +19,7 @@ unsigned fpconst_absrepr_num;
 // TODO: this must be properly set
 // What we need to do is to statically find how many 'different' fp values a
 // program may observe.
-const unsigned FP_BITS = 4;
+const unsigned FP_BITS = 32;
 }
 
 namespace aop {
@@ -62,7 +62,7 @@ Expr fpConst(float f) {
   } else if (f == 1.0) {
     absval = 1;
   } else {
-    assert(2 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
+    assert((unsigned long long)(2 + fpconst_absrepr_num) < (1ull << FP_BITS));
     absval = 2 + fpconst_absrepr_num++;
   }
   Expr e = Expr::mkBV(absval, FP_BITS);
