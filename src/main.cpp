@@ -35,9 +35,16 @@ llvm::cl::opt<unsigned> arg_smt_to("smt-to",
 llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
   llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"));
 
-llvm::cl::opt<bool> arg_cross_check("cross-check",
-  llvm::cl::desc("Run all SMT solvers and cross-check the results. "
-                 "By default, Z3 is only used."));
+llvm::cl::opt<smt::SolverType> arg_solver("solver",
+  llvm::cl::desc("Type of SMT solvers used when verifying"
+                 " (default=Z3)"),
+  llvm::cl::init(smt::SolverType::Z3),
+  llvm::cl::values(
+    clEnumValN(smt::SolverType::Z3, "Z3", "Z3 Solver"),
+    clEnumValN(smt::SolverType::CVC5, "CVC5", "CVC5 Solver"),
+    clEnumValN(smt::SolverType::ALL, "ALL", "Z3, CVC5 Solvers")
+  )
+);
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::desc("Number of memory blocks required to validate translation"
@@ -93,11 +100,13 @@ int main(int argc, char* argv[]) {
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   smt::setTimeout(arg_smt_to.getValue());
-  smt::useZ3();
-#ifdef SOLVER_CVC5
-  if (arg_cross_check)
+  if (arg_solver.getValue() == smt::ALL || arg_solver.getValue() == smt::Z3)
+    smt::useZ3();
+  if (arg_solver.getValue() == smt::ALL || arg_solver.getValue() == smt::CVC5) {
+    #ifdef SOLVER_CVC5
     smt::useCVC5();
-#endif
+    #endif
+  }
 
   MLIRContext context;
   DialectRegistry registry;
