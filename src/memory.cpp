@@ -269,7 +269,7 @@ MultipleArrayMemory::refines(const Memory &other0) const {
   auto bid = Expr::mkFreshVar(Sort::bvSort(bidBits), "bid");
   auto offset = Index::var("offset", VarType::FRESH);
 
-  auto refines = [this, &other, &bid, &offset](unsigned ubid) {
+  auto refines = [this, &other, &offset](unsigned ubid) {
     auto [srcValue, srcSuccess] = load(ubid, offset);
     auto srcWritable = getWritable(ubid);
     auto [tgtValue, tgtSuccess] = other.load(ubid, offset);

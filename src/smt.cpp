@@ -946,7 +946,7 @@ Expr Model::eval(const Expr &e, bool modelCompletion) const {
   SET_Z3(newe, fmap(z3, [modelCompletion, &e](auto &z3model){
     return z3model.eval(e.getZ3Expr(), modelCompletion);
   }));
-  SET_CVC5(newe, fupdate2(sctx.cvc5, e.cvc5, [&e](auto &solver, auto ec){
+  SET_CVC5(newe, fupdate2(sctx.cvc5, e.cvc5, [](auto &solver, auto ec){
     // getValue() creates a new BV, so the model gets invalidated
     // re-running checkSat() is very expensive, but this is so far
     // the only way to retrieve the values
