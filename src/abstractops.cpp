@@ -213,11 +213,11 @@ Expr getAssociativePrecondition() {
         FnDecl hashfn(Float::sort(), Index::sort(), freshName("hash"));
 
         auto aVal = hashfn.apply(a.select(Index(0)));
-        for (unsigned i = 1; i < alen; i ++)
-          aVal = aVal + hashfn.apply(a.select(Index(i)));
+        for (unsigned k = 1; k < alen; k ++)
+          aVal = aVal + hashfn.apply(a.select(Index(k)));
         auto bVal = hashfn.apply(b.select(Index(0)));
-        for (unsigned i = 1; i < blen; i ++)
-          bVal = bVal + hashfn.apply(b.select(Index(i)));
+        for (unsigned k = 1; k < blen; k ++)
+          bVal = bVal + hashfn.apply(b.select(Index(k)));
 
         // precond: sumfn(A) != sumfn(B) -> hashfn(A) != hashfn(B)
         // This means if two summations are different, we can find concrete hash function that hashes into different value.
