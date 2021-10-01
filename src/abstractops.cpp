@@ -57,6 +57,7 @@ static AbsLevelDot alDot;
 static bool isAddAssociative;
 static UsedAbstractOps usedOps;
 static vector<tuple<Expr, Expr, Expr>> staticArrays;
+static bool useMultiset;
 
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
@@ -73,6 +74,11 @@ void setAbstraction(AbsLevelDot ad, bool addAssoc, unsigned fpBits) {
   updateConstants();
 
   staticArrays.clear();
+}
+
+// A set of options that must not change the precision of validation.
+void setEncodingOptions(bool use_multiset) {
+  useMultiset = use_multiset;
 }
 
 bool getAddAssociativity() { return isAddAssociative; }
@@ -228,6 +234,26 @@ Expr fpMul(const Expr &f1, const Expr &f2) {
   );
 }
 
+Expr associativeSum(const Expr &a, const Expr &n) {
+  uint64_t length;
+  if (!n.isUInt(length))
+    assert("Only an array of constant length is supported.");
+  auto bag = Expr::mkEmptyBag(Float::sort());
+  for (unsigned i = 0; i < length; i ++) {
+    bag = bag.insert(a.select(Index(i)));
+    bag = bag.simplify();
+  }
+
+  if (!assoc_sumfn)
+    assoc_sumfn.emplace(bag.sort(), Float::sort(), "smt_assoc_sum");
+  Expr result = (*assoc_sumfn)(bag);
+
+  if (n.isNumeral())
+    staticArrays.push_back({bag, n, result});
+
+  return result;
+}
+
 Expr sum(const Expr &a, const Expr &n) {
   usedOps.sum = true;
   // TODO: check that a.Sort is Index::Sort() -> Float::Sort()
@@ -270,36 +296,56 @@ Expr dot(const Expr &a, const Expr &b, const Expr &n) {
     Expr ai = a.select(i), bi = b.select(i);
     Expr arr = Expr::mkLambda(i, fpMul(ai, bi));
 
-    return sum(arr, n);
+    if (isAddAssociative && useMultiset)
+      return associativeSum(arr, n);
+    else
+      return sum(arr, n);
   }
   llvm_unreachable("Unknown abstraction level for dot");
 }
 
 Expr getAssociativePrecondition() {
-  Expr precond = Expr::mkBool(true);
-  for (unsigned i = 0; i < staticArrays.size(); i ++) {
-    for (unsigned j = i + 1; j < staticArrays.size(); j ++) {
-      auto [a, an, asum] = staticArrays[i];
-      auto [b, bn, bsum] = staticArrays[j];
-      uint64_t alen, blen;
-      if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
-      FnDecl hashfn(Float::sort(), Index::sort(), freshName("hash"));
-
-      auto aVal = hashfn.apply(a.select(Index(0)));
-      for (unsigned i = 1; i < alen; i ++)
-        aVal = aVal + hashfn.apply(a.select(Index(i)));
-      auto bVal = hashfn.apply(b.select(Index(0)));
-      for (unsigned i = 1; i < blen; i ++)
-        bVal = bVal + hashfn.apply(b.select(Index(i)));
-
-      // precond: sumfn(A) != sumfn(B) -> hashfn(A) != hashfn(B)
-      // This means if two summations are different, we can find concrete hash function that hashes into different value.
-      auto associativity = (!(asum == bsum)).implies(!(aVal == bVal));
-      precond = precond & associativity;
+  if (useMultiset) {
+    // precondition between `bag equality <-> assoc_sumfn`
+    Expr precond = Expr::mkBool(true);
+    for (unsigned i = 0; i < staticArrays.size(); i ++) {
+      for (unsigned j = i + 1; j < staticArrays.size(); j ++) {
+        auto [abag, an, asum] = staticArrays[i];
+        auto [bbag, bn, bsum] = staticArrays[j];
+        uint64_t alen, blen;
+        if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
+        precond = precond & (abag == bbag).implies(asum == bsum);
+      }
     }
+    precond = precond.simplify();
+    return precond;
+  } else {
+    // precondition between `hashfn <-> sumfn`
+    Expr precond = Expr::mkBool(true);
+    for (unsigned i = 0; i < staticArrays.size(); i ++) {
+      for (unsigned j = i + 1; j < staticArrays.size(); j ++) {
+        auto [a, an, asum] = staticArrays[i];
+        auto [b, bn, bsum] = staticArrays[j];
+        uint64_t alen, blen;
+        if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
+        FnDecl hashfn(Float::sort(), Index::sort(), freshName("hash"));
+
+        auto aVal = hashfn.apply(a.select(Index(0)));
+        for (unsigned i = 1; i < alen; i ++)
+          aVal = aVal + hashfn.apply(a.select(Index(i)));
+        auto bVal = hashfn.apply(b.select(Index(0)));
+        for (unsigned i = 1; i < blen; i ++)
+          bVal = bVal + hashfn.apply(b.select(Index(i)));
+
+        // precond: sumfn(A) != sumfn(B) -> hashfn(A) != hashfn(B)
+        // This means if two summations are different, we can find concrete hash function that hashes into different value.
+        auto associativity = (!(asum == bsum)).implies(!(aVal == bVal));
+        precond = precond & associativity;
+      }
+    }
+    precond = precond.simplify();
+    return precond;
   }
-  precond = precond.simplify();
-  return precond;
 }
 
 }
