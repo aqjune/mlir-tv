@@ -45,6 +45,7 @@ public:
   MemEncoding encoding;
   unsigned int numBlocks;
   bool associativeAdd;
+  bool useMultiset;
 };
 
 };
@@ -367,7 +368,7 @@ static void checkIsSrcAlwaysUB(
 
   // Set the abstract level to be as concrete as possible because we may not
   // be able to detect always-UB cases
-  aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, vinput.associativeAdd);
+  aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, vinput.associativeAdd, vinput.useMultiset);
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
@@ -407,7 +408,7 @@ static Results validate(ValidationInput vinput) {
   // Don't enable add associativity even if vinput.associativeAdd is true
   // because simply encoding it as UF is more efficient.
   aop::setAbstractionLevel(
-      aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false);
+      aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false, false);
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
 
   if (res.code == Results::INCONSISTENT)
@@ -425,7 +426,7 @@ static Results validate(ValidationInput vinput) {
   bool useSumMulForDot = usedOps.dot && usedOps.sum && usedOps.mul;
 
   if (assocAdd || useSumMulForDot) {
-    aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, assocAdd);
+    aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, assocAdd, vinput.useMultiset);
     if (!vinput.dumpSMTPath.empty())
       vinput.dumpSMTPath += "_noabs";
   } else {
@@ -452,7 +453,7 @@ Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
     unsigned int numBlocks, MemEncoding encoding,
-    bool associativeAdd) {
+    bool associativeAdd, bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -480,6 +481,7 @@ Results validate(
     vinput.numBlocks = numBlocks;
     vinput.encoding = encoding;
     vinput.associativeAdd = associativeAdd;
+    vinput.useMultiset = useMultiset;
 
     verificationResult.merge(validate(vinput));
   }
