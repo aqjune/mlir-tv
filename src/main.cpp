@@ -103,9 +103,14 @@ int main(int argc, char* argv[]) {
   if (arg_solver.getValue() == smt::ALL || arg_solver.getValue() == smt::Z3)
     smt::useZ3();
   if (arg_solver.getValue() == smt::ALL || arg_solver.getValue() == smt::CVC5) {
-    #ifdef SOLVER_CVC5
+#ifdef SOLVER_CVC5
     smt::useCVC5();
-    #endif
+#else
+    if (arg_solver.getValue() == smt::CVC5) {
+      llvm::errs() << "CVC5_DIR was not set while building this project! aborting..\n";
+      return 1;
+    }
+#endif
   }
 
   MLIRContext context;
