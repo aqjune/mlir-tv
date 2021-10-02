@@ -94,14 +94,9 @@ Expr fpConst(float f) {
   } else if (f == -0.0) {
     absval = 2;
   } else {
-<<<<<<< HEAD
-    assert((unsigned long long)(2 + fpconst_absrepr_num) < (1ull << FP_BITS));
-    absval = 2 + fpconst_absrepr_num++;
-=======
     // #x3~5 is reserved for NaN and Inf
-    assert(6 + fpconst_absrepr_num < (1ull << (uint64_t)FP_BITS));
+    assert((unsigned long long)(6 + fpconst_absrepr_num) < (1ull << FP_BITS));
     absval = 6 + fpconst_absrepr_num++;
->>>>>>> ac98261 (Update)
   }
   Expr e = Expr::mkBV(absval, FP_BITS);
   fpconst_absrepr.emplace(f, e);
