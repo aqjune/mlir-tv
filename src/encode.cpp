@@ -6,6 +6,7 @@
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
+#include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Matchers.h"
 
@@ -75,15 +76,6 @@ static optional<ValueTy> fromExpr(Expr &&e, mlir::Type ty) {
     return Integer(e);
   }
   return {};
-}
-
-static vector<Expr> createBoundIndexVars(unsigned n) {
-  vector<Expr> idxs;
-  for (unsigned i = 0; i < n; i ++) {
-    idxs.push_back(
-      Index::var("i" + std::to_string(i), VarType::BOUND));
-  }
-  return idxs;
 }
 
 
@@ -422,7 +414,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
 
   vector<Expr> inIdxs, outIdxs;
   // indices that is going to be read from the output tensor
-  inIdxs = createBoundIndexVars(resType.getRank());
+  inIdxs = Index::boundIndexVars(resType.getRank());
 
   // map the output tensor indices to source tensor indices
   unsigned idx = 0;
@@ -435,6 +427,36 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   }
   st.regs.add(res,
       Tensor::mkLambda(move(dims), move(inIdxs), src.get(outIdxs).first));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
+  auto optys = op.getOperandTypes();
+  if (!optys[0].isa<mlir::RankedTensorType>() ||
+      !optys[1].isa<mlir::RankedTensorType>())
+    return "Unsupported operand types";
+
+  auto opty1 = optys[0].cast<mlir::RankedTensorType>();
+  auto opty2 = optys[1].cast<mlir::RankedTensorType>();
+
+  // Broadcasting is not implemented yet
+  for (unsigned i = 0; i < opty1.getRank(); ++i) {
+    auto d1 = opty1.getDimSize(i), d2 = opty2.getDimSize(i);
+    if (d1 != d2) {
+      assert(d1 == 1 || d2 == 1);
+      return "Broadcasting is not implemented yet";
+    }
+  }
+
+  auto t1 = st.regs.get<Tensor>(op.getOperand(0));
+  auto t2 = st.regs.get<Tensor>(op.getOperand(1));
+
+  auto [res, welldef] = t1.elementwiseBinOp(t2, [](auto &&e1, auto &&e2)
+      { return e1 + e2; });
+  st.wellDefined(op.getOperation(), move(welldef));
+  st.regs.add(op, move(res));
+
   return {};
 }
 
@@ -576,7 +598,7 @@ static void storeTensorTo(
     // freshly created block?
     // We may not need to preserve the 'previous' bytes.
 
-    vector<Expr> idxs = createBoundIndexVars(memrefTy.getRank());
+    vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
     auto [tVal, tSuccess] = tensor.get(idxs);
     auto [mVal, mSuccess] = memref.get(idxs);
     auto success = tSuccess & mSuccess;
@@ -614,7 +636,7 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
 
   // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
-  vector<Expr> idxs = createBoundIndexVars(dims.size());
+  vector<Expr> idxs = Index::boundIndexVars(dims.size());
   auto [Expr, success] = m.get(idxs);
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), Expr);
 
@@ -1361,6 +1383,8 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::ExtractOp);
     ENCODE(st, op, mlir::tensor::FromElementsOp);
     ENCODE(st, op, mlir::tensor::ExtractSliceOp);
+
+    ENCODE(st, op, mlir::tosa::AddOp);
 
     ENCODE(st, op, mlir::memref::AllocOp);
     ENCODE(st, op, mlir::memref::LoadOp);

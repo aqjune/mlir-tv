@@ -37,6 +37,7 @@ public:
   static Index one();
   static Index zero();
   static Index var(std::string &&name, enum VarType);
+  static std::vector<smt::Expr> boundIndexVars(unsigned);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
   // (refinement, unbound variables used in the refinement formula)
@@ -152,7 +153,8 @@ public:
 
   // Return <a new tensor T2, inbounds>
   // T2[idx] = idx == indices ? value : this[idx]
-  std::pair<Tensor, smt::Expr> insert(const smt::Expr &value, const std::vector<smt::Expr> &indices) const;
+  std::pair<Tensor, smt::Expr> insert(
+      const smt::Expr &value, const std::vector<smt::Expr> &indices) const;
 
   // Return a new tensor T2 s.t.
   //   T2[newidxvars] = this[srcidxs]
@@ -173,6 +175,12 @@ public:
   Tensor transpose() const;
 
   Tensor matmul(const Tensor &b) const;
+
+  // Return the result of an elementwise operation
+  // (the resulting tensor, shape check)
+  std::pair<Tensor, smt::Expr> elementwiseBinOp(
+      const Tensor &b,
+      const std::function<smt::Expr(smt::Expr &&e1, smt::Expr &&e2)> &op) const;
 
   smt::Expr dot(const Tensor &b) const;
   smt::Expr sum() const;

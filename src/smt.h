@@ -146,6 +146,8 @@ public:
   Expr operator==(const Expr &rhs) const;
   Expr operator==(uint64_t rhs) const;
   Expr operator!() const;
+  Expr &operator&=(const Expr &rhs);
+  Expr &operator|=(const Expr &rhs);
 
   Expr implies(const Expr &rhs) const;
   Expr isNonZero() const;

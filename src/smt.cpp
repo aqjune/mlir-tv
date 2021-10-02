@@ -4,13 +4,13 @@
 #include "utils.h"
 
 #ifdef SOLVER_Z3
-#define SET_Z3(e, v) e.setZ3(v)
+#define SET_Z3(e, v) (e).setZ3(v)
 #else
 #define SET_Z3(e, v)
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-#define SET_CVC5(e, v) e.setCVC5(v)
+#define SET_CVC5(e, v) (e).setCVC5(v)
 #else
 #define SET_CVC5(e, v)
 #endif // SOLVER_CVC5
@@ -649,6 +649,20 @@ Expr Expr::operator!() const {
   SET_Z3(e, fmap(this->z3, [&](auto e) { return !e; }));
   SET_CVC5(e, fmap(this->cvc5, [&](auto e) { return e.notTerm(); }));
   return e;
+}
+
+Expr &Expr::operator&=(const Expr &rhs) {
+  Expr e = *this & rhs;
+  SET_Z3(*this, move(e.z3));
+  SET_CVC5(*this, move(e.cvc5));
+  return *this;
+}
+
+Expr &Expr::operator|=(const Expr &rhs) {
+  Expr e = *this | rhs;
+  SET_Z3(*this, move(e.z3));
+  SET_CVC5(*this, move(e.cvc5));
+  return *this;
 }
 
 Expr Expr::substitute(

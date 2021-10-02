@@ -66,6 +66,14 @@ Index Index::var(std::string &&name, VarType varty) {
   }
   llvm_unreachable("Unknown case");
 }
+vector<Expr> Index::boundIndexVars(unsigned n) {
+  vector<Expr> idxs;
+  for (unsigned i = 0; i < n; i ++) {
+    idxs.push_back(
+      Index::var("i" + std::to_string(i), VarType::BOUND));
+  }
+  return idxs;
+}
 
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
@@ -361,6 +369,20 @@ Tensor Tensor::matmul(const Tensor &b) const {
 
   return mkLambda({dims[0], bt.dims[0]}, {i, j},
       aop::dot(a_row, bt_row, dims[1]));
+}
+
+pair<Tensor, Expr> Tensor::elementwiseBinOp(
+      const Tensor &b, const function<Expr(Expr &&e1, Expr &&e2)> &f)
+      const {
+  assert(getRank() == b.getRank());
+
+  Expr equalSize = Expr::mkBool(true);
+  auto idxvars = Index::boundIndexVars(getRank());
+  for (unsigned i = 0; i < getRank(); ++i)
+    equalSize = equalSize & (Expr)getDim(i) == (Expr)b.getDim(i);
+  Expr elemout = f(get(idxvars).first, b.get(idxvars).first);
+
+  return { mkLambda(getDims(), move(idxvars), elemout), move(equalSize) };
 }
 
 Expr Tensor::dot(const Tensor &t2) const {
