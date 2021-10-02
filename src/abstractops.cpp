@@ -18,7 +18,7 @@ namespace {
 // FP_BITS must be geq than 3 (otherwise it can't handle 'reserved' values)
 const unsigned FP_BITS = 32;
 
-// NaNs and Infs must not be used as key
+// NaNs and Infs must not be used as keys
 // because they break the entire map.
 // So we keep them in separate variables
 optional<Expr> fpconst_nan_pos;
@@ -142,12 +142,12 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
         Expr::mkIte(f2 == fp_nan, f2,         // x + NaN -> NaN
     // inf + -inf -> NaN, -inf + inf -> NaN
     // IEEE 754-2019 section 7.2 'Invalid operation'
-    Expr::mkIte((f1 == fp_inf_pos & f2 == fp_inf_neg) |
-                (f1 == fp_inf_neg & f2 == fp_inf_pos), fp_nan,
+    Expr::mkIte(((f1 == fp_inf_pos) & (f2 == fp_inf_neg)) |
+                ((f1 == fp_inf_neg) & (f2 == fp_inf_pos)), fp_nan,
     // inf + x -> inf, -inf + x -> -inf (both commutative)
     // IEEE 754-2019 section 6.1 'Infinity arithmetic'
-    Expr::mkIte(f1 == fp_inf_pos | f1 == fp_inf_neg, f1,
-      Expr::mkIte(f2 == fp_inf_pos | f2 == fp_inf_neg, f2,
+    Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg), f1,
+      Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg), f2,
     // if both operands do not fall into any of the cases above,
     // use fp_add for abstract representation
     fpaddfn->apply({f1, f2})
