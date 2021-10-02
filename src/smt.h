@@ -30,6 +30,10 @@ class FnDecl;
 class Model;
 class Sort;
 
+enum SolverType {
+  Z3, CVC5, ALL
+};
+
 namespace matchers {
 class Matcher;
 }

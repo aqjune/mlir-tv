@@ -25,9 +25,9 @@ const unsigned TYPE_BITS = 2;
 // TODO: this must be properly set
 // What we need to do is to statically find how many 'different' fp values a
 // program may observe.
+// FP_BITS must be geq than 1 (otherwise it can't handle reserved values)
 const unsigned VALUE_BITS = 32;
 const unsigned FP_BITS = SIGN_BITS + TYPE_BITS + VALUE_BITS;
-const uint64_t MAX_VALUE = 1ull << (uint64_t)VALUE_BITS;
 const uint64_t INF_VALUE = 1ull << (uint64_t)VALUE_BITS;
 const uint64_t NAN_VALUE = 2ull << (uint64_t)VALUE_BITS;
 const uint64_t SIGNED_VALUE = 1ull << (uint64_t)(TYPE_BITS + VALUE_BITS);
@@ -85,12 +85,12 @@ Expr fpConst(float f) {
 
   uint64_t absval;
   float abs_f = abs(f);
-  if (f == 0.0) {
+  if (abs_f == 0.0) {
     absval = 0; // This is consistent with what mkZeroElemFromArr assumes
-  } else if (f == 1.0) {
+  } else if (abs_f == 1.0) {
     absval = 1;
   } else {
-    assert(2 + fpconst_absrepr_num < MAX_VALUE);
+    assert(static_cast<unsigned long long>(2 + fpconst_absrepr_num) < INF_VALUE);
     absval = 2 + fpconst_absrepr_num++;
   }
 
@@ -124,7 +124,28 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
 
   if (!fpaddfn)
     fpaddfn.emplace({fty, fty}, fty, "fp_add");
-  return fpaddfn->apply({f1, f2});
+
+  auto fp_id = Float(-0.0);
+  auto fp_inf_pos = Float(INFINITY);
+  auto fp_inf_neg = Float(-INFINITY);
+  auto fp_nan = Float(nanf("0"));
+
+  return Expr::mkIte(f1 == fp_id, f2,         // -0.0 + x -> x
+    Expr::mkIte(f2 == fp_id, f1,              // x + -0.0 -> x
+      Expr::mkIte(f1 == fp_nan, f1,           // NaN + x -> NaN
+        Expr::mkIte(f2 == fp_nan, f2,         // x + NaN -> NaN
+    // inf + -inf -> NaN, -inf + inf -> NaN
+    // IEEE 754-2019 section 7.2 'Invalid operation'
+    Expr::mkIte(((f1 == fp_inf_pos) & (f2 == fp_inf_neg)) |
+                ((f1 == fp_inf_neg) & (f2 == fp_inf_pos)), fp_nan,
+    // inf + x -> inf, -inf + x -> -inf (both commutative)
+    // IEEE 754-2019 section 6.1 'Infinity arithmetic'
+    Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg), f1,
+      Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg), f2,
+    // if both operands do not fall into any of the cases above,
+    // use fp_add for abstract representation
+    fpaddfn->apply({f1, f2})
+  )))))));
 }
 
 Expr fpMul(const Expr &f1, const Expr &f2) {
