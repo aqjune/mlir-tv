@@ -108,8 +108,8 @@ Expr fpConst(float f) {
   return e;
 }
 
-vector<double> fpPossibleConsts(const Expr &e) {
-  vector<double> vec;
+vector<float> fpPossibleConsts(const Expr &e) {
+  vector<float> vec;
   for (auto &[k, v]: fpconst_absrepr) {
     if (v.isIdentical(e))
       vec.push_back(k);
