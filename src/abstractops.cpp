@@ -15,7 +15,7 @@ namespace {
 // TODO: this must be properly set
 // What we need to do is to statically find how many 'different' fp values a
 // program may observe.
-// FP_BITS must be geq than 3 (otherwise it can't handle 'reserved' values)
+// FP_BITS must be geq than 3 (otherwise it can't handle reserved values)
 const unsigned FP_BITS = 32;
 
 // NaNs and Infs must not be used as keys

@@ -1,6 +1,6 @@
 // VERIFY-INCORRECT
 
-// This may be incorrect if at least one of arg0 and arg1 is NaN or -Inf
+// This is incorrect if at least one of arg0 and arg1 is NaN or -Inf
 
 func @f(%arg0: f32, %arg1: f32) -> f32 {
   %inf = constant 0x7F800000 : f32
