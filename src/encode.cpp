@@ -1057,9 +1057,6 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
 
 static optional<string> initInputStateForLoopBody(
     State &st, mlir::linalg::GenericOp op) {
-  if (op.getNumInputs() == 0)
-    return "Unsupported loop";
-
   // TODO: Currently we do not encode UB in loop body. How to deal with UB properly?
   auto indexingMaps = op.indexing_maps().getValue();
   auto &block = *op.region().begin();
