@@ -311,19 +311,24 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
   return {};
 }
 
+static pair<Expr, Expr> encodeDimOp(
+    State &st, vector<Expr> &&dims, mlir::Value index) {
+  auto idx = st.regs.get<Index>(index);
+
+  auto res = dims[0];
+  for (unsigned i = 1; i < dims.size(); ++i)
+    res = Expr::mkIte((Expr)idx == i, dims[i], res);
+
+  return {move(res), ((Expr)idx).ult(dims.size())};
+}
+
 template<>
 optional<string> encodeOp(State &st, mlir::tensor::DimOp op) {
-  auto tensor = op.source();
-  if (!tensor.getType().isa<mlir::TensorType>())
-    return "tensor type is supported only";
-  auto t = st.regs.get<Tensor>(tensor);
+  auto [res, wf] = encodeDimOp(
+      st, st.regs.get<Tensor>(op.source()).getDims(), op.index());
+  st.regs.add(op, Index(res));
+  st.wellDefined(op.getOperation(), move(wf));
 
-  if (auto idx = op.getConstantIndex())
-    st.regs.add(op, t.getDim(*idx));
-  else {
-    // TODO: if-then-else needed
-    return "variable index not implemented yet";
-  }
   return {};
 }
 
@@ -498,6 +503,16 @@ optional<string> encodeOp(State &st, mlir::memref::AllocOp op) {
   auto memref = get<1>(move(memrefOrErr));
 
   st.regs.add(op, move(memref));
+
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::memref::DimOp op) {
+  auto [res, wf] = encodeDimOp(
+      st, st.regs.get<MemRef>(op.source()).getDims(), op.index());
+  st.regs.add(op, Index(res));
+  st.wellDefined(op.getOperation(), move(wf));
 
   return {};
 }
@@ -1042,6 +1057,9 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
 
 static optional<string> initInputStateForLoopBody(
     State &st, mlir::linalg::GenericOp op) {
+  if (op.getNumInputs() == 0)
+    return "Unsupported loop";
+
   // TODO: Currently we do not encode UB in loop body. How to deal with UB properly?
   auto indexingMaps = op.indexing_maps().getValue();
   auto &block = *op.region().begin();
@@ -1146,6 +1164,14 @@ static optional<string> encodeParallelLoopBodyAndOutput(
   auto &ops = block.getOperations();
   mlir::Value yieldedValue;
   for (auto &op: ops) {
+    auto op_operands = op.getOperands();
+    for (const auto &opop: op_operands) {
+      if (!newst.regs.contains(opop)) {
+        RET_STR("This is a bug in mlir-tv or the loop is ill-formed: "
+          "the result of a block in a parallel loop depends on the output"
+          " variable: " << opop);
+      }
+    }
     ENCODE(newst, op, mlir::AddFOp);
     ENCODE(newst, op, mlir::MulFOp);
     ENCODE(newst, op, mlir::AddIOp);
@@ -1387,10 +1413,11 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tosa::AddOp);
 
     ENCODE(st, op, mlir::memref::AllocOp);
+    ENCODE(st, op, mlir::memref::BufferCastOp);
+    ENCODE(st, op, mlir::memref::DimOp);
     ENCODE(st, op, mlir::memref::LoadOp);
     ENCODE(st, op, mlir::memref::StoreOp);
     ENCODE(st, op, mlir::memref::SubViewOp);
-    ENCODE(st, op, mlir::memref::BufferCastOp);
     ENCODE(st, op, mlir::memref::TensorLoadOp);
     ENCODE(st, op, mlir::memref::TensorStoreOp);
 
