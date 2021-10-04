@@ -4,13 +4,13 @@
 #include "utils.h"
 
 #ifdef SOLVER_Z3
-#define SET_Z3(e, v) e.setZ3(v)
+#define SET_Z3(e, v) (e).setZ3(v)
 #else
 #define SET_Z3(e, v)
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-#define SET_CVC5(e, v) e.setCVC5(v)
+#define SET_CVC5(e, v) (e).setCVC5(v)
 #else
 #define SET_CVC5(e, v)
 #endif // SOLVER_CVC5
@@ -20,7 +20,6 @@ using namespace std;
 
 namespace {
 #ifdef SOLVER_Z3
-z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec);
 z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec);
 z3::sort_vector toZ3SortVector(const vector<smt::Sort> &vec);
 #endif // SOLVER_Z3
@@ -46,6 +45,7 @@ uint64_t to_uint64(string &&str) {
   return tmp;
 }
 
+[[maybe_unused]]
 int64_t to_int64(string &&str) {
   uint64_t i = to_uint64(move(str));
   // Don't do (int64_t)i; it may raise UB
@@ -651,6 +651,20 @@ Expr Expr::operator!() const {
   return e;
 }
 
+Expr &Expr::operator&=(const Expr &rhs) {
+  Expr e = *this & rhs;
+  SET_Z3(*this, move(e.z3));
+  SET_CVC5(*this, move(e.cvc5));
+  return *this;
+}
+
+Expr &Expr::operator|=(const Expr &rhs) {
+  Expr e = *this | rhs;
+  SET_Z3(*this, move(e.z3));
+  SET_CVC5(*this, move(e.cvc5));
+  return *this;
+}
+
 Expr Expr::substitute(
     const std::vector<Expr> &vars,
     const std::vector<Expr> &values) const {
@@ -946,7 +960,7 @@ Expr Model::eval(const Expr &e, bool modelCompletion) const {
   SET_Z3(newe, fmap(z3, [modelCompletion, &e](auto &z3model){
     return z3model.eval(e.getZ3Expr(), modelCompletion);
   }));
-  SET_CVC5(newe, fupdate2(sctx.cvc5, e.cvc5, [&e](auto &solver, auto ec){
+  SET_CVC5(newe, fupdate2(sctx.cvc5, e.cvc5, [](auto &solver, auto ec){
     // getValue() creates a new BV, so the model gets invalidated
     // re-running checkSat() is very expensive, but this is so far
     // the only way to retrieve the values
@@ -960,20 +974,20 @@ Expr Model::eval(const Expr &e, bool modelCompletion) const {
 vector<Expr> Model::eval(const vector<Expr> &exprs, bool modelCompletion) const {
   vector<Expr> values;
   values.reserve(exprs.size());
+
 #ifdef SOLVER_CVC5
   auto cvc5_values = fupdate(sctx.cvc5, [exprs](auto &solver) {
     // see the comment at Expr Model::eval(const Expr &e, bool modelCompletion)
     solver.checkSat();
     auto cvc5_exprs = toCVC5TermVector(exprs);
-    // reverse to use faster pop_back()
-    reverse(cvc5_exprs.begin(), cvc5_exprs.end());
     return solver.getValue(cvc5_exprs);
   });
 #endif // SOLVER_CVC5
 
-  for (auto &e : exprs) {
+  for (size_t i = 0; i < exprs.size(); ++i) {
 #ifdef SOLVER_Z3
-    auto z3_value = fmap(z3, [modelCompletion, e](auto &z3model) {
+    auto &e = exprs[i];
+    auto z3_value = fmap(z3, [modelCompletion, &e](auto &z3model) {
       return z3model.eval(e.getZ3Expr(), modelCompletion);
     });
 #endif // SOLVER_Z3
@@ -981,9 +995,7 @@ vector<Expr> Model::eval(const vector<Expr> &exprs, bool modelCompletion) const 
 #ifdef SOLVER_CVC5
     optional<cvc5::api::Term> cvc5_value;
     if (cvc5_values) {
-      // iterate in reverse order
-      cvc5_value = move(cvc5_values->back());
-      cvc5_values->pop_back();
+      cvc5_value = move((*cvc5_values)[i]);
     }
 #endif // SOLVER_CVC5
 
@@ -1121,13 +1133,6 @@ bool Store::operator()(const Expr &expr) const {
 
 namespace {
 #ifdef SOLVER_Z3
-z3::expr_vector toZ3ExprVector(const vector<z3::expr> &vec) {
-  z3::expr_vector ev(*smt::sctx.z3);
-  for (auto &e: vec)
-    ev.push_back(e);
-  return ev;
-}
-
 z3::expr_vector toZ3ExprVector(const vector<smt::Expr> &vec) {
   z3::expr_vector ev(*smt::sctx.z3);
   for (auto &e: vec)

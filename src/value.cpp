@@ -25,7 +25,7 @@ vector<Expr> ShapedValue::getDims(
 
   dims.reserve(rank);
   unsigned unknownVarIdx = 0;
-  for (auto i = 0; i < rank; ++i) {
+  for (unsigned i = 0; i < rank; ++i) {
     uint64_t sz = shapedTy.getDimSize(i);
     if (sz == (uint64_t)-1ull) {
       if (freshVarForUnknownSize) {
@@ -64,7 +64,15 @@ Index Index::var(std::string &&name, VarType varty) {
   case VarType::FRESH:
     return {Expr::mkFreshVar(Index::sort(), move(name))};
   }
-  assert("Unknown case");
+  llvm_unreachable("Unknown case");
+}
+vector<Expr> Index::boundIndexVars(unsigned n) {
+  vector<Expr> idxs;
+  for (unsigned i = 0; i < n; i ++) {
+    idxs.push_back(
+      Index::var("i" + std::to_string(i), VarType::BOUND));
+  }
+  return idxs;
 }
 
 
@@ -97,7 +105,7 @@ Float Float::var(std::string &&name, VarType varty) {
   case VarType::FRESH:
     return {Expr::mkFreshVar(Float::sort(), move(name))};
   }
-  assert("Unknown case");
+  llvm_unreachable("Unknown case");
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
@@ -148,7 +156,7 @@ Integer Integer::var(std::string &&name, unsigned bw, VarType varty) {
   case VarType::FRESH:
     return {Expr::mkFreshVar(Sort::bvSort(bw), move(name))};
   }
-  assert("Unknown case");
+  llvm_unreachable("Unknown case");
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
@@ -207,21 +215,21 @@ std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(const ShapedValue
 }
 
 Tensor::Tensor(Expr &&splat_elem, vector<Expr> &&dimvec):
-    arr(Expr::mkSplatArray(Index::sort(), move(splat_elem))),
-    dims(move(dimvec)) {}
+    dims(move(dimvec)),
+    arr(Expr::mkSplatArray(Index::sort(), move(splat_elem))) {}
 
 Tensor::Tensor(const vector<Expr> &elems1d):
+    dims({ (Expr)Index(elems1d.size()) }),
     arr(Expr::mkFreshVar(Sort::arraySort(Index::sort(), elems1d[0].sort()),
-        "tensor_val")),
-    dims({ (Expr)Index(elems1d.size()) }) {
+        "tensor_val")) {
   for (unsigned i = 0; i < elems1d.size(); ++i)
     arr = arr.store(i, elems1d[i]);
 }
 
 Tensor::Tensor(string &&name, const vector<Expr> &dimvec,
                const smt::Sort &elemty):
-  arr(Expr::mkVar(Sort::arraySort(Index::sort(), elemty), move(name))),
-  dims(dimvec) {}
+  dims(dimvec),
+  arr(Expr::mkVar(Sort::arraySort(Index::sort(), elemty), move(name))) {}
 
 Tensor::Tensor(
     const vector<vector<uint64_t>> &indices,
@@ -363,6 +371,20 @@ Tensor Tensor::matmul(const Tensor &b) const {
       aop::dot(a_row, bt_row, dims[1]));
 }
 
+pair<Tensor, Expr> Tensor::elementwiseBinOp(
+      const Tensor &b, const function<Expr(Expr &&e1, Expr &&e2)> &f)
+      const {
+  assert(getRank() == b.getRank());
+
+  Expr equalSize = Expr::mkBool(true);
+  auto idxvars = Index::boundIndexVars(getRank());
+  for (unsigned i = 0; i < getRank(); ++i)
+    equalSize = equalSize & (Expr)getDim(i) == (Expr)b.getDim(i);
+  Expr elemout = f(get(idxvars).first, b.get(idxvars).first);
+
+  return { mkLambda(getDims(), move(idxvars), elemout), move(equalSize) };
+}
+
 Expr Tensor::dot(const Tensor &t2) const {
   return aop::dot(arr, t2.arr, get1DSize());
 }
@@ -480,13 +502,14 @@ Tensor Tensor::mkLambda(
     std::vector<Expr> &&newdims, std::vector<Expr> &&indexvars,
     Expr body) {
   if (indexvars.size() == 0) {
-    int64_t i;
     // If indexvars is empty, let's assume that the tensor has only one
     // element.
     if (newdims.size() == 0) {
       newdims.push_back(Index(1));
-    } else
+    } else {
+      [[maybe_unused]] int64_t i;
       assert(newdims.size() == 1 && newdims[0].isInt(i) && i == 1);
+    }
   } else
     assert(newdims.size() == indexvars.size());
 
@@ -529,7 +552,7 @@ MemRef::Layout::Layout(const vector<Expr> &dims):
     precondition(Expr::mkBool(true)) {
   vector<Expr> indVars, inverseMappings;
 
-  for (int i = 0; i < dims.size(); i ++) {
+  for (size_t i = 0; i < dims.size(); i ++) {
     indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
     inbounds = inbounds & indVars[i].ult(dims[i]);
   }
@@ -655,13 +678,14 @@ optional<MemRef::Layout> MemRef::getLayout(
 
   int64_t offset;
   llvm::SmallVector<int64_t, 4> strides;
-  auto success = mlir::getStridesAndOffset(memRefTy, strides, offset);
+  [[maybe_unused]] auto success =
+      mlir::getStridesAndOffset(memRefTy, strides, offset);
   assert(succeeded(success) && "unexpected non-strided memref");
   Expr layout = getConstOrFreshVar(offset, "offset");
   vector<Expr> indVars;
 
   Expr inbounds = Expr::mkBool(true);
-  for (int i = 0; i < strides.size(); i ++) {
+  for (size_t i = 0; i < strides.size(); i ++) {
     indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
     layout = layout + getConstOrFreshVar(strides[i], "strides") * indVars[i];
     inbounds = inbounds & indVars[i].ult(dims[i]);
@@ -735,7 +759,6 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
   if (rankDiff > 0) {
     vector<Expr> indVars, reducedSizes;
     for (unsigned i = 0; i < sizes.size(); i++) {
-      uint64_t size_cst;
       if (rankDiff > 0 && unusedDims.contains(i)) {
         //statically known to be 1
         indVars.push_back(Index::zero());

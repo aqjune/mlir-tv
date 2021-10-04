@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.15.0)
 project(mlir-tv VERSION 0.1.0)
 set (CMAKE_CXX_STANDARD 17)
 
+string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+
 set(MLIR_DIR CACHE PATH "MLIR installation top-level directory")
 set(Z3_DIR CACHE PATH "Z3 installation top-level directory")
 set(CVC5_DIR CACHE PATH "CVC5 installation top-level directory")
@@ -26,6 +28,8 @@ add_library(${PROJECT_LIB} STATIC
     src/value.cpp
     src/vcgen.cpp)
 
+# PRIVATE vs. PUBLIC: see https://stackoverflow.com/a/23995391/1488216
+target_compile_options(${PROJECT_LIB} PRIVATE "-Werror=unused")
 # Check for MLIR installation
 if(NOT MLIR_DIR)
     message(FATAL_ERROR "path to MLIR must be provided!")
@@ -39,7 +43,7 @@ else()
         MLIRViewLikeInterface MLIRInferTypeOpInterface MLIRControlFlowInterfaces MLIRSideEffectInterfaces
         MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRAffine MLIRMemRef
         MLIRShape MLIRMath MLIRSparseTensor MLIRSCF
-        MLIRStandard MLIRMemRefUtils MLIRTensor MLIRParser MLIRSupport
+        MLIRStandard MLIRMemRefUtils MLIRTensor MLIRTosa MLIRQuant MLIRParser MLIRSupport
         LLVMSupport LLVMDemangle pthread m curses)
     if (APPLE) # Apple LLD does not support 'group' flags
         target_link_libraries(${PROJECT_LIB} PUBLIC ${LIB_LIST})
