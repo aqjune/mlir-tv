@@ -652,7 +652,7 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
   vector<Expr> idxs = Index::boundIndexVars(dims.size());
-  auto [Expr, success] = m.get(idxs);
+  auto Expr = m.get(idxs).first;
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), Expr);
 
   st.regs.add(op.getResult(), t_res);
@@ -1097,7 +1097,7 @@ static optional<string> initInputStateForLoopBody(
           affine_Exprs.emplace_back(move(*ae_res));
         }
 
-        auto [t_elem, inbounds] = t_input.get(affine_Exprs);
+        auto t_elem = t_input.get(affine_Exprs).first;
         st.regs.add(block.getArgument(arg_i), t_elem, elemty);
       }
     } else if (auto memrefty = op_i.getType().dyn_cast<mlir::MemRefType>()) {
@@ -1116,7 +1116,7 @@ static optional<string> initInputStateForLoopBody(
       }
 
       // TODO: We do not encode UB in loops currently. How to deal with this?
-      auto [m_elem, success] = m_input.get(affine_Exprs);
+      auto m_elem = m_input.get(affine_Exprs).first;
       st.regs.add(block.getArgument(arg_i), Float(m_elem));
     } else {
       return "unsupported block argument type";
