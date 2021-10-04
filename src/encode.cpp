@@ -445,31 +445,58 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
   auto opty1 = optys[0].cast<mlir::RankedTensorType>();
   auto opty2 = optys[1].cast<mlir::RankedTensorType>();
   auto resRank = max(opty1.getRank(), opty2.getRank());
-  // Broadcasting is not implemented yet
-  auto opIdx1 = 0, opIdx2 = 0;
+  auto swapped = false;
+
+  // if dimensions differ, op2 broadcasts
+  if(resRank > opty1.getRank()) {
+    opty1 = optys[1].cast<mlir::RankedTensorType>();
+    opty2 = optys[0].cast<mlir::RankedTensorType>();
+    swapped = true;
+  }
+
+  auto opIdx2 = 0;
   auto opInVars1 = Index::boundIndexVars(resRank);
   auto opInVars2 = Index::boundIndexVars(resRank);
-  vector<Expr> opOutVars1, opOutVars2;
+  vector<Expr> opOutVars1, opOutVars2, resDims;
 
   for (unsigned i = 0; i < resRank; ++i) {
-    auto d1 = opty1.getDimSize(opIdx1), d2 = opty2.getDimSize(opIdx2);
+    auto d1 = opty1.getDimSize(i);
+    auto d2 = opIdx2 < opty2.getRank() ? opty2.getDimSize(opIdx2) : 1;
     if (d1 == d2) {
-      opOutVars1.push_back(opInVars1[opIdx1++]);
+      opOutVars1.push_back(opInVars1[i]);
       opOutVars2.push_back(opInVars2[opIdx2++]);
+      resDims.push_back(Index(d1));
     }
     else {
-      assert(d1 == 1 || d2 == 1);
-      if(d1 == 1) {
+      assert((resRank > opty2.getRank()) || (d1 == 1 || d2 == 1));
+      if(resRank > opty2.getRank()) {
+        while(opIdx2 < opty2.getRank() && opty2.getDimSize(opIdx2) == 1){
+          opOutVars2.push_back(Index(0));
+          opIdx2++;
+        }
+        opOutVars1.push_back(opInVars1[i]);
+        resDims.push_back(Index(d1));
+      }
+      else if(d1 == 1) {
+        opOutVars1.push_back(Index(0));
         opOutVars2.push_back(opInVars2[opIdx2++]);
+        resDims.push_back(Index(d2));
       }
       else {
-        opOutVars1.push_back(opInVars1[opIdx1++]);
+        opOutVars1.push_back(opInVars1[i]);
+        opOutVars2.push_back(Index(0));
+        resDims.push_back(Index(d1));
       }
     }
   }
 
-  auto t1 = st.regs.get<Tensor>(op.getOperand(0));
-  auto t2 = st.regs.get<Tensor>(op.getOperand(1));
+  vector<Expr> resDims2 = resDims;
+  
+  auto t1 = swapped ? Tensor::mkLambda(move(resDims), move(opInVars2), st.regs.get<Tensor>(op.getOperand(0)).get(opOutVars2).first)
+                    : Tensor::mkLambda(move(resDims), move(opInVars1), st.regs.get<Tensor>(op.getOperand(0)).get(opOutVars1).first);
+
+  auto t2 = swapped ? Tensor::mkLambda(move(resDims2), move(opInVars1), st.regs.get<Tensor>(op.getOperand(1)).get(opOutVars1).first) 
+                    : Tensor::mkLambda(move(resDims2), move(opInVars2), st.regs.get<Tensor>(op.getOperand(1)).get(opOutVars2).first);
 
   auto [res, welldef] = t1.elementwiseBinOp(t2, [](auto &&e1, auto &&e2)
       { return e1 + e2; });
