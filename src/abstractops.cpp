@@ -1,6 +1,7 @@
 #include "abstractops.h"
 #include "smt.h"
 #include "value.h"
+#include <cmath>
 #include <map>
 
 using namespace smt;
@@ -62,13 +63,13 @@ Sort fpSort() {
 
 Expr fpConst(float f) {
   // NaNs and Infs are handled using separate variable
-  if (isnanf(f)) {
+  if (isnan(f)) {
     if (!fpconst_nan_pos)
       fpconst_nan_pos = Expr::mkBV(3, FP_BITS);
     return *fpconst_nan_pos;
   }
 
-  if (isinff(f)) {
+  if (isinf(f)) {
     if (signbit(f)) {
       if (!fpconst_inf_neg)
         fpconst_inf_neg = Expr::mkBV(5, FP_BITS);
