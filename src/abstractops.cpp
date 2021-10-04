@@ -234,7 +234,7 @@ Expr fpMul(const Expr &f1, const Expr &f2) {
   );
 }
 
-Expr associativeSum(const Expr &a, const Expr &n) {
+Expr multisetSum(const Expr &a, const Expr &n) {
   uint64_t length;
   if (!n.isUInt(length))
     assert("Only an array of constant length is supported.");
@@ -257,6 +257,9 @@ Expr associativeSum(const Expr &a, const Expr &n) {
 Expr sum(const Expr &a, const Expr &n) {
   usedOps.sum = true;
   // TODO: check that a.Sort is Index::Sort() -> Float::Sort()
+
+  if (isAddAssociative && useMultiset)
+    return multisetSum(a, n);
 
   if (!sumfn)
     sumfn.emplace(a.sort(), Float::sort(), "smt_sum");
@@ -296,10 +299,7 @@ Expr dot(const Expr &a, const Expr &b, const Expr &n) {
     Expr ai = a.select(i), bi = b.select(i);
     Expr arr = Expr::mkLambda(i, fpMul(ai, bi));
 
-    if (isAddAssociative && useMultiset)
-      return associativeSum(arr, n);
-    else
-      return sum(arr, n);
+    return sum(arr, n);
   }
   llvm_unreachable("Unknown abstraction level for dot");
 }
