@@ -491,12 +491,18 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
   }
 
   vector<Expr> resDims2 = resDims;
-  
-  auto t1 = swapped ? Tensor::mkLambda(move(resDims), move(opInVars2), st.regs.get<Tensor>(op.getOperand(0)).get(opOutVars2).first)
-                    : Tensor::mkLambda(move(resDims), move(opInVars1), st.regs.get<Tensor>(op.getOperand(0)).get(opOutVars1).first);
+  auto input1 = st.regs.get<Tensor>(op.getOperand(0));
+  auto input2 = st.regs.get<Tensor>(op.getOperand(1));
 
-  auto t2 = swapped ? Tensor::mkLambda(move(resDims2), move(opInVars1), st.regs.get<Tensor>(op.getOperand(1)).get(opOutVars1).first) 
-                    : Tensor::mkLambda(move(resDims2), move(opInVars2), st.regs.get<Tensor>(op.getOperand(1)).get(opOutVars2).first);
+  auto t1 = swapped ? Tensor::mkLambda(move(resDims), move(opInVars2),
+                                        input1.get(opOutVars2).first)
+                    : Tensor::mkLambda(move(resDims), move(opInVars1),
+                                        input1.get(opOutVars1).first);
+
+  auto t2 = swapped ? Tensor::mkLambda(move(resDims2), move(opInVars1),
+                                        input2.get(opOutVars1).first) 
+                    : Tensor::mkLambda(move(resDims2), move(opInVars2),
+                                        input2.get(opOutVars2).first);
 
   auto [res, welldef] = t1.elementwiseBinOp(t2, [](auto &&e1, auto &&e2)
       { return e1 + e2; });
