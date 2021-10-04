@@ -447,19 +447,24 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
   auto resRank = max(opty1.getRank(), opty2.getRank());
   // Broadcasting is not implemented yet
   auto opIdx1 = 0, opIdx2 = 0;
+  auto opInVars1 = Index::boundIndexVars(resRank);
+  auto opInVars2 = Index::boundIndexVars(resRank);
+  vector<Expr> opOutVars1, opOutVars2;
 
   for (unsigned i = 0; i < resRank; ++i) {
     auto d1 = opty1.getDimSize(opIdx1), d2 = opty2.getDimSize(opIdx2);
     if (d1 == d2) {
-      opIdx1++;
-      opIdx2++;
+      opOutVars1.push_back(opInVars1[opIdx1++]);
+      opOutVars2.push_back(opInVars2[opIdx2++]);
     }
     else {
       assert(d1 == 1 || d2 == 1);
-      if(d1 == 1)
-        opIdx1++;
-      else
-        opIdx2++;
+      if(d1 == 1) {
+        opOutVars2.push_back(opInVars2[opIdx2++]);
+      }
+      else {
+        opOutVars1.push_back(opInVars1[opIdx1++]);
+      }
     }
   }
 
