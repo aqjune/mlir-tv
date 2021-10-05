@@ -444,7 +444,7 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
   auto srcType1 = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>();
   auto srcType2 = op.getOperand(1).getType().dyn_cast<mlir::ShapedType>();
   auto resType = res.getType().dyn_cast<mlir::ShapedType>();
-  assert(srcType2 == resType);
+  
 #define GET_OP(vec, ee) { \
     for (auto s: op.getMixed ## ee()) { \
       vec.push_back(s.is<mlir::Value>() ? \
@@ -456,6 +456,7 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
   GET_OP(sizes, Sizes);
   GET_OP(offsets, Offsets);
 #undef GET_OP
+
   assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
           strides.size() == (size_t)srcType1.getRank() &&
           srcType1.getRank() == srcType2.getRank() &&
@@ -464,6 +465,7 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
 
   vector<Expr> inIdxs, src1Idxs, dims;
   inIdxs = Index::boundIndexVars(resType.getRank());
+
   for (unsigned i = 0; i < resType.getRank(); i++) {
     uint64_t v;
     sizes[i].isUInt(v);
@@ -483,8 +485,8 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
                           ((inIdxs[i] - offsets[i]) / strides[i]).ult(sizes[i]),
                           output, src2Mapping);
   }
-  st.regs.add(res,
-      Tensor::mkLambda(move(dims), move(inIdxs), output));
+
+  st.regs.add(res, Tensor::mkLambda(move(dims), move(inIdxs), output));
   return {};
 }
 
