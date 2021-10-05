@@ -469,21 +469,20 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
     sizes[i].isUInt(v);
     assert(srcType1.getDimSize(i) >= v || srcType1.getDimSize(i) == -1);
     dims.push_back(Index(resType.getDimSize(i)));
-    src1Idxs.push_back(inIdxs[i] - offsets[i] / strides[i]);
+    src1Idxs.push_back((inIdxs[i] - offsets[i]) / strides[i]);
   }
 
   Expr src2Mapping = src2.get(inIdxs).first;
 
-  Expr output = Expr::mkIte(((inIdxs[0]-offsets[0]) % strides[0]).isZero() &
-                          (inIdxs[0] - offsets[0] / strides[0]).ult(sizes[0]),
+  Expr output = Expr::mkIte(((inIdxs[0] - offsets[0]) % strides[0]).isZero() &
+                          ((inIdxs[0] - offsets[0]) / strides[0]).ult(sizes[0]),
                           src1.get(src1Idxs).first, src2Mapping);
 
   for(unsigned i = 1; i < resType.getRank(); i++) {
-    output = Expr::mkIte(((inIdxs[i]-offsets[i]) % strides[i]).isZero() &
-                          (inIdxs[i] - offsets[i] / strides[i]).ult(sizes[i]),
+    output = Expr::mkIte(((inIdxs[i] - offsets[i]) % strides[i]).isZero() &
+                          ((inIdxs[i] - offsets[i]) / strides[i]).ult(sizes[i]),
                           output, src2Mapping);
   }
-
   st.regs.add(res,
       Tensor::mkLambda(move(dims), move(inIdxs), output));
   return {};
