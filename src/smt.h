@@ -139,6 +139,10 @@ public:
   Expr operator-(uint64_t rhs) const;
   Expr operator*(const Expr &rhs) const;
   Expr operator*(uint64_t rhs) const;
+  Expr operator/(const Expr &rhs) const;
+  Expr operator/(uint64_t rhs) const;
+  Expr operator%(const Expr &rhs) const;
+  Expr operator%(uint64_t rhs) const;
   Expr operator&(const Expr &rhs) const;
   Expr operator&(bool rhs) const;
   Expr operator|(const Expr &rhs) const;
@@ -150,6 +154,7 @@ public:
   Expr &operator|=(const Expr &rhs);
 
   Expr implies(const Expr &rhs) const;
+  Expr isZero() const;
   Expr isNonZero() const;
 
   Expr substitute(const std::vector<Expr> &vars,

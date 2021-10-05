@@ -436,6 +436,54 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
+  vector<Expr> offsets, sizes, strides;
+  auto src1 = st.regs.get<Tensor>(op.getOperand(0));
+  auto src2 = st.regs.get<Tensor>(op.getOperand(1));
+  auto res = op.getResult();
+  auto srcType1 = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>();
+  auto srcType2 = op.getOperand(1).getType().dyn_cast<mlir::ShapedType>();
+  auto resType = res.getType().dyn_cast<mlir::ShapedType>();
+  assert(srcType2 == resType);
+#define GET_OP(vec, ee) { \
+    for (auto s: op.getMixed ## ee()) { \
+      vec.push_back(s.is<mlir::Value>() ? \
+      st.regs.get<Index>(s.get<mlir::Value>()) : \
+      Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
+    } \
+  }
+  GET_OP(strides, Strides);
+  GET_OP(sizes, Sizes);
+  GET_OP(offsets, Offsets);
+#undef GET_OP
+  assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
+          strides.size() == (size_t)srcType1.getRank() &&
+          srcType1.getRank() == resType.getRank()
+        );
+
+  vector<Expr> inIdxs, src1Idxs, dims;
+  inIdxs = Index::boundIndexVars(resType.getRank());
+  for(unsigned i = 0; i < resType.getRank(); i++) {
+    dims.push_back(Index(resType.getDimSize(i)));
+    src1Idxs.push_back(inIdxs[i] - offsets[i] / strides[i]);
+  }
+
+  Expr src2Mapping = src2.get(inIdxs).first;
+
+  Expr output = Expr::mkIte(((inIdxs[0]-offsets[0]) % strides[0]).isZero(),
+                              src1.get(src1Idxs).first, src2Mapping);
+
+  for(unsigned i = 1; i < resType.getRank(); i++) {
+    output = Expr::mkIte(((inIdxs[i]-offsets[i]) % strides[i]).isZero(),
+                            output, src2Mapping);    
+  }
+
+  st.regs.add(res,
+      Tensor::mkLambda(move(dims), move(inIdxs), output));
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
   auto optys = op.getOperandTypes();
   if (!optys[0].isa<mlir::RankedTensorType>() ||
@@ -1406,6 +1454,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::ExtractOp);
     ENCODE(st, op, mlir::tensor::FromElementsOp);
     ENCODE(st, op, mlir::tensor::ExtractSliceOp);
+    ENCODE(st, op, mlir::tensor::InsertSliceOp);
 
     ENCODE(st, op, mlir::tosa::AddOp);
 

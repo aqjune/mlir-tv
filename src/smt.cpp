@@ -562,6 +562,10 @@ Expr Expr::implies(const Expr &rhs) const {
   return e;
 }
 
+Expr Expr::isZero() const {
+  return *this == Expr::mkBV(0, sort().bitwidth());
+}
+
 Expr Expr::isNonZero() const {
   return !(*this == Expr::mkBV(0, sort().bitwidth()));
 }
@@ -587,6 +591,22 @@ Expr Expr::operator*(const Expr &rhs) const {
   Expr e;
   SET_Z3_USEOP(e, rhs, operator*);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_MULT);
+  return e;
+}
+
+EXPR_BVOP_UINT64(operator/)
+Expr Expr::operator/(const Expr &rhs) const {
+  Expr e;
+  SET_Z3_USEOP(e, rhs, operator/);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_UDIV);
+  return e;
+}
+
+EXPR_BVOP_UINT64(operator%)
+Expr Expr::operator%(const Expr &rhs) const {
+  Expr e;
+  SET_Z3_USEOP(e, rhs, operator%);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_SMOD);
   return e;
 }
 
