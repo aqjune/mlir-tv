@@ -149,9 +149,10 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
   auto fty = f1.sort();
 
   if (!fpaddfn) {
-    // fully abstract fp_add(fty, fty) -> fty
+    // Fully abstract fp_add(fty, fty) -> fty
     // may be interpreted into 'invalid' value.
-    // so fp_add should yield BV[VALUE_BITS]
+    // So fp_add should yield BV[SIGN_BITS + VALUE_BITS].
+    // Then, an appropriate value will be inserted to fill in TYPE_BITS 
     auto fp_value_ty = Sort::bvSort(SIGN_BITS + VALUE_BITS);
     fpaddfn.emplace({fty, fty}, fp_value_ty, "fp_add");
   }
@@ -185,7 +186,11 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
     // the sign bit and type bit(s) in front of fp_add result.
     // Fortunately we can just assume that type bit(s) is 0,
     // because the result of fp_add is always some finite value.
-    // Sadly, choosing the right value for sign bit is not that trivial...
+    // For sign bits, we can assure that the sign bit will be
+    // 0 if both f1 and f2's MSB are 0
+    // and 1 if both f1 and f2's MSB are 1
+    // but if f1 and f2 have different signs, just use an arbitrary sign
+    // yielded from fp_add
     Expr::mkIte(((f1.getMSB() == bv_false) & (f2.getMSB() == bv_false)),
       // pos + pos -> pos
       bv_false.concat(fp_add_value.zext(TYPE_BITS)),
