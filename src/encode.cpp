@@ -474,12 +474,14 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
 
   Expr src2Mapping = src2.get(inIdxs).first;
 
-  Expr output = Expr::mkIte(((inIdxs[0]-offsets[0]) % strides[0]).isZero(),
-                              src1.get(src1Idxs).first, src2Mapping);
+  Expr output = Expr::mkIte(((inIdxs[0]-offsets[0]) % strides[0]).isZero() &
+                          (inIdxs[0] - offsets[0] / strides[0]).ult(sizes[0]),
+                          src1.get(src1Idxs).first, src2Mapping);
 
   for(unsigned i = 1; i < resType.getRank(); i++) {
-    output = Expr::mkIte(((inIdxs[i]-offsets[i]) % strides[i]).isZero(),
-                            output, src2Mapping);    
+    output = Expr::mkIte(((inIdxs[i]-offsets[i]) % strides[i]).isZero() &
+                          (inIdxs[i] - offsets[i] / strides[i]).ult(sizes[i]),
+                          output, src2Mapping);
   }
 
   st.regs.add(res,
