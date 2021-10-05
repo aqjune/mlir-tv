@@ -6,6 +6,7 @@
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
+#include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Matchers.h"
 
@@ -75,15 +76,6 @@ static optional<ValueTy> fromExpr(Expr &&e, mlir::Type ty) {
     return Integer(e);
   }
   return {};
-}
-
-static vector<Expr> createBoundIndexVars(unsigned n) {
-  vector<Expr> idxs;
-  for (unsigned i = 0; i < n; i ++) {
-    idxs.push_back(
-      Index::var("i" + std::to_string(i), VarType::BOUND));
-  }
-  return idxs;
 }
 
 
@@ -319,19 +311,24 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
   return {};
 }
 
+static pair<Expr, Expr> encodeDimOp(
+    State &st, vector<Expr> &&dims, mlir::Value index) {
+  auto idx = st.regs.get<Index>(index);
+
+  auto res = dims[0];
+  for (unsigned i = 1; i < dims.size(); ++i)
+    res = Expr::mkIte((Expr)idx == i, dims[i], res);
+
+  return {move(res), ((Expr)idx).ult(dims.size())};
+}
+
 template<>
 optional<string> encodeOp(State &st, mlir::tensor::DimOp op) {
-  auto tensor = op.source();
-  if (!tensor.getType().isa<mlir::TensorType>())
-    return "tensor type is supported only";
-  auto t = st.regs.get<Tensor>(tensor);
+  auto [res, wf] = encodeDimOp(
+      st, st.regs.get<Tensor>(op.source()).getDims(), op.index());
+  st.regs.add(op, Index(res));
+  st.wellDefined(op.getOperation(), move(wf));
 
-  if (auto idx = op.getConstantIndex())
-    st.regs.add(op, t.getDim(*idx));
-  else {
-    // TODO: if-then-else needed
-    return "variable index not implemented yet";
-  }
   return {};
 }
 
@@ -422,7 +419,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
 
   vector<Expr> inIdxs, outIdxs;
   // indices that is going to be read from the output tensor
-  inIdxs = createBoundIndexVars(resType.getRank());
+  inIdxs = Index::boundIndexVars(resType.getRank());
 
   // map the output tensor indices to source tensor indices
   unsigned idx = 0;
@@ -435,6 +432,36 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   }
   st.regs.add(res,
       Tensor::mkLambda(move(dims), move(inIdxs), src.get(outIdxs).first));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
+  auto optys = op.getOperandTypes();
+  if (!optys[0].isa<mlir::RankedTensorType>() ||
+      !optys[1].isa<mlir::RankedTensorType>())
+    return "Unsupported operand types";
+
+  auto opty1 = optys[0].cast<mlir::RankedTensorType>();
+  auto opty2 = optys[1].cast<mlir::RankedTensorType>();
+
+  // Broadcasting is not implemented yet
+  for (unsigned i = 0; i < opty1.getRank(); ++i) {
+    auto d1 = opty1.getDimSize(i), d2 = opty2.getDimSize(i);
+    if (d1 != d2) {
+      assert(d1 == 1 || d2 == 1);
+      return "Broadcasting is not implemented yet";
+    }
+  }
+
+  auto t1 = st.regs.get<Tensor>(op.getOperand(0));
+  auto t2 = st.regs.get<Tensor>(op.getOperand(1));
+
+  auto [res, welldef] = t1.elementwiseBinOp(t2, [](auto &&e1, auto &&e2)
+      { return e1 + e2; });
+  st.wellDefined(op.getOperation(), move(welldef));
+  st.regs.add(op, move(res));
+
   return {};
 }
 
@@ -476,6 +503,16 @@ optional<string> encodeOp(State &st, mlir::memref::AllocOp op) {
   auto memref = get<1>(move(memrefOrErr));
 
   st.regs.add(op, move(memref));
+
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::memref::DimOp op) {
+  auto [res, wf] = encodeDimOp(
+      st, st.regs.get<MemRef>(op.source()).getDims(), op.index());
+  st.regs.add(op, Index(res));
+  st.wellDefined(op.getOperation(), move(wf));
 
   return {};
 }
@@ -576,7 +613,7 @@ static void storeTensorTo(
     // freshly created block?
     // We may not need to preserve the 'previous' bytes.
 
-    vector<Expr> idxs = createBoundIndexVars(memrefTy.getRank());
+    vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
     auto [tVal, tSuccess] = tensor.get(idxs);
     auto [mVal, mSuccess] = memref.get(idxs);
     auto success = tSuccess & mSuccess;
@@ -614,8 +651,8 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
 
   // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
-  vector<Expr> idxs = createBoundIndexVars(dims.size());
-  auto [Expr, success] = m.get(idxs);
+  vector<Expr> idxs = Index::boundIndexVars(dims.size());
+  auto Expr = m.get(idxs).first;
   Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), Expr);
 
   st.regs.add(op.getResult(), t_res);
@@ -1060,7 +1097,7 @@ static optional<string> initInputStateForLoopBody(
           affine_Exprs.emplace_back(move(*ae_res));
         }
 
-        auto [t_elem, inbounds] = t_input.get(affine_Exprs);
+        auto t_elem = t_input.get(affine_Exprs).first;
         st.regs.add(block.getArgument(arg_i), t_elem, elemty);
       }
     } else if (auto memrefty = op_i.getType().dyn_cast<mlir::MemRefType>()) {
@@ -1079,7 +1116,7 @@ static optional<string> initInputStateForLoopBody(
       }
 
       // TODO: We do not encode UB in loops currently. How to deal with this?
-      auto [m_elem, success] = m_input.get(affine_Exprs);
+      auto m_elem = m_input.get(affine_Exprs).first;
       st.regs.add(block.getArgument(arg_i), Float(m_elem));
     } else {
       return "unsupported block argument type";
@@ -1124,6 +1161,14 @@ static optional<string> encodeParallelLoopBodyAndOutput(
   auto &ops = block.getOperations();
   mlir::Value yieldedValue;
   for (auto &op: ops) {
+    auto op_operands = op.getOperands();
+    for (const auto &opop: op_operands) {
+      if (!newst.regs.contains(opop)) {
+        RET_STR("This is a bug in mlir-tv or the loop is ill-formed: "
+          "the result of a block in a parallel loop depends on the output"
+          " variable: " << opop);
+      }
+    }
     ENCODE(newst, op, mlir::AddFOp);
     ENCODE(newst, op, mlir::MulFOp);
     ENCODE(newst, op, mlir::AddIOp);
@@ -1362,11 +1407,14 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::FromElementsOp);
     ENCODE(st, op, mlir::tensor::ExtractSliceOp);
 
+    ENCODE(st, op, mlir::tosa::AddOp);
+
     ENCODE(st, op, mlir::memref::AllocOp);
+    ENCODE(st, op, mlir::memref::BufferCastOp);
+    ENCODE(st, op, mlir::memref::DimOp);
     ENCODE(st, op, mlir::memref::LoadOp);
     ENCODE(st, op, mlir::memref::StoreOp);
     ENCODE(st, op, mlir::memref::SubViewOp);
-    ENCODE(st, op, mlir::memref::BufferCastOp);
     ENCODE(st, op, mlir::memref::TensorLoadOp);
     ENCODE(st, op, mlir::memref::TensorStoreOp);
 

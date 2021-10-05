@@ -12,6 +12,7 @@
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/Parser.h"
 #include "mlir/Support/FileUtilities.h"
@@ -124,6 +125,7 @@ int main(int argc, char* argv[]) {
   registry.insert<shape::ShapeDialect>();
   registry.insert<sparse_tensor::SparseTensorDialect>();
   registry.insert<tensor::TensorDialect>();
+  registry.insert<tosa::TosaDialect>();
   context.appendDialectRegistry(registry);
   context.allowUnregisteredDialects();
 

@@ -1,6 +1,7 @@
 #include "abstractops.h"
 #include "smt.h"
 #include "value.h"
+#include <cmath>
 #include <map>
 
 using namespace smt;
@@ -17,19 +18,21 @@ optional<Expr> fpconst_nan;
 optional<Expr> fpconst_inf_pos;
 optional<Expr> fpconst_inf_neg;
 // Abstract representation of valid fp constants.
-map<float, Expr> fpconst_absrepr;
+// the std::map fail to distinguish 0.0 and -0.0 when used as key,
+// so we just keep two separate maps for positive and negative floats
+map<float, Expr> fpconst_absrepr_pos, fpconst_absrepr_neg;
 unsigned fpconst_absrepr_num;
 
 const unsigned SIGN_BITS = 1;
-const unsigned TYPE_BITS = 2;
+const unsigned TYPE_BITS = 1;
 // TODO: this must be properly set
 // What we need to do is to statically find how many 'different' fp values a
 // program may observe.
 // FP_BITS must be geq than 1 (otherwise it can't handle reserved values)
-const unsigned VALUE_BITS = 32;
+const unsigned VALUE_BITS = 31;
 const unsigned FP_BITS = SIGN_BITS + TYPE_BITS + VALUE_BITS;
 const uint64_t INF_VALUE = 1ull << (uint64_t)VALUE_BITS;
-const uint64_t NAN_VALUE = 2ull << (uint64_t)VALUE_BITS;
+const uint64_t NAN_VALUE = INF_VALUE + 1;
 const uint64_t SIGNED_VALUE = 1ull << (uint64_t)(TYPE_BITS + VALUE_BITS);
 }
 
@@ -47,7 +50,8 @@ void setAbstractionLevel(AbsLevelDot ad, bool addAssoc) {
   isAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
-  fpconst_absrepr.clear();
+  fpconst_absrepr_pos.clear();
+  fpconst_absrepr_neg.clear();
   fpconst_absrepr_num = 0;
 
   staticArrays.clear();
@@ -63,13 +67,13 @@ Sort fpSort() {
 
 Expr fpConst(float f) {
   // NaNs and Infs are stored in separate variable
-  if (isnanf(f)) {
+  if (isnan(f)) {
     if (!fpconst_nan)
       fpconst_nan = Expr::mkBV(NAN_VALUE, FP_BITS);
     return *fpconst_nan;
   }
 
-  if (isinff(f)) {
+  if (isinf(f)) {
     if (!fpconst_inf_pos)
         fpconst_inf_pos = Expr::mkBV(INF_VALUE, FP_BITS);
     if (!fpconst_inf_neg)
@@ -79,32 +83,42 @@ Expr fpConst(float f) {
   }
 
   // We don't explicitly encode f
-  auto itr = fpconst_absrepr.find(f);
-  if (itr != fpconst_absrepr.end())
-    return itr->second;
+  if (signbit(f)) {
+    auto itr = fpconst_absrepr_neg.find(f);
+    if (itr != fpconst_absrepr_neg.end())
+      return itr->second;
+  } else {
+    auto itr = fpconst_absrepr_pos.find(f);
+    if (itr != fpconst_absrepr_pos.end())
+      return itr->second;
+  }
 
   uint64_t absval;
   float abs_f = abs(f);
-  if (abs_f == 0.0) {
+  if (abs_f == 0.0f) {
     absval = 0; // This is consistent with what mkZeroElemFromArr assumes
-  } else if (abs_f == 1.0) {
+  } else if (abs_f == 1.0f) {
     absval = 1;
   } else {
-    assert(static_cast<unsigned long long>(2 + fpconst_absrepr_num) < INF_VALUE);
+    assert(static_cast<uint64_t>(2 + fpconst_absrepr_num) < INF_VALUE);
     absval = 2 + fpconst_absrepr_num++;
   }
 
   Expr e_pos = Expr::mkBV(absval, FP_BITS);
-  fpconst_absrepr.emplace(abs_f, e_pos);
+  fpconst_absrepr_pos.emplace(abs_f, e_pos);
   Expr e_neg = Expr::mkBV(SIGNED_VALUE + absval, FP_BITS);
-  fpconst_absrepr.emplace(-abs_f, e_neg);
+  fpconst_absrepr_neg.emplace(-abs_f, e_neg);
   
   return signbit(f) ? e_neg : e_pos;
 }
 
 vector<float> fpPossibleConsts(const Expr &e) {
   vector<float> vec;
-  for (auto &[k, v]: fpconst_absrepr) {
+  for (auto &[k, v]: fpconst_absrepr_pos) {
+    if (v.isIdentical(e))
+      vec.push_back(k);
+  }
+  for (auto &[k, v]: fpconst_absrepr_neg) {
     if (v.isIdentical(e))
       vec.push_back(k);
   }
@@ -116,19 +130,30 @@ Expr mkZeroElemFromArr(const Expr &arr) {
   return Expr::mkBV(0, bvsz);
 }
 
-optional<FnDecl> sumfn, assoc_sumfn, dotfn, fpaddfn, fpmulfn;
+optional<FnDecl> sumfn, assoc_sumfn, dotfn, fpaddfn, fpmulfn, fpaddufn;
 
 Expr fpAdd(const Expr &f1, const Expr &f2) {
   usedOps.add = true;
   auto fty = f1.sort();
 
-  if (!fpaddfn)
-    fpaddfn.emplace({fty, fty}, fty, "fp_add");
+  if (!fpaddfn) {
+    // fully abstract fp_add(fty, fty) -> fty
+    // may be interpreted into 'invalid' value.
+    // so fp_add should yield BV[VALUE_BITS]
+    auto fp_value_ty = Sort::bvSort(SIGN_BITS + VALUE_BITS);
+    fpaddfn.emplace({fty, fty}, fp_value_ty, "fp_add");
+  }
 
-  auto fp_id = Float(-0.0);
+  auto fp_id = Float(-0.0f);
   auto fp_inf_pos = Float(INFINITY);
   auto fp_inf_neg = Float(-INFINITY);
   auto fp_nan = Float(nanf("0"));
+  auto bv_true = Expr::mkBV(1, 1);
+  auto bv_false = Expr::mkBV(0, 1);
+
+  auto fp_add_res = fpaddfn->apply({f1, f2});
+  auto fp_add_sign = fp_add_res.getMSB();
+  auto fp_add_value = fp_add_res.extract(VALUE_BITS - 1, 0);
 
   return Expr::mkIte(f1 == fp_id, f2,         // -0.0 + x -> x
     Expr::mkIte(f2 == fp_id, f1,              // x + -0.0 -> x
@@ -142,10 +167,21 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
     // IEEE 754-2019 section 6.1 'Infinity arithmetic'
     Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg), f1,
       Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg), f2,
-    // if both operands do not fall into any of the cases above,
-    // use fp_add for abstract representation
-    fpaddfn->apply({f1, f2})
-  )))))));
+    // If both operands do not fall into any of the cases above,
+    // use fp_add for abstract representation.
+    // But fp_add only yields BV[VALUE_BIT], so we must prepend
+    // the sign bit and type bit(s) in front of fp_add result.
+    // Fortunately we can just assume that type bit(s) is 0,
+    // because the result of fp_add is always some finite value.
+    // Sadly, choosing the right value for sign bit is not that trivial...
+    Expr::mkIte(((f1.getMSB() == bv_false) & (f2.getMSB() == bv_false)),
+      // pos + pos -> pos
+      bv_false.concat(fp_add_value.zext(TYPE_BITS)),
+      Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
+        // neg + neg -> neg
+        bv_true.concat(fp_add_value.zext(TYPE_BITS)),
+        fp_add_sign.concat(fp_add_value.zext(TYPE_BITS))
+  )))))))));
 }
 
 Expr fpMul(const Expr &f1, const Expr &f2) {

@@ -34,7 +34,7 @@ ValueTy RegFile::findOrCrash(mlir::Value v) const {
     return itr->second;
   } else {
     llvm::errs() << "Cannot find key: " << v << "\n";
-    llvm_unreachable("Unknown key");
+    abort();
   }
 }
 
