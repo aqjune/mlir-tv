@@ -464,7 +464,7 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
 
   vector<Expr> inIdxs, src1Idxs, dims;
   inIdxs = Index::boundIndexVars(resType.getRank());
-  for(unsigned i = 0; i < resType.getRank(); i++) {
+  for (unsigned i = 0; i < resType.getRank(); i++) {
     uint64_t v;
     sizes[i].isUInt(v);
     assert(srcType1.getDimSize(i) >= v || srcType1.getDimSize(i) == -1);
@@ -478,7 +478,7 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
                           ((inIdxs[0] - offsets[0]) / strides[0]).ult(sizes[0]),
                           src1.get(src1Idxs).first, src2Mapping);
 
-  for(unsigned i = 1; i < resType.getRank(); i++) {
+  for (unsigned i = 1; i < resType.getRank(); i++) {
     output = Expr::mkIte(((inIdxs[i] - offsets[i]) % strides[i]).isZero() &
                           ((inIdxs[i] - offsets[i]) / strides[i]).ult(sizes[i]),
                           output, src2Mapping);
