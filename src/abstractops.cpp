@@ -14,13 +14,13 @@ static string freshName(string prefix) {
 
 namespace {
 // Keep 'special' fp constants in separate variables
+optional<Expr> fpconst_zero_pos;
+optional<Expr> fpconst_zero_neg;
 optional<Expr> fpconst_nan;
 optional<Expr> fpconst_inf_pos;
 optional<Expr> fpconst_inf_neg;
 // Abstract representation of valid fp constants.
-// the std::map fail to distinguish 0.0 and -0.0 when used as key,
-// so we just keep two separate maps for positive and negative floats
-map<float, Expr> fpconst_absrepr_pos, fpconst_absrepr_neg;
+map<float, Expr> fpconst_absrepr;
 unsigned fpconst_absrepr_num;
 
 const unsigned SIGN_BITS = 1;
@@ -50,8 +50,7 @@ void setAbstractionLevel(AbsLevelDot ad, bool addAssoc) {
   isAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
-  fpconst_absrepr_pos.clear();
-  fpconst_absrepr_neg.clear();
+  fpconst_absrepr.clear();
   fpconst_absrepr_num = 0;
 
   staticArrays.clear();
@@ -66,7 +65,9 @@ Sort fpSort() {
 }
 
 Expr fpConst(float f) {
-  // NaNs and Infs are stored in separate variable
+  // NaNs, Infs, and +-0 are stored in separate variable
+  // as they do not work well with map
+  // due to comparison issue
   if (isnan(f)) {
     if (!fpconst_nan)
       fpconst_nan = Expr::mkBV(NAN_VALUE, FP_BITS);
@@ -82,22 +83,23 @@ Expr fpConst(float f) {
     return signbit(f) ? *fpconst_inf_neg : *fpconst_inf_pos;
   }
 
-  // We don't explicitly encode f
-  if (signbit(f)) {
-    auto itr = fpconst_absrepr_neg.find(f);
-    if (itr != fpconst_absrepr_neg.end())
-      return itr->second;
-  } else {
-    auto itr = fpconst_absrepr_pos.find(f);
-    if (itr != fpconst_absrepr_pos.end())
-      return itr->second;
+  if (f == 0.0f) {
+    if (!fpconst_zero_pos)
+        fpconst_zero_pos = Expr::mkBV(0, FP_BITS);
+    if (!fpconst_zero_neg)
+        fpconst_zero_neg = Expr::mkBV(SIGNED_VALUE + 0, FP_BITS);
+
+    return signbit(f) ? *fpconst_zero_neg : *fpconst_zero_pos;
   }
+
+  // We don't explicitly encode f
+  auto itr = fpconst_absrepr.find(f);
+  if (itr != fpconst_absrepr.end())
+    return itr->second;
 
   uint64_t absval;
   float abs_f = abs(f);
-  if (abs_f == 0.0f) {
-    absval = 0; // This is consistent with what mkZeroElemFromArr assumes
-  } else if (abs_f == 1.0f) {
+  if (abs_f == 1.0f) {
     absval = 1;
   } else {
     assert(static_cast<uint64_t>(2 + fpconst_absrepr_num) < INF_VALUE);
@@ -105,23 +107,33 @@ Expr fpConst(float f) {
   }
 
   Expr e_pos = Expr::mkBV(absval, FP_BITS);
-  fpconst_absrepr_pos.emplace(abs_f, e_pos);
+  fpconst_absrepr.emplace(abs_f, e_pos);
   Expr e_neg = Expr::mkBV(SIGNED_VALUE + absval, FP_BITS);
-  fpconst_absrepr_neg.emplace(-abs_f, e_neg);
+  fpconst_absrepr.emplace(-abs_f, e_neg);
   
   return signbit(f) ? e_neg : e_pos;
 }
 
 vector<float> fpPossibleConsts(const Expr &e) {
   vector<float> vec;
-  for (auto &[k, v]: fpconst_absrepr_pos) {
+  for (auto &[k, v]: fpconst_absrepr) {
     if (v.isIdentical(e))
       vec.push_back(k);
   }
-  for (auto &[k, v]: fpconst_absrepr_neg) {
-    if (v.isIdentical(e))
-      vec.push_back(k);
+
+  // for 'reserved' values that do not belong to fpconst_absrepr
+  if (fpconst_nan && fpconst_nan->isIdentical(e)) {
+    vec.push_back(nanf("0"));
+  } else if (fpconst_zero_pos && fpconst_zero_pos->isIdentical(e)) {
+    vec.push_back(0.0f);
+  } else if (fpconst_zero_neg && fpconst_zero_neg->isIdentical(e)) {
+    vec.push_back(-0.0f);
+  } else if (fpconst_inf_pos && fpconst_inf_pos->isIdentical(e)) {
+    vec.push_back(INFINITY);
+  } else if (fpconst_inf_neg && fpconst_inf_neg->isIdentical(e)) {
+    vec.push_back(-INFINITY);
   }
+
   return vec;
 }
 
