@@ -72,7 +72,8 @@ llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
   ));
 
 llvm::cl::opt<bool> arg_multiset("multiset",
-  llvm::cl::desc("Use multiset when encoding floating point add"),  llvm::cl::Hidden,
+  llvm::cl::desc("Use multiset when encoding the associativity of the floating"
+                 " point addition"),  llvm::cl::Hidden,
   llvm::cl::init(false));
 
 // These functions are excerpted from ToolUtilities.cpp in mlir
