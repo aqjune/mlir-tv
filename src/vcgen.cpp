@@ -148,9 +148,9 @@ static pair<CheckResult, int64_t> solve(
 
   if (!dumpSMTPath.empty()) {
 #if SOLVER_Z3
-    if (refinement_negated.hasZ3Expr()) {
+    if (refinement_negated.hasZ3Expr() && solver.z3) {
       ofstream fout(dumpSMTPath + ".z3." + dump_string_to_suffix + ".smt2");
-      fout << refinement_negated.getZ3Expr();
+      fout << solver.z3->to_smt2();
       fout.close();
     }
 #endif

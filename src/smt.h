@@ -268,13 +268,12 @@ public:
 };
 
 class Solver {
-private:
+public:
 #ifdef SOLVER_Z3
   std::optional<z3::solver> z3;
 #endif
   // No need for CVC5
 
-public:
   Solver(const char *logic);
   Solver(const Solver &) = delete;
   ~Solver();

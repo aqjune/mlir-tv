@@ -72,7 +72,12 @@ public:
     timeout_ms = 10000;
   }
 
-  IF_Z3_ENABLED(void useZ3() { this->z3.emplace(); })
+#ifdef SOLVER_Z3
+  void useZ3() {
+    this->z3.emplace();
+    this->z3->set("timeout", (int)timeout_ms);
+  }
+#endif
 #ifdef SOLVER_CVC5
   void useCVC5() {
     this->cvc5.emplace();
