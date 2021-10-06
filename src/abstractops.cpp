@@ -165,7 +165,7 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
   auto bv_true = Expr::mkBV(1, 1);
   auto bv_false = Expr::mkBV(0, 1);
 
-  auto fp_add_res = fpaddfn->apply({f1, f2});
+  auto fp_add_res = fpaddfn->apply({f1, f2}) + fpaddfn->apply({f2, f1});
   auto fp_add_sign = fp_add_res.getMSB();
   auto fp_add_value = fp_add_res.extract(VALUE_BITS - 1, 0);
 
