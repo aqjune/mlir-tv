@@ -13,7 +13,8 @@ static string freshName(string prefix) {
 }
 
 namespace {
-// Keep 'special' fp constants in separate variables
+// NaNs, Infs, and +-0 are stored in separate variable
+// as they do not work well with map due to comparison issue
 optional<Expr> fpconst_zero_pos;
 optional<Expr> fpconst_zero_neg;
 optional<Expr> fpconst_nan;
@@ -25,15 +26,29 @@ unsigned fpconst_absrepr_num;
 
 const unsigned SIGN_BITS = 1;
 const unsigned TYPE_BITS = 1;
+
 // TODO: this must be properly set
 // What we need to do is to statically find how many 'different' fp values a
 // program may observe.
 // FP_BITS must be geq than 1 (otherwise it can't handle reserved values)
-const unsigned VALUE_BITS = 31;
-const unsigned FP_BITS = SIGN_BITS + TYPE_BITS + VALUE_BITS;
-const uint64_t INF_VALUE = 1ull << (uint64_t)VALUE_BITS;
-const uint64_t NAN_VALUE = INF_VALUE + 1;
-const uint64_t SIGNED_VALUE = 1ull << (uint64_t)(TYPE_BITS + VALUE_BITS);
+unsigned VALUE_BITS = 31;
+unsigned FP_BITS;
+uint64_t INF_VALUE;
+uint64_t NAN_VALUE;
+uint64_t SIGNED_VALUE;
+
+void updateConstants() {
+  FP_BITS = SIGN_BITS + TYPE_BITS + VALUE_BITS;
+  INF_VALUE = 1ull << (uint64_t)VALUE_BITS;
+  NAN_VALUE = INF_VALUE + 1;
+  SIGNED_VALUE = 1ull << (uint64_t)(TYPE_BITS + VALUE_BITS);
+
+  fpconst_nan = Expr::mkBV(NAN_VALUE, FP_BITS);
+  fpconst_inf_pos = Expr::mkBV(INF_VALUE, FP_BITS);
+  fpconst_inf_neg = Expr::mkBV(SIGNED_VALUE + INF_VALUE, FP_BITS);
+  fpconst_zero_pos = Expr::mkBV(0, FP_BITS);
+  fpconst_zero_neg = Expr::mkBV(SIGNED_VALUE + 0, FP_BITS);
+}
 }
 
 namespace aop {
@@ -45,13 +60,17 @@ static vector<tuple<Expr, Expr, Expr>> staticArrays;
 
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
-void setAbstractionLevel(AbsLevelDot ad, bool addAssoc) {
+void setAbstraction(AbsLevelDot ad, bool addAssoc, unsigned fpBits) {
   alDot = ad;
   isAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
   fpconst_absrepr.clear();
   fpconst_absrepr_num = 0;
+
+  assert(fpBits > 0);
+  VALUE_BITS = fpBits == 1 ? fpBits : fpBits - 1;
+  updateConstants();
 
   staticArrays.clear();
 }
@@ -65,32 +84,14 @@ Sort fpSort() {
 }
 
 Expr fpConst(float f) {
-  // NaNs, Infs, and +-0 are stored in separate variable
-  // as they do not work well with map
-  // due to comparison issue
-  if (isnan(f)) {
-    if (!fpconst_nan)
-      fpconst_nan = Expr::mkBV(NAN_VALUE, FP_BITS);
+  if (isnan(f))
     return *fpconst_nan;
-  }
 
-  if (isinf(f)) {
-    if (!fpconst_inf_pos)
-        fpconst_inf_pos = Expr::mkBV(INF_VALUE, FP_BITS);
-    if (!fpconst_inf_neg)
-        fpconst_inf_neg = Expr::mkBV(SIGNED_VALUE + INF_VALUE, FP_BITS);
-    
+  if (isinf(f))
     return signbit(f) ? *fpconst_inf_neg : *fpconst_inf_pos;
-  }
 
-  if (f == 0.0f) {
-    if (!fpconst_zero_pos)
-        fpconst_zero_pos = Expr::mkBV(0, FP_BITS);
-    if (!fpconst_zero_neg)
-        fpconst_zero_neg = Expr::mkBV(SIGNED_VALUE + 0, FP_BITS);
-
+  if (f == 0.0f)
     return signbit(f) ? *fpconst_zero_neg : *fpconst_zero_pos;
-  }
 
   // We don't explicitly encode f
   auto itr = fpconst_absrepr.find(f);
@@ -142,7 +143,7 @@ Expr mkZeroElemFromArr(const Expr &arr) {
   return Expr::mkBV(0, bvsz);
 }
 
-optional<FnDecl> sumfn, assoc_sumfn, dotfn, fpaddfn, fpmulfn, fpaddufn;
+optional<FnDecl> sumfn, assoc_sumfn, dotfn, fpaddfn, fpmulfn;
 
 Expr fpAdd(const Expr &f1, const Expr &f2) {
   usedOps.add = true;
@@ -198,13 +199,13 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
     Expr::mkIte(((f1.getMSB() == bv_false) & (f2.getMSB() == bv_false)),
       // pos + pos -> pos
       bv_false.concat(fp_add_value.zext(TYPE_BITS)),
-      Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
-        // neg + neg -> neg
-        bv_true.concat(fp_add_value.zext(TYPE_BITS)),
-        Expr::mkIte(f1.extract(VALUE_BITS - 1, 0) == f2.extract(VALUE_BITS - 1, 0),
-          // x + -x -> 0.0
-          fp_zero,
-          fp_add_sign.concat(fp_add_value.zext(TYPE_BITS))
+    Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
+      // neg + neg -> neg
+      bv_true.concat(fp_add_value.zext(TYPE_BITS)),
+    Expr::mkIte(f1.extract(VALUE_BITS - 1, 0) == f2.extract(VALUE_BITS - 1, 0),
+      // x + -x -> 0.0
+      fp_zero,
+      fp_add_sign.concat(fp_add_value.zext(TYPE_BITS))
   ))))))))));
 }
 
