@@ -44,6 +44,7 @@ public:
 
   MemEncoding encoding;
   unsigned int numBlocks;
+  unsigned int fpBits;
   bool associativeAdd;
 };
 
@@ -367,7 +368,8 @@ static void checkIsSrcAlwaysUB(
 
   // Set the abstract level to be as concrete as possible because we may not
   // be able to detect always-UB cases
-  aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, vinput.associativeAdd);
+  aop::setAbstraction(aop::AbsLevelDot::SUM_MUL, vinput.associativeAdd,
+      vinput.fpBits);
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
@@ -406,8 +408,9 @@ static Results validate(ValidationInput vinput) {
 
   // Don't enable add associativity even if vinput.associativeAdd is true
   // because simply encoding it as UF is more efficient.
-  aop::setAbstractionLevel(
-      aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false);
+  aop::setAbstraction(
+      aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false,
+      /*fp bits*/vinput.fpBits);
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
 
   if (res.code == Results::INCONSISTENT)
@@ -425,7 +428,7 @@ static Results validate(ValidationInput vinput) {
   bool useSumMulForDot = usedOps.dot && usedOps.sum && usedOps.mul;
 
   if (assocAdd || useSumMulForDot) {
-    aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, assocAdd);
+    aop::setAbstraction(aop::AbsLevelDot::SUM_MUL, assocAdd, vinput.fpBits);
     if (!vinput.dumpSMTPath.empty())
       vinput.dumpSMTPath += "_noabs";
   } else {
@@ -452,7 +455,7 @@ Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
     unsigned int numBlocks, MemEncoding encoding,
-    bool associativeAdd) {
+    unsigned fpBits, bool associativeAdd) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -478,6 +481,7 @@ Results validate(
     vinput.tgt = itr->second;
     vinput.dumpSMTPath = dumpSMTPath;
     vinput.numBlocks = numBlocks;
+    vinput.fpBits = fpBits;
     vinput.encoding = encoding;
     vinput.associativeAdd = associativeAdd;
 

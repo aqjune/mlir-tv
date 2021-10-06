@@ -1,3 +1,4 @@
+#include "abstractops.h"
 #include "memory.h"
 #include "smt.h"
 #include "vcgen.h"
@@ -47,6 +48,11 @@ llvm::cl::opt<smt::SolverType> arg_solver("solver",
   )
 );
 
+llvm::cl::opt<unsigned> fp_bits("fp-bits",
+  llvm::cl::desc("The number of bits for the abstract representation of"
+                 "floating points (default=32)"),
+  llvm::cl::init(32), llvm::cl::value_desc("number"));
+
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::desc("Number of memory blocks required to validate translation"
                  " (default=8)"),
@@ -89,6 +95,7 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     arg_dump_smt_to.getValue(),
     num_memblocks.getValue(),
     memory_encoding.getValue(),
+    fp_bits.getValue(),
     arg_associative_sum.getValue()
     ).code;
 }

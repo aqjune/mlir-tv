@@ -17,7 +17,7 @@ namespace {
 // What we need to do is to statically find how many 'different' fp values a
 // program may observe.
 // FP_BITS must be geq than 3 (otherwise it can't handle reserved values)
-const unsigned FP_BITS = 32;
+unsigned FP_BITS;
 
 // NaNs and Infs must not be used as keys
 // because they break the entire map.
@@ -42,13 +42,15 @@ static vector<tuple<Expr, Expr, Expr>> staticArrays;
 
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
-void setAbstractionLevel(AbsLevelDot ad, bool addAssoc) {
+void setAbstraction(AbsLevelDot ad, bool addAssoc, unsigned fpBits) {
   alDot = ad;
   isAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
   fpconst_absrepr.clear();
   fpconst_absrepr_num = 0;
+
+  FP_BITS = fpBits;
 
   staticArrays.clear();
 }
