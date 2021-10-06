@@ -71,6 +71,11 @@ llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
     clEnumValN(MemEncoding::MULTIPLE_ARRAY, "MULTIPLE", "Using multiple arrays memory encoding")
   ));
 
+llvm::cl::opt<bool> arg_multiset("multiset",
+  llvm::cl::desc("Use multiset when encoding the associativity of the floating"
+                 " point addition"),  llvm::cl::Hidden,
+  llvm::cl::init(false));
+
 // These functions are excerpted from ToolUtilities.cpp in mlir
 static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
@@ -92,11 +97,12 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   }
 
   return validate(ir_before, ir_after,
-    arg_dump_smt_to.getValue(),
-    num_memblocks.getValue(),
-    memory_encoding.getValue(),
-    fp_bits.getValue(),
-    arg_associative_sum.getValue()
+      arg_dump_smt_to.getValue(),
+      num_memblocks.getValue(),
+      memory_encoding.getValue(),
+      fp_bits.getValue(),
+      arg_associative_sum.getValue(),
+      arg_multiset.getValue()
     ).code;
 }
 

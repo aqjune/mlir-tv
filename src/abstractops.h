@@ -20,6 +20,7 @@ enum class AbsLevelDot {
 
 // This resets the used abstract ops record.
 void setAbstraction(AbsLevelDot, bool isAddAssociative, unsigned fpBits);
+void setEncodingOptions(bool use_multiset);
 AbsLevelDot getAbstractionLevelOfDot();
 bool getAddAssociativity();
 

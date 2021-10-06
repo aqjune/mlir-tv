@@ -46,4 +46,5 @@ Results validate(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     unsigned int numBlocks,
     MemEncoding encoding,
     unsigned fpBits,
-    bool associativeAdd);
+    bool associativeAdd,
+    bool useMultiset);

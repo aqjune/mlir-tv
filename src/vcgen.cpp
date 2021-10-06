@@ -46,6 +46,7 @@ public:
   unsigned int numBlocks;
   unsigned int fpBits;
   bool associativeAdd;
+  bool useMultiset;
 };
 
 };
@@ -370,6 +371,7 @@ static void checkIsSrcAlwaysUB(
   // be able to detect always-UB cases
   aop::setAbstraction(aop::AbsLevelDot::SUM_MUL, vinput.associativeAdd,
       vinput.fpBits);
+  aop::setEncodingOptions(vinput.useMultiset);
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
@@ -411,6 +413,7 @@ static Results validate(ValidationInput vinput) {
   aop::setAbstraction(
       aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false,
       /*fp bits*/vinput.fpBits);
+  aop::setEncodingOptions(/*useMultiset*/false);
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
 
   if (res.code == Results::INCONSISTENT)
@@ -429,6 +432,7 @@ static Results validate(ValidationInput vinput) {
 
   if (assocAdd || useSumMulForDot) {
     aop::setAbstraction(aop::AbsLevelDot::SUM_MUL, assocAdd, vinput.fpBits);
+    aop::setEncodingOptions(vinput.useMultiset);
     if (!vinput.dumpSMTPath.empty())
       vinput.dumpSMTPath += "_noabs";
   } else {
@@ -455,7 +459,7 @@ Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
     unsigned int numBlocks, MemEncoding encoding,
-    unsigned fpBits, bool associativeAdd) {
+    unsigned fpBits, bool associativeAdd, bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -484,6 +488,7 @@ Results validate(
     vinput.fpBits = fpBits;
     vinput.encoding = encoding;
     vinput.associativeAdd = associativeAdd;
+    vinput.useMultiset = useMultiset;
 
     verificationResult.merge(validate(vinput));
   }
