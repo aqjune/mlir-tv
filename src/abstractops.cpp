@@ -182,14 +182,17 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
       Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg), f2,
     // If both operands do not fall into any of the cases above,
     // use fp_add for abstract representation.
-    // But fp_add only yields BV[VALUE_BIT], so we must prepend
-    // the sign bit and type bit(s) in front of fp_add result.
+    // But fp_add only yields BV[SIGN_BITS + VALUE_BIT], so we must insert
+    // type bit(s) into the fp_add result.
     // Fortunately we can just assume that type bit(s) is 0,
-    // because the result of fp_add is always some finite value.
-    // For sign bits, we can assure that the sign bit will be
-    // 0 if both f1 and f2's MSB are 0
-    // and 1 if both f1 and f2's MSB are 1
-    // but if f1 and f2 have different signs, just use an arbitrary sign
+    // because the result of fp_add is always some finite value
+    // as Infs and NaNs are already handled in the previous Ites.
+    // 
+    // fp_add will yield some arbitrary sign bit when called.
+    // But then there are some cases where we must override this sign bit.
+    // If signbit(f1) == 0 and signbit(f2) == 0, signbit(fpAdd(f1, f2)) must be 0.
+    // And if signbit(f1) == 1 and signbit(f2) == 1, signbit(fpAdd(f1, f2)) must be 1.
+    // But if f1 and f2 have different signs, we can just use an arbitrary sign
     // yielded from fp_add
     Expr::mkIte(((f1.getMSB() == bv_false) & (f2.getMSB() == bv_false)),
       // pos + pos -> pos
