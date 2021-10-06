@@ -157,6 +157,7 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
     fpaddfn.emplace({fty, fty}, fp_value_ty, "fp_add");
   }
 
+  auto fp_zero = Float(0.0f);
   auto fp_id = Float(-0.0f);
   auto fp_inf_pos = Float(INFINITY);
   auto fp_inf_neg = Float(-INFINITY);
@@ -200,8 +201,11 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
       Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
         // neg + neg -> neg
         bv_true.concat(fp_add_value.zext(TYPE_BITS)),
-        fp_add_sign.concat(fp_add_value.zext(TYPE_BITS))
-  )))))))));
+        Expr::mkIte(f1.extract(VALUE_BITS - 1, 0) == f2.extract(VALUE_BITS - 1, 0),
+          // x + -x -> 0.0
+          fp_zero,
+          fp_add_sign.concat(fp_add_value.zext(TYPE_BITS))
+  ))))))))));
 }
 
 Expr fpMul(const Expr &f1, const Expr &f2) {
