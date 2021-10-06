@@ -145,6 +145,8 @@ public:
   Expr operator|(bool rhs) const;
   Expr operator==(const Expr &rhs) const;
   Expr operator==(uint64_t rhs) const;
+  Expr operator!=(const Expr &rhs) const { return !(*this == rhs); }
+  Expr operator!=(uint64_t rhs) const { return !(*this == rhs); }
   Expr operator!() const;
   Expr &operator&=(const Expr &rhs);
   Expr &operator|=(const Expr &rhs);

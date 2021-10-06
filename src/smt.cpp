@@ -519,6 +519,14 @@ Expr Expr::getMSB() const {
 }
 
 Expr Expr::extract(unsigned hbit, unsigned lbit) const {
+  uint64_t u;
+  if (isUInt(u) && hbit < 64) {
+    u = u >> lbit;
+    if (hbit != 63)
+      u = u & ((1ull << (uint64_t)(hbit + 1)) - 1);
+    return Expr::mkBV(u, hbit - lbit + 1);
+  }
+
   Expr e;
   SET_Z3(e, fmap(this->z3, [&hbit, &lbit](auto e) {
     return e.extract(hbit, lbit); 
@@ -623,6 +631,10 @@ Expr Expr::operator|(const Expr &rhs) const {
   else if (rhs.isFalse() || isTrue())
     return *this;
 
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBV(a | b, sort().bitwidth());
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator|);
   if (sort().isBV()) {
@@ -643,6 +655,11 @@ EXPR_BVOP_UINT64(operator==)
 Expr Expr::operator==(const Expr &rhs) const {
   if (isIdentical(rhs, true))
     return mkBool(true);
+
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBool(a == b);
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator==);
   SET_CVC5_USEOP(e, rhs, EQUAL);
@@ -650,6 +667,11 @@ Expr Expr::operator==(const Expr &rhs) const {
 }
 
 Expr Expr::operator!() const {
+  if (isTrue())
+    return mkBool(false);
+  else if (isFalse())
+    return mkBool(true);
+
   Expr e;
   SET_Z3(e, fmap(this->z3, [&](auto e) { return !e; }));
   SET_CVC5(e, fmap(this->cvc5, [&](auto e) { return e.notTerm(); }));
