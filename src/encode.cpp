@@ -477,17 +477,16 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
     src1Idxs.push_back((inIdxs[i] - offsets[i]) / strides[i]);
   }
 
-  Expr src2Mapping = src2.get(inIdxs).first;
-
-  Expr output = Expr::mkIte(((inIdxs[0] - offsets[0]) % strides[0]).isZero() &
-                          ((inIdxs[0] - offsets[0]) / strides[0]).ult(sizes[0]),
-                          src1.get(src1Idxs).first, src2Mapping);
+  Expr cond = ((inIdxs[0] - offsets[0]) % strides[0]).isZero() &
+              ((inIdxs[0] - offsets[0]) / strides[0]).ult(sizes[0]);
 
   for (unsigned i = 1; i < resType.getRank(); i++) {
-    output = Expr::mkIte(((inIdxs[i] - offsets[i]) % strides[i]).isZero() &
-                          ((inIdxs[i] - offsets[i]) / strides[i]).ult(sizes[i]),
-                          output, src2Mapping);
+    cond &= ((inIdxs[i] - offsets[i]) % strides[i]).isZero() &
+            ((inIdxs[i] - offsets[i]) / strides[i]).ult(sizes[i]);
   }
+
+  Expr output = Expr::mkIte(cond, src1.get(src1Idxs).first,
+                            src2.get(inIdxs).first);
 
   st.regs.add(res, Tensor::mkLambda(move(dims), move(inIdxs), output));
   return {};
