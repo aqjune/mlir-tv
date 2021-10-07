@@ -458,9 +458,8 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
 #undef GET_OP
 
   assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
-          strides.size() == (size_t)srcType1.getRank() &&
-          srcType1.getRank() == srcType2.getRank() &&
-          srcType2 == resType
+          strides.size() == (size_t)srcType2.getRank() && srcType2 == resType &&
+          srcType1.getRank() <= srcType2.getRank()
         );
 
   vector<Expr> inIdxs, src1Idxs, dims;
@@ -473,8 +472,11 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
   }
   
   for (unsigned i = 0; i < srcType2.getRank(); i++) {
+    uint64_t v;
     dims.push_back(Index(srcType2.getDimSize(i)));
-    src1Idxs.push_back((inIdxs[i] - offsets[i]) / strides[i]);
+    // case when src1 dim < src2 dim
+    if(!(sizes[i].isUInt(v) && v == 1))
+      src1Idxs.push_back((inIdxs[i] - offsets[i]) / strides[i]);
   }
 
   Expr cond = ((inIdxs[0] - offsets[0]) % strides[0]).isZero() &
