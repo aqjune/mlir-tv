@@ -218,20 +218,76 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
 Expr fpMul(const Expr &f1, const Expr &f2) {
   usedOps.mul = true;
   // TODO: check that a.get_Sort() == b.get_Sort()
-  auto exprSort = f1.sort();
+  auto fty = f1.sort();
 
-  if (!fpmulfn)
-    fpmulfn.emplace({exprSort, exprSort}, Float::sort(), "fp_mul");
+  if (!fpmulfn) {
+    // Fully abstract fp_mul(fty, fty) -> fty
+    // may be interpreted into 'invalid' value.
+    // So fp_mul should yield BV[VALUE_BITS].
+    // Unlike fp_add, fp_mul doesn't have to yield SIGN_BITS
+    // because they will be overridden in the following steps anyway.
+    auto fp_value_ty = Sort::bvSort(VALUE_BITS);
+    fpmulfn.emplace({fty, fty}, fp_value_ty, "fp_mul");
+  }
 
-  auto fp_id = Float(1.0);
-  // if neither a nor b is 1.0, the result should be
-  // an abstract and pairwise commutative value.
-  // therefore we return fp_mul(f1, f2) + fp_mul(f2, f1)
-  return Expr::mkIte(f1 == fp_id, f2,                     // if f1 == 1.0, then f2
-    Expr::mkIte(f2 == fp_id, f1,                          // elif f2 == 1.0 , then f1
-      fpmulfn->apply({f1, f2}) + fpmulfn->apply({f2, f1}) // else fp_mul(f1, f2) + fp_mul(f2, f1)
-    )
-  );
+  auto fp_zero_pos = Float(0.0f);
+  auto fp_zero_neg = Float(-0.0f);
+  auto fp_id = Float(1.0f);
+  auto fp_neg = Float(-1.0f);
+  auto fp_inf_pos = Float(INFINITY);
+  auto fp_inf_neg = Float(-INFINITY);
+  auto fp_nan = Float(nanf("0"));
+  auto bv_true = Expr::mkBV(1, 1);
+  auto bv_false = Expr::mkBV(0, 1);
+
+  // The sign bit(s) will be replaced in the next step,
+  // so it is better to completely ignore the signs in this step.
+  // (This is why there's so many | in the conditions...)
+  // 
+  // 1.0 * x -> x, -1.0 * x -> -x
+  auto fpmul_res = Expr::mkIte((f1 == fp_id) | (f1 == fp_neg), f2,
+  // x * 1.0 -> x, x * -1.0 -> -x
+  Expr::mkIte((f2 == fp_id) | (f2 == fp_neg), f1,
+  // NaN * x -> NaN
+  Expr::mkIte(f1 == fp_nan, f1,
+  // x * NaN -> NaN
+  Expr::mkIte(f2 == fp_nan, f2,
+  // +-Inf * +-0.0 -> NaN , +-Inf * x -> ?Inf (if x != 0.0)
+  // IEEE 754-2019 section 7.2 'Invalid operation'
+  Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg),
+    Expr::mkIte((f2 == fp_zero_pos) | (f2 == fp_zero_neg), fp_nan, fp_inf_pos),
+  // +-0.0 * +-Inf -> NaN , x * +-Inf -> ?Inf (if x != 0.0)
+  // IEEE 754-2019 section 7.2 'Invalid operation'
+  Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg),
+    Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg), fp_nan, fp_inf_pos),
+  // +-0.0 * x -> ?0.0, x * +-0.0 -> ?0.0
+  Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg) | (f2 == fp_zero_pos) | (f2 == fp_zero_neg), 
+    fp_zero_pos,
+    // If both operands do not fall into any of the cases above,
+    // use fp_mul for abstract representation.
+    // But fp_mul only yields BV[VALUE_BITS], so we must prepend
+    // sign bit(s) and type bit(s) at the fp_mul result.
+    // For type bit(s), we can just assume that they are 0,
+    // because the result of fp_mul is always some finite value
+    // as Infs and NaNs are already handled in the previous Ites.
+    // For sign bits, as written in the comment above,
+    // it is safe to use any value as they will be overwritten anyway.
+    // Now that we know using 0 for both SIGN_BITS and TYPE_BITS is fine,
+    // we can simply zext(2) the fp_mul
+    // to obtain BV[SIGN_BITS + TYPE_BITS + VALUE_BITS] we want!
+    //
+    // We want the result of fp_mul to be an abstract and pairwise commutative value.
+    // therefore we return fp_mul(f1, f2) + fp_mul(f2, f1)
+    (fpmulfn->apply({f1, f2}) + fpmulfn->apply({f2, f1})).zext(2)
+  )))))));
+
+  // And at last we replace the sign with signbit(f1) ^ signbit(f2)
+  // pos * pos | neg * neg -> pos, pos * neg | neg * pos -> neg
+  return Expr::mkIte(fpmul_res == fp_nan, fp_nan,
+    Expr::mkIte(f1.getMSB() == f2.getMSB(),
+      bv_false.concat(fpmul_res.extract(VALUE_BITS, 0)),
+      bv_true.concat(fpmul_res.extract(VALUE_BITS, 0))    
+  ));
 }
 
 static Expr multisetSum(const Expr &a, const Expr &n) {
