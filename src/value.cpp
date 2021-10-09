@@ -351,6 +351,7 @@ Tensor Tensor::conv(const Tensor &filter,
 }
 
 Tensor Tensor::reshape(const vector<Expr> &newdims) const {
+  assert(newdims.size() > 0);
   // TODO: check whether size(newdims) == size(dims)
   return { simplifyList(newdims), Expr(arr) };
 }

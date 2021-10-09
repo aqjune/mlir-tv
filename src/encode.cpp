@@ -228,16 +228,20 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
   auto reassocExprs = op.getReassociationIndices();
   assert(reassocExprs.size() == (size_t)resTy.getRank());
 
-  // If the collapsed size does not match op.getResultType(), it is UB.
   vector<Expr> newDims;
-  for (unsigned i = 0; i < reassocExprs.size(); ++i) {
-    Expr size = Index::one();
-    for (auto &idx: reassocExprs[i])
-      size = size * t.getDim(idx);
+  if (reassocExprs.size() == 0) {
+    newDims.push_back(Index(1));
+  } else {
+    // If the collapsed size does not match op.getResultType(), it is UB.
+    for (unsigned i = 0; i < reassocExprs.size(); ++i) {
+      Expr size = Index::one();
+      for (auto &idx: reassocExprs[i])
+        size = size * t.getDim(idx);
 
-    if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
-      st.wellDefined(op.getOperation(), size == resTy.getDimSize(i));
-    newDims.push_back(move(size));
+      if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
+        st.wellDefined(op.getOperation(), size == resTy.getDimSize(i));
+      newDims.push_back(move(size));
+    }
   }
 
   st.regs.add(op.getResult(), t.reshape(newDims));
@@ -894,6 +898,8 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
   if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
     if (!denseAttr.isSplat())
       return "a fp splat constant tensor is supported only";
+    if (!op.getType().isa<mlir::TensorType>())
+      return "unsupported constant type";
 
     // A constant tensor's type cannot have unknown dimensions
     auto dims = ShapedValue::getDims(

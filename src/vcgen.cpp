@@ -94,6 +94,9 @@ createInputState(
 
     // Encode arguments of the source function.
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
+      if (!ty.hasRank())
+        RET_STR("Unsupported Tensor type: " << ty);
+
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
       auto elemtyOrNull = Tensor::getElemTy(ty);
@@ -106,6 +109,9 @@ createInputState(
       s.regs.add(arg, move(tensor));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
+      if (!ty.hasRank())
+        RET_STR("Unsupported Tensor type: " << ty);
+
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
       auto elemtyOrNull = MemRef::getElemTy(ty);
@@ -463,9 +469,9 @@ Results validate(
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
-    if (fnop.isDeclaration())
-      return;
-    m[fnop.getName()] = fnop;
+    if (fnop && !fnop.isDeclaration()) {
+      m[fnop.getName()] = fnop;
+    }
   };
   llvm::for_each(*src, [&](auto &op) { fillFns(srcfns, op); });
   llvm::for_each(*tgt, [&](auto &op) { fillFns(tgtfns, op); });
