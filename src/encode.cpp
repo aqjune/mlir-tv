@@ -244,6 +244,7 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
     }
   }
 
+  st.wellDefined(op.getOperation(), t.get1DSize() == smt::get1DSize(newDims));
   st.regs.add(op.getResult(), t.reshape(newDims));
   return {};
 }
