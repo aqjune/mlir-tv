@@ -12,6 +12,8 @@ static string freshName(string prefix) {
   return prefix + to_string(count ++);
 }
 
+// ----- Constants and global vars for abstract floating point operations ------
+
 namespace {
 // NaNs, Infs, and +-0 are stored in separate variable
 // as they do not work well with map due to comparison issue
@@ -49,20 +51,60 @@ void updateConstants() {
   fpconst_zero_pos = Expr::mkBV(0, FP_BITS);
   fpconst_zero_neg = Expr::mkBV(SIGNED_VALUE + 0, FP_BITS);
 }
+
+optional<FnDecl> fp_sumfn;
+optional<FnDecl> fp_assoc_sumfn;
+optional<FnDecl> fp_dotfn;
+optional<FnDecl> fp_addfn;
+optional<FnDecl> fp_mulfn;
 }
+
+// ----- Constants and global vars for abstract int operations ------
+
+namespace {
+map<unsigned, FnDecl> int_sumfn;
+map<unsigned, FnDecl> int_dotfn;
+
+FnDecl getIntSumFn(unsigned bitwidth) {
+  auto itr = int_sumfn.find(bitwidth);
+  if (itr != int_sumfn.end())
+    return itr->second;
+
+  FnDecl hashfn(Integer::sort(bitwidth), Integer::sort(bitwidth),
+                "int_sum" + to_string(bitwidth));
+  int_sumfn.emplace(bitwidth, hashfn);
+  return hashfn;
+}
+
+FnDecl getIntDotFn(unsigned bitwidth) {
+  auto itr = int_dotfn.find(bitwidth);
+  if (itr != int_dotfn.end())
+    return itr->second;
+
+  FnDecl hashfn(Integer::sort(bitwidth), Integer::sort(bitwidth),
+                "int_dot" + to_string(bitwidth));
+  int_dotfn.emplace(bitwidth, hashfn);
+  return hashfn;
+}
+}
+
 
 namespace aop {
 
-static AbsLevelDot alDot;
+static AbsLevelFpDot alFpDot;
+static AbsLevelIntDot alIntDot;
 static bool isFpAddAssociative;
 static UsedAbstractOps usedOps;
 static vector<tuple<Expr, Expr, Expr>> staticArrays;
 static bool useMultiset;
 
+
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
-void setAbstraction(AbsLevelDot ad, bool addAssoc, unsigned fpBits) {
-  alDot = ad;
+void setAbstraction(
+    AbsLevelFpDot afd, AbsLevelIntDot aid, bool addAssoc, unsigned fpBits) {
+  alFpDot = afd;
+  alIntDot = aid;
   isFpAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
@@ -82,7 +124,6 @@ void setEncodingOptions(bool use_multiset) {
 }
 
 bool getFpAddAssociativity() { return isFpAddAssociative; }
-AbsLevelDot getDotAbstractionLevel() { return alDot; }
 
 
 Sort fpSort() {
@@ -149,13 +190,6 @@ Expr mkZeroElemFromArr(const Expr &arr) {
   return Expr::mkBV(0, bvsz);
 }
 
-
-// ----- Floating point operations ------
-static optional<FnDecl> fp_sumfn;
-static optional<FnDecl> fp_assoc_sumfn;
-static optional<FnDecl> fp_dotfn;
-static optional<FnDecl> fp_addfn;
-static optional<FnDecl> fp_mulfn;
 
 Expr fpAdd(const Expr &f1, const Expr &f2) {
   usedOps.fpAdd = true;
@@ -284,9 +318,8 @@ Expr fpSum(const Expr &a, const Expr &n) {
 }
 
 Expr fpDot(const Expr &a, const Expr &b, const Expr &n) {
-  if (alDot == AbsLevelDot::FP_FULLY_ABS) {
+  if (alFpDot == AbsLevelFpDot::FULLY_ABS) {
     usedOps.fpDot = true;
-    // TODO: check that a.get_Sort() == b.get_Sort()
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     auto fnSort = a.sort().toFnSort();
     if (!fp_dotfn)
@@ -294,6 +327,7 @@ Expr fpDot(const Expr &a, const Expr &b, const Expr &n) {
 
     Expr ai = a.select(i), bi = b.select(i);
     Expr zero = mkZeroElemFromArr(a);
+    // Encode commutativity: dot(a, b) = dot(b, a)
     Expr lhs = fp_dotfn->apply({
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero)),
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero))});
@@ -302,16 +336,15 @@ Expr fpDot(const Expr &a, const Expr &b, const Expr &n) {
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero))});
     return lhs + rhs;
 
-  } else if (alDot == AbsLevelDot::FP_SUM_MUL) {
-    usedOps.fpMul = usedOps.fpSum = true;
-    // TODO: check that a.get_Sort() == b.get_Sort()
+  } else if (alFpDot == AbsLevelFpDot::SUM_MUL) {
+    // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     Expr ai = a.select(i), bi = b.select(i);
     Expr arr = Expr::mkLambda(i, fpMul(ai, bi));
 
     return fpSum(arr, n);
   }
-  llvm_unreachable("Unknown abstraction level for dot");
+  llvm_unreachable("Unknown abstraction level for fp dot");
 }
 
 Expr getFpAssociativePrecondition() {
@@ -359,6 +392,50 @@ Expr getFpAssociativePrecondition() {
   }
   precond = precond.simplify();
   return precond;
+}
+
+
+// ----- Integer operations ------
+
+
+Expr intSum(const Expr &a, const Expr &n) {
+  usedOps.intSum = true;
+
+  FnDecl sumfn = getIntSumFn(a.sort().bitwidth());
+  auto i = Index::var("idx", VarType::BOUND);
+  Expr ai = a.select(i);
+  Expr zero = mkZeroElemFromArr(a);
+  Expr result = sumfn(
+      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
+
+  return result;
+}
+
+Expr intDot(const Expr &a, const Expr &b, const Expr &n) {
+  if (alIntDot == AbsLevelIntDot::FULLY_ABS) {
+    usedOps.intDot = true;
+
+    auto i = (Expr)Index::var("idx", VarType::BOUND);
+    FnDecl dotfn = getIntDotFn(a.sort().bitwidth());
+
+    Expr ai = a.select(i), bi = b.select(i);
+    Expr zero = mkZeroElemFromArr(a);
+    Expr lhs = dotfn.apply({
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero)),
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero))});
+    Expr rhs = dotfn.apply({
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero)),
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero))});
+    return lhs + rhs;
+
+  } else if (alIntDot == AbsLevelIntDot::SUM_MUL) {
+    auto i = (Expr)Index::var("idx", VarType::BOUND);
+    Expr ai = a.select(i), bi = b.select(i);
+    Expr arr = Expr::mkLambda(i, ai * bi);
+
+    return intSum(arr, n);
+  }
+  llvm_unreachable("Unknown abstraction level for int dot");
 }
 
 }

@@ -6,22 +6,32 @@
 namespace aop {
 
 struct UsedAbstractOps {
+  // Float ops
   bool fpDot;
   bool fpAdd;
   bool fpMul;
   bool fpSum;
+  // Int ops
+  bool intDot;
+  bool intSum;
 };
 UsedAbstractOps getUsedAbstractOps();
 
-enum class AbsLevelDot {
-  FP_FULLY_ABS = 0, // FP Dot is a fully unknown function
-  FP_SUM_MUL   = 1, // FP Dot is a summation of pairwisely multiplied values
+enum class AbsLevelFpDot {
+  FULLY_ABS = 0, // FP Dot is a fully unknown function
+  SUM_MUL   = 1, // FP Dot is a summation of pairwisely multiplied values
+};
+
+enum class AbsLevelIntDot {
+  FULLY_ABS = 0, // Int Dot is a fully unknown function
+  SUM_MUL   = 1, // Int Dot is a summation of pairwisely multiplied values
 };
 
 // This resets the used abstract ops record.
-void setAbstraction(AbsLevelDot, bool isFpAddAssociative, unsigned fpBits);
+void setAbstraction(AbsLevelFpDot, AbsLevelIntDot, bool isFpAddAssociative,
+                    unsigned fpBits);
 void setEncodingOptions(bool use_multiset);
-AbsLevelDot getAbstractionLevelOfDot();
+
 bool getFpAddAssociativity();
 
 smt::Sort fpSort();
@@ -36,5 +46,9 @@ smt::Expr fpSum(const smt::Expr &arr, const smt::Expr &n);
 smt::Expr fpDot(const smt::Expr &arr1, const smt::Expr &arr2,
                 const smt::Expr &n);
 smt::Expr getFpAssociativePrecondition();
+
+smt::Expr intSum(const smt::Expr &arr, const smt::Expr &n);
+smt::Expr intDot(const smt::Expr &arr1, const smt::Expr &arr2,
+                 const smt::Expr &n);
 
 };
