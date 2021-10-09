@@ -70,7 +70,9 @@ FnDecl getIntSumFn(unsigned bitwidth) {
   if (itr != int_sumfn.end())
     return itr->second;
 
-  FnDecl hashfn(Integer::sort(bitwidth), Integer::sort(bitwidth),
+  auto codomainty = Sort::bvSort(bitwidth);
+  auto arrty = Sort::arraySort(Index::sort(), codomainty).toFnSort();
+  FnDecl hashfn(arrty, Integer::sort(bitwidth),
                 "int_sum" + to_string(bitwidth));
   int_sumfn.emplace(bitwidth, hashfn);
   return hashfn;
@@ -81,8 +83,9 @@ FnDecl getIntDotFn(unsigned bitwidth) {
   if (itr != int_dotfn.end())
     return itr->second;
 
-  FnDecl hashfn(Integer::sort(bitwidth), Integer::sort(bitwidth),
-                "int_dot" + to_string(bitwidth));
+  auto codomainty = Sort::bvSort(bitwidth);
+  auto arrty = Sort::arraySort(Index::sort(), codomainty).toFnSort();
+  FnDecl hashfn({arrty, arrty}, codomainty, "int_dot" + to_string(bitwidth));
   int_dotfn.emplace(bitwidth, hashfn);
   return hashfn;
 }
@@ -185,10 +188,6 @@ vector<float> fpPossibleConsts(const Expr &e) {
   return vec;
 }
 
-Expr mkZeroElemFromArr(const Expr &arr) {
-  unsigned bvsz = arr.select(Index::zero()).sort().bitwidth();
-  return Expr::mkBV(0, bvsz);
-}
 
 
 Expr fpAdd(const Expr &f1, const Expr &f2) {
@@ -307,9 +306,9 @@ Expr fpSum(const Expr &a, const Expr &n) {
     fp_sumfn.emplace(a.sort(), Float::sort(), "fp_sum");
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
-  Expr zero = mkZeroElemFromArr(a);
+  Expr identity = Float(-0.0);
   Expr result = (*fp_sumfn)(
-      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
+      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, identity)));
 
   if (isFpAddAssociative && n.isNumeral())
     staticArrays.push_back({a, n, result});
@@ -326,14 +325,14 @@ Expr fpDot(const Expr &a, const Expr &b, const Expr &n) {
       fp_dotfn.emplace({fnSort, fnSort}, Float::sort(), "fp_dot");
 
     Expr ai = a.select(i), bi = b.select(i);
-    Expr zero = mkZeroElemFromArr(a);
+    Expr identity = Float(-0.0);
     // Encode commutativity: dot(a, b) = dot(b, a)
     Expr lhs = fp_dotfn->apply({
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero)),
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero))});
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity)),
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity))});
     Expr rhs = fp_dotfn->apply({
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero)),
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero))});
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity)),
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity))});
     return lhs + rhs;
 
   } else if (alFpDot == AbsLevelFpDot::SUM_MUL) {
@@ -401,10 +400,11 @@ Expr getFpAssociativePrecondition() {
 Expr intSum(const Expr &a, const Expr &n) {
   usedOps.intSum = true;
 
-  FnDecl sumfn = getIntSumFn(a.sort().bitwidth());
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
-  Expr zero = mkZeroElemFromArr(a);
+  Expr zero = Integer(0, ai.bitwidth());
+
+  FnDecl sumfn = getIntSumFn(ai.sort().bitwidth());
   Expr result = sumfn(
       Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
 
@@ -416,10 +416,11 @@ Expr intDot(const Expr &a, const Expr &b, const Expr &n) {
     usedOps.intDot = true;
 
     auto i = (Expr)Index::var("idx", VarType::BOUND);
-    FnDecl dotfn = getIntDotFn(a.sort().bitwidth());
-
     Expr ai = a.select(i), bi = b.select(i);
-    Expr zero = mkZeroElemFromArr(a);
+    assert(ai.sort().bitwidth() == bi.sort().bitwidth());
+
+    FnDecl dotfn = getIntDotFn(ai.sort().bitwidth());
+    Expr zero = Expr::mkBV(0, ai.bitwidth());
     Expr lhs = dotfn.apply({
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero)),
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero))});

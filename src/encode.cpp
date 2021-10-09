@@ -1311,7 +1311,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   using mlir::matchers::m_Val;
   // Support this form:
   //   ...
-  //   %sum = addf %v, %arg_out or  %sum = addf %arg_out, %v
+  //   %sum = op %v, %arg_out or  %sum = op %arg_out, %v
+  //      where op = addf, addi
   //   yield %sum
   auto lastarg = block.getArgument(block.getNumArguments() - 1);
   assert(!newst.regs.contains(lastarg));
@@ -1320,14 +1321,18 @@ static optional<string> encodeReductionLoopBodyAndOutput(
       m_Op<mlir::AddFOp>(m_Val(lastarg), m_Any()));
   auto p2 = m_Op<mlir::linalg::YieldOp>(
       m_Op<mlir::AddFOp>(m_Any(), m_Val(lastarg)));
+  auto p3 = m_Op<mlir::linalg::YieldOp>(
+      m_Op<mlir::AddIOp>(m_Val(lastarg), m_Any()));
+  auto p4 = m_Op<mlir::linalg::YieldOp>(
+      m_Op<mlir::AddIOp>(m_Any(), m_Val(lastarg)));
 
-  mlir::Value sumvar;
-  if (p1.match(&ops.back()))
-    sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(1);
-  else if (p2.match(&ops.back()))
-    sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(0);
+  unsigned idx;
+  if (p1.match(&ops.back()) || p3.match(&ops.back()))      idx = 1;
+  else if (p2.match(&ops.back()) || p4.match(&ops.back())) idx = 0;
   else
     return errmsg;
+
+  auto sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(idx);
 
   unsigned cnt = 0;
   for (auto &op: ops) {
@@ -1337,6 +1342,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
 
     ENCODE(newst, op, mlir::AddFOp);
     ENCODE(newst, op, mlir::MulFOp);
+    ENCODE(newst, op, mlir::AddIOp);
+    ENCODE(newst, op, mlir::MulIOp);
     RET_STR("has an unsupported operation" << op);
   }
 

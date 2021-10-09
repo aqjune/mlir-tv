@@ -89,6 +89,7 @@ public:
 
   Expr simplify() const;
   Sort sort() const;
+  unsigned bitwidth() const;
   std::vector<Expr> toNDIndices(const std::vector<Expr> &dims) const;
 
   // Returns true if at least one expr in z3, cvc5, ... is uint.

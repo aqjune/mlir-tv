@@ -272,6 +272,10 @@ Sort Expr::sort() const {
   return s;
 }
 
+unsigned Expr::bitwidth() const {
+  return sort().bitwidth();
+}
+
 vector<Expr> Expr::toNDIndices(const vector<Expr> &dims) const {
   assert(dims.size() > 0);
 

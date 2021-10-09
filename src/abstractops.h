@@ -39,7 +39,6 @@ smt::Expr fpConst(float f);
 // Return the set of possible FP constants for 'e'.
 std::vector<float> fpPossibleConsts(const smt::Expr &e);
 
-smt::Expr mkZeroElemFromArr(const smt::Expr &arr);
 smt::Expr fpAdd(const smt::Expr &f1, const smt::Expr &f2);
 smt::Expr fpMul(const smt::Expr &f1, const smt::Expr &f2);
 smt::Expr fpSum(const smt::Expr &arr, const smt::Expr &n);

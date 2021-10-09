@@ -324,6 +324,9 @@ Tensor Tensor::affine(
     }
     srcidxs[i] = newv;
   }
+  auto elem = get(srcidxs).first;
+  auto zero = elemType.isa<mlir::FloatType>() ?
+      (Expr)Float(0.0) : (Expr)Integer(0, elem.bitwidth());
 
   return {
     elemType,
@@ -332,8 +335,8 @@ Tensor Tensor::affine(
       idxvar,
       Expr::mkIte(
         ((Expr)idxvar).ult(::get1DSize(newsizes)),
-        get(srcidxs).first,
-        aop::mkZeroElemFromArr(arr)
+        elem,
+        zero
       ))
   };
 }
@@ -390,7 +393,8 @@ Tensor Tensor::matmul(const Tensor &b) const {
       {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
   // TODO: integer-dot is needed.
-  auto res = aop::fpDot(a_row, bt_row, dims[1]);
+  auto res = elemType.isa<mlir::FloatType>() ?
+      aop::fpDot(a_row, bt_row, dims[1]) : aop::intDot(a_row, bt_row, dims[1]);
   return mkLambda(elemType, {dims[0], bt.dims[0]}, {i, j}, move(res));
 }
 
@@ -411,13 +415,14 @@ pair<Tensor, Expr> Tensor::elementwiseBinOp(
 }
 
 Expr Tensor::dot(const Tensor &t2) const {
-  // TOOD: it is type-dependent.
-  return aop::fpDot(arr, t2.arr, get1DSize());
+  auto len = get1DSize();
+  return elemType.isa<mlir::FloatType>() ?
+      aop::fpDot(arr, t2.arr, len) : aop::intDot(arr, t2.arr, len);
 }
 
 Expr Tensor::sum() const {
-  // TODO: it is type-dependent.
-  return aop::fpSum(arr, get1DSize());
+  return elemType.isa<mlir::FloatType>() ?
+      aop::fpSum(arr, get1DSize()) : aop::intSum(arr, get1DSize());
 }
 
 pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
@@ -557,13 +562,16 @@ Expr Tensor::to1DArrayWithOfs(
     auto absidx = relidxs[i] + offbegins[i];
     absidxs.push_back(std::move(absidx));
   }
+  auto elem = get(absidxs).first;
+  auto zero = elemType.isa<mlir::FloatType>() ?
+      (Expr)Float(0.0) : (Expr)Integer(0, elem.bitwidth());
 
   return Expr::mkLambda(
       idxvar,
       Expr::mkIte(
         ((Expr)idxvar).ult(::get1DSize(sizes)),
-        get(absidxs).first,
-        aop::mkZeroElemFromArr(arr)));
+        elem,
+        zero));
 }
 
 MemRef::Layout::Layout(const vector<Expr> &dims):
