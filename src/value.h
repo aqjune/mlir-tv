@@ -15,6 +15,8 @@ enum class VarType {
   UNBOUND
 };
 
+std::optional<smt::Sort> convertTypeToSort(mlir::Type ty);
+
 class Index {
   smt::Expr e;
 
@@ -117,9 +119,10 @@ public:
 class Tensor: public ShapedValue {
   std::vector<smt::Expr> dims;
   smt::Expr arr;
+  mlir::Type elemType;
 
-  Tensor(std::vector<smt::Expr> &&dims, smt::Expr &&arr):
-      dims(std::move(dims)), arr(std::move(arr)){}
+  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&dims, smt::Expr &&arr):
+      elemType(elemType), dims(std::move(dims)), arr(std::move(arr)) {}
 
 public:
   // This may be parameterized later..
@@ -127,25 +130,28 @@ public:
   static const unsigned MAX_DIM_SIZE = 25;
 
   // A splat tensor.
-  Tensor(smt::Expr &&splat_elem, std::vector<smt::Expr> &&dims);
+  Tensor(mlir::Type elemType, smt::Expr &&splat_elem,
+         std::vector<smt::Expr> &&dims);
   // A sparse tensor.
-  Tensor(const std::vector<std::vector<uint64_t>> &indices,
+  Tensor(mlir::Type elemType,
+         const std::vector<std::vector<uint64_t>> &indices,
          const std::vector<smt::Expr> &elems,
          const std::vector<uint64_t> &dims, const smt::Expr &zero);
+  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems1d);
+  Tensor(mlir::Type elemType, std::string &&name,
+         const std::vector<smt::Expr> &dims);
 
-  Tensor(const std::vector<smt::Expr> &elems1d);
-  Tensor(std::string &&name, const std::vector<smt::Expr> &dims,
-         const smt::Sort &elemty);
 
   smt::Expr asArray() const { return arr; }
-
   smt::Expr getWellDefined() const;
+  mlir::Type getElemType() const { return elemType; }
 
   // Return the element at indices.
   //   Expr v = tensor.get(indices)
   //   useAsInt(Integer(v)) // valid only if tensor had integer elems
   //   useAsFloat(Float(v)) // valid only if tensor had float elems
-  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const override;
+  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
+      const override;
 
   std::vector<smt::Expr> getDims() const override { return dims; }
 
@@ -187,9 +193,10 @@ public:
 
   operator smt::Expr() const { return arr; }
 
-  static std::optional<smt::Sort> getElemTy(mlir::TensorType tensorTy);
+  static bool isTypeSupported(mlir::TensorType tensorTy);
 
   static Tensor mkLambda(
+      mlir::Type elemType,
       std::vector<smt::Expr> &&newdims,
       std::vector<smt::Expr> &&indexvars, smt::Expr body);
 
@@ -277,10 +284,10 @@ public:
   smt::Expr getPrecondition() const;
   smt::Expr getWellDefined() const;
 
-  // If memRefTy is unsupported, return nullopt
-  static std::optional<Layout>
-      getLayout(mlir::MemRefType memRefTy, const std::vector<smt::Expr> &dims);
-  static std::optional<smt::Sort> getElemTy(mlir::MemRefType memRefTy);
+  static bool isTypeSupported(mlir::MemRefType memRefTy);
+  // memRefTy must pass isTypeSupported(memRefTy)
+  static Layout getLayout(
+      mlir::MemRefType memRefTy, const std::vector<smt::Expr> &dims);
 
   // Property getters
   smt::Expr getBID() const { return bid; }
@@ -324,12 +331,14 @@ private:
   smt::Expr bid; // blockID
   Index offset; // offset
   std::vector<smt::Expr> dims;
-  Layout layout; // memory layout defined by affine_map (ex. s0 * idx0 + s1 * idx1 + ... + offset)
+  Layout layout; // memory layout defined by affine_map
+                 // (ex. s0 * idx0 + s1 * idx1 + ... + offset)
 
   smt::Expr to1DArrayWithOfs(
       const std::vector<smt::Expr> &offbegins,
       const std::vector<smt::Expr> &sizes) const;
-  std::pair<smt::Expr, smt::Expr> to1DIdxWithLayout(const std::vector<smt::Expr> &idxs) const;
+  std::pair<smt::Expr, smt::Expr> to1DIdxWithLayout(
+      const std::vector<smt::Expr> &idxs) const;
 
   MemRef::Layout createSubViewLayout(const std::vector<smt::Expr> &indVars,
       const std::vector<smt::Expr> &offsets,

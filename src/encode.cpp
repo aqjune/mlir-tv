@@ -229,8 +229,9 @@ encodeOp(State &st, mlir::linalg::ConvOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   auto res = op.getResult();
-  auto ty = res.getType().dyn_cast<mlir::TensorType>();
-  assert(ty);
+  auto ty = res.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!ty || !Tensor::isTypeSupported(ty))
+    return "Unsupported tensor type";
 
   vector<Expr> sizes;
   if (ty.getRank() == 0) {
@@ -244,15 +245,11 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
     }
   }
 
-  auto elemTy = Tensor::getElemTy(ty);
-  if (!elemTy)
-    return "Unsupported tensor type";
-
   // FIXME: can we use res's name?
   static int new_var_idx = 0;
   st.regs.add(res,
-      Tensor(string("init_tensor_") + to_string(new_var_idx++), sizes,
-             *elemTy));
+      Tensor(ty.getElementType(), ("init_tensor_") + to_string(new_var_idx++),
+             sizes));
 
   return {};
 }
@@ -415,7 +412,7 @@ optional<string> encodeOp(State &st, mlir::tensor::FromElementsOp op) {
   for (unsigned i = 0; i < op.getNumOperands(); ++i)
     elems.push_back(st.regs.getExpr(op.getOperand(i)));
 
-  auto res = Tensor(elems);
+  auto res = Tensor(op.getType().getElementType(), move(elems));
   st.regs.add(op.getResult(), move(res));
   return {};
 }
@@ -473,7 +470,8 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
         offsets[i] : ((inIdxs[idx++] * strides[i])) + offsets[i]);
   }
   st.regs.add(res,
-      Tensor::mkLambda(move(dims), move(inIdxs), src.get(outIdxs).first));
+      Tensor::mkLambda(src.getElemType(), move(dims), move(inIdxs),
+                       src.get(outIdxs).first));
   return {};
 }
 
@@ -520,7 +518,8 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
   Expr output = Expr::mkIte(cond, move(src1elem), src2.get(indVars).first);
 
   st.wellDefined(op.getOperation(), move(src1wb));
-  st.regs.add(res, Tensor::mkLambda(move(dims), move(indVars), output));
+  st.regs.add(res, Tensor::mkLambda(
+      src1.getElemType(), move(dims), move(indVars), output));
   return {};
 }
 
@@ -556,19 +555,16 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
 
 static variant<string, MemRef> createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
-  auto elemtyOrNull = MemRef::getElemTy(memrefTy);
-  auto layoutOrNull = MemRef::getLayout(memrefTy, dims);
-  if (!elemtyOrNull)
+  if (!MemRef::isTypeSupported(memrefTy))
     return "unsupported element type";
-  else if (!layoutOrNull)
-    return "unsupported layout";
 
+  auto layout = MemRef::getLayout(memrefTy, dims);
   // Add a new local block
   auto bid = m->addLocalBlock(smt::get1DSize(dims), Expr::mkBool(writable));
   // Create MemRef which points to the newly created block
   auto memref =
-      MemRef(m, bid, Index::zero(), dims, move(*layoutOrNull),
-             move(*elemtyOrNull));
+      MemRef(m, bid, Index::zero(), dims, move(layout),
+             move(*convertTypeToSort(memrefTy.getElementType())));
 
   return {move(memref)};
 }
@@ -741,8 +737,9 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
   vector<Expr> idxs = Index::boundIndexVars(dims.size());
-  auto Expr = m.get(idxs).first;
-  Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), Expr);
+  auto expr = m.get(idxs).first;
+  Tensor t_res = Tensor::mkLambda(getTensorElemTy(op.getResult()),
+      move(dims), move(idxs), expr);
 
   st.regs.add(op.getResult(), t_res);
   st.wellDefined(op.getOperation(), m.isInBounds());
@@ -783,7 +780,8 @@ optional<string> encodeOp(State &st, mlir::linalg::FillOp op) {
     return "it has multiple results";
 
   auto t = st.regs.get<Tensor>(op.getOperand(1));
-  auto res = Tensor(st.regs.getExpr(op.getOperand(0)), t.getDims());
+  auto res = Tensor(t.getElemType(),
+      st.regs.getExpr(op.getOperand(0)), t.getDims());
   st.regs.add(op.getResult(0), move(res));
   return {};
 }
@@ -813,7 +811,8 @@ optional<string> encodeOp(State &st, mlir::linalg::DotOp op) {
   st.wellDefined(op.getOperation(), t1.get1DSize() == t2.get1DSize());
 
   auto res = t1.dot(t2);
-  st.regs.add(op.getResult(0), Tensor(move(res), move(outputDim)));
+  st.regs.add(op.getResult(0),
+      Tensor(t1.getElemType(), move(res), move(outputDim)));
   return {};
 }
 
@@ -940,19 +939,21 @@ template<>
 optional<string> encodeOp(State &st, mlir::ConstantOp op) {
   auto attr = op.getValue();
   if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
+    // splat
     if (!denseAttr.isSplat())
       return "a fp splat constant tensor is supported only";
     if (!op.getType().isa<mlir::TensorType>())
       return "unsupported constant type";
 
     // A constant tensor's type cannot have unknown dimensions
-    auto dims = ShapedValue::getDims(
-        op.getType().cast<mlir::TensorType>(), false);
+    auto tensorty = op.getType().cast<mlir::TensorType>();
+    auto dims = ShapedValue::getDims(tensorty, false);
     auto v = attrToValueTy(denseAttr.getSplatValue());
     if (!v)
       return "unsupported constant";
 
-    st.regs.add(op, Tensor(getExpr(*v), move(dims)));
+    st.regs.add(op,
+        Tensor(tensorty.getElementType(), (Expr&&)move(*v), move(dims)));
     return {};
 
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
@@ -969,13 +970,14 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
       return "unsupported type";
 
     auto sparseIndexValues = sparseAttr.getIndices().getValues<uint64_t>();
+    auto elemTy = sparseType.getElementType();
     auto rank = sparseType.getRank();
     vector<uint64_t> dims;
     for (unsigned i = 0; i < rank; ++i)
       dims.push_back(sparseType.getDimSize(i));
 
     // Unspecified locations are filled with zero.
-    auto zero = getZero(sparseType.getElementType());
+    auto zero = getZero(elemTy);
     if (!zero)
       return "unsupported element type";
 
@@ -999,7 +1001,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
       sparseValues.push_back(getExpr(*e));
     }
     st.hasConstArray = true;
-    st.regs.add(op, Tensor(sparseIndices, sparseValues, dims, *zero));
+    st.regs.add(op, Tensor(elemTy, sparseIndices, sparseValues, dims, *zero));
     return {};
   }
   return "unsupported constant";
@@ -1016,7 +1018,7 @@ optional<string> encodeOp(State &st, mlir::shape::ShapeOfOp op) {
     return "unsupported type";
 
   auto tt = st.regs.get<Tensor>(tensor);
-  st.regs.add(op, Tensor(tt.getDims()));
+  st.regs.add(op, Tensor(getTensorElemTy(op.getResult()), tt.getDims()));
   return {};
 }
 
@@ -1284,7 +1286,8 @@ static optional<string> encodeParallelLoopBodyAndOutput(
   auto &scope = newst.linalgGenericScopes.top();
   auto outputIndVars = doMap(scope.indVars, outputMap);
   auto tensorSz = addOne(doMap(scope.indVarUpperBounds, outputMap));
-  t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars),
+  t_res = Tensor::mkLambda(yieldedValue.getType(),
+      move(tensorSz), move(outputIndVars),
       newst.regs.getExpr(yieldedValue));
 
   return {};
@@ -1343,6 +1346,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
 
   // Represent %v as an element of a tensor.
   Tensor t_v = Tensor::mkLambda(
+      sumvar.getType(),
       addOne(vector(linalgInfo.indVarUpperBounds)),
       vector(linalgInfo.indVars),
       newst.regs.getExpr(sumvar));
@@ -1357,7 +1361,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
-    t_res = Tensor(t_v.sum(), makeCube(Index(1), outputType.getRank()));
+    t_res = Tensor(t_v.getElemType(), t_v.sum(),
+        makeCube(Index(1), outputType.getRank()));
     return {};
   } else {
     // in:  (i, j) -> (i, j)
@@ -1389,13 +1394,15 @@ static optional<string> encodeReductionLoopBodyAndOutput(
 
     auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
     auto t_sum = Tensor::mkLambda(
+          t_v.getElemType(),
           addOne(move(boundsForRes)),
           move(indVarsForRes),
           t_v.get(linalgInfo.indVars).first)
         .sum();
 
     auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
-    t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars), t_sum);
+    t_res = Tensor::mkLambda(
+        t_v.getElemType(), move(tensorSz), move(outputIndVars), t_sum);
     return {};
   }
 }

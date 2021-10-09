@@ -94,38 +94,30 @@ createInputState(
 
     // Encode arguments of the source function.
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
-      if (!ty.hasRank())
+      if (!Tensor::isTypeSupported(ty))
         RET_STR("Unsupported Tensor type: " << ty);
 
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
-      auto elemtyOrNull = Tensor::getElemTy(ty);
-      if (!elemtyOrNull)
-        RET_STR("Unsupported Tensor element type: " << arg.getType());
+      auto tensor = Tensor(ty.getElementType(),
+          "arg" + to_string(arg.getArgNumber()),
+          dims);
 
-      auto tensor = Tensor("arg" + to_string(arg.getArgNumber()),
-          dims, *elemtyOrNull);
       preconds.push_back(tensor.getWellDefined());
       s.regs.add(arg, move(tensor));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
-      if (!ty.hasRank())
-        RET_STR("Unsupported Tensor type: " << ty);
+      if (!MemRef::isTypeSupported(ty))
+        RET_STR("Unsupported MemRef type: " << ty);
 
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
-      auto elemtyOrNull = MemRef::getElemTy(ty);
-      auto layoutOrNull = MemRef::getLayout(ty, dims);
-
-      if (!elemtyOrNull) {
-        RET_STR("Unsupported MemRef element type: " << arg.getType());
-      } else if (!layoutOrNull) {
-        RET_STR("Unsupported MemRef layout: " << arg.getType());
-      }
+      auto elemty = *convertTypeToSort(ty.getElementType());
+      auto layout = MemRef::getLayout(ty, dims);
 
       // TODO : out of bounds pointer is allowed?
       auto memref = MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
-          dims, *layoutOrNull, *elemtyOrNull);
+          dims, layout, elemty);
 
       // Function argument MemRefs must point to global memblocks.
       preconds.push_back(memref.isGlobalBlock());
