@@ -45,8 +45,8 @@ public:
   MemEncoding encoding;
   unsigned int numBlocks;
   unsigned int fpBits;
-  bool associativeAdd;
-  bool useMultiset;
+  bool isFpAddAssociative;
+  bool useMultisetForFpSum;
 };
 
 };
@@ -337,8 +337,8 @@ static tuple<State, State, Expr> encodeFinalStates(
   State st_tgt = encodeFinalState(
       vinput, move(initMemTgt), printOps, false, args, preconds);
 
-  if (aop::getAddAssociativity())
-    preconds.push_back(aop::getAssociativePrecondition());
+  if (aop::getFpAddAssociativity())
+    preconds.push_back(aop::getFpAssociativePrecondition());
 
   Expr precond =
       exprAnd(preconds) & st_src.precondition() & st_tgt.precondition();
@@ -367,9 +367,9 @@ static void checkIsSrcAlwaysUB(
 
   // Set the abstract level to be as concrete as possible because we may not
   // be able to detect always-UB cases
-  aop::setAbstraction(aop::AbsLevelDot::SUM_MUL, vinput.associativeAdd,
+  aop::setAbstraction(aop::AbsLevelDot::FP_SUM_MUL, vinput.isFpAddAssociative,
       vinput.fpBits);
-  aop::setEncodingOptions(vinput.useMultiset);
+  aop::setEncodingOptions(vinput.useMultisetForFpSum);
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
@@ -409,7 +409,7 @@ static Results validate(ValidationInput vinput) {
   // Don't enable add associativity even if vinput.associativeAdd is true
   // because simply encoding it as UF is more efficient.
   aop::setAbstraction(
-      aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false,
+      aop::AbsLevelDot::FP_FULLY_ABS, /*isFpAddAssociative*/false,
       /*fp bits*/vinput.fpBits);
   aop::setEncodingOptions(/*useMultiset*/false);
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
@@ -424,13 +424,14 @@ static Results validate(ValidationInput vinput) {
   }
 
   auto usedOps = aop::getUsedAbstractOps();
-  bool assocAdd = vinput.associativeAdd;
+  bool fpAssocAdd = vinput.isFpAddAssociative;
   // dot = mul + sum?
-  bool useSumMulForDot = usedOps.dot && usedOps.sum && usedOps.mul;
+  bool useSumMulForFpDot = usedOps.fpDot && usedOps.fpSum && usedOps.fpMul;
 
-  if (assocAdd || useSumMulForDot) {
-    aop::setAbstraction(aop::AbsLevelDot::SUM_MUL, assocAdd, vinput.fpBits);
-    aop::setEncodingOptions(vinput.useMultiset);
+  if (fpAssocAdd || useSumMulForFpDot) {
+    aop::setAbstraction(aop::AbsLevelDot::FP_SUM_MUL, fpAssocAdd,
+        vinput.fpBits);
+    aop::setEncodingOptions(vinput.useMultisetForFpSum);
     if (!vinput.dumpSMTPath.empty())
       vinput.dumpSMTPath += "_noabs";
   } else {
@@ -443,7 +444,7 @@ static Results validate(ValidationInput vinput) {
       << "  Giving more precise semantics to abstractly defined ops...\n"
       << "===============================================================\n\n";
 
-  bool useAllLogic = assocAdd;
+  bool useAllLogic = fpAssocAdd;
   res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
   if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
     // Check whether it is always UB
@@ -457,7 +458,7 @@ Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
     unsigned int numBlocks, MemEncoding encoding,
-    unsigned fpBits, bool associativeAdd, bool useMultiset) {
+    unsigned fpBits, bool isFpAddAssociative, bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -485,8 +486,8 @@ Results validate(
     vinput.numBlocks = numBlocks;
     vinput.fpBits = fpBits;
     vinput.encoding = encoding;
-    vinput.associativeAdd = associativeAdd;
-    vinput.useMultiset = useMultiset;
+    vinput.isFpAddAssociative = isFpAddAssociative;
+    vinput.useMultisetForFpSum = useMultiset;
 
     verificationResult.merge(validate(vinput));
   }

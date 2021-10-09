@@ -54,7 +54,7 @@ void updateConstants() {
 namespace aop {
 
 static AbsLevelDot alDot;
-static bool isAddAssociative;
+static bool isFpAddAssociative;
 static UsedAbstractOps usedOps;
 static vector<tuple<Expr, Expr, Expr>> staticArrays;
 static bool useMultiset;
@@ -63,7 +63,7 @@ UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(AbsLevelDot ad, bool addAssoc, unsigned fpBits) {
   alDot = ad;
-  isAddAssociative = addAssoc;
+  isFpAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
   fpconst_absrepr.clear();
@@ -81,7 +81,7 @@ void setEncodingOptions(bool use_multiset) {
   useMultiset = use_multiset;
 }
 
-bool getAddAssociativity() { return isAddAssociative; }
+bool getFpAddAssociativity() { return isFpAddAssociative; }
 AbsLevelDot getDotAbstractionLevel() { return alDot; }
 
 
@@ -149,19 +149,25 @@ Expr mkZeroElemFromArr(const Expr &arr) {
   return Expr::mkBV(0, bvsz);
 }
 
-optional<FnDecl> sumfn, assoc_sumfn, dotfn, fpaddfn, fpmulfn;
+
+// ----- Floating point operations ------
+static optional<FnDecl> fp_sumfn;
+static optional<FnDecl> fp_assoc_sumfn;
+static optional<FnDecl> fp_dotfn;
+static optional<FnDecl> fp_addfn;
+static optional<FnDecl> fp_mulfn;
 
 Expr fpAdd(const Expr &f1, const Expr &f2) {
-  usedOps.add = true;
+  usedOps.fpAdd = true;
   auto fty = f1.sort();
 
-  if (!fpaddfn) {
+  if (!fp_addfn) {
     // Fully abstract fp_add(fty, fty) -> fty
     // may be interpreted into 'invalid' value.
     // So fp_add should yield BV[SIGN_BITS + VALUE_BITS].
     // Then, an appropriate value will be inserted to fill in TYPE_BITS 
     auto fp_value_ty = Sort::bvSort(SIGN_BITS + VALUE_BITS);
-    fpaddfn.emplace({fty, fty}, fp_value_ty, "fp_add");
+    fp_addfn.emplace({fty, fty}, fp_value_ty, "fp_add");
   }
 
   auto fp_zero = Float(0.0f);
@@ -172,7 +178,7 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
   auto bv_true = Expr::mkBV(1, 1);
   auto bv_false = Expr::mkBV(0, 1);
 
-  auto fp_add_res = fpaddfn->apply({f1, f2}) + fpaddfn->apply({f2, f1});
+  auto fp_add_res = fp_addfn->apply({f1, f2}) + fp_addfn->apply({f2, f1});
   auto fp_add_sign = fp_add_res.getMSB();
   auto fp_add_value = fp_add_res.extract(VALUE_BITS - 1, 0);
 
@@ -216,12 +222,12 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
 }
 
 Expr fpMul(const Expr &f1, const Expr &f2) {
-  usedOps.mul = true;
+  usedOps.fpMul = true;
   // TODO: check that a.get_Sort() == b.get_Sort()
   auto exprSort = f1.sort();
 
-  if (!fpmulfn)
-    fpmulfn.emplace({exprSort, exprSort}, Float::sort(), "fp_mul");
+  if (!fp_mulfn)
+    fp_mulfn.emplace({exprSort, exprSort}, Float::sort(), "fp_mul");
 
   auto fp_id = Float(1.0);
   // if neither a nor b is 1.0, the result should be
@@ -229,12 +235,13 @@ Expr fpMul(const Expr &f1, const Expr &f2) {
   // therefore we return fp_mul(f1, f2) + fp_mul(f2, f1)
   return Expr::mkIte(f1 == fp_id, f2,                     // if f1 == 1.0, then f2
     Expr::mkIte(f2 == fp_id, f1,                          // elif f2 == 1.0 , then f1
-      fpmulfn->apply({f1, f2}) + fpmulfn->apply({f2, f1}) // else fp_mul(f1, f2) + fp_mul(f2, f1)
+      fp_mulfn->apply({f1, f2}) + fp_mulfn->apply({f2, f1})
+          // else fp_mul(f1, f2) + fp_mul(f2, f1)
     )
   );
 }
 
-static Expr multisetSum(const Expr &a, const Expr &n) {
+static Expr fpMultisetSum(const Expr &a, const Expr &n) {
   uint64_t length;
   if (!n.isUInt(length))
     assert("Only an array of constant length is supported.");
@@ -245,9 +252,9 @@ static Expr multisetSum(const Expr &a, const Expr &n) {
     bag = bag.simplify();
   }
 
-  if (!assoc_sumfn)
-    assoc_sumfn.emplace(bag.sort(), Float::sort(), "smt_assoc_sum");
-  Expr result = (*assoc_sumfn)(bag);
+  if (!fp_assoc_sumfn)
+    fp_assoc_sumfn.emplace(bag.sort(), Float::sort(), "fp_assoc_sum");
+  Expr result = (*fp_assoc_sumfn)(bag);
 
   if (n.isNumeral())
     staticArrays.push_back({bag, n, result});
@@ -255,59 +262,61 @@ static Expr multisetSum(const Expr &a, const Expr &n) {
   return result;
 }
 
-Expr sum(const Expr &a, const Expr &n) {
-  usedOps.sum = true;
+Expr fpSum(const Expr &a, const Expr &n) {
+  usedOps.fpSum = true;
   // TODO: check that a.Sort is Index::Sort() -> Float::Sort()
 
-  if (isAddAssociative && useMultiset)
-    return multisetSum(a, n);
+  if (isFpAddAssociative && useMultiset)
+    return fpMultisetSum(a, n);
 
-  if (!sumfn)
-    sumfn.emplace(a.sort(), Float::sort(), "smt_sum");
+  if (!fp_sumfn)
+    fp_sumfn.emplace(a.sort(), Float::sort(), "fp_sum");
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
   Expr zero = mkZeroElemFromArr(a);
-  Expr result = (*sumfn)(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
+  Expr result = (*fp_sumfn)(
+      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
 
-  if (isAddAssociative && n.isNumeral())
+  if (isFpAddAssociative && n.isNumeral())
     staticArrays.push_back({a, n, result});
 
   return result;
 }
 
-Expr dot(const Expr &a, const Expr &b, const Expr &n) {
-  if (alDot == AbsLevelDot::FULLY_ABS) {
-    usedOps.dot = true;
+Expr fpDot(const Expr &a, const Expr &b, const Expr &n) {
+  if (alDot == AbsLevelDot::FP_FULLY_ABS) {
+    usedOps.fpDot = true;
     // TODO: check that a.get_Sort() == b.get_Sort()
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     auto fnSort = a.sort().toFnSort();
-    if (!dotfn)
-      dotfn.emplace({fnSort, fnSort}, Float::sort(), "smt_dot");
+    if (!fp_dotfn)
+      fp_dotfn.emplace({fnSort, fnSort}, Float::sort(), "fp_dot");
 
     Expr ai = a.select(i), bi = b.select(i);
     Expr zero = mkZeroElemFromArr(a);
-    Expr lhs = dotfn->apply({
+    Expr lhs = fp_dotfn->apply({
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero)),
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero))});
-    Expr rhs = dotfn->apply({
+    Expr rhs = fp_dotfn->apply({
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero)),
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero))});
     return lhs + rhs;
-  } else if (alDot == AbsLevelDot::SUM_MUL) {
-    usedOps.mul = usedOps.sum = true;
+
+  } else if (alDot == AbsLevelDot::FP_SUM_MUL) {
+    usedOps.fpMul = usedOps.fpSum = true;
     // TODO: check that a.get_Sort() == b.get_Sort()
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     Expr ai = a.select(i), bi = b.select(i);
     Expr arr = Expr::mkLambda(i, fpMul(ai, bi));
 
-    return sum(arr, n);
+    return fpSum(arr, n);
   }
   llvm_unreachable("Unknown abstraction level for dot");
 }
 
-Expr getAssociativePrecondition() {
+Expr getFpAssociativePrecondition() {
   // Calling this function doesn't make sense if add is not associative
-  assert(isAddAssociative);
+  assert(isFpAddAssociative);
 
   if (useMultiset) {
     // precondition between `bag equality <-> assoc_sumfn`
@@ -333,7 +342,7 @@ Expr getAssociativePrecondition() {
       auto [b, bn, bsum] = staticArrays[j];
       uint64_t alen, blen;
       if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
-      FnDecl hashfn(Float::sort(), Index::sort(), freshName("hash"));
+      FnDecl hashfn(Float::sort(), Index::sort(), freshName("fp_hash"));
 
       auto aVal = hashfn.apply(a.select(Index(0)));
       for (unsigned k = 1; k < alen; k ++)

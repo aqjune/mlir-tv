@@ -224,7 +224,7 @@ std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(const ShapedValue
 
   Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
   Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
-  Expr outputExpr = aop::dot(inputExpr, filterExpr, ::get1DSize(cubeSize));
+  Expr outputExpr = aop::fpDot(inputExpr, filterExpr, ::get1DSize(cubeSize));
 
   return {move(outputIdxs), move(outputExpr)};
 }
@@ -390,7 +390,7 @@ Tensor Tensor::matmul(const Tensor &b) const {
       {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
   // TODO: integer-dot is needed.
-  auto res = aop::dot(a_row, bt_row, dims[1]);
+  auto res = aop::fpDot(a_row, bt_row, dims[1]);
   return mkLambda(elemType, {dims[0], bt.dims[0]}, {i, j}, move(res));
 }
 
@@ -412,12 +412,12 @@ pair<Tensor, Expr> Tensor::elementwiseBinOp(
 
 Expr Tensor::dot(const Tensor &t2) const {
   // TOOD: it is type-dependent.
-  return aop::dot(arr, t2.arr, get1DSize());
+  return aop::fpDot(arr, t2.arr, get1DSize());
 }
 
 Expr Tensor::sum() const {
   // TODO: it is type-dependent.
-  return aop::sum(arr, get1DSize());
+  return aop::fpSum(arr, get1DSize());
 }
 
 pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
