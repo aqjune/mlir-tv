@@ -124,6 +124,43 @@ static mlir::Type getTensorElemTy(mlir::Value v) {
   return v.getType().dyn_cast<mlir::TensorType>().getElementType();
 }
 
+template<class OpTy>
+static optional<string>
+encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
+    function<Float(Float &&e1, Float &&e2)> f_float,
+    function<Integer(Integer &&e1, Integer &&e2)> f_int) {
+
+  if (arg0.getType().isa<mlir::FloatType>()) {
+    auto a = st.regs.get<Float>(arg0);
+    auto b = st.regs.get<Float>(arg1);
+    st.regs.add(op, f_float(move(a), move(b)));
+
+  } else if (auto tty = arg0.getType().dyn_cast<mlir::RankedTensorType>()) {
+    auto elemty = tty.getElementType();
+    if (!elemty.isIntOrFloat())
+      return "Unsupported element type";
+
+    auto a = st.regs.get<Tensor>(arg0);
+    auto b = st.regs.get<Tensor>(arg1);
+
+    auto f = [&](smt::Expr &&a, smt::Expr &&b) -> smt::Expr {
+      if (elemty.isa<mlir::FloatType>()) {
+        return f_float(Float(a), Float(b));
+      } else if (elemty.isa<mlir::IntegerType>()) {
+        return f_int(Integer(a), Integer(b));
+      }
+      llvm_unreachable("Unreachable case");
+    };
+    auto [res, welldef] = a.elementwiseBinOp(b, f);
+    st.regs.add(op, move(res));
+    st.wellDefined(op.getOperation(), move(welldef));
+
+  } else {
+    return "Unsupported type";
+  }
+  return {};
+}
+
 
 #define ENCODE(st, op, ty) { \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
@@ -506,13 +543,13 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
     }
   }
 
-  auto t1 = st.regs.get<Tensor>(op.getOperand(0));
-  auto t2 = st.regs.get<Tensor>(op.getOperand(1));
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
 
-  auto [res, welldef] = t1.elementwiseBinOp(t2, [](auto &&e1, auto &&e2)
-      { return e1 + e2; });
-  st.wellDefined(op.getOperation(), move(welldef));
-  st.regs.add(op, move(res));
+  encodeBinaryOp(st, op, arg0, arg1,
+      [](auto &&a, auto &&b) { return a.add(b); },
+      [](auto &&a, auto &&b) { return (Expr)a + (Expr)b; });
+  return {};
 
   return {};
 }
@@ -782,17 +819,23 @@ optional<string> encodeOp(State &st, mlir::linalg::DotOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::AddFOp op) {
-  auto a = st.regs.get<Float>(op.getOperand(0));
-  auto b = st.regs.get<Float>(op.getOperand(1));
-  st.regs.add(op, a.add(b));
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1,
+      [](auto &&a, auto &&b) { return a.add(b); },
+      [](auto &&a, auto &&b) { return (Expr)a + (Expr)b; });
   return {};
 }
 
 template<>
 optional<string> encodeOp(State &st, mlir::MulFOp op) {
-  auto a = st.regs.get<Float>(op.getOperand(0));
-  auto b = st.regs.get<Float>(op.getOperand(1));
-  st.regs.add(op, a.mul(b));
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1,
+      [](auto &&a, auto &&b) { return a.mul(b); },
+      [](auto &&a, auto &&b) { return (Expr)a * (Expr)b; });
   return {};
 }
 
