@@ -444,8 +444,8 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
   auto rank = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>().getRank();
   if (rank != op.getOperand(1).getType().dyn_cast<mlir::ShapedType>().getRank()
       || rank != res.getType().dyn_cast<mlir::ShapedType>().getRank())
-    return "Unsupported tensor types of src adn dest: they do not match";
-  
+    return "Unsupported tensor types of src and dest: their ranks do not match";
+
 #define GET_OP(vec, ee) { \
     for (auto s: op.getMixed ## ee()) { \
       vec.push_back(s.is<mlir::Value>() ? \
