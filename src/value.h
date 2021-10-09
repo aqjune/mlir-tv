@@ -300,7 +300,7 @@ public:
   void setMemory(Memory *m) { this->m = m; }
   bool isIdentityMap() const;
 
-  // Return a new memerf which is subview of source memref.
+  // Return a new memref which is a subview of the source memref.
   MemRef subview(const std::vector<smt::Expr> &offsets,
       const std::vector<smt::Expr> &sizes,
       const std::vector<smt::Expr> &strides,

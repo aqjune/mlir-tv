@@ -436,6 +436,53 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
+  vector<Expr> offsets, sizes, strides;
+  auto src1 = st.regs.get<Tensor>(op.getOperand(0));
+  auto src2 = st.regs.get<Tensor>(op.getOperand(1));
+  auto res = op.getResult();
+  auto rank = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>().getRank();
+  if (rank != op.getOperand(1).getType().dyn_cast<mlir::ShapedType>().getRank()
+      || rank != res.getType().dyn_cast<mlir::ShapedType>().getRank())
+    return "Unsupported tensor types of src and dest: their ranks do not match";
+
+#define GET_OP(vec, ee) { \
+    for (auto s: op.getMixed ## ee()) { \
+      vec.push_back(s.is<mlir::Value>() ? \
+      st.regs.get<Index>(s.get<mlir::Value>()) : \
+      Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
+    } \
+  }
+  GET_OP(strides, Strides);
+  GET_OP(sizes, Sizes);
+  GET_OP(offsets, Offsets);
+#undef GET_OP
+
+  assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
+         strides.size() == rank);
+
+  vector<Expr> indVars = Index::boundIndexVars(rank);
+  vector<Expr> dims = src2.getDims();
+  vector<Expr> src1Idxs;
+
+  Expr cond = Expr::mkBool(true);
+
+  for (unsigned i = 0; i < rank; i++) {
+    src1Idxs.push_back((indVars[i] - offsets[i]).udiv(strides[i]));
+    cond &= ((indVars[i] - offsets[i]) % strides[i]).isZero() &
+            (indVars[i] - offsets[i]).ult(sizes[i] * strides[i]);
+  }
+
+  // Picking the value from src1 must not be out of bounds.
+  auto [src1elem, src1wb] = src1.get(src1Idxs);
+  Expr output = Expr::mkIte(cond, move(src1elem), src2.get(indVars).first);
+
+  st.wellDefined(op.getOperation(), move(src1wb));
+  st.regs.add(res, Tensor::mkLambda(move(dims), move(indVars), output));
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
   auto optys = op.getOperandTypes();
   if (!optys[0].isa<mlir::RankedTensorType>() ||
@@ -1406,6 +1453,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::ExtractOp);
     ENCODE(st, op, mlir::tensor::FromElementsOp);
     ENCODE(st, op, mlir::tensor::ExtractSliceOp);
+    ENCODE(st, op, mlir::tensor::InsertSliceOp);
 
     ENCODE(st, op, mlir::tosa::AddOp);
 
