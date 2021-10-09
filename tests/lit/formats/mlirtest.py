@@ -12,7 +12,7 @@ import signal
 
 def _executeCommand(dir_tv: str, dir_src: str, dir_tgt: str,
                     args = []) -> Tuple[str, str, int]:
-    timeout: int = 10000
+    timeout: int = 30000
     command: list[str] = [dir_tv, f"-smt-to={timeout}", dir_src, dir_tgt] + args
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8") as proc:
         exitCode = proc.wait()

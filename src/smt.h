@@ -147,6 +147,8 @@ public:
   Expr operator|(bool rhs) const;
   Expr operator==(const Expr &rhs) const;
   Expr operator==(uint64_t rhs) const;
+  Expr operator!=(const Expr &rhs) const { return !(*this == rhs); }
+  Expr operator!=(uint64_t rhs) const { return !(*this == rhs); }
   Expr operator!() const;
   Expr &operator&=(const Expr &rhs);
   Expr &operator|=(const Expr &rhs);
@@ -271,13 +273,12 @@ public:
 };
 
 class Solver {
-private:
+public:
 #ifdef SOLVER_Z3
   std::optional<z3::solver> z3;
 #endif
   // No need for CVC5
 
-public:
   Solver(const char *logic);
   Solver(const Solver &) = delete;
   ~Solver();
