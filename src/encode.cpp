@@ -441,9 +441,10 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
   auto src1 = st.regs.get<Tensor>(op.getOperand(0));
   auto src2 = st.regs.get<Tensor>(op.getOperand(1));
   auto res = op.getResult();
-  auto srcType1 = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>();
-  auto srcType2 = op.getOperand(1).getType().dyn_cast<mlir::ShapedType>();
-  auto resType = res.getType().dyn_cast<mlir::ShapedType>();
+  auto rank = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>().getRank();
+  if (rank != op.getOperand(1).getType().dyn_cast<mlir::ShapedType>().getRank()
+      || rank != res.getType().dyn_cast<mlir::ShapedType>().getRank())
+    return "Unsupported tensor types of src adn dest: they do not match";
   
 #define GET_OP(vec, ee) { \
     for (auto s: op.getMixed ## ee()) { \
@@ -458,39 +459,26 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
 #undef GET_OP
 
   assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
-          strides.size() == (size_t)srcType2.getRank() && srcType2 == resType &&
-          srcType1.getRank() <= srcType2.getRank()
-        );
+         strides.size() == rank);
 
-  vector<Expr> inIdxs, src1Idxs, dims;
-  inIdxs = Index::boundIndexVars(resType.getRank());
+  vector<Expr> indVars = Index::boundIndexVars(rank);
+  vector<Expr> dims = src2.getDims();
+  vector<Expr> src1Idxs;
 
-  for (unsigned i = 0; i < srcType1.getRank(); i++) {
-    uint64_t v;
-    sizes[i].isUInt(v);
-    assert(srcType1.getDimSize(i) >= v || srcType1.getDimSize(i) == -1);
-  }
-  
-  for (unsigned i = 0; i < srcType2.getRank(); i++) {
-    uint64_t v;
-    dims.push_back(Index(srcType2.getDimSize(i)));
-    // case when src1 dim < src2 dim
-    if(!(sizes[i].isUInt(v) && v == 1))
-      src1Idxs.push_back((inIdxs[i] - offsets[i]) / strides[i]);
+  Expr cond = Expr::mkBool(true);
+
+  for (unsigned i = 0; i < rank; i++) {
+    src1Idxs.push_back((indVars[i] - offsets[i]).udiv(strides[i]));
+    cond &= ((indVars[i] - offsets[i]) % strides[i]).isZero() &
+            (indVars[i] - offsets[i]).ult(sizes[i] * strides[i]);
   }
 
-  Expr cond = ((inIdxs[0] - offsets[0]) % strides[0]).isZero() &
-              ((inIdxs[0] - offsets[0]) / strides[0]).ult(sizes[0]);
+  // Picking the value from src1 must not be out of bounds.
+  auto [src1elem, src1wb] = src1.get(src1Idxs);
+  Expr output = Expr::mkIte(cond, move(src1elem), src2.get(indVars).first);
 
-  for (unsigned i = 1; i < resType.getRank(); i++) {
-    cond &= ((inIdxs[i] - offsets[i]) % strides[i]).isZero() &
-            ((inIdxs[i] - offsets[i]) / strides[i]).ult(sizes[i]);
-  }
-
-  Expr output = Expr::mkIte(cond, src1.get(src1Idxs).first,
-                            src2.get(inIdxs).first);
-
-  st.regs.add(res, Tensor::mkLambda(move(dims), move(inIdxs), output));
+  st.wellDefined(op.getOperation(), move(src1wb));
+  st.regs.add(res, Tensor::mkLambda(move(dims), move(indVars), output));
   return {};
 }
 
