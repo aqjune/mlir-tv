@@ -171,6 +171,7 @@ class SrcTgtPairTest(TestFormat):
                     test = VerifyIncorrectTest()
                 elif self.__unsupported_regex.match(line):
                     test = UnsupportedTest()
+                    skip_identity_check = True
                 elif self.__expect_regex.match(line):
                     msg: str = self.__expect_regex.findall(line)[0]
                     test = ExpectTest(msg)
