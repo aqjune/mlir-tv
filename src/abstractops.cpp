@@ -15,56 +15,62 @@ static string freshName(string prefix) {
 // ----- Constants and global vars for abstract floating point operations ------
 
 namespace {
-// NaNs, Infs, and +-0 are stored in separate variable
-// as they do not work well with map due to comparison issue
-optional<Expr> fpconst_zero_pos;
-optional<Expr> fpconst_zero_neg;
-optional<Expr> fpconst_nan;
-optional<Expr> fpconst_inf_pos;
-optional<Expr> fpconst_inf_neg;
-// Abstract representation of valid fp constants.
-map<float, Expr> fpconst_absrepr;
-unsigned fpconst_absrepr_num;
+template<class OriginalTy>
+class AbsFpValEncoding {
+public:
+  // NaNs, Infs, and +-0 are stored in separate variable
+  // as they do not work well with map due to comparison issue
+  optional<Expr> fpconst_zero_pos;
+  optional<Expr> fpconst_zero_neg;
+  optional<Expr> fpconst_nan;
+  optional<Expr> fpconst_inf_pos;
+  optional<Expr> fpconst_inf_neg;
+  // Abstract representation of valid fp constants.
+  map<OriginalTy, Expr> fpconst_absrepr;
+  uint64_t fpconst_absrepr_num = 0;
 
-const unsigned SIGN_BITS = 1;
-const unsigned TYPE_BITS = 1;
+  const static unsigned SIGN_BITS = 1;
+  const static unsigned TYPE_BITS = 1;
 
-// TODO: this must be properly set
-// What we need to do is to statically find how many 'different' fp values a
-// program may observe.
-// FP_BITS must be geq than 1 (otherwise it can't handle reserved values)
-unsigned VALUE_BITS = 31;
-unsigned FP_BITS;
-uint64_t INF_VALUE;
-uint64_t NAN_VALUE;
-uint64_t SIGNED_VALUE;
+  unsigned value_bv_bits;
+  unsigned fp_bv_bits;
+  uint64_t inf_value;
+  uint64_t nan_value;
+  uint64_t signed_value;
 
-optional<FnDecl> fp_sumfn;
-optional<FnDecl> fp_assoc_sumfn;
-optional<FnDecl> fp_dotfn;
-optional<FnDecl> fp_addfn;
-optional<FnDecl> fp_mulfn;
-vector<tuple<Expr, Expr, Expr>> fp_sum_relations;
+  // These are lazily created.
+  optional<FnDecl> fp_sumfn;
+  optional<FnDecl> fp_assoc_sumfn;
+  optional<FnDecl> fp_dotfn;
+  optional<FnDecl> fp_addfn;
+  optional<FnDecl> fp_mulfn;
+  vector<tuple<Expr, Expr, Expr>> fp_sum_relations;
 
-void updateConstants() {
-  FP_BITS = SIGN_BITS + TYPE_BITS + VALUE_BITS;
-  INF_VALUE = 1ull << (uint64_t)VALUE_BITS;
-  NAN_VALUE = INF_VALUE + 1;
-  SIGNED_VALUE = 1ull << (uint64_t)(TYPE_BITS + VALUE_BITS);
+  AbsFpValEncoding(unsigned valuebits) {
+    assert(valuebits > 0);
+    value_bv_bits = valuebits;
+    fp_bv_bits = SIGN_BITS + TYPE_BITS + value_bv_bits;
+    inf_value = 1ull << (uint64_t)value_bv_bits; // The type bit is set to 1
+    nan_value = inf_value + 1; // Type bit = 1 && Value bits != 0
+    signed_value = 1ull << (uint64_t)(TYPE_BITS + value_bv_bits);
 
-  fpconst_nan = Expr::mkBV(NAN_VALUE, FP_BITS);
-  fpconst_inf_pos = Expr::mkBV(INF_VALUE, FP_BITS);
-  fpconst_inf_neg = Expr::mkBV(SIGNED_VALUE + INF_VALUE, FP_BITS);
-  fpconst_zero_pos = Expr::mkBV(0, FP_BITS);
-  fpconst_zero_neg = Expr::mkBV(SIGNED_VALUE + 0, FP_BITS);
+    fpconst_nan = Expr::mkBV(nan_value, fp_bv_bits);
+    fpconst_inf_pos = Expr::mkBV(inf_value, fp_bv_bits);
+    fpconst_inf_neg = Expr::mkBV(signed_value + inf_value, fp_bv_bits);
+    fpconst_zero_pos = Expr::mkBV(0, fp_bv_bits);
+    fpconst_zero_neg = Expr::mkBV(signed_value + 0, fp_bv_bits);
 
-  fp_sumfn.reset();
-  fp_assoc_sumfn.reset();
-  fp_dotfn.reset();
-  fp_addfn.reset();
-  fp_mulfn.reset();
-  fp_sum_relations.clear();
-}
+    fp_sumfn.reset();
+    fp_assoc_sumfn.reset();
+    fp_dotfn.reset();
+    fp_addfn.reset();
+    fp_mulfn.reset();
+    fp_sum_relations.clear();
+  }
+};
+
+// TODO: double
+optional<AbsFpValEncoding<float>> floatEnc;
 }
 
 // ----- Constants and global vars for abstract int operations ------
@@ -118,12 +124,7 @@ void setAbstraction(
   isFpAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
-  fpconst_absrepr.clear();
-  fpconst_absrepr_num = 0;
-
-  assert(fpBits > 0);
-  VALUE_BITS = fpBits == 1 ? fpBits : fpBits - 1;
-  updateConstants();
+  floatEnc.emplace(fpBits == 1 ? fpBits : fpBits - 1);
 }
 
 // A set of options that must not change the precision of validation.
@@ -135,58 +136,63 @@ bool getFpAddAssociativity() { return isFpAddAssociative; }
 
 
 Sort fpSort() {
-  return Sort::bvSort(FP_BITS);
+  return Sort::bvSort(floatEnc->fp_bv_bits);
 }
 
 Expr fpConst(float f) {
+  auto &enc = *floatEnc;
+
   if (isnan(f))
-    return *fpconst_nan;
+    return *enc.fpconst_nan;
 
   if (isinf(f))
-    return signbit(f) ? *fpconst_inf_neg : *fpconst_inf_pos;
+    return signbit(f) ? *enc.fpconst_inf_neg : *enc.fpconst_inf_pos;
 
   if (f == 0.0f)
-    return signbit(f) ? *fpconst_zero_neg : *fpconst_zero_pos;
+    return signbit(f) ? *enc.fpconst_zero_neg : *enc.fpconst_zero_pos;
 
   // We don't explicitly encode f
-  auto itr = fpconst_absrepr.find(f);
-  if (itr != fpconst_absrepr.end())
+  auto itr = enc.fpconst_absrepr.find(f);
+  if (itr != enc.fpconst_absrepr.end())
     return itr->second;
 
-  uint64_t absval;
+  uint64_t value_id;
   float abs_f = abs(f);
   if (abs_f == 1.0f) {
-    absval = 1;
+    value_id = 1;
   } else {
-    assert(static_cast<uint64_t>(2 + fpconst_absrepr_num) < INF_VALUE);
-    absval = 2 + fpconst_absrepr_num++;
+    assert(static_cast<uint64_t>(2 + enc.fpconst_absrepr_num) < enc.inf_value);
+    value_id = 2 + enc.fpconst_absrepr_num++;
   }
 
-  Expr e_pos = Expr::mkBV(absval, FP_BITS);
-  fpconst_absrepr.emplace(abs_f, e_pos);
-  Expr e_neg = Expr::mkBV(SIGNED_VALUE + absval, FP_BITS);
-  fpconst_absrepr.emplace(-abs_f, e_neg);
-  
+  uint64_t bw = enc.fp_bv_bits;
+  Expr e_pos = Expr::mkBV(value_id, bw);
+  enc.fpconst_absrepr.emplace(abs_f, e_pos);
+  Expr e_neg = Expr::mkBV(enc.signed_value | value_id, bw);
+  enc.fpconst_absrepr.emplace(-abs_f, e_neg);
+
   return signbit(f) ? e_neg : e_pos;
 }
 
 vector<float> fpPossibleConsts(const Expr &e) {
   vector<float> vec;
-  for (auto &[k, v]: fpconst_absrepr) {
+  auto &enc = *floatEnc;
+
+  for (auto &[k, v]: enc.fpconst_absrepr) {
     if (v.isIdentical(e))
       vec.push_back(k);
   }
 
   // for 'reserved' values that do not belong to fpconst_absrepr
-  if (fpconst_nan && fpconst_nan->isIdentical(e)) {
+  if (enc.fpconst_nan && enc.fpconst_nan->isIdentical(e)) {
     vec.push_back(nanf("0"));
-  } else if (fpconst_zero_pos && fpconst_zero_pos->isIdentical(e)) {
+  } else if (enc.fpconst_zero_pos && enc.fpconst_zero_pos->isIdentical(e)) {
     vec.push_back(0.0f);
-  } else if (fpconst_zero_neg && fpconst_zero_neg->isIdentical(e)) {
+  } else if (enc.fp_addfn && enc.fpconst_zero_neg->isIdentical(e)) {
     vec.push_back(-0.0f);
-  } else if (fpconst_inf_pos && fpconst_inf_pos->isIdentical(e)) {
+  } else if (enc.fpconst_inf_pos && enc.fpconst_inf_pos->isIdentical(e)) {
     vec.push_back(INFINITY);
-  } else if (fpconst_inf_neg && fpconst_inf_neg->isIdentical(e)) {
+  } else if (enc.fpconst_inf_neg && enc.fpconst_inf_neg->isIdentical(e)) {
     vec.push_back(-INFINITY);
   }
 
@@ -197,15 +203,17 @@ vector<float> fpPossibleConsts(const Expr &e) {
 
 Expr fpAdd(const Expr &f1, const Expr &f2) {
   usedOps.fpAdd = true;
-  auto fty = f1.sort();
+  auto &enc = *floatEnc;
 
-  if (!fp_addfn) {
+  if (!enc.fp_addfn) {
     // Fully abstract fp_add(fty, fty) -> fty
     // may be interpreted into 'invalid' value.
-    // So fp_add should yield BV[SIGN_BITS + VALUE_BITS].
+    // Therefore, we define fp_add as yielding a shorter bitvector
+    // BV[SIGN_BITS + VALUE_BITS].
     // Then, an appropriate value will be inserted to fill in TYPE_BITS 
-    auto fp_value_ty = Sort::bvSort(SIGN_BITS + VALUE_BITS);
-    fp_addfn.emplace({fty, fty}, fp_value_ty, "fp_add");
+    auto fty = f1.sort();
+    auto fp_value_ty = Sort::bvSort(enc.SIGN_BITS + enc.value_bv_bits);
+    enc.fp_addfn.emplace({fty, fty}, fp_value_ty, "fp_add");
   }
 
   auto fp_zero = Float(0.0f);
@@ -216,9 +224,11 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
   auto bv_true = Expr::mkBV(1, 1);
   auto bv_false = Expr::mkBV(0, 1);
 
-  auto fp_add_res = fp_addfn->apply({f1, f2}) + fp_addfn->apply({f2, f1});
+  // Encode commutativity
+  auto fp_add_res = enc.fp_addfn->apply({f1, f2}) +
+                    enc.fp_addfn->apply({f2, f1});
   auto fp_add_sign = fp_add_res.getMSB();
-  auto fp_add_value = fp_add_res.extract(VALUE_BITS - 1, 0);
+  auto fp_add_value = fp_add_res.extract(enc.value_bv_bits - 1, 0);
 
   return Expr::mkIte(f1 == fp_id, f2,         // -0.0 + x -> x
     Expr::mkIte(f2 == fp_id, f1,              // x + -0.0 -> x
@@ -240,32 +250,32 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
     // because the result of fp_add is always some finite value
     // as Infs and NaNs are already handled in the previous Ites.
     // 
-    // fp_add will yield some arbitrary sign bit when called.
-    // But then there are some cases where we must override this sign bit.
-    // If signbit(f1) == 0 and signbit(f2) == 0, signbit(fpAdd(f1, f2)) must be 0.
-    // And if signbit(f1) == 1 and signbit(f2) == 1, signbit(fpAdd(f1, f2)) must be 1.
-    // But if f1 and f2 have different signs, we can just use an arbitrary sign
-    // yielded from fp_add
+    // There are two cases where we must override the sign bit of fp_add.
+    // If signbit(f1) == 0 /\ signbit(f2) == 0, signbit(fpAdd(f1, f2)) = 0.
+    // If signbit(f1) == 1 /\ signbit(f2) == 1, signbit(fpAdd(f1, f2)) = 1.
+    // Otherwise, we can just use the arbitrary sign yielded from fp_add.
     Expr::mkIte(((f1.getMSB() == bv_false) & (f2.getMSB() == bv_false)),
       // pos + pos -> pos
-      bv_false.concat(fp_add_value.zext(TYPE_BITS)),
+      bv_false.concat(fp_add_value.zext(enc.TYPE_BITS)),
     Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
       // neg + neg -> neg
-      bv_true.concat(fp_add_value.zext(TYPE_BITS)),
-    Expr::mkIte(f1.extract(VALUE_BITS - 1, 0) == f2.extract(VALUE_BITS - 1, 0),
+      bv_true.concat(fp_add_value.zext(enc.TYPE_BITS)),
+    Expr::mkIte(f1.extract(enc.value_bv_bits - 1, 0) ==
+                f2.extract(enc.value_bv_bits - 1, 0),
       // x + -x -> 0.0
       fp_zero,
-      fp_add_sign.concat(fp_add_value.zext(TYPE_BITS))
+      fp_add_sign.concat(fp_add_value.zext(enc.TYPE_BITS))
   ))))))))));
 }
 
 Expr fpMul(const Expr &f1, const Expr &f2) {
   usedOps.fpMul = true;
-  // TODO: check that a.get_Sort() == b.get_Sort()
-  auto exprSort = f1.sort();
+  auto &enc = *floatEnc;
 
-  if (!fp_mulfn)
-    fp_mulfn.emplace({exprSort, exprSort}, Float::sort(), "fp_mul");
+  if (!enc.fp_mulfn) {
+    auto exprSort = f1.sort();
+    enc.fp_mulfn.emplace({exprSort, exprSort}, Float::sort(), "fp_mul");
+  }
 
   auto fp_id = Float(1.0);
   // if neither a nor b is 1.0, the result should be
@@ -273,7 +283,7 @@ Expr fpMul(const Expr &f1, const Expr &f2) {
   // therefore we return fp_mul(f1, f2) + fp_mul(f2, f1)
   return Expr::mkIte(f1 == fp_id, f2,                     // if f1 == 1.0, then f2
     Expr::mkIte(f2 == fp_id, f1,                          // elif f2 == 1.0 , then f1
-      fp_mulfn->apply({f1, f2}) + fp_mulfn->apply({f2, f1})
+      enc.fp_mulfn->apply({f1, f2}) + enc.fp_mulfn->apply({f2, f1})
           // else fp_mul(f1, f2) + fp_mul(f2, f1)
     )
   );
@@ -284,18 +294,19 @@ static Expr fpMultisetSum(const Expr &a, const Expr &n) {
   if (!n.isUInt(length))
     assert("Only an array of constant length is supported.");
 
+  auto &enc = *floatEnc;
   auto bag = Expr::mkEmptyBag(Float::sort());
   for (unsigned i = 0; i < length; i ++) {
     bag = bag.insert(a.select(Index(i)));
     bag = bag.simplify();
   }
 
-  if (!fp_assoc_sumfn)
-    fp_assoc_sumfn.emplace(bag.sort(), Float::sort(), "fp_assoc_sum");
-  Expr result = (*fp_assoc_sumfn)(bag);
+  if (!enc.fp_assoc_sumfn)
+    enc.fp_assoc_sumfn.emplace(bag.sort(), Float::sort(), "fp_assoc_sum");
+  Expr result = (*enc.fp_assoc_sumfn)(bag);
 
   if (n.isNumeral())
-    fp_sum_relations.push_back({bag, n, result});
+    enc.fp_sum_relations.push_back({bag, n, result});
 
   return result;
 }
@@ -307,35 +318,38 @@ Expr fpSum(const Expr &a, const Expr &n) {
   if (isFpAddAssociative && useMultiset)
     return fpMultisetSum(a, n);
 
-  if (!fp_sumfn)
-    fp_sumfn.emplace(a.sort(), Float::sort(), "fp_sum");
+  auto &enc = *floatEnc;
+  if (!enc.fp_sumfn)
+    enc.fp_sumfn.emplace(a.sort(), Float::sort(), "fp_sum");
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
   Expr identity = Float(-0.0);
-  Expr result = (*fp_sumfn)(
+  Expr result = (*enc.fp_sumfn)(
       Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, identity)));
 
   if (isFpAddAssociative && n.isNumeral())
-    fp_sum_relations.push_back({a, n, result});
+    enc.fp_sum_relations.push_back({a, n, result});
 
   return result;
 }
 
 Expr fpDot(const Expr &a, const Expr &b, const Expr &n) {
+  auto &enc = *floatEnc;
+
   if (alFpDot == AbsLevelFpDot::FULLY_ABS) {
     usedOps.fpDot = true;
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     auto fnSort = a.sort().toFnSort();
-    if (!fp_dotfn)
-      fp_dotfn.emplace({fnSort, fnSort}, Float::sort(), "fp_dot");
+    if (!enc.fp_dotfn)
+      enc.fp_dotfn.emplace({fnSort, fnSort}, Float::sort(), "fp_dot");
 
     Expr ai = a.select(i), bi = b.select(i);
     Expr identity = Float(-0.0);
     // Encode commutativity: dot(a, b) = dot(b, a)
-    Expr lhs = fp_dotfn->apply({
+    Expr lhs = enc.fp_dotfn->apply({
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity)),
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity))});
-    Expr rhs = fp_dotfn->apply({
+    Expr rhs = enc.fp_dotfn->apply({
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity)),
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity))});
     return lhs + rhs;
@@ -351,10 +365,8 @@ Expr fpDot(const Expr &a, const Expr &b, const Expr &n) {
   llvm_unreachable("Unknown abstraction level for fp dot");
 }
 
-Expr getFpAssociativePrecondition() {
-  // Calling this function doesn't make sense if add is not associative
-  assert(isFpAddAssociative);
-
+static Expr getFpAssociativePrecondition(
+    const decltype(floatEnc->fp_sum_relations) &fp_sum_relations) {
   if (useMultiset) {
     // precondition between `bag equality <-> assoc_sumfn`
     Expr precond = Expr::mkBool(true);
@@ -397,6 +409,19 @@ Expr getFpAssociativePrecondition() {
   precond = precond.simplify();
   return precond;
 }
+
+Expr getFpAssociativePrecondition() {
+  // Calling this function doesn't make sense if add is not associative
+  assert(isFpAddAssociative);
+
+  Expr cond = Expr::mkBool(true);
+  if (floatEnc)
+    cond &= getFpAssociativePrecondition(floatEnc->fp_sum_relations);
+  // TODO: double
+
+  return cond;
+}
+
 
 
 // ----- Integer operations ------
