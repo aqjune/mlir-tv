@@ -39,6 +39,13 @@ uint64_t INF_VALUE;
 uint64_t NAN_VALUE;
 uint64_t SIGNED_VALUE;
 
+optional<FnDecl> fp_sumfn;
+optional<FnDecl> fp_assoc_sumfn;
+optional<FnDecl> fp_dotfn;
+optional<FnDecl> fp_addfn;
+optional<FnDecl> fp_mulfn;
+vector<tuple<Expr, Expr, Expr>> fp_sum_relations;
+
 void updateConstants() {
   FP_BITS = SIGN_BITS + TYPE_BITS + VALUE_BITS;
   INF_VALUE = 1ull << (uint64_t)VALUE_BITS;
@@ -50,13 +57,14 @@ void updateConstants() {
   fpconst_inf_neg = Expr::mkBV(SIGNED_VALUE + INF_VALUE, FP_BITS);
   fpconst_zero_pos = Expr::mkBV(0, FP_BITS);
   fpconst_zero_neg = Expr::mkBV(SIGNED_VALUE + 0, FP_BITS);
-}
 
-optional<FnDecl> fp_sumfn;
-optional<FnDecl> fp_assoc_sumfn;
-optional<FnDecl> fp_dotfn;
-optional<FnDecl> fp_addfn;
-optional<FnDecl> fp_mulfn;
+  fp_sumfn.reset();
+  fp_assoc_sumfn.reset();
+  fp_dotfn.reset();
+  fp_addfn.reset();
+  fp_mulfn.reset();
+  fp_sum_relations.clear();
+}
 }
 
 // ----- Constants and global vars for abstract int operations ------
@@ -98,7 +106,6 @@ static AbsLevelFpDot alFpDot;
 static AbsLevelIntDot alIntDot;
 static bool isFpAddAssociative;
 static UsedAbstractOps usedOps;
-static vector<tuple<Expr, Expr, Expr>> staticArrays;
 static bool useMultiset;
 
 
@@ -117,8 +124,6 @@ void setAbstraction(
   assert(fpBits > 0);
   VALUE_BITS = fpBits == 1 ? fpBits : fpBits - 1;
   updateConstants();
-
-  staticArrays.clear();
 }
 
 // A set of options that must not change the precision of validation.
@@ -290,7 +295,7 @@ static Expr fpMultisetSum(const Expr &a, const Expr &n) {
   Expr result = (*fp_assoc_sumfn)(bag);
 
   if (n.isNumeral())
-    staticArrays.push_back({bag, n, result});
+    fp_sum_relations.push_back({bag, n, result});
 
   return result;
 }
@@ -311,7 +316,7 @@ Expr fpSum(const Expr &a, const Expr &n) {
       Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, identity)));
 
   if (isFpAddAssociative && n.isNumeral())
-    staticArrays.push_back({a, n, result});
+    fp_sum_relations.push_back({a, n, result});
 
   return result;
 }
@@ -353,10 +358,10 @@ Expr getFpAssociativePrecondition() {
   if (useMultiset) {
     // precondition between `bag equality <-> assoc_sumfn`
     Expr precond = Expr::mkBool(true);
-    for (unsigned i = 0; i < staticArrays.size(); i ++) {
-      for (unsigned j = i + 1; j < staticArrays.size(); j ++) {
-        auto [abag, an, asum] = staticArrays[i];
-        auto [bbag, bn, bsum] = staticArrays[j];
+    for (unsigned i = 0; i < fp_sum_relations.size(); i ++) {
+      for (unsigned j = i + 1; j < fp_sum_relations.size(); j ++) {
+        auto [abag, an, asum] = fp_sum_relations[i];
+        auto [bbag, bn, bsum] = fp_sum_relations[j];
         uint64_t alen, blen;
         if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
         precond = precond & (abag == bbag).implies(asum == bsum);
@@ -368,10 +373,10 @@ Expr getFpAssociativePrecondition() {
 
   // precondition between `hashfn <-> sumfn`
   Expr precond = Expr::mkBool(true);
-  for (unsigned i = 0; i < staticArrays.size(); i ++) {
-    for (unsigned j = i + 1; j < staticArrays.size(); j ++) {
-      auto [a, an, asum] = staticArrays[i];
-      auto [b, bn, bsum] = staticArrays[j];
+  for (unsigned i = 0; i < fp_sum_relations.size(); i ++) {
+    for (unsigned j = i + 1; j < fp_sum_relations.size(); j ++) {
+      auto [a, an, asum] = fp_sum_relations[i];
+      auto [b, bn, bsum] = fp_sum_relations[j];
       uint64_t alen, blen;
       if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
       FnDecl hashfn(Float::sort(), Index::sort(), freshName("fp_hash"));
