@@ -250,19 +250,29 @@ vector<float> fpPossibleConsts(const Expr &e) {
   return vec;
 }
 
-
-
-Expr fpAdd(const Expr &f1, const Expr &f2) {
+Expr fpAdd(const Expr &_f1, const Expr &_f2) {
   usedOps.fpAdd = true;
   auto &enc = *floatEnc;
 
-  auto fp_zero = Float(0.0f);
-  auto fp_id = Float(-0.0f);
-  auto fp_inf_pos = Float(INFINITY);
-  auto fp_inf_neg = Float(-INFINITY);
-  auto fp_nan = Float(nanf("0"));
-  auto bv_true = Expr::mkBV(1, 1);
-  auto bv_false = Expr::mkBV(0, 1);
+  const auto fp_zero = Float(0.0f);
+  const auto fp_id = Float(-0.0f);
+  const auto fp_inf_pos = Float(INFINITY);
+  const auto fp_inf_neg = Float(-INFINITY);
+  const auto fp_nan = Float(nanf("0"));
+  const auto bv_true = Expr::mkBV(1, 1);
+  const auto bv_false = Expr::mkBV(0, 1);
+
+  // Assume that all unspecified BVs are NaN
+  const auto inf_value = ((Expr)fp_inf_pos).extract(enc.value_bv_bits - 1, 0);
+  const auto inf_type = bv_true; 
+
+  const auto f1_value = _f1.extract(enc.value_bv_bits - 1, 0);
+  const auto f1_type = _f1.extract(enc.value_bv_bits, enc.value_bv_bits);
+  const auto f1 = Expr::mkIte((f1_type == inf_type) & (f1_value != inf_value), fp_nan, _f1);
+
+  const auto f2_value = _f2.extract(enc.value_bv_bits - 1, 0);
+  const auto f2_type = _f2.extract(enc.value_bv_bits, enc.value_bv_bits);
+  const auto f2 = Expr::mkIte((f2_type == inf_type) & (f2_value != inf_value), fp_nan, _f2);
 
   // Encode commutativity
   auto fp_add_res = enc.getAddFn().apply({f1, f2}) +
