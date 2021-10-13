@@ -953,7 +953,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
       return "unsupported constant";
 
     st.regs.add(op,
-        Tensor(tensorty.getElementType(), (Expr&&)move(*v), move(dims)));
+        Tensor(tensorty.getElementType(), getExpr(*v), move(dims)));
     return {};
 
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
