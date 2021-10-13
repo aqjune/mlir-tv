@@ -4,10 +4,10 @@ set (CMAKE_CXX_STANDARD 17)
 
 string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
 
-set(MLIR_DIR /opt/llvm-main-libc CACHE PATH "MLIR installation top-level directory")
-set(Z3_DIR /opt/z3-inst CACHE PATH "Z3 installation top-level directory")
-set(CVC5_DIR /opt/cvc5-libc CACHE PATH "CVC5 installation top-level directory")
-option(USE_LIBC "Use libc++ in case the MLIR (and CVC5) is linked against libc++" ON)
+set(MLIR_DIR CACHE PATH "MLIR installation top-level directory")
+set(Z3_DIR CACHE PATH "Z3 installation top-level directory")
+set(CVC5_DIR CACHE PATH "CVC5 installation top-level directory")
+option(USE_LIBC "Use libc++ in case the MLIR (and CVC5) is linked against libc++")
 
 set(MLIR_INC_DIR "${MLIR_DIR}/include")
 set(MLIR_LIB_DIR "${MLIR_DIR}/lib")
