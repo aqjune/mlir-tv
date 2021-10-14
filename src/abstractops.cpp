@@ -340,7 +340,8 @@ static Expr fpMultisetSum(const Expr &a, const Expr &n) {
     assert("Only an array of constant length is supported.");
 
   auto &enc = *floatEnc;
-  auto bag = Expr::mkEmptyBag(a.sort());
+  auto elemtSort = a.select(Index(0)).sort();
+  auto bag = Expr::mkEmptyBag(elemtSort);
   for (unsigned i = 0; i < length; i ++) {
     bag = bag.insert(a.select(Index(i)));
     bag = bag.simplify();
