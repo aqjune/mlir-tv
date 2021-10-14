@@ -12,6 +12,21 @@ static string freshName(string prefix) {
   return prefix + to_string(count ++);
 }
 
+optional<smt::Sort> convertTypeToSort(mlir::Type elemty) {
+  if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
+    return Integer::sort(ielemty.getWidth());
+  } else if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
+    return Float::sort();
+  } else if (auto felemty = elemty.dyn_cast<mlir::Float64Type>()) {
+    // In the abstract world, f32 and f64 are all unknown values
+    return Float::sort();
+  } else if (elemty.isa<mlir::IndexType>()) {
+    return Index::sort();
+  }
+
+  return {};
+}
+
 vector<Expr> ShapedValue::getDims(
     const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize,
     optional<vector<Expr>> &&valsForUnknownSz) {
@@ -209,16 +224,18 @@ std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(const ShapedValue
 
   Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
   Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
-  Expr outputExpr = aop::dot(inputExpr, filterExpr, ::get1DSize(cubeSize));
+  Expr outputExpr = aop::fpDot(inputExpr, filterExpr, ::get1DSize(cubeSize));
 
   return {move(outputIdxs), move(outputExpr)};
 }
 
-Tensor::Tensor(Expr &&splat_elem, vector<Expr> &&dimvec):
+Tensor::Tensor(mlir::Type elemType, Expr &&splat_elem, vector<Expr> &&dimvec):
+    elemType(elemType),
     dims(move(dimvec)),
     arr(Expr::mkSplatArray(Index::sort(), move(splat_elem))) {}
 
-Tensor::Tensor(const vector<Expr> &elems1d):
+Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d):
+    elemType(elemType),
     dims({ (Expr)Index(elems1d.size()) }),
     arr(Expr::mkFreshVar(Sort::arraySort(Index::sort(), elems1d[0].sort()),
         "tensor_val")) {
@@ -226,16 +243,19 @@ Tensor::Tensor(const vector<Expr> &elems1d):
     arr = arr.store(i, elems1d[i]);
 }
 
-Tensor::Tensor(string &&name, const vector<Expr> &dimvec,
-               const smt::Sort &elemty):
+Tensor::Tensor(
+    mlir::Type elemType, string &&name, const vector<Expr> &dimvec):
+  elemType(elemType),
   dims(dimvec),
-  arr(Expr::mkVar(Sort::arraySort(Index::sort(), elemty), move(name))) {}
+  arr(Expr::mkVar(Sort::arraySort(Index::sort(),
+      *convertTypeToSort(elemType)), move(name))) {}
 
 Tensor::Tensor(
+    mlir::Type elemType,
     const vector<vector<uint64_t>> &indices,
     const vector<Expr> &elems,
     const vector<uint64_t> &dims, const Expr &zero):
-  arr(Expr::mkSplatArray(Index::sort(), zero)) {
+  elemType(elemType), arr(Expr::mkSplatArray(Index::sort(), zero)) {
 
   assert(indices.size() == elems.size());
 
@@ -287,7 +307,7 @@ pair<Tensor, Expr> Tensor::insert(const smt::Expr &value,
 
   auto newdims = dims;
   auto lambda = Expr::mkLambda(idxvar, Expr::mkIte(cond, value, originValue));
-  return {{move(newdims), move(lambda)}, inbounds};
+  return {{elemType, move(newdims), move(lambda)}, inbounds};
 }
 
 Tensor Tensor::affine(
@@ -304,15 +324,19 @@ Tensor Tensor::affine(
     }
     srcidxs[i] = newv;
   }
+  auto elem = get(srcidxs).first;
+  auto zero = elemType.isa<mlir::FloatType>() ?
+      (Expr)Float(0.0) : (Expr)Integer(0, elem.bitwidth());
 
   return {
+    elemType,
     move(newsizes),
     Expr::mkLambda(
       idxvar,
       Expr::mkIte(
         ((Expr)idxvar).ult(::get1DSize(newsizes)),
-        get(srcidxs).first,
-        aop::mkZeroElemFromArr(arr)
+        elem,
+        zero
       ))
   };
 }
@@ -347,12 +371,13 @@ Tensor Tensor::conv(const Tensor &filter,
   outputDims.push_back(filter.getDims().back()); // Output Channel
 
   auto [indices, res] = ShapedValue::conv(filter, strides, dilations);
-  return Tensor::mkLambda(move(outputDims), move(indices), move(res));
+  return Tensor::mkLambda(elemType, move(outputDims), move(indices), move(res));
 }
 
 Tensor Tensor::reshape(const vector<Expr> &newdims) const {
+  assert(newdims.size() > 0);
   // TODO: check whether size(newdims) == size(dims)
-  return { simplifyList(newdims), Expr(arr) };
+  return { elemType, simplifyList(newdims), Expr(arr) };
 }
 
 Tensor Tensor::matmul(const Tensor &b) const {
@@ -367,14 +392,17 @@ Tensor Tensor::matmul(const Tensor &b) const {
   auto bt_row = bt.to1DArrayWithOfs(
       {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
-  return mkLambda({dims[0], bt.dims[0]}, {i, j},
-      aop::dot(a_row, bt_row, dims[1]));
+  // TODO: integer-dot is needed.
+  auto res = elemType.isa<mlir::FloatType>() ?
+      aop::fpDot(a_row, bt_row, dims[1]) : aop::intDot(a_row, bt_row, dims[1]);
+  return mkLambda(elemType, {dims[0], bt.dims[0]}, {i, j}, move(res));
 }
 
 pair<Tensor, Expr> Tensor::elementwiseBinOp(
       const Tensor &b, const function<Expr(Expr &&e1, Expr &&e2)> &f)
       const {
   assert(getRank() == b.getRank());
+  assert(elemType == b.elemType);
 
   Expr equalSize = Expr::mkBool(true);
   auto idxvars = Index::boundIndexVars(getRank());
@@ -382,18 +410,24 @@ pair<Tensor, Expr> Tensor::elementwiseBinOp(
     equalSize = equalSize & (Expr)getDim(i) == (Expr)b.getDim(i);
   Expr elemout = f(get(idxvars).first, b.get(idxvars).first);
 
-  return { mkLambda(getDims(), move(idxvars), elemout), move(equalSize) };
+  return { mkLambda(elemType, getDims(), move(idxvars), elemout),
+           move(equalSize) };
 }
 
 Expr Tensor::dot(const Tensor &t2) const {
-  return aop::dot(arr, t2.arr, get1DSize());
+  auto len = get1DSize();
+  return elemType.isa<mlir::FloatType>() ?
+      aop::fpDot(arr, t2.arr, len) : aop::intDot(arr, t2.arr, len);
 }
 
 Expr Tensor::sum() const {
-  return aop::sum(arr, get1DSize());
+  return elemType.isa<mlir::FloatType>() ?
+      aop::fpSum(arr, get1DSize()) : aop::intSum(arr, get1DSize());
 }
 
 pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
+  assert(elemType == other.elemType);
+
   // Size mismatch check.
   // If it does, don't return index var.
   size_t sz = getDims().size();
@@ -415,21 +449,10 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
     params};
 }
 
-optional<smt::Sort> Tensor::getElemTy(mlir::TensorType tensorTy) {
-  auto elemty = tensorTy.getElementType();
-
-  if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
-    return Integer::sort(ielemty.getWidth());
-  } else if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
-    return Float::sort();
-  } else if (auto felemty = elemty.dyn_cast<mlir::Float64Type>()) {
-    // In the abstract world, f32 and f64 are all unknown values
-    return Float::sort();
-  } else if (elemty.isa<mlir::IndexType>()) {
-    return Index::sort();
-  }
-
-  return {};
+bool Tensor::isTypeSupported(mlir::TensorType tensorTy) {
+  if (!tensorTy.hasRank())
+    return false;
+  return convertTypeToSort(tensorTy.getElementType()) != nullopt;
 }
 
 
@@ -488,17 +511,19 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 
 Tensor Tensor::eval(Model m) const {
   vector<Expr> dims_ev = smt::simplifyList(m.eval(dims));
-  return { move(dims_ev), m.eval(arr, true).simplify() };
+  return { elemType, move(dims_ev), m.eval(arr, true).simplify() };
 }
 
 Tensor Tensor::transpose() const {
   assert(dims.size() == 2);
   auto i = Index::var("i", VarType::BOUND);
   auto j = Index::var("j", VarType::BOUND);
-  return Tensor::mkLambda({dims[1], dims[0]}, {j, i}, get({i, j}).first);
+  return Tensor::mkLambda(
+      elemType, {dims[1], dims[0]}, {j, i}, get({i, j}).first);
 }
 
 Tensor Tensor::mkLambda(
+    mlir::Type elemType,
     std::vector<Expr> &&newdims, std::vector<Expr> &&indexvars,
     Expr body) {
   if (indexvars.size() == 0) {
@@ -521,7 +546,7 @@ Tensor Tensor::mkLambda(
     body = body.substitute(indexvars, idxExprs);
   }
 
-  return { move(newdims), Expr::mkLambda(idx, body) };
+  return { elemType, move(newdims), Expr::mkLambda(idx, body) };
 }
 
 Expr Tensor::to1DArrayWithOfs(
@@ -537,13 +562,16 @@ Expr Tensor::to1DArrayWithOfs(
     auto absidx = relidxs[i] + offbegins[i];
     absidxs.push_back(std::move(absidx));
   }
+  auto elem = get(absidxs).first;
+  auto zero = elemType.isa<mlir::FloatType>() ?
+      (Expr)Float(0.0) : (Expr)Integer(0, elem.bitwidth());
 
   return Expr::mkLambda(
       idxvar,
       Expr::mkIte(
         ((Expr)idxvar).ult(::get1DSize(sizes)),
-        get(absidxs).first,
-        aop::mkZeroElemFromArr(arr)));
+        elem,
+        zero));
 }
 
 MemRef::Layout::Layout(const vector<Expr> &dims):
@@ -655,24 +683,22 @@ Expr MemRef::getWellDefined() const {
   return e.simplify();
 }
 
-optional<smt::Sort> MemRef::getElemTy(mlir::MemRefType memRefTy) {
-  auto elemty = memRefTy.getElementType();
-  if (!elemty.isa<mlir::Float32Type>())
-    // Currently we only support f32 element type.
-    return {};
-
-  return Float::sort();
-}
-
-optional<MemRef::Layout> MemRef::getLayout(
-    mlir::MemRefType memRefTy, const vector<Expr> &dims) {
+bool MemRef::isTypeSupported(mlir::MemRefType memRefTy) {
   if (!mlir::isStrided(memRefTy)) {
     // Currently we only support strided Memref.
     return {};
   }
 
-  auto affineMaps = memRefTy.getAffineMaps();
+  auto elemty = memRefTy.getElementType();
+  // Currently we only support f32 element type.
+  return elemty.isa<mlir::Float32Type>();
+}
 
+MemRef::Layout MemRef::getLayout(
+    mlir::MemRefType memRefTy, const vector<Expr> &dims) {
+  assert(mlir::isStrided(memRefTy));
+
+  auto affineMaps = memRefTy.getAffineMaps();
   if (affineMaps.empty())
     return MemRef::Layout(dims);
 

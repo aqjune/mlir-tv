@@ -1,5 +1,4 @@
 // UNSUPPORTED
-// NO-IDENTITY
 
 #accesses = [
   affine_map<(i, j) -> (i, j)>

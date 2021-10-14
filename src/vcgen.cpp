@@ -45,8 +45,8 @@ public:
   MemEncoding encoding;
   unsigned int numBlocks;
   unsigned int fpBits;
-  bool associativeAdd;
-  bool useMultiset;
+  bool isFpAddAssociative;
+  bool useMultisetForFpSum;
 };
 
 };
@@ -94,32 +94,30 @@ createInputState(
 
     // Encode arguments of the source function.
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
+      if (!Tensor::isTypeSupported(ty))
+        RET_STR("Unsupported Tensor type: " << ty);
+
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
-      auto elemtyOrNull = Tensor::getElemTy(ty);
-      if (!elemtyOrNull)
-        RET_STR("Unsupported Tensor element type: " << arg.getType());
+      auto tensor = Tensor(ty.getElementType(),
+          "arg" + to_string(arg.getArgNumber()),
+          dims);
 
-      auto tensor = Tensor("arg" + to_string(arg.getArgNumber()),
-          dims, *elemtyOrNull);
       preconds.push_back(tensor.getWellDefined());
       s.regs.add(arg, move(tensor));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
+      if (!MemRef::isTypeSupported(ty))
+        RET_STR("Unsupported MemRef type: " << ty);
+
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
-      auto elemtyOrNull = MemRef::getElemTy(ty);
-      auto layoutOrNull = MemRef::getLayout(ty, dims);
-
-      if (!elemtyOrNull) {
-        RET_STR("Unsupported MemRef element type: " << arg.getType());
-      } else if (!layoutOrNull) {
-        RET_STR("Unsupported MemRef layout: " << arg.getType());
-      }
+      auto elemty = *convertTypeToSort(ty.getElementType());
+      auto layout = MemRef::getLayout(ty, dims);
 
       // TODO : out of bounds pointer is allowed?
       auto memref = MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
-          dims, *layoutOrNull, *elemtyOrNull);
+          dims, layout, elemty);
 
       // Function argument MemRefs must point to global memblocks.
       preconds.push_back(memref.isGlobalBlock());
@@ -339,8 +337,8 @@ static tuple<State, State, Expr> encodeFinalStates(
   State st_tgt = encodeFinalState(
       vinput, move(initMemTgt), printOps, false, args, preconds);
 
-  if (aop::getAddAssociativity())
-    preconds.push_back(aop::getAssociativePrecondition());
+  if (aop::getFpAddAssociativity())
+    preconds.push_back(aop::getFpAssociativePrecondition());
 
   Expr precond =
       exprAnd(preconds) & st_src.precondition() & st_tgt.precondition();
@@ -369,9 +367,12 @@ static void checkIsSrcAlwaysUB(
 
   // Set the abstract level to be as concrete as possible because we may not
   // be able to detect always-UB cases
-  aop::setAbstraction(aop::AbsLevelDot::SUM_MUL, vinput.associativeAdd,
+  aop::setAbstraction(
+      aop::AbsLevelFpDot::SUM_MUL,
+      aop::AbsLevelIntDot::SUM_MUL,
+      vinput.isFpAddAssociative,
       vinput.fpBits);
-  aop::setEncodingOptions(vinput.useMultiset);
+  aop::setEncodingOptions(vinput.useMultisetForFpSum);
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
@@ -408,12 +409,18 @@ static Results validate(ValidationInput vinput) {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
 
-  // Don't enable add associativity even if vinput.associativeAdd is true
+  using namespace aop;
+
+  // Don't enable fp add associativity even if vinput.associativeAdd is true
   // because simply encoding it as UF is more efficient.
-  aop::setAbstraction(
-      aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false,
+  // We can turn it on in the next iteration.
+  setAbstraction(
+      AbsLevelFpDot::FULLY_ABS,
+      AbsLevelIntDot::FULLY_ABS,
+      /*isFpAddAssociative*/false,
       /*fp bits*/vinput.fpBits);
-  aop::setEncodingOptions(/*useMultiset*/false);
+  setEncodingOptions(/*useMultiset*/false);
+
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
 
   if (res.code == Results::INCONSISTENT)
@@ -426,26 +433,34 @@ static Results validate(ValidationInput vinput) {
   }
 
   auto usedOps = aop::getUsedAbstractOps();
-  bool assocAdd = vinput.associativeAdd;
+  bool fpAssocAdd = vinput.isFpAddAssociative;
   // dot = mul + sum?
-  bool useSumMulForDot = usedOps.dot && usedOps.sum && usedOps.mul;
+  bool useSumMulForFpDot = usedOps.fpDot && usedOps.fpSum && usedOps.fpMul;
+  bool useSumMulForIntDot = usedOps.intDot && usedOps.intSum; // Eh.. int mul?
+  bool tryRefinedAbstraction =
+      fpAssocAdd || useSumMulForFpDot || useSumMulForIntDot;
 
-  if (assocAdd || useSumMulForDot) {
-    aop::setAbstraction(aop::AbsLevelDot::SUM_MUL, assocAdd, vinput.fpBits);
-    aop::setEncodingOptions(vinput.useMultiset);
-    if (!vinput.dumpSMTPath.empty())
-      vinput.dumpSMTPath += "_noabs";
-  } else {
+  if (!tryRefinedAbstraction)
     return res;
-  }
 
-  // Try more precise encoding
+  // Refine the current abstraction.
+  setAbstraction(
+      (useSumMulForFpDot || fpAssocAdd) ?
+          AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
+      useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
+      fpAssocAdd,
+      vinput.fpBits);
+  setEncodingOptions(vinput.useMultisetForFpSum);
+
+  if (!vinput.dumpSMTPath.empty())
+    vinput.dumpSMTPath += "_noabs";
+
   llvm::outs()
       << "\n===============================================================\n"
       << "  Giving more precise semantics to abstractly defined ops...\n"
       << "===============================================================\n\n";
 
-  bool useAllLogic = assocAdd;
+  bool useAllLogic = fpAssocAdd;
   res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
   if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
     // Check whether it is always UB
@@ -459,13 +474,13 @@ Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
     unsigned int numBlocks, MemEncoding encoding,
-    unsigned fpBits, bool associativeAdd, bool useMultiset) {
+    unsigned fpBits, bool isFpAddAssociative, bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
-    if (fnop.isDeclaration())
-      return;
-    m[fnop.getName()] = fnop;
+    if (fnop && !fnop.isDeclaration()) {
+      m[fnop.getName()] = fnop;
+    }
   };
   llvm::for_each(*src, [&](auto &op) { fillFns(srcfns, op); });
   llvm::for_each(*tgt, [&](auto &op) { fillFns(tgtfns, op); });
@@ -487,8 +502,8 @@ Results validate(
     vinput.numBlocks = numBlocks;
     vinput.fpBits = fpBits;
     vinput.encoding = encoding;
-    vinput.associativeAdd = associativeAdd;
-    vinput.useMultiset = useMultiset;
+    vinput.isFpAddAssociative = isFpAddAssociative;
+    vinput.useMultisetForFpSum = useMultiset;
 
     verificationResult.merge(validate(vinput));
   }
