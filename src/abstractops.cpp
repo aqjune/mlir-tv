@@ -1,6 +1,7 @@
 #include "abstractops.h"
 #include "smt.h"
 #include "value.h"
+#include "utils.h"
 #include <cmath>
 #include <map>
 
@@ -336,7 +337,8 @@ Expr fpMul(const Expr &f1, const Expr &f2) {
 
 static Expr fpMultisetSum(const Expr &a, const Expr &n) {
   uint64_t length;
-  assert(n.isUInt(length));
+  if (!n.isUInt(length))
+    throw UnsupportedException("Only an array of constant length is supported.");
 
   auto &enc = *floatEnc;
   auto elemtSort = a.select(Index(0)).sort();
@@ -355,7 +357,7 @@ Expr fpSum(const Expr &a, const Expr &n) {
   usedOps.fpSum = true;
   // TODO: check that a.Sort is Index::Sort() -> Float::Sort()
   if (isFpAddAssociative && !n.isNumeral())
-    assert("Only an array of constant length is supported when verify add's associativity.");
+    throw UnsupportedException("Only an array of constant length is supported.");
 
   if (isFpAddAssociative && useMultiset)
     return fpMultisetSum(a, n);
