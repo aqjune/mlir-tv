@@ -438,6 +438,14 @@ pair<Tensor, Expr> Tensor::elementwiseBinOp(
            move(equalSize) };
 }
 
+Tensor Tensor::elementwiseUnaryOp(
+    mlir::Type resultElemType, const function<Expr(Expr &&)> &f) const {
+  auto idxvars = Index::boundIndexVars(getRank());
+  Expr elemout = f(get(idxvars).first);
+
+  return mkLambda(resultElemType, getDims(), move(idxvars), elemout);
+}
+
 Expr Tensor::dot(const Tensor &t2) const {
   auto len = get1DSize();
   return elemType.isa<mlir::FloatType>() ?

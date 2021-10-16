@@ -134,7 +134,11 @@ public:
   // (the resulting tensor, shape check)
   std::pair<Tensor, smt::Expr> elementwiseBinOp(
       const Tensor &b,
-      const std::function<smt::Expr(smt::Expr &&e1, smt::Expr &&e2)> &op) const;
+      const std::function<smt::Expr(smt::Expr &&, smt::Expr &&)> &op) const;
+
+  Tensor elementwiseUnaryOp(
+      mlir::Type resultElemType,
+      const std::function<smt::Expr(smt::Expr &&)> &op) const;
 
   smt::Expr dot(const Tensor &b) const;
   smt::Expr sum() const;

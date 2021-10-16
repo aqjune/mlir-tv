@@ -861,26 +861,49 @@ optional<string> encodeOp(State &st, mlir::MulIOp op) {
   return {};
 }
 
-template<>
-optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
-  auto src = st.regs.getExpr(op.getOperand());
-  assert(src.sort().isBV());
-  unsigned srcWidth = src.sort().bitwidth();
+static Expr evalIndexCastOp(mlir::Type src, mlir::Type tgt, Expr &&val) {
+  assert(val.sort().isBV());
+
+  unsigned srcWidth = val.sort().bitwidth();
 
   unsigned destWidth = 0;
-  if (auto dstty = op.getType().dyn_cast<mlir::IntegerType>())
+  if (auto dstty = tgt.dyn_cast<mlir::IntegerType>())
     destWidth = dstty.getWidth();
   else {
-    assert(op.getType().isa<mlir::IndexType>());
+    assert(tgt.isa<mlir::IndexType>());
     destWidth = Index::BITS;
   }
 
-  Expr casted = src;
+  Expr casted = val;
   if (srcWidth > destWidth)
-    casted = src.extract(destWidth - 1, 0);
+    casted = val.extract(destWidth - 1, 0);
   else if (srcWidth < destWidth)
-    casted = src.sext(destWidth - srcWidth);
-  st.regs.add(op, Integer(casted));
+    casted = val.sext(destWidth - srcWidth);
+  return casted;
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
+  auto srcty = op.getOperand().getType();
+  auto dstty = op.getType();
+
+  if (auto src_tensorty = srcty.dyn_cast<mlir::TensorType>()) {
+    auto dst_tensorty = dstty.dyn_cast<mlir::TensorType>();
+    if (!dst_tensorty)
+      return "Unknown type";
+
+    auto src = st.regs.get<Tensor>(op.getOperand());
+    auto dst_elemty = dst_tensorty.getElementType();
+    auto res = src.elementwiseUnaryOp(dst_elemty, [&](auto &&e) {
+      return evalIndexCastOp(src_tensorty.getElementType(),
+          dst_elemty, move(e));
+    });
+    st.regs.add(op, move(res));
+
+  } else {
+    auto src = st.regs.getExpr(op.getOperand());
+    st.regs.add(op, Integer(evalIndexCastOp(srcty, dstty, move(src))));
+  }
   return {};
 }
 
