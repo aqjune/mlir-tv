@@ -1,4 +1,4 @@
-// EXPECT: Only an array of constant length is supported
+// EXPECT: "Only an array of constant length is supported"
 // ARGS: --associative
 
 func @f(%a: tensor<?xf32>, %b: tensor<?xf32>) -> tensor<f32> {
