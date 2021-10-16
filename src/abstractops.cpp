@@ -1,6 +1,7 @@
 #include "abstractops.h"
 #include "simplevalue.h"
 #include "smt.h"
+#include "utils.h"
 #include <map>
 
 using namespace smt;
@@ -317,7 +318,7 @@ Expr AbsFpEncoding::mul(const Expr &f1, const Expr &f2) {
 Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
   uint64_t length;
   if (!n.isUInt(length))
-    assert("Only an array of constant length is supported.");
+    throw UnsupportedException("Only an array of constant length is supported.");
 
   auto elemtSort = a.select(Index(0)).sort();
   auto bag = Expr::mkEmptyBag(elemtSort);
@@ -327,14 +328,15 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
   }
 
   Expr result = getAssocSumFn()(bag);
-
-  if (n.isNumeral())
-    fp_sum_relations.push_back({bag, n, result});
+  fp_sum_relations.push_back({bag, n, result});
 
   return result;
 }
 
 Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
+  if (getFpAddAssociativity() && !n.isNumeral())
+    throw UnsupportedException("Only an array of constant length is supported.");
+
   usedOps.fpSum = true;
 
   if (getFpAddAssociativity() && useMultiset)
@@ -345,7 +347,7 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   Expr result = getSumFn()(
       Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero(true))));
 
-  if (getFpAddAssociativity() && n.isNumeral())
+  if (getFpAddAssociativity())
     fp_sum_relations.push_back({a, n, result});
 
   return result;

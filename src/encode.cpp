@@ -1,4 +1,5 @@
 #include "encode.h"
+#include "utils.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
@@ -155,9 +156,13 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
 
 #define ENCODE(st, op, ty) { \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    auto errmsg = encodeOp(st, op2); \
-    if (errmsg) { \
-      RET_STR("Unknown op (" << op.getName() << "): " << op << "\n\t" << *errmsg << "\n") \
+    try { \
+      auto errmsg = encodeOp(st, op2); \
+      if (errmsg) { \
+        RET_STR("Unknown op (" << op.getName() << "): " << op << "\n\t" << *errmsg << "\n") \
+      } \
+    } catch (UnsupportedException& e) { \
+      RET_STR("Unknown op (" << op.getName() << "): " << op << "\n\t" << e.what() << "\n") \
     } \
     continue; \
   } \
