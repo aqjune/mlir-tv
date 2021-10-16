@@ -128,17 +128,22 @@ createInputState(
         RET_STR("Unsupported type: " << arg.getType());
       }
 
+      string name = "arg" + to_string(arg.getArgNumber());
+      auto varty = VarType::UNBOUND;
       if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
-        s.regs.add(arg,
-          Index::var("arg" + to_string(arg.getArgNumber()), VarType::UNBOUND));
+        s.regs.add(arg, Index::var(move(name), varty));
 
       } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
-        s.regs.add(arg,
-            Float::var("arg" + to_string(arg.getArgNumber()),
-                argty, VarType::UNBOUND));
+        s.regs.add(arg, Float::var(move(name), argty, varty));
+
+      } else if (auto ty = argty.dyn_cast<mlir::IntegerType>()) {
+        unsigned bw = ty.getIntOrFloatBitWidth();
+        s.regs.add(arg, Integer::var(move(name), bw, varty));
+
       } else {
-        llvm_unreachable("convertTypeToSort must have returned nullopt for this"
-                        " type!");
+        llvm::errs() << "convertTypeToSort must have returned nullopt for this"
+                        " type!";
+        abort();
       }
     }
     args.add(i, s.regs.findOrCrash(arg));
