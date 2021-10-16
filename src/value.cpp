@@ -25,10 +25,11 @@ optional<smt::Sort> convertTypeToSort(mlir::Type elemty) {
 }
 
 optional<Expr> getZero(mlir::Type eltType) {
-  if (eltType.isa<mlir::Float32Type>())
-    return Float(0.0f);
-  else if (eltType.isa<mlir::Float64Type>())
-    return Float(0.0);
+  if (convertTypeToSort(eltType) == nullopt)
+    return nullopt;
+
+  if (eltType.isa<mlir::FloatType>())
+    return Float::constant(llvm::APFloat(0.0), eltType);
   else if (eltType.isa<mlir::IntegerType>())
     return Integer(0, eltType.getIntOrFloatBitWidth());
   else if (eltType.isa<mlir::IndexType>())
@@ -114,17 +115,11 @@ Index Index::eval(Model m) const {
   return Index(m.eval(e, true).simplify());
 }
 
-Float::Float(float f): e(aop::fpConst(f)) {}
-
-// TODO: fix this
-Float::Float(double d): e(aop::fpConst((float)d)) {}
-
 optional<Sort> Float::sort(mlir::Type t) {
   if (t.isa<mlir::Float32Type>()) {
-    // TOOD: fixme
-    return aop::fpSort();
+    return aop::getFloatEncoding().sort();
   } else if (t.isa<mlir::Float64Type>()) {
-    return aop::fpSort();
+    return aop::getDoubleEncoding().sort();
   }
   return nullopt;
 }
@@ -132,36 +127,32 @@ optional<Sort> Float::sort(mlir::Type t) {
 Float Float::constant(const llvm::APFloat &apf, mlir::Type ty) {
   assert(sort(ty) != nullopt);
 
-  if (ty.isa<mlir::Float32Type>())
-    return Float(apf.convertToFloat());
-  else if (ty.isa<mlir::Float64Type>())
-    return Float(apf.convertToDouble());
-
-  llvm_unreachable("Unknown fp type");
+  return {aop::getFpEncoding(ty).constant(apf), ty};
 }
 
 Sort Float::sortFloat32() {
-  return aop::fpSort();
+  return aop::getFloatEncoding().sort();
 }
 
 Float Float::var(std::string &&name, mlir::Type ty, VarType varty) {
   switch(varty) {
   case VarType::BOUND:
   case VarType::UNBOUND:
-    return {Expr::mkVar(*Float::sort(ty), move(name), varty == VarType::BOUND)};
+    return {Expr::mkVar(*Float::sort(ty), move(name), varty == VarType::BOUND),
+            ty};
   case VarType::FRESH:
-    return {Expr::mkFreshVar(*Float::sort(ty), move(name))};
+    return {Expr::mkFreshVar(*Float::sort(ty), move(name)), ty};
   }
   llvm_unreachable("Unknown case");
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
   Expr e = f;
-  auto vec = aop::fpPossibleConsts(e);
+  auto vec = aop::getFpEncoding(f.type).possibleConsts(e);
   if (!vec.empty()) {
-    os << vec[0];
+    os << vec[0].convertToDouble();
     for (unsigned i = 1; i < vec.size(); ++i)
-      os << " or " << vec[i];
+      os << " or " << vec[i].convertToDouble();
   } else {
     os << "unknown (" << or_omit((Expr)f) << ")";
   }
@@ -173,15 +164,15 @@ std::pair<Expr, vector<Expr>> Float::refines(const Float &other) const {
 }
 
 Float Float::eval(Model m) const {
-  return Float(m.eval(e, true).simplify());
+  return Float(m.eval(e, true).simplify(), type);
 }
 
 Float Float::add(const Float &b) const {
-  return Float(aop::fpAdd(e, b.e));
+  return Float(aop::getFpEncoding(type).add(e, b.e), type);
 }
 
 Float Float::mul(const Float &b) const {
-  return Float(aop::fpMul(e, b.e));
+  return Float(aop::getFpEncoding(type).mul(e, b.e), type);
 }
 
 
@@ -219,7 +210,8 @@ Integer Integer::eval(Model m) const {
   return Integer(m.eval(e, true).simplify());
 }
 
-std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(const ShapedValue &filter,
+std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(
+    const ShapedValue &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations) const {
   // input: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
@@ -256,18 +248,19 @@ std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(const ShapedValue
 
   Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
   Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
-  Expr outputExpr = aop::fpDot(inputExpr, filterExpr, ::get1DSize(cubeSize));
+  Expr outputExpr = aop::getFpEncoding(elemType).dot(
+      inputExpr, filterExpr, ::get1DSize(cubeSize));
 
   return {move(outputIdxs), move(outputExpr)};
 }
 
 Tensor::Tensor(mlir::Type elemType, Expr &&splat_elem, vector<Expr> &&dimvec):
-    elemType(elemType),
+    ShapedValue(elemType),
     dims(move(dimvec)),
     arr(Expr::mkSplatArray(Index::sort(), move(splat_elem))) {}
 
 Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d):
-    elemType(elemType),
+    ShapedValue(elemType),
     dims({ (Expr)Index(elems1d.size()) }),
     arr(Expr::mkFreshVar(Sort::arraySort(Index::sort(), elems1d[0].sort()),
         "tensor_val")) {
@@ -277,7 +270,7 @@ Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d):
 
 Tensor::Tensor(
     mlir::Type elemType, string &&name, const vector<Expr> &dimvec):
-  elemType(elemType),
+  ShapedValue(elemType),
   dims(dimvec),
   arr(Expr::mkVar(Sort::arraySort(Index::sort(),
       *convertTypeToSort(elemType)), move(name))) {}
@@ -287,7 +280,7 @@ Tensor::Tensor(
     const vector<vector<uint64_t>> &indices,
     const vector<Expr> &elems,
     const vector<uint64_t> &dims, const Expr &zero):
-  elemType(elemType), arr(Expr::mkSplatArray(Index::sort(), zero)) {
+  ShapedValue(elemType), arr(Expr::mkSplatArray(Index::sort(), zero)) {
 
   assert(indices.size() == elems.size());
 
@@ -423,9 +416,9 @@ Tensor Tensor::matmul(const Tensor &b) const {
   auto bt_row = bt.to1DArrayWithOfs(
       {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
-  // TODO: integer-dot is needed.
   auto res = elemType.isa<mlir::FloatType>() ?
-      aop::fpDot(a_row, bt_row, dims[1]) : aop::intDot(a_row, bt_row, dims[1]);
+      aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1]) :
+      aop::intDot(a_row, bt_row, dims[1]);
   return mkLambda(elemType, {dims[0], bt.dims[0]}, {i, j}, move(res));
 }
 
@@ -448,12 +441,14 @@ pair<Tensor, Expr> Tensor::elementwiseBinOp(
 Expr Tensor::dot(const Tensor &t2) const {
   auto len = get1DSize();
   return elemType.isa<mlir::FloatType>() ?
-      aop::fpDot(arr, t2.arr, len) : aop::intDot(arr, t2.arr, len);
+      aop::getFpEncoding(elemType).dot(arr, t2.arr, len) :
+      aop::intDot(arr, t2.arr, len);
 }
 
 Expr Tensor::sum() const {
   return elemType.isa<mlir::FloatType>() ?
-      aop::fpSum(arr, get1DSize()) : aop::intSum(arr, get1DSize());
+      aop::getFpEncoding(elemType).sum(arr, get1DSize()) :
+      aop::intSum(arr, get1DSize());
 }
 
 pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
@@ -595,7 +590,8 @@ Expr Tensor::to1DArrayWithOfs(
   }
   auto elem = get(absidxs).first;
   auto zero = elemType.isa<mlir::FloatType>() ?
-      (Expr)Float(0.0) : (Expr)Integer(0, elem.bitwidth());
+      aop::getFpEncoding(elemType).zero() :
+      (Expr)Integer(0, elem.bitwidth());
 
   return Expr::mkLambda(
       idxvar,
@@ -675,17 +671,19 @@ MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
 }
 
 MemRef::MemRef(Memory *m,
+  const mlir::Type &elemTy,
   const smt::Expr &bid,
   const smt::Expr &offset,
   const std::vector<smt::Expr> &dims,
-  const Layout &layout,
-  const smt::Sort &elemty) : m(m), bid(bid), offset(offset), dims(dims), layout(layout) {}
+  const Layout &layout) : ShapedValue(elemTy), m(m), bid(bid),
+    offset(offset), dims(dims), layout(layout) {}
 
 MemRef::MemRef(Memory *m,
+  const mlir::Type &elemty,
   const std::string &name,
   const std::vector<Expr> &dims,
-  const Layout &layout,
-  const smt::Sort &elemty):
+  const Layout &layout):
+    ShapedValue(elemty),
     m(m),
     bid(Expr::mkVar(Sort::bvSort(m->getBIDBits()), (name + "_bid").c_str())),
     offset(Index::var(name + "_offset", VarType::UNBOUND)),
@@ -693,9 +691,10 @@ MemRef::MemRef(Memory *m,
     layout(layout) {}
 
 MemRef::MemRef(Memory *m,
+    const mlir::Type &elemty,
     const std::vector<Expr> &dims,
-    const Layout &layout,
-    const smt::Sort &elemty) : MemRef(m, freshName("memref"), dims, layout, elemty) {}
+    const Layout &layout) :
+    MemRef(m, elemty, freshName("memref"), dims, layout) {}
 
 Expr MemRef::getPrecondition() const {
   return layout.precondition;
@@ -827,11 +826,11 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
     }
 
     auto subviewLayout = createSubViewLayout(indVars, offsets, strides, sizes);
-    return MemRef(m, bid, offset, reducedSizes, subviewLayout,
-                  Float::sortFloat32());
+    return MemRef(m, elemType, bid, offset, reducedSizes, subviewLayout);
   } else {
-    auto subviewLayout = createSubViewLayout(layout.indVars, offsets, strides, sizes);
-    return MemRef(m, bid, offset, sizes, subviewLayout, Float::sortFloat32());
+    auto subviewLayout = createSubViewLayout(
+        layout.indVars, offsets, strides, sizes);
+    return MemRef(m, elemType, bid, offset, sizes, subviewLayout);
   }
 }
 
