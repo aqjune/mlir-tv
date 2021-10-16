@@ -95,7 +95,7 @@ createInputState(
     // Encode arguments of the source function.
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
       if (!Tensor::isTypeSupported(ty))
-        RET_STR("Unsupported Tensor type: " << ty);
+        RET_STR("Unsupported type: " << ty);
 
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
@@ -108,7 +108,7 @@ createInputState(
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
       if (!MemRef::isTypeSupported(ty))
-        RET_STR("Unsupported MemRef type: " << ty);
+        RET_STR("Unsupported type: " << ty);
 
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);

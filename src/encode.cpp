@@ -949,6 +949,9 @@ optional<string> encodeOp(State &st, mlir::ConstantIndexOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::ConstantFloatOp op) {
+  if (Float::sort(op.getType()) == nullopt)
+    return "unsupported constant type";
+
   auto fp = op.getValue();
   st.regs.add(op, Float::constant(fp, op.getType()));
   return {};
