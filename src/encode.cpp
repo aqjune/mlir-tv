@@ -368,6 +368,23 @@ optional<string> encodeOp(State &st, mlir::tensor::DimOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::tensor::CastOp op) {
+  auto tty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!tty)
+    return "Unsupported type";
+
+  auto t = st.regs.get<Tensor>(op.getOperand());
+  for (size_t i = 0; i < tty.getRank(); ++i) {
+    if (tty.isDynamicDim(i))
+      continue;
+    st.wellDefined(op.getOperation(), (Expr)t.getDim(i) == tty.getDimSize(i));
+  }
+  st.regs.add(op, move(t));
+
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::tensor::InsertOp op) {
   auto val = st.regs.get<Float>(op.scalar());
   auto dest = st.regs.get<Tensor>(op.dest());
@@ -1535,6 +1552,7 @@ static optional<string> encodeRegion(
 
     ENCODE(st, op, mlir::AffineApplyOp);
 
+    ENCODE(st, op, mlir::tensor::CastOp);
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::InsertOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
