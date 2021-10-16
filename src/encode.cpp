@@ -879,7 +879,7 @@ optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
   if (srcWidth > destWidth)
     casted = src.extract(destWidth - 1, 0);
   else if (srcWidth < destWidth)
-    casted = Expr::mkBV(0, destWidth - srcWidth).concat(casted);
+    casted = src.sext(destWidth - srcWidth);
   st.regs.add(op, Integer(casted));
   return {};
 }
