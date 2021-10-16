@@ -37,20 +37,10 @@ using namespace std;
 }
 
 
-static optional<Expr> getZero(mlir::Type eltType) {
-  if (eltType.isa<mlir::FloatType>())
-    return Float(0.0);
-  else if (eltType.isa<mlir::IntegerType>())
-    return Integer(0, eltType.getIntOrFloatBitWidth());
-  else if (eltType.isa<mlir::IndexType>())
-    return Index(0);
-  return {};
-}
-
 static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   auto ty = a.getType();
   if (ty.isa<mlir::FloatType>()) {
-    return Float(a.dyn_cast<mlir::FloatAttr>().getValue().convertToFloat());
+    return Float::constant(a.dyn_cast<mlir::FloatAttr>().getValue(), ty);
   } else if (ty.isa<mlir::IntegerType>()) {
     if (64 < ty.getIntOrFloatBitWidth())
       // size is too large
@@ -60,8 +50,9 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   } else if (ty.isa<mlir::IndexType>()) {
     llvm::APInt i = a.dyn_cast<mlir::IntegerAttr>().getValue();
     assert(i.getBitWidth() == 64);
-    // TODO: The result may not fit in Index::BITS
-    return Index(i.getSExtValue());
+    int64_t ii = i.getSExtValue();
+    assert(-2147483648ll <= ii && ii <= 2147483647ll);
+    return Index(ii);
   }
   return {};
 }
@@ -931,7 +922,7 @@ optional<string> encodeOp(State &st, mlir::ConstantIndexOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::ConstantFloatOp op) {
   auto fp = op.getValue();
-  st.regs.add(op, Float(fp));
+  st.regs.add(op, Float::constant(fp, op.getType()));
   return {};
 }
 

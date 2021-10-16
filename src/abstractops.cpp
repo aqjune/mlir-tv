@@ -357,7 +357,6 @@ static Expr fpMultisetSum(const Expr &a, const Expr &n) {
 
 Expr fpSum(const Expr &a, const Expr &n) {
   usedOps.fpSum = true;
-  // TODO: check that a.Sort is Index::Sort() -> Float::Sort()
 
   if (isFpAddAssociative && useMultiset)
     return fpMultisetSum(a, n);
@@ -431,7 +430,9 @@ static Expr getFpAssociativePrecondition(
       auto [b, bn, bsum] = fp_sum_relations[j];
       uint64_t alen, blen;
       if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
-      FnDecl hashfn(Float::sort(), Index::sort(), freshName("fp_hash"));
+
+      auto domainSort = a.select(Index(0)).sort();
+      FnDecl hashfn(domainSort, Index::sort(), freshName("fp_hash"));
 
       auto aVal = hashfn.apply(a.select(Index(0)));
       for (unsigned k = 1; k < alen; k ++)

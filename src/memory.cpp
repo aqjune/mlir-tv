@@ -57,7 +57,7 @@ SingleArrayMemory::SingleArrayMemory(
     ulog2(numGlobalBlocks + maxLocalBlocks)),
   arrayMaps(Expr::mkVar(
       Sort::arraySort(Sort::bvSort(bidBits),
-        Sort::arraySort(Index::sort(), Float::sort())),
+        Sort::arraySort(Index::sort(), Float::sortFloat32())),
       "arrayMaps")),
   writableMaps(Expr::mkVar(
       Sort::arraySort(Sort::bvSort(bidBits), Sort::boolSort()),
@@ -135,7 +135,7 @@ MultipleArrayMemory::MultipleArrayMemory(
       return s + to_string(i);
     };
     arrays.push_back(Expr::mkVar(
-        Sort::arraySort(Index::sort(), Float::sort()),
+        Sort::arraySort(Index::sort(), Float::sortFloat32()),
           suffix("array").c_str()));
     writables.push_back(
         Expr::mkVar(Sort::boolSort(),suffix("writable").c_str()));
@@ -191,7 +191,8 @@ Expr MultipleArrayMemory::addLocalBlock(
     return s + to_string(bid) + (isSrc ? "_src" : "_tgt");
   };
   arrays.push_back(Expr::mkVar(
-      Sort::arraySort(Index::sort(), Float::sort()), suffix("array").c_str()));
+      Sort::arraySort(Index::sort(), Float::sortFloat32()),
+                      suffix("array").c_str()));
   writables.push_back(writable);
   numelems.push_back(numelem);
   numLocalBlocks ++;

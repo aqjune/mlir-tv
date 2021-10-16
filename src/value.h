@@ -16,6 +16,7 @@ enum class VarType {
 };
 
 std::optional<smt::Sort> convertTypeToSort(mlir::Type ty);
+std::optional<smt::Expr> getZero(mlir::Type eltType);
 
 class Index {
   smt::Expr e;
@@ -53,13 +54,15 @@ class Float {
 
 public:
   Float(const smt::Expr &e): e(e) {}
-  Float(const llvm::APFloat &apf);
   Float(float f);
+  Float(double d);
 
   operator smt::Expr() const { return e; }
 
-  static smt::Sort sort();
-  static Float var(std::string &&name, VarType vty);
+  static std::optional<smt::Sort> sort(mlir::Type ty);
+  static smt::Sort sortFloat32();
+  static Float var(std::string &&name, mlir::Type ty, VarType vty);
+  static Float constant(const llvm::APFloat &apf, mlir::Type ty);
 
   Float add(const Float &b) const;
   Float mul(const Float &b) const;

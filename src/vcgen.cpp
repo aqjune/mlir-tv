@@ -124,16 +124,23 @@ createInputState(
       preconds.push_back(memref.getWellDefined());
       s.regs.add(arg, move(memref));
 
-    } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
-      s.regs.add(arg,
-        Index::var("arg" + to_string(arg.getArgNumber()), VarType::UNBOUND));
-
-    } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
-      s.regs.add(arg,
-          Float::var("arg" + to_string(arg.getArgNumber()), VarType::UNBOUND));
-
     } else {
-      RET_STR("Unsupported type: " << arg.getType());
+      if (convertTypeToSort(argty) == nullopt) {
+        RET_STR("Unsupported type: " << arg.getType());
+      }
+
+      if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
+        s.regs.add(arg,
+          Index::var("arg" + to_string(arg.getArgNumber()), VarType::UNBOUND));
+
+      } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
+        s.regs.add(arg,
+            Float::var("arg" + to_string(arg.getArgNumber()),
+                argty, VarType::UNBOUND));
+      } else {
+        llvm_unreachable("convertTypeToSort must have returned nullopt for this"
+                        " type!");
+      }
     }
     args.add(i, s.regs.findOrCrash(arg));
   }

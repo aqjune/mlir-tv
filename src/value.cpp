@@ -15,17 +15,27 @@ static string freshName(string prefix) {
 optional<smt::Sort> convertTypeToSort(mlir::Type elemty) {
   if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
     return Integer::sort(ielemty.getWidth());
-  } else if (auto felemty = elemty.dyn_cast<mlir::Float32Type>()) {
-    return Float::sort();
-  } else if (auto felemty = elemty.dyn_cast<mlir::Float64Type>()) {
-    // In the abstract world, f32 and f64 are all unknown values
-    return Float::sort();
+  } else if (auto felemty = elemty.dyn_cast<mlir::FloatType>()) {
+    return Float::sort(felemty);
   } else if (elemty.isa<mlir::IndexType>()) {
     return Index::sort();
   }
 
   return {};
 }
+
+optional<Expr> getZero(mlir::Type eltType) {
+  if (eltType.isa<mlir::Float32Type>())
+    return Float(0.0f);
+  else if (eltType.isa<mlir::Float64Type>())
+    return Float(0.0);
+  else if (eltType.isa<mlir::IntegerType>())
+    return Integer(0, eltType.getIntOrFloatBitWidth());
+  else if (eltType.isa<mlir::IndexType>())
+    return Index(0);
+  return {};
+}
+
 
 vector<Expr> ShapedValue::getDims(
     const mlir::ShapedType &shapedTy, bool freshVarForUnknownSize,
@@ -106,19 +116,41 @@ Index Index::eval(Model m) const {
 
 Float::Float(float f): e(aop::fpConst(f)) {}
 
-Float::Float(const llvm::APFloat &f): Float(f.convertToFloat()) {}
+// TODO: fix this
+Float::Float(double d): e(aop::fpConst((float)d)) {}
 
-Sort Float::sort() {
+optional<Sort> Float::sort(mlir::Type t) {
+  if (t.isa<mlir::Float32Type>()) {
+    // TOOD: fixme
+    return aop::fpSort();
+  } else if (t.isa<mlir::Float64Type>()) {
+    return aop::fpSort();
+  }
+  return nullopt;
+}
+
+Float Float::constant(const llvm::APFloat &apf, mlir::Type ty) {
+  assert(sort(ty) != nullopt);
+
+  if (ty.isa<mlir::Float32Type>())
+    return Float(apf.convertToFloat());
+  else if (ty.isa<mlir::Float64Type>())
+    return Float(apf.convertToDouble());
+
+  llvm_unreachable("Unknown fp type");
+}
+
+Sort Float::sortFloat32() {
   return aop::fpSort();
 }
 
-Float Float::var(std::string &&name, VarType varty) {
+Float Float::var(std::string &&name, mlir::Type ty, VarType varty) {
   switch(varty) {
   case VarType::BOUND:
   case VarType::UNBOUND:
-    return {Expr::mkVar(Float::sort(), move(name), varty == VarType::BOUND)};
+    return {Expr::mkVar(*Float::sort(ty), move(name), varty == VarType::BOUND)};
   case VarType::FRESH:
-    return {Expr::mkFreshVar(Float::sort(), move(name))};
+    return {Expr::mkFreshVar(*Float::sort(ty), move(name))};
   }
   llvm_unreachable("Unknown case");
 }
@@ -325,8 +357,7 @@ Tensor Tensor::affine(
     srcidxs[i] = newv;
   }
   auto elem = get(srcidxs).first;
-  auto zero = elemType.isa<mlir::FloatType>() ?
-      (Expr)Float(0.0) : (Expr)Integer(0, elem.bitwidth());
+  auto zero = *getZero(elemType);
 
   return {
     elemType,
@@ -796,10 +827,11 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
     }
 
     auto subviewLayout = createSubViewLayout(indVars, offsets, strides, sizes);
-    return MemRef(m, bid, offset, reducedSizes, subviewLayout, Float::sort());
+    return MemRef(m, bid, offset, reducedSizes, subviewLayout,
+                  Float::sortFloat32());
   } else {
     auto subviewLayout = createSubViewLayout(layout.indVars, offsets, strides, sizes);
-    return MemRef(m, bid, offset, sizes, subviewLayout, Float::sort());
+    return MemRef(m, bid, offset, sizes, subviewLayout, Float::sortFloat32());
   }
 }
 
