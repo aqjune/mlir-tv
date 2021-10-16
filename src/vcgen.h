@@ -35,6 +35,8 @@ public:
   Code code;
 };
 
+const int UNSUPPORTED_EXIT_CODE = 91;
+
 enum class VerificationStep {
   UB,
   RetValue,
@@ -45,6 +47,6 @@ Results validate(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const std::string &dump_smt_to,
     unsigned int numBlocks,
     MemEncoding encoding,
-    unsigned fpBits,
+    std::pair<unsigned, unsigned> fpBits, // (float, double)
     bool associativeAdd,
     bool useMultiset);

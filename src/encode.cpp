@@ -1,4 +1,5 @@
 #include "encode.h"
+#include "utils.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
@@ -37,20 +38,10 @@ using namespace std;
 }
 
 
-static optional<Expr> getZero(mlir::Type eltType) {
-  if (eltType.isa<mlir::FloatType>())
-    return Float(0.0);
-  else if (eltType.isa<mlir::IntegerType>())
-    return Integer(0, eltType.getIntOrFloatBitWidth());
-  else if (eltType.isa<mlir::IndexType>())
-    return Index(0);
-  return {};
-}
-
 static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   auto ty = a.getType();
   if (ty.isa<mlir::FloatType>()) {
-    return Float(a.dyn_cast<mlir::FloatAttr>().getValue().convertToFloat());
+    return Float::constant(a.dyn_cast<mlir::FloatAttr>().getValue(), ty);
   } else if (ty.isa<mlir::IntegerType>()) {
     if (64 < ty.getIntOrFloatBitWidth())
       // size is too large
@@ -60,8 +51,9 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   } else if (ty.isa<mlir::IndexType>()) {
     llvm::APInt i = a.dyn_cast<mlir::IntegerAttr>().getValue();
     assert(i.getBitWidth() == 64);
-    // TODO: The result may not fit in Index::BITS
-    return Index(i.getSExtValue());
+    int64_t ii = i.getSExtValue();
+    assert(-2147483648ll <= ii && ii <= 2147483647ll);
+    return Index(ii);
   }
   return {};
 }
@@ -69,8 +61,8 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
 static optional<ValueTy> fromExpr(Expr &&e, mlir::Type ty) {
   if (ty.isa<mlir::IndexType>())
     return Index(e);
-  else if (ty.isa<mlir::Float32Type>())
-    return Float(e);
+  else if (ty.isa<mlir::FloatType>())
+    return Float(e, ty);
   else if (ty.isa<mlir::IntegerType>()) {
     assert(e.sort().bitwidth() == ty.getIntOrFloatBitWidth());
     return Integer(e);
@@ -145,7 +137,7 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
 
     auto f = [&](smt::Expr &&a, smt::Expr &&b) -> smt::Expr {
       if (elemty.isa<mlir::FloatType>()) {
-        return f_float(Float(a), Float(b));
+        return f_float(Float(a, elemty), Float(b, elemty));
       } else if (elemty.isa<mlir::IntegerType>()) {
         return f_int(Integer(a), Integer(b));
       }
@@ -164,9 +156,13 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
 
 #define ENCODE(st, op, ty) { \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    auto errmsg = encodeOp(st, op2); \
-    if (errmsg) { \
-      RET_STR("Unknown op (" << op.getName() << "): " << op << "\n\t" << *errmsg << "\n") \
+    try { \
+      auto errmsg = encodeOp(st, op2); \
+      if (errmsg) { \
+        RET_STR("Unknown op (" << op.getName() << "): " << op << "\n\t" << *errmsg << "\n") \
+      } \
+    } catch (UnsupportedException& e) { \
+      RET_STR("Unknown op (" << op.getName() << "): " << op << "\n\t" << e.what() << "\n") \
     } \
     continue; \
   } \
@@ -563,8 +559,8 @@ static variant<string, MemRef> createNewLocalBlk(
   auto bid = m->addLocalBlock(smt::get1DSize(dims), Expr::mkBool(writable));
   // Create MemRef which points to the newly created block
   auto memref =
-      MemRef(m, bid, Index::zero(), dims, move(layout),
-             move(*convertTypeToSort(memrefTy.getElementType())));
+      MemRef(m, memrefTy.getElementType(), bid, Index::zero(), dims,
+          move(layout));
 
   return {move(memref)};
 }
@@ -870,26 +866,49 @@ optional<string> encodeOp(State &st, mlir::MulIOp op) {
   return {};
 }
 
-template<>
-optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
-  auto src = st.regs.getExpr(op.getOperand());
-  assert(src.sort().isBV());
-  unsigned srcWidth = src.sort().bitwidth();
+static Expr evalIndexCastOp(mlir::Type src, mlir::Type tgt, Expr &&val) {
+  assert(val.sort().isBV());
+
+  unsigned srcWidth = val.sort().bitwidth();
 
   unsigned destWidth = 0;
-  if (auto dstty = op.getType().dyn_cast<mlir::IntegerType>())
+  if (auto dstty = tgt.dyn_cast<mlir::IntegerType>())
     destWidth = dstty.getWidth();
   else {
-    assert(op.getType().isa<mlir::IndexType>());
+    assert(tgt.isa<mlir::IndexType>());
     destWidth = Index::BITS;
   }
 
-  Expr casted = src;
+  Expr casted = val;
   if (srcWidth > destWidth)
-    casted = src.extract(destWidth - 1, 0);
+    casted = val.extract(destWidth - 1, 0);
   else if (srcWidth < destWidth)
-    casted = Expr::mkBV(0, destWidth - srcWidth).concat(casted);
-  st.regs.add(op, Integer(casted));
+    casted = val.sext(destWidth - srcWidth);
+  return casted;
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
+  auto srcty = op.getOperand().getType();
+  auto dstty = op.getType();
+
+  if (auto src_tensorty = srcty.dyn_cast<mlir::TensorType>()) {
+    auto dst_tensorty = dstty.dyn_cast<mlir::TensorType>();
+    if (!dst_tensorty)
+      return "Unknown type";
+
+    auto src = st.regs.get<Tensor>(op.getOperand());
+    auto dst_elemty = dst_tensorty.getElementType();
+    auto res = src.elementwiseUnaryOp(dst_elemty, [&](auto &&e) {
+      return evalIndexCastOp(src_tensorty.getElementType(),
+          dst_elemty, move(e));
+    });
+    st.regs.add(op, move(res));
+
+  } else {
+    auto src = st.regs.getExpr(op.getOperand());
+    st.regs.add(op, Integer(evalIndexCastOp(srcty, dstty, move(src))));
+  }
   return {};
 }
 
@@ -931,7 +950,7 @@ optional<string> encodeOp(State &st, mlir::ConstantIndexOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::ConstantFloatOp op) {
   auto fp = op.getValue();
-  st.regs.add(op, Float(fp));
+  st.regs.add(op, Float::constant(fp, op.getType()));
   return {};
 }
 
@@ -1216,7 +1235,8 @@ static optional<string> initInputStateForLoopBody(
 
       // TODO: We do not encode UB in loops currently. How to deal with this?
       auto m_elem = m_input.get(affine_Exprs).first;
-      st.regs.add(block.getArgument(arg_i), Float(m_elem));
+      st.regs.add(block.getArgument(arg_i), 
+          Float(m_elem, memrefty.getElementType()));
     } else {
       return "unsupported block argument type";
     }

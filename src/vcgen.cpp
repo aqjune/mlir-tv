@@ -44,7 +44,7 @@ public:
 
   MemEncoding encoding;
   unsigned int numBlocks;
-  unsigned int fpBits;
+  unsigned int floatBits, doubleBits;
   bool isFpAddAssociative;
   bool useMultisetForFpSum;
 };
@@ -112,28 +112,39 @@ createInputState(
 
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
-      auto elemty = *convertTypeToSort(ty.getElementType());
       auto layout = MemRef::getLayout(ty, dims);
 
       // TODO : out of bounds pointer is allowed?
-      auto memref = MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
-          dims, layout, elemty);
+      auto memref = MemRef(s.m.get(), ty.getElementType(),
+          "arg" + to_string(arg.getArgNumber()), dims, layout);
 
       // Function argument MemRefs must point to global memblocks.
       preconds.push_back(memref.isGlobalBlock());
       preconds.push_back(memref.getWellDefined());
       s.regs.add(arg, move(memref));
 
-    } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
-      s.regs.add(arg,
-        Index::var("arg" + to_string(arg.getArgNumber()), VarType::UNBOUND));
-
-    } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
-      s.regs.add(arg,
-          Float::var("arg" + to_string(arg.getArgNumber()), VarType::UNBOUND));
-
     } else {
-      RET_STR("Unsupported type: " << arg.getType());
+      if (convertTypeToSort(argty) == nullopt) {
+        RET_STR("Unsupported type: " << arg.getType());
+      }
+
+      string name = "arg" + to_string(arg.getArgNumber());
+      auto varty = VarType::UNBOUND;
+      if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
+        s.regs.add(arg, Index::var(move(name), varty));
+
+      } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
+        s.regs.add(arg, Float::var(move(name), argty, varty));
+
+      } else if (auto ty = argty.dyn_cast<mlir::IntegerType>()) {
+        unsigned bw = ty.getIntOrFloatBitWidth();
+        s.regs.add(arg, Integer::var(move(name), bw, varty));
+
+      } else {
+        llvm::errs() << "convertTypeToSort must have returned nullopt for this"
+                        " type!";
+        abort();
+      }
     }
     args.add(i, s.regs.findOrCrash(arg));
   }
@@ -284,7 +295,7 @@ static Results checkRefinement(
 
 static void raiseUnsupported(const string &msg) {
   llvm::errs() << msg << "\n";
-  exit(91);
+  exit(UNSUPPORTED_EXIT_CODE);
 }
 
 static State encodeFinalState(
@@ -371,7 +382,8 @@ static void checkIsSrcAlwaysUB(
       aop::AbsLevelFpDot::SUM_MUL,
       aop::AbsLevelIntDot::SUM_MUL,
       vinput.isFpAddAssociative,
-      vinput.fpBits);
+      vinput.floatBits,
+      vinput.doubleBits);
   aop::setEncodingOptions(vinput.useMultisetForFpSum);
 
   ArgInfo args_dummy;
@@ -418,7 +430,8 @@ static Results validate(ValidationInput vinput) {
       AbsLevelFpDot::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
       /*isFpAddAssociative*/false,
-      /*fp bits*/vinput.fpBits);
+      /*fp bits*/vinput.floatBits,
+      /*doublebits*/vinput.doubleBits);
   setEncodingOptions(/*useMultiset*/false);
 
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
@@ -449,7 +462,8 @@ static Results validate(ValidationInput vinput) {
           AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
       fpAssocAdd,
-      vinput.fpBits);
+      vinput.floatBits,
+      vinput.doubleBits);
   setEncodingOptions(vinput.useMultisetForFpSum);
 
   if (!vinput.dumpSMTPath.empty())
@@ -474,7 +488,8 @@ Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
     unsigned int numBlocks, MemEncoding encoding,
-    unsigned fpBits, bool isFpAddAssociative, bool useMultiset) {
+    pair<unsigned, unsigned> fpBits, bool isFpAddAssociative,
+    bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -500,7 +515,8 @@ Results validate(
     vinput.tgt = itr->second;
     vinput.dumpSMTPath = dumpSMTPath;
     vinput.numBlocks = numBlocks;
-    vinput.fpBits = fpBits;
+    vinput.floatBits = fpBits.first;
+    vinput.doubleBits = fpBits.second;
     vinput.encoding = encoding;
     vinput.isFpAddAssociative = isFpAddAssociative;
     vinput.useMultisetForFpSum = useMultiset;

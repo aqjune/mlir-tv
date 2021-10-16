@@ -48,10 +48,10 @@ llvm::cl::opt<smt::SolverType> arg_solver("solver",
   )
 );
 
-llvm::cl::opt<unsigned> fp_bits("fp-bits",
+llvm::cl::opt<int> fp_bits("fp-bits",
   llvm::cl::desc("The number of bits for the abstract representation of"
-                 "floating points (default=32)"),
-  llvm::cl::init(32), llvm::cl::value_desc("number"));
+                 "float and double types (default=their bitwidths)"),
+  llvm::cl::init(-1), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::desc("Number of memory blocks required to validate translation"
@@ -96,11 +96,20 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     return 82;
   }
 
+  int fp_bits_arg = fp_bits.getValue();
+  pair<unsigned, unsigned> fp_bits;
+  if (fp_bits_arg == -1)
+    // TODO: Double is set to 63 instead of 64 (which is the correct bitwidth
+    // of double) because compilers do not support int128 in general.
+    fp_bits = {32, 63};
+  else
+    fp_bits = {fp_bits_arg, fp_bits_arg};
+
   return validate(ir_before, ir_after,
       arg_dump_smt_to.getValue(),
       num_memblocks.getValue(),
       memory_encoding.getValue(),
-      fp_bits.getValue(),
+      fp_bits,
       arg_associative_sum.getValue(),
       arg_multiset.getValue()
     ).code;
