@@ -1,6 +1,8 @@
 #pragma once
 
 #include "smt.h"
+#include "llvm/ADT/APFloat.h"
+#include "mlir/IR/BuiltinOps.h"
 #include <vector>
 
 namespace aop {
@@ -29,25 +31,89 @@ enum class AbsLevelIntDot {
 
 // This resets the used abstract ops record.
 void setAbstraction(AbsLevelFpDot, AbsLevelIntDot, bool isFpAddAssociative,
-                    unsigned fpBits);
+                    unsigned floatBits, unsigned doubleBits);
 void setEncodingOptions(bool use_multiset);
 
 bool getFpAddAssociativity();
 
-smt::Sort fpSort();
-smt::Expr fpConst(float f);
-// Return the set of possible FP constants for 'e'.
-std::vector<float> fpPossibleConsts(const smt::Expr &e);
-
-smt::Expr fpAdd(const smt::Expr &f1, const smt::Expr &f2);
-smt::Expr fpMul(const smt::Expr &f1, const smt::Expr &f2);
-smt::Expr fpSum(const smt::Expr &arr, const smt::Expr &n);
-smt::Expr fpDot(const smt::Expr &arr1, const smt::Expr &arr2,
-                const smt::Expr &n);
 smt::Expr getFpAssociativePrecondition();
 
 smt::Expr intSum(const smt::Expr &arr, const smt::Expr &n);
 smt::Expr intDot(const smt::Expr &arr1, const smt::Expr &arr2,
                  const smt::Expr &n);
+
+class AbsFpEncoding {
+private:
+  const llvm::fltSemantics &semantics;
+
+  // NaNs, Infs, and +-0 are stored in separate variable
+  // as they do not work well with map due to comparison issue
+  std::optional<smt::Expr> fpconst_zero_pos;
+  std::optional<smt::Expr> fpconst_zero_neg;
+  std::optional<smt::Expr> fpconst_nan;
+  std::optional<smt::Expr> fpconst_inf_pos;
+  std::optional<smt::Expr> fpconst_inf_neg;
+  // Abstract representation of valid fp constants.
+  std::map<llvm::APFloat, smt::Expr> fpconst_absrepr;
+  uint64_t fpconst_absrepr_num = 0;
+
+  const static unsigned SIGN_BITS = 1;
+  const static unsigned TYPE_BITS = 1;
+
+  unsigned value_bv_bits;
+  unsigned fp_bv_bits;
+  uint64_t inf_value;
+  uint64_t nan_value;
+  uint64_t signed_value;
+
+  std::vector<std::tuple<smt::Expr, smt::Expr, smt::Expr>> fp_sum_relations;
+
+  // These are lazily created.
+  std::optional<smt::FnDecl> fp_sumfn;
+  std::optional<smt::FnDecl> fp_assoc_sumfn;
+  std::optional<smt::FnDecl> fp_dotfn;
+  std::optional<smt::FnDecl> fp_addfn;
+  std::optional<smt::FnDecl> fp_mulfn;
+  std::string fn_suffix;
+
+public:
+  AbsFpEncoding(const llvm::fltSemantics &semantics, unsigned valuebits,
+      std::string &&fn_suffix);
+
+  smt::Sort sort() const {
+    return smt::Sort::bvSort(fp_bv_bits);
+  }
+
+private:
+  // Returns a fully abstract add fn fp_add(fty, fty) -> fty2
+  // where fty is BV(fp_bv_bits) and fty2 is BV(fp_bv_bits - TYPE_BITS).
+  // It is the user of this function that fills in TYPE_BITS.
+  smt::FnDecl getAddFn();
+  smt::FnDecl getMulFn();
+  smt::FnDecl getAssocSumFn();
+  smt::FnDecl getSumFn();
+  smt::FnDecl getDotFn();
+
+public:
+  smt::Expr constant(const llvm::APFloat &f);
+  smt::Expr zero(bool isNegative = false);
+  smt::Expr one(bool isNegative = false);
+  smt::Expr infinity(bool isNegative = false);
+  smt::Expr nan();
+
+  std::vector<llvm::APFloat> possibleConsts(const smt::Expr &e) const;
+  smt::Expr add(const smt::Expr &f1, const smt::Expr &f2);
+  smt::Expr mul(const smt::Expr &f1, const smt::Expr &f2);
+  smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
+  smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
+  smt::Expr getFpAssociativePrecondition() const;
+
+private:
+  smt::Expr multisetSum(const smt::Expr &a, const smt::Expr &n);
+};
+
+AbsFpEncoding &getFloatEncoding();
+AbsFpEncoding &getDoubleEncoding();
+AbsFpEncoding &getFpEncoding(mlir::Type);
 
 };
