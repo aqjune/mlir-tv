@@ -35,6 +35,8 @@ public:
   Code code;
 };
 
+const int UNSUPPORTED_EXIT_CODE = 91;
+
 enum class VerificationStep {
   UB,
   RetValue,

@@ -61,14 +61,13 @@ class ExitCodeDependentTestBase(TestBase):
         elif int(exit_code / 10) == 8:
             # exit code 80~89: parsing related errors
             return lit.Test.UNRESOLVED, ""
-        elif int(exit_code / 10) == 9:
-            # exit code 90~99: mlir-tv related errors
-            return lit.Test.UNRESOLVED, ""
         elif exit_code == 101:
             # timeout
             return lit.Test.TIMEOUT, ""
-        elif exit_code == 0 or int(exit_code / 10) == 10:
-            # behavior is defined by tests
+        elif exit_code == 0 or int(exit_code / 10) == 9 or \
+             int(exit_code / 10) == 10:
+            # 90~99:   unsupported
+            # 100~109: timeout/value mismatch/etc
             return self._check(outs, errs, exit_code)
 
     @abstractmethod

@@ -295,7 +295,7 @@ static Results checkRefinement(
 
 static void raiseUnsupported(const string &msg) {
   llvm::errs() << msg << "\n";
-  exit(91);
+  exit(UNSUPPORTED_EXIT_CODE);
 }
 
 static State encodeFinalState(
