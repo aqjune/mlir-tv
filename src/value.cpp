@@ -160,7 +160,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
 };
 
 std::pair<Expr, vector<Expr>> Float::refines(const Float &other) const {
-  return {(Expr) other == (Expr) *this, {}};
+  auto nan1 = aop::getFpEncoding(type).isnan(e);
+  auto nan2 = aop::getFpEncoding(type).isnan(other.e);
+  return {
+    Expr::mkIte(nan1 | nan2, nan1 == nan2, (Expr) other == (Expr) *this), {}};
 }
 
 Float Float::eval(Model m) const {

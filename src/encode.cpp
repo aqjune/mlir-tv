@@ -1280,6 +1280,25 @@ static vector<Expr> addOne(vector<Expr> &&vec) {
   return vec;
 }
 
+// Encode operations that
+// (1) do not change the current state except the definition of a new register
+// (2) never raise UB.
+#define ENCODE_SCALAR_OPS(st, op) \
+    ENCODE(st, op, mlir::arith::AddFOp); \
+    ENCODE(st, op, mlir::arith::AddIOp); \
+    ENCODE(st, op, mlir::arith::ConstantFloatOp); \
+    ENCODE(st, op, mlir::arith::ConstantIndexOp); \
+    ENCODE(st, op, mlir::arith::ConstantIntOp); \
+    ENCODE(st, op, mlir::arith::ConstantOp); \
+    ENCODE(st, op, mlir::arith::IndexCastOp); \
+    ENCODE(st, op, mlir::arith::MulFOp); \
+    ENCODE(st, op, mlir::arith::MulIOp); \
+    ENCODE(st, op, mlir::arith::SubIOp); \
+    ENCODE(st, op, mlir::AffineApplyOp); \
+    ENCODE(st, op, mlir::linalg::IndexOp); \
+    ENCODE(st, op, mlir::shape::ShapeOfOp);
+
+
 static optional<string> encodeParallelLoopBodyAndOutput(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
     const mlir::ShapedType &outputType, optional<Tensor> &t_res) {
@@ -1296,14 +1315,9 @@ static optional<string> encodeParallelLoopBodyAndOutput(
           " variable: " << opop);
       }
     }
-    ENCODE(newst, op, mlir::arith::AddFOp);
-    ENCODE(newst, op, mlir::arith::MulFOp);
-    ENCODE(newst, op, mlir::arith::AddIOp);
-    ENCODE(newst, op, mlir::arith::SubIOp);
-    ENCODE(newst, op, mlir::arith::MulIOp);
-    ENCODE(newst, op, mlir::arith::IndexCastOp);
-    ENCODE(newst, op, mlir::AffineApplyOp);
-    ENCODE(newst, op, mlir::linalg::IndexOp);
+
+    ENCODE_SCALAR_OPS(newst, op);
+
     if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
       yieldedValue = op2.getOperand(0);
       break;
@@ -1368,10 +1382,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
       // Don't directly encode %sum
       break;
 
-    ENCODE(newst, op, mlir::arith::AddFOp);
-    ENCODE(newst, op, mlir::arith::MulFOp);
-    ENCODE(newst, op, mlir::arith::AddIOp);
-    ENCODE(newst, op, mlir::arith::MulIOp);
+    ENCODE_SCALAR_OPS(newst, op);
     RET_STR("has an unsupported operation" << op);
   }
 
@@ -1527,18 +1538,8 @@ static optional<string> encodeRegion(
     if (printOps)
       llvm::outs() << "  " << op << "\n";
 
-    ENCODE(st, op, mlir::arith::AddFOp);
-    ENCODE(st, op, mlir::arith::AddIOp);
-    ENCODE(st, op, mlir::arith::ConstantFloatOp);
-    ENCODE(st, op, mlir::arith::ConstantIndexOp);
-    ENCODE(st, op, mlir::arith::ConstantIntOp);
-    ENCODE(st, op, mlir::arith::ConstantOp);
-    ENCODE(st, op, mlir::arith::IndexCastOp);
-    ENCODE(st, op, mlir::arith::MulFOp);
-    ENCODE(st, op, mlir::arith::MulIOp);
-    ENCODE(st, op, mlir::arith::SubIOp);
+    ENCODE_SCALAR_OPS(st, op);
 
-    ENCODE(st, op, mlir::AffineApplyOp);
     ENCODE(st, op, mlir::ReturnOp);
 
     ENCODE(st, op, mlir::tensor::CastOp);
@@ -1564,13 +1565,11 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::linalg::DotOp);
     ENCODE(st, op, mlir::linalg::FillOp);
     ENCODE(st, op, mlir::linalg::GenericOp);
-    ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::InitTensorOp);
     ENCODE(st, op, mlir::linalg::MatmulOp);
     ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp);
     ENCODE(st, op, mlir::linalg::TensorExpandShapeOp);
     
-    ENCODE(st, op, mlir::shape::ShapeOfOp);
     ENCODE(st, op, mlir::shape::ToExtentTensorOp);
 
     ENCODE(st, op, mlir::sparse_tensor::ConvertOp);

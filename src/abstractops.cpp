@@ -236,6 +236,16 @@ Expr AbsFpEncoding::nan() {
   return constant(llvm::APFloat::getNaN(semantics));
 }
 
+Expr AbsFpEncoding::isnan(const Expr &f) {
+  const auto inf_value = infinity().extract(value_bv_bits - 1, 0);
+  const auto inf_type = infinity().extract(value_bv_bits, value_bv_bits);
+
+  const auto f_value = f.extract(value_bv_bits - 1, 0);
+  const auto f_type = f.extract(value_bv_bits, value_bv_bits);
+
+  return (f_value != inf_value) & (f_type == inf_type);
+}
+
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   usedOps.fpAdd = true;
 
@@ -247,18 +257,8 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   const auto bv_false = Expr::mkBV(0, 1);
 
   // Handle non-canonical NaNs
-  const auto inf_value = fp_inf_pos.extract(value_bv_bits - 1, 0);
-  const auto inf_type = bv_true;
-
-  const auto f1_value = _f1.extract(value_bv_bits - 1, 0);
-  const auto f1_type = _f1.extract(value_bv_bits, value_bv_bits);
-  const auto f1 = Expr::mkIte(
-      (f1_type == inf_type) & (f1_value != inf_value), fp_nan, _f1);
-
-  const auto f2_value = _f2.extract(value_bv_bits - 1, 0);
-  const auto f2_type = _f2.extract(value_bv_bits, value_bv_bits);
-  const auto f2 = Expr::mkIte(
-      (f2_type == inf_type) & (f2_value != inf_value), fp_nan, _f2);
+  const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
+  const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
 
   // Encode commutativity
   auto fp_add_res = getAddFn().apply({f1, f2}) + getAddFn().apply({f2, f1});
@@ -317,18 +317,8 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   auto bv_false = Expr::mkBV(0, 1);
 
   // Handle non-canonical NaNs
-  const auto inf_value = fp_inf_pos.extract(value_bv_bits - 1, 0);
-  const auto inf_type = bv_true; 
-
-  const auto f1_value = _f1.extract(value_bv_bits - 1, 0);
-  const auto f1_type = _f1.extract(value_bv_bits, value_bv_bits);
-  const auto f1 = Expr::mkIte(
-      (f1_type == inf_type) & (f1_value != inf_value), fp_nan, _f1);
-
-  const auto f2_value = _f2.extract(value_bv_bits - 1, 0);
-  const auto f2_type = _f2.extract(value_bv_bits, value_bv_bits);
-  const auto f2 = Expr::mkIte(
-      (f2_type == inf_type) & (f2_value != inf_value), fp_nan, _f2);
+  const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
+  const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
 
   // The sign bit(s) will be replaced in the next step,
   // so it is better to completely ignore the signs in this step.
@@ -389,7 +379,8 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
   auto elemtSort = a.select(Index(0)).sort();
   auto bag = Expr::mkEmptyBag(elemtSort);
   for (unsigned i = 0; i < length; i ++) {
-    bag = bag.insert(a.select(Index(i)));
+    auto ai = a.select(Index(i));
+    bag = bag.insert(Expr::mkIte(isnan(ai), nan(), ai));
     bag = bag.simplify();
   }
 
@@ -411,7 +402,8 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
   Expr result = getSumFn()(
-      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero(true))));
+      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
+        Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
 
   if (getFpAddAssociativity())
     fp_sum_relations.push_back({a, n, result});
