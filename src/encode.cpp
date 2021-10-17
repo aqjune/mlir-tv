@@ -432,22 +432,36 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   GET_OP(offsets, Offsets);
 #undef GET_OP
 
-  assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
-      strides.size() == (size_t)srcType.getRank());
+  if (offsets.size() != sizes.size() || sizes.size() != strides.size() ||
+      strides.size() != (size_t)srcType.getRank())
+    return "Unsupported form";
 
   vector<Expr> dims;
 
   // push output dimensions to dims
   unsigned j = 0;
   for (unsigned i = 0; i < resType.getRank(); i++) {
-    uint64_t v;
-    // lowers dimension if size is 1
-    while ((sizes[j].isUInt(v) && v == 1) && resType.getDimSize(i) != -1) {
+    if (!resType.isDynamicDim(i) && resType.getDimSize(i) == 1) {
+      dims.push_back(Index(1));
+      continue;
+    }
+
+    // Find the new size.
+    while (true) {
+      assert(j < sizes.size());
+      auto elem = op.getMixedSizes()[j];
+      if (!elem.is<mlir::Attribute>())
+        // Matched.
+        break;
+      auto szval = elem.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>();
+      if (szval.getInt() != 1)
+        break;
+      // Ignore the zero size, and look into the next one.
       j++;
     }
+    
     // check if output tensor matches size or size is unknown
-    assert((uint64_t)resType.getDimSize(i) == v || resType.getDimSize(i) == -1);
-    dims.push_back(Index(resType.getDimSize(i)));
+    dims.push_back(Index(sizes[j]));
     j++;
   }
 
