@@ -8,6 +8,7 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
@@ -142,6 +143,7 @@ int main(int argc, char* argv[]) {
   // dependency on some of those dialects
   registry.insert<StandardOpsDialect>();
   registry.insert<AffineDialect>();
+  registry.insert<arith::ArithmeticDialect>();
   registry.insert<linalg::LinalgDialect>();
   registry.insert<memref::MemRefDialect>();
   registry.insert<shape::ShapeDialect>();

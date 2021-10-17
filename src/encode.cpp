@@ -2,11 +2,12 @@
 #include "utils.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
-#include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
-#include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Matchers.h"
@@ -181,44 +182,25 @@ encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op) {
   for (auto d: op.dilations())
     dilations.push_back(Index(d.getSExtValue()));
 
-  if (!op.hasTensorSemantics())
-    return "tensor semantics is supported only";
+  if (op.hasTensorSemantics()) {
+    auto t_input = st.regs.get<Tensor>(op.image());
+    auto t_filter = st.regs.get<Tensor>(op.filter());
 
-  auto inputs = op.getInputTensorOperands();
-  assert(inputs.size() == 2);
-  auto input = inputs[0]->get();
-  auto filter = inputs[1]->get();
+    auto t_res = t_input.conv(t_filter, strides, dilations);
+    st.regs.add(op.getResult(0), move(t_res));
+  } else {
+    auto input = st.regs.get<MemRef>(op.image());
+    auto filter = st.regs.get<MemRef>(op.filter());
+    auto output = st.regs.get<MemRef>(op.outputs()[0]);
 
-  // NOTE: conv's output tensor (op.getOutputTensorOperands()[0]->get())
-  // aqjune talked with mlir people and it is confirmed by them
+    if (!output.isIdentityMap())
+      return "Currently output MemRef should have identity layout..";
 
-  auto t_input = st.regs.get<Tensor>(input);
-  auto t_filter = st.regs.get<Tensor>(filter);
-
-  auto t_res = t_input.conv(t_filter, strides, dilations);
-  st.regs.add(op.getResult(0), move(t_res));
-
-  return {};
-}
-
-template<>
-optional<string>
-encodeOp(State &st, mlir::linalg::ConvOp op) {
-  vector<Expr> strides, dilations;
-  for (unsigned i = 0; i < op.getNumSpatialDimensions(); i ++) {
-    strides.push_back(Index(op.getStride(i)));
-    dilations.push_back(Index(op.getDilation(i)));
+    auto success = output.conv(input, filter, strides, dilations);
+    // add well defined
+    st.wellDefined(op, move(success));
   }
-  auto input = st.regs.get<MemRef>(op.input());
-  auto filter = st.regs.get<MemRef>(op.filter());
-  auto output = st.regs.get<MemRef>(op.output());
 
-  if (!output.isIdentityMap())
-    return "Currently output MemRef should have identity layout..";
-
-  auto success = output.conv(input, filter, strides, dilations);
-  // add well defined
-  st.wellDefined(op, move(success));
   return {};
 }
 
@@ -830,7 +812,7 @@ optional<string> encodeOp(State &st, mlir::linalg::DotOp op) {
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::AddFOp op) {
+optional<string> encodeOp(State &st, mlir::arith::AddFOp op) {
   mlir::Value arg0 = op.getOperand(0);
   mlir::Value arg1 = op.getOperand(1);
 
@@ -841,7 +823,7 @@ optional<string> encodeOp(State &st, mlir::AddFOp op) {
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::MulFOp op) {
+optional<string> encodeOp(State &st, mlir::arith::MulFOp op) {
   mlir::Value arg0 = op.getOperand(0);
   mlir::Value arg1 = op.getOperand(1);
 
@@ -860,7 +842,7 @@ static void addIntOrIndex(
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::AddIOp op) {
+optional<string> encodeOp(State &st, mlir::arith::AddIOp op) {
   auto a = st.regs.getExpr(op.getOperand(0));
   auto b = st.regs.getExpr(op.getOperand(1));
   addIntOrIndex(st, op, a + b, op.getType().isIndex());
@@ -868,7 +850,7 @@ optional<string> encodeOp(State &st, mlir::AddIOp op) {
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::SubIOp op) {
+optional<string> encodeOp(State &st, mlir::arith::SubIOp op) {
   auto a = st.regs.getExpr(op.getOperand(0));
   auto b = st.regs.getExpr(op.getOperand(1));
   addIntOrIndex(st, op, a - b, op.getType().isIndex());
@@ -876,7 +858,7 @@ optional<string> encodeOp(State &st, mlir::SubIOp op) {
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::MulIOp op) {
+optional<string> encodeOp(State &st, mlir::arith::MulIOp op) {
   auto a = st.regs.getExpr(op.getOperand(0));
   auto b = st.regs.getExpr(op.getOperand(1));
   addIntOrIndex(st, op, a * b, op.getType().isIndex());
@@ -905,7 +887,7 @@ static Expr evalIndexCastOp(mlir::Type src, mlir::Type tgt, Expr &&val) {
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
+optional<string> encodeOp(State &st, mlir::arith::IndexCastOp op) {
   auto srcty = op.getOperand().getType();
   auto dstty = op.getType();
 
@@ -959,24 +941,30 @@ optional<string> encodeOp(State &st, mlir::ReturnOp op) {
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::ConstantIndexOp op) {
-  st.regs.add(op, Index(op.getValue()));
+optional<string> encodeOp(State &st, mlir::arith::ConstantIndexOp op) {
+  st.regs.add(op, Index(op.value()));
   return {};
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::ConstantFloatOp op) {
+optional<string> encodeOp(State &st, mlir::arith::ConstantIntOp op) {
+  st.regs.add(op, Integer(op.value(), op.getType().getIntOrFloatBitWidth()));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::arith::ConstantFloatOp op) {
   if (Float::sort(op.getType()) == nullopt)
     return "unsupported constant type";
 
-  auto fp = op.getValue();
+  auto fp = op.value();
   st.regs.add(op, Float::constant(fp, op.getType()));
   return {};
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::ConstantOp op) {
-  auto attr = op.getValue();
+optional<string> encodeOp(State &st, mlir::arith::ConstantOp op) {
+  auto attr = op.value();
   if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
     // splat
     if (!denseAttr.isSplat())
@@ -1308,12 +1296,12 @@ static optional<string> encodeParallelLoopBodyAndOutput(
           " variable: " << opop);
       }
     }
-    ENCODE(newst, op, mlir::AddFOp);
-    ENCODE(newst, op, mlir::MulFOp);
-    ENCODE(newst, op, mlir::AddIOp);
-    ENCODE(newst, op, mlir::SubIOp);
-    ENCODE(newst, op, mlir::MulIOp);
-    ENCODE(newst, op, mlir::IndexCastOp);
+    ENCODE(newst, op, mlir::arith::AddFOp);
+    ENCODE(newst, op, mlir::arith::MulFOp);
+    ENCODE(newst, op, mlir::arith::AddIOp);
+    ENCODE(newst, op, mlir::arith::SubIOp);
+    ENCODE(newst, op, mlir::arith::MulIOp);
+    ENCODE(newst, op, mlir::arith::IndexCastOp);
     ENCODE(newst, op, mlir::AffineApplyOp);
     ENCODE(newst, op, mlir::linalg::IndexOp);
     if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
@@ -1358,13 +1346,13 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   assert(!newst.regs.contains(lastarg));
 
   auto p1 = m_Op<mlir::linalg::YieldOp>(
-      m_Op<mlir::AddFOp>(m_Val(lastarg), m_Any()));
+      m_Op<mlir::arith::AddFOp>(m_Val(lastarg), m_Any()));
   auto p2 = m_Op<mlir::linalg::YieldOp>(
-      m_Op<mlir::AddFOp>(m_Any(), m_Val(lastarg)));
+      m_Op<mlir::arith::AddFOp>(m_Any(), m_Val(lastarg)));
   auto p3 = m_Op<mlir::linalg::YieldOp>(
-      m_Op<mlir::AddIOp>(m_Val(lastarg), m_Any()));
+      m_Op<mlir::arith::AddIOp>(m_Val(lastarg), m_Any()));
   auto p4 = m_Op<mlir::linalg::YieldOp>(
-      m_Op<mlir::AddIOp>(m_Any(), m_Val(lastarg)));
+      m_Op<mlir::arith::AddIOp>(m_Any(), m_Val(lastarg)));
 
   unsigned idx;
   if (p1.match(&ops.back()) || p3.match(&ops.back()))      idx = 1;
@@ -1380,10 +1368,10 @@ static optional<string> encodeReductionLoopBodyAndOutput(
       // Don't directly encode %sum
       break;
 
-    ENCODE(newst, op, mlir::AddFOp);
-    ENCODE(newst, op, mlir::MulFOp);
-    ENCODE(newst, op, mlir::AddIOp);
-    ENCODE(newst, op, mlir::MulIOp);
+    ENCODE(newst, op, mlir::arith::AddFOp);
+    ENCODE(newst, op, mlir::arith::MulFOp);
+    ENCODE(newst, op, mlir::arith::AddIOp);
+    ENCODE(newst, op, mlir::arith::MulIOp);
     RET_STR("has an unsupported operation" << op);
   }
 
@@ -1538,19 +1526,20 @@ static optional<string> encodeRegion(
   for (auto &op: block) {
     if (printOps)
       llvm::outs() << "  " << op << "\n";
-    ENCODE(st, op, mlir::ConstantIndexOp);
-    ENCODE(st, op, mlir::ConstantFloatOp);
-    ENCODE(st, op, mlir::ConstantOp);
 
-    ENCODE(st, op, mlir::AddFOp);
-    ENCODE(st, op, mlir::AddIOp);
-    ENCODE(st, op, mlir::IndexCastOp);
-    ENCODE(st, op, mlir::MulFOp);
-    ENCODE(st, op, mlir::MulIOp);
-    ENCODE(st, op, mlir::ReturnOp);
-    ENCODE(st, op, mlir::SubIOp);
+    ENCODE(st, op, mlir::arith::AddFOp);
+    ENCODE(st, op, mlir::arith::AddIOp);
+    ENCODE(st, op, mlir::arith::ConstantFloatOp);
+    ENCODE(st, op, mlir::arith::ConstantIndexOp);
+    ENCODE(st, op, mlir::arith::ConstantIntOp);
+    ENCODE(st, op, mlir::arith::ConstantOp);
+    ENCODE(st, op, mlir::arith::IndexCastOp);
+    ENCODE(st, op, mlir::arith::MulFOp);
+    ENCODE(st, op, mlir::arith::MulIOp);
+    ENCODE(st, op, mlir::arith::SubIOp);
 
     ENCODE(st, op, mlir::AffineApplyOp);
+    ENCODE(st, op, mlir::ReturnOp);
 
     ENCODE(st, op, mlir::tensor::CastOp);
     ENCODE(st, op, mlir::tensor::DimOp);
@@ -1572,7 +1561,6 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::memref::TensorStoreOp);
 
     ENCODE(st, op, mlir::linalg::Conv2DNhwcHwcfOp);
-    ENCODE(st, op, mlir::linalg::ConvOp);
     ENCODE(st, op, mlir::linalg::DotOp);
     ENCODE(st, op, mlir::linalg::FillOp);
     ENCODE(st, op, mlir::linalg::GenericOp);

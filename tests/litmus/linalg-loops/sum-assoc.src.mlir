@@ -23,7 +23,7 @@ func @sum(%mat: tensor<100x100xf32>) -> tensor<f32>
       iterator_types = ["reduction"]}
      ins(%mat_col : tensor<10000xf32>) outs(%outty : tensor<f32>) {
      ^bb0(%arg0 : f32, %arg1 : f32):
-        %0 = addf %arg0, %arg1 : f32
+        %0 = arith.addf %arg0, %arg1 : f32
         linalg.yield %0 : f32
   } -> tensor<f32>
   return %result : tensor<f32>
