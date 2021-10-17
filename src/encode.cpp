@@ -527,12 +527,13 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
 
   auto opty1 = optys[0].cast<mlir::RankedTensorType>();
   auto opty2 = optys[1].cast<mlir::RankedTensorType>();
+  if (opty1.getRank() != opty2.getRank())
+    return "Broadcasting is not implemented yet";
 
   // Broadcasting is not implemented yet
   for (unsigned i = 0; i < opty1.getRank(); ++i) {
     auto d1 = opty1.getDimSize(i), d2 = opty2.getDimSize(i);
     if (d1 != d2) {
-      assert(d1 == 1 || d2 == 1);
       return "Broadcasting is not implemented yet";
     }
   }
