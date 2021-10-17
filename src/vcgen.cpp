@@ -370,9 +370,6 @@ static Results tryValidation(
 static void checkIsSrcAlwaysUB(
     const ValidationInput &vinput, bool wasSuccess, bool useAllLogic,
     int64_t &elapsedMillisec) {
-  [[maybe_unused]] static bool isCalled = false;
-  assert(!isCalled);
-  isCalled = true;
   mlir::FuncOp src = vinput.src;
   string fnname = src.getName().str();
 
