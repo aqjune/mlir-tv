@@ -178,6 +178,10 @@ Float Float::mul(const Float &b) const {
   return Float(aop::getFpEncoding(type).mul(e, b.e), type);
 }
 
+Float Float::abs() const {
+  return Float(aop::getFpEncoding(type).abs(e), type);
+}
+
 
 Integer::Integer(int64_t i, unsigned bw):
   e(Expr::mkBV(i, bw)) {}

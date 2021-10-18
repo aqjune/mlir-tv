@@ -10,6 +10,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
@@ -145,6 +146,7 @@ int main(int argc, char* argv[]) {
   registry.insert<AffineDialect>();
   registry.insert<arith::ArithmeticDialect>();
   registry.insert<linalg::LinalgDialect>();
+  registry.insert<math::MathDialect>();
   registry.insert<memref::MemRefDialect>();
   registry.insert<shape::ShapeDialect>();
   registry.insert<sparse_tensor::SparseTensorDialect>();

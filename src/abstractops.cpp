@@ -131,7 +131,7 @@ FnDecl AbsFpEncoding::getAddFn() {
 
 FnDecl AbsFpEncoding::getMulFn() {
   if (!fp_mulfn) {
-    auto fty = sort();
+    auto fty = Sort::bvSort(fp_bv_bits - SIGN_BITS);
     auto fty2 = Sort::bvSort(value_bv_bits);
     fp_mulfn.emplace({fty, fty}, fty2, "fp_mul_" + fn_suffix);
   }
@@ -246,6 +246,10 @@ Expr AbsFpEncoding::isnan(const Expr &f) {
   return (f_value != inf_value) & (f_type == inf_type);
 }
 
+Expr AbsFpEncoding::abs(const Expr &f) {
+  return Expr::mkBV(0, 1).concat(f.extract(fp_bv_bits - 2, 0));
+}
+
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   usedOps.fpAdd = true;
 
@@ -319,6 +323,8 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   // Handle non-canonical NaNs
   const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
   const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
+  const auto f1_nosign = f1.extract(fp_bv_bits - 2, 0);
+  const auto f2_nosign = f2.extract(fp_bv_bits - 2, 0);
 
   // The sign bit(s) will be replaced in the next step,
   // so it is better to completely ignore the signs in this step.
@@ -359,7 +365,8 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
     //
     // We want the result of fp_mul to be an abstract and pairwise commutative value.
     // therefore we return fp_mul(f1, f2) + fp_mul(f2, f1)
-    (getMulFn().apply({f1, f2}) + getMulFn().apply({f2, f1})).zext(2)
+    (getMulFn().apply({f1_nosign, f2_nosign}) +
+     getMulFn().apply({f2_nosign, f1_nosign})).zext(2)
   )))))));
 
   // And at last we replace the sign with signbit(f1) ^ signbit(f2)

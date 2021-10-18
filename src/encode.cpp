@@ -4,6 +4,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
@@ -783,6 +784,13 @@ optional<string> encodeOp(State &st, mlir::linalg::IndexOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::math::AbsOp op) {
+  auto f = st.regs.get<Float>(op.getOperand());
+  st.regs.add(op.getResult(), f.abs());
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::linalg::FillOp op) {
   if (!op.hasTensorSemantics())
     return "tensor semantics is supported only";
@@ -1311,6 +1319,7 @@ static vector<Expr> addOne(vector<Expr> &&vec) {
     ENCODE(st, op, mlir::arith::SubIOp); \
     ENCODE(st, op, mlir::AffineApplyOp); \
     ENCODE(st, op, mlir::linalg::IndexOp); \
+    ENCODE(st, op, mlir::math::AbsOp); \
     ENCODE(st, op, mlir::shape::ShapeOfOp);
 
 

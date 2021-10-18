@@ -89,7 +89,8 @@ private:
   // where fty is BV(fp_bv_bits) and fty2 is BV(fp_bv_bits - TYPE_BITS).
   // It is the user of this function that fills in TYPE_BITS.
   smt::FnDecl getAddFn();
-  // Returns a fully abstract mul fn fp_mul(fty, fty) -> BV(value_bv_bits)
+  // Returns a fully abstract mul fn fp_mul(value_bv_bits-1, value_bv_bits-1)
+  // -> BV(value_bv_bits)
   smt::FnDecl getMulFn();
   smt::FnDecl getAssocSumFn();
   smt::FnDecl getSumFn();
@@ -104,6 +105,7 @@ public:
 
   std::vector<llvm::APFloat> possibleConsts(const smt::Expr &e) const;
   smt::Expr isnan(const smt::Expr &f);
+  smt::Expr abs(const smt::Expr &f);
   smt::Expr add(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr mul(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
