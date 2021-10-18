@@ -44,7 +44,9 @@ public:
 
   MemEncoding encoding;
   unsigned int numBlocks;
-  bool associativeAdd;
+  unsigned int floatBits, doubleBits;
+  bool isFpAddAssociative;
+  bool useMultisetForFpSum;
 };
 
 };
@@ -92,48 +94,57 @@ createInputState(
 
     // Encode arguments of the source function.
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
+      if (!Tensor::isTypeSupported(ty))
+        RET_STR("Unsupported type: " << ty);
+
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
-      auto elemtyOrNull = Tensor::getElemTy(ty);
-      if (!elemtyOrNull)
-        RET_STR("Unsupported Tensor element type: " << arg.getType());
+      auto tensor = Tensor(ty.getElementType(),
+          "arg" + to_string(arg.getArgNumber()),
+          dims);
 
-      auto tensor = Tensor("arg" + to_string(arg.getArgNumber()),
-          dims, *elemtyOrNull);
       preconds.push_back(tensor.getWellDefined());
       s.regs.add(arg, move(tensor));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
+      if (!MemRef::isTypeSupported(ty))
+        RET_STR("Unsupported type: " << ty);
+
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
-      auto elemtyOrNull = MemRef::getElemTy(ty);
-      auto layoutOrNull = MemRef::getLayout(ty, dims);
-
-      if (!elemtyOrNull) {
-        RET_STR("Unsupported MemRef element type: " << arg.getType());
-      } else if (!layoutOrNull) {
-        RET_STR("Unsupported MemRef layout: " << arg.getType());
-      }
+      auto layout = MemRef::getLayout(ty, dims);
 
       // TODO : out of bounds pointer is allowed?
-      auto memref = MemRef(s.m.get(), "arg" + to_string(arg.getArgNumber()),
-          dims, *layoutOrNull, *elemtyOrNull);
+      auto memref = MemRef(s.m.get(), ty.getElementType(),
+          "arg" + to_string(arg.getArgNumber()), dims, layout);
 
       // Function argument MemRefs must point to global memblocks.
       preconds.push_back(memref.isGlobalBlock());
       preconds.push_back(memref.getWellDefined());
       s.regs.add(arg, move(memref));
 
-    } else if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
-      s.regs.add(arg,
-        Index::var("arg" + to_string(arg.getArgNumber()), VarType::UNBOUND));
-
-    } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
-      s.regs.add(arg,
-          Float::var("arg" + to_string(arg.getArgNumber()), VarType::UNBOUND));
-
     } else {
-      RET_STR("Unsupported type: " << arg.getType());
+      if (convertTypeToSort(argty) == nullopt) {
+        RET_STR("Unsupported type: " << arg.getType());
+      }
+
+      string name = "arg" + to_string(arg.getArgNumber());
+      auto varty = VarType::UNBOUND;
+      if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
+        s.regs.add(arg, Index::var(move(name), varty));
+
+      } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
+        s.regs.add(arg, Float::var(move(name), argty, varty));
+
+      } else if (auto ty = argty.dyn_cast<mlir::IntegerType>()) {
+        unsigned bw = ty.getIntOrFloatBitWidth();
+        s.regs.add(arg, Integer::var(move(name), bw, varty));
+
+      } else {
+        llvm::errs() << "convertTypeToSort must have returned nullopt for this"
+                        " type!";
+        abort();
+      }
     }
     args.add(i, s.regs.findOrCrash(arg));
   }
@@ -148,9 +159,9 @@ static pair<CheckResult, int64_t> solve(
 
   if (!dumpSMTPath.empty()) {
 #if SOLVER_Z3
-    if (refinement_negated.hasZ3Expr()) {
+    if (refinement_negated.hasZ3Expr() && solver.z3) {
       ofstream fout(dumpSMTPath + ".z3." + dump_string_to_suffix + ".smt2");
-      fout << refinement_negated.getZ3Expr();
+      fout << solver.z3->to_smt2();
       fout.close();
     }
 #endif
@@ -284,7 +295,7 @@ static Results checkRefinement(
 
 static void raiseUnsupported(const string &msg) {
   llvm::errs() << msg << "\n";
-  exit(91);
+  exit(UNSUPPORTED_EXIT_CODE);
 }
 
 static State encodeFinalState(
@@ -337,8 +348,8 @@ static tuple<State, State, Expr> encodeFinalStates(
   State st_tgt = encodeFinalState(
       vinput, move(initMemTgt), printOps, false, args, preconds);
 
-  if (aop::getAddAssociativity())
-    preconds.push_back(aop::getAssociativePrecondition());
+  if (aop::getFpAddAssociativity())
+    preconds.push_back(aop::getFpAssociativePrecondition());
 
   Expr precond =
       exprAnd(preconds) & st_src.precondition() & st_tgt.precondition();
@@ -359,15 +370,18 @@ static Results tryValidation(
 static void checkIsSrcAlwaysUB(
     const ValidationInput &vinput, bool wasSuccess, bool useAllLogic,
     int64_t &elapsedMillisec) {
-  [[maybe_unused]] static bool isCalled = false;
-  assert(!isCalled);
-  isCalled = true;
   mlir::FuncOp src = vinput.src;
   string fnname = src.getName().str();
 
   // Set the abstract level to be as concrete as possible because we may not
   // be able to detect always-UB cases
-  aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, vinput.associativeAdd);
+  aop::setAbstraction(
+      aop::AbsLevelFpDot::SUM_MUL,
+      aop::AbsLevelIntDot::SUM_MUL,
+      vinput.isFpAddAssociative,
+      vinput.floatBits,
+      vinput.doubleBits);
+  aop::setEncodingOptions(vinput.useMultisetForFpSum);
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
@@ -404,10 +418,19 @@ static Results validate(ValidationInput vinput) {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
 
-  // Don't enable add associativity even if vinput.associativeAdd is true
+  using namespace aop;
+
+  // Don't enable fp add associativity even if vinput.associativeAdd is true
   // because simply encoding it as UF is more efficient.
-  aop::setAbstractionLevel(
-      aop::AbsLevelDot::FULLY_ABS, /*isAddAssociative*/false);
+  // We can turn it on in the next iteration.
+  setAbstraction(
+      AbsLevelFpDot::FULLY_ABS,
+      AbsLevelIntDot::FULLY_ABS,
+      /*isFpAddAssociative*/false,
+      /*fp bits*/vinput.floatBits,
+      /*doublebits*/vinput.doubleBits);
+  setEncodingOptions(/*useMultiset*/false);
+
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
 
   if (res.code == Results::INCONSISTENT)
@@ -420,25 +443,35 @@ static Results validate(ValidationInput vinput) {
   }
 
   auto usedOps = aop::getUsedAbstractOps();
-  bool assocAdd = vinput.associativeAdd;
+  bool fpAssocAdd = vinput.isFpAddAssociative;
   // dot = mul + sum?
-  bool useSumMulForDot = usedOps.dot && usedOps.sum && usedOps.mul;
+  bool useSumMulForFpDot = usedOps.fpDot && usedOps.fpSum && usedOps.fpMul;
+  bool useSumMulForIntDot = usedOps.intDot && usedOps.intSum; // Eh.. int mul?
+  bool tryRefinedAbstraction =
+      fpAssocAdd || useSumMulForFpDot || useSumMulForIntDot;
 
-  if (assocAdd || useSumMulForDot) {
-    aop::setAbstractionLevel(aop::AbsLevelDot::SUM_MUL, assocAdd);
-    if (!vinput.dumpSMTPath.empty())
-      vinput.dumpSMTPath += "_noabs";
-  } else {
+  if (!tryRefinedAbstraction)
     return res;
-  }
 
-  // Try more precise encoding
+  // Refine the current abstraction.
+  setAbstraction(
+      (useSumMulForFpDot || fpAssocAdd) ?
+          AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
+      useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
+      fpAssocAdd,
+      vinput.floatBits,
+      vinput.doubleBits);
+  setEncodingOptions(vinput.useMultisetForFpSum);
+
+  if (!vinput.dumpSMTPath.empty())
+    vinput.dumpSMTPath += "_noabs";
+
   llvm::outs()
       << "\n===============================================================\n"
       << "  Giving more precise semantics to abstractly defined ops...\n"
       << "===============================================================\n\n";
 
-  bool useAllLogic = assocAdd;
+  bool useAllLogic = fpAssocAdd;
   res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
   if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
     // Check whether it is always UB
@@ -452,13 +485,14 @@ Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
     unsigned int numBlocks, MemEncoding encoding,
-    bool associativeAdd) {
+    pair<unsigned, unsigned> fpBits, bool isFpAddAssociative,
+    bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
-    if (fnop.isDeclaration())
-      return;
-    m[fnop.getName()] = fnop;
+    if (fnop && !fnop.isDeclaration()) {
+      m[fnop.getName()] = fnop;
+    }
   };
   llvm::for_each(*src, [&](auto &op) { fillFns(srcfns, op); });
   llvm::for_each(*tgt, [&](auto &op) { fillFns(tgtfns, op); });
@@ -478,8 +512,11 @@ Results validate(
     vinput.tgt = itr->second;
     vinput.dumpSMTPath = dumpSMTPath;
     vinput.numBlocks = numBlocks;
+    vinput.floatBits = fpBits.first;
+    vinput.doubleBits = fpBits.second;
     vinput.encoding = encoding;
-    vinput.associativeAdd = associativeAdd;
+    vinput.isFpAddAssociative = isFpAddAssociative;
+    vinput.useMultisetForFpSum = useMultiset;
 
     verificationResult.merge(validate(vinput));
   }

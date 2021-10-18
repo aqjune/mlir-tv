@@ -89,6 +89,7 @@ public:
 
   Expr simplify() const;
   Sort sort() const;
+  unsigned bitwidth() const;
   std::vector<Expr> toNDIndices(const std::vector<Expr> &dims) const;
 
   // Returns true if at least one expr in z3, cvc5, ... is uint.
@@ -139,17 +140,22 @@ public:
   Expr operator-(uint64_t rhs) const;
   Expr operator*(const Expr &rhs) const;
   Expr operator*(uint64_t rhs) const;
+  Expr operator%(const Expr &rhs) const;
+  Expr operator%(uint64_t rhs) const;
   Expr operator&(const Expr &rhs) const;
   Expr operator&(bool rhs) const;
   Expr operator|(const Expr &rhs) const;
   Expr operator|(bool rhs) const;
   Expr operator==(const Expr &rhs) const;
   Expr operator==(uint64_t rhs) const;
+  Expr operator!=(const Expr &rhs) const { return !(*this == rhs); }
+  Expr operator!=(uint64_t rhs) const { return !(*this == rhs); }
   Expr operator!() const;
   Expr &operator&=(const Expr &rhs);
   Expr &operator|=(const Expr &rhs);
 
   Expr implies(const Expr &rhs) const;
+  Expr isZero() const;
   Expr isNonZero() const;
 
   Expr substitute(const std::vector<Expr> &vars,
@@ -268,13 +274,12 @@ public:
 };
 
 class Solver {
-private:
+public:
 #ifdef SOLVER_Z3
   std::optional<z3::solver> z3;
 #endif
   // No need for CVC5
 
-public:
   Solver(const char *logic);
   Solver(const Solver &) = delete;
   ~Solver();

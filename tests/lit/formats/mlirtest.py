@@ -12,7 +12,7 @@ import signal
 
 def _executeCommand(dir_tv: str, dir_src: str, dir_tgt: str,
                     args = []) -> Tuple[str, str, int]:
-    timeout: int = 10000
+    timeout: int = 30000
     command: list[str] = [dir_tv, f"-smt-to={timeout}", dir_src, dir_tgt] + args
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8") as proc:
         exitCode = proc.wait()
@@ -61,14 +61,13 @@ class ExitCodeDependentTestBase(TestBase):
         elif int(exit_code / 10) == 8:
             # exit code 80~89: parsing related errors
             return lit.Test.UNRESOLVED, ""
-        elif int(exit_code / 10) == 9:
-            # exit code 90~99: mlir-tv related errors
-            return lit.Test.UNRESOLVED, ""
         elif exit_code == 101:
             # timeout
             return lit.Test.TIMEOUT, ""
-        elif exit_code == 0 or int(exit_code / 10) == 10:
-            # behavior is defined by tests
+        elif exit_code == 0 or int(exit_code / 10) == 9 or \
+             int(exit_code / 10) == 10:
+            # 90~99:   unsupported
+            # 100~109: timeout/value mismatch/etc
             return self._check(outs, errs, exit_code)
 
     @abstractmethod
@@ -171,6 +170,7 @@ class SrcTgtPairTest(TestFormat):
                     test = VerifyIncorrectTest()
                 elif self.__unsupported_regex.match(line):
                     test = UnsupportedTest()
+                    skip_identity_check = True
                 elif self.__expect_regex.match(line):
                     msg: str = self.__expect_regex.findall(line)[0]
                     test = ExpectTest(msg)

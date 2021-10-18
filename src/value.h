@@ -1,63 +1,28 @@
 #pragma once
 
-#include "smt.h"
+#include "simplevalue.h"
 #include "llvm/ADT/APFloat.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
-#include <string>
-#include <optional>
-#include <vector>
 
 class Memory;
 
-enum class VarType {
-  BOUND, // a bound variable; see Expr::mkVar
-  FRESH, // a fresh, unbound variable
-  UNBOUND
-};
+std::optional<smt::Sort> convertTypeToSort(mlir::Type ty);
+std::optional<smt::Expr> getZero(mlir::Type eltType);
 
-class Index {
-  smt::Expr e;
-
-public:
-  static const unsigned BITS = 32;
-
-  Index(unsigned);
-  Index(const smt::Expr &e): e(e) {}
-  Index(smt::Expr &&e): e(std::move(e)) {}
-
-  operator smt::Expr() const { return e; }
-  Index ofs(int i) const {
-    uint64_t v;
-    if (e.isUInt(v))
-      return Index(v + i);
-    return Index(e + i);
-  }
-
-  static smt::Sort sort();
-  static Index one();
-  static Index zero();
-  static Index var(std::string &&name, enum VarType);
-  static std::vector<smt::Expr> boundIndexVars(unsigned);
-
-  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
-  // (refinement, unbound variables used in the refinement formula)
-  std::pair<smt::Expr, std::vector<smt::Expr>> refines(
-      const Index &other) const;
-  Index eval(smt::Model m) const;
-};
 
 class Float {
   smt::Expr e;
+  mlir::Type type;
 
 public:
-  Float(const smt::Expr &e): e(e) {}
-  Float(const llvm::APFloat &apf);
-  Float(float f);
+  Float(const smt::Expr &e, mlir::Type type): e(e), type(type) {}
 
   operator smt::Expr() const { return e; }
 
-  static smt::Sort sort();
-  static Float var(std::string &&name, VarType vty);
+  static std::optional<smt::Sort> sort(mlir::Type ty);
+  static smt::Sort sortFloat32();
+  static Float var(std::string &&name, mlir::Type ty, VarType vty);
+  static Float constant(const llvm::APFloat &apf, mlir::Type ty);
 
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
@@ -69,29 +34,14 @@ public:
   Float eval(smt::Model m) const;
 };
 
-class Integer {
-  smt::Expr e;
-
-public:
-  Integer(const smt::Expr &e): e(e) {}
-  Integer(int64_t i, unsigned bw);
-  Integer(const llvm::APInt &api);
-
-  operator smt::Expr() const { return e; }
-
-  static smt::Sort sort(unsigned bw);
-  static Integer var(std::string &&name, unsigned bw, VarType vty);
-
-  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
-  // (refinement, {})
-  std::pair<smt::Expr, std::vector<smt::Expr>> refines(const Integer &other)
-      const;
-  Integer eval(smt::Model m) const;
-};
-
 
 class ShapedValue {
+protected:
+  mlir::Type elemType;
+
 public:
+  ShapedValue(mlir::Type elemType): elemType(elemType) {}
+
   // If (freshVarForUnknownSizes, valsForUnknownSz) is
   // (1) (false, nullopt): shapedTy must not have an unknown sized dimension
   // (2) (true, _): unknown sized dimensions are assigned fresh variables
@@ -99,6 +49,8 @@ public:
   static std::vector<smt::Expr> getDims(
       const mlir::ShapedType &shapedTy, bool freshVarForUnknownSizes = true,
       std::optional<std::vector<smt::Expr>> &&valsForUnknownSz = std::nullopt);
+
+  mlir::Type getElemType() const { return elemType; }
 
   virtual std::vector<smt::Expr> getDims() const = 0;
   virtual std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const = 0;
@@ -118,8 +70,8 @@ class Tensor: public ShapedValue {
   std::vector<smt::Expr> dims;
   smt::Expr arr;
 
-  Tensor(std::vector<smt::Expr> &&dims, smt::Expr &&arr):
-      dims(std::move(dims)), arr(std::move(arr)){}
+  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&dims, smt::Expr &&arr):
+      ShapedValue(elemType), dims(std::move(dims)), arr(std::move(arr)) {}
 
 public:
   // This may be parameterized later..
@@ -127,25 +79,27 @@ public:
   static const unsigned MAX_DIM_SIZE = 25;
 
   // A splat tensor.
-  Tensor(smt::Expr &&splat_elem, std::vector<smt::Expr> &&dims);
+  Tensor(mlir::Type elemType, smt::Expr &&splat_elem,
+         std::vector<smt::Expr> &&dims);
   // A sparse tensor.
-  Tensor(const std::vector<std::vector<uint64_t>> &indices,
+  Tensor(mlir::Type elemType,
+         const std::vector<std::vector<uint64_t>> &indices,
          const std::vector<smt::Expr> &elems,
          const std::vector<uint64_t> &dims, const smt::Expr &zero);
+  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems1d);
+  Tensor(mlir::Type elemType, std::string &&name,
+         const std::vector<smt::Expr> &dims);
 
-  Tensor(const std::vector<smt::Expr> &elems1d);
-  Tensor(std::string &&name, const std::vector<smt::Expr> &dims,
-         const smt::Sort &elemty);
 
   smt::Expr asArray() const { return arr; }
-
   smt::Expr getWellDefined() const;
 
   // Return the element at indices.
   //   Expr v = tensor.get(indices)
   //   useAsInt(Integer(v)) // valid only if tensor had integer elems
   //   useAsFloat(Float(v)) // valid only if tensor had float elems
-  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const override;
+  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
+      const override;
 
   std::vector<smt::Expr> getDims() const override { return dims; }
 
@@ -180,16 +134,21 @@ public:
   // (the resulting tensor, shape check)
   std::pair<Tensor, smt::Expr> elementwiseBinOp(
       const Tensor &b,
-      const std::function<smt::Expr(smt::Expr &&e1, smt::Expr &&e2)> &op) const;
+      const std::function<smt::Expr(smt::Expr &&, smt::Expr &&)> &op) const;
+
+  Tensor elementwiseUnaryOp(
+      mlir::Type resultElemType,
+      const std::function<smt::Expr(smt::Expr &&)> &op) const;
 
   smt::Expr dot(const Tensor &b) const;
   smt::Expr sum() const;
 
   operator smt::Expr() const { return arr; }
 
-  static std::optional<smt::Sort> getElemTy(mlir::TensorType tensorTy);
+  static bool isTypeSupported(mlir::TensorType tensorTy);
 
   static Tensor mkLambda(
+      mlir::Type elemType,
       std::vector<smt::Expr> &&newdims,
       std::vector<smt::Expr> &&indexvars, smt::Expr body);
 
@@ -255,21 +214,21 @@ public:
   };
 
   MemRef(Memory *m,
+    const mlir::Type &elemty,
     const smt::Expr &bid,
     const smt::Expr &offset,
     const std::vector<smt::Expr> &dims,
-    const Layout &layout,
-    const smt::Sort &elemty);
+    const Layout &layout);
   // Makes an unbound variable.
   MemRef(Memory *m,
+    const mlir::Type &elemty,
     const std::string &name,
     const std::vector<smt::Expr> &dims,
-    const Layout &layout,
-    const smt::Sort &elemty);
+    const Layout &layout);
   MemRef(Memory *m,
+    const mlir::Type &elemty,
     const std::vector<smt::Expr> &dims,
-    const Layout &layout,
-    const smt::Sort &elemty);
+    const Layout &layout);
 
   // FIXME: Remove this function?
   operator smt::Expr() const { return bid; }
@@ -277,10 +236,10 @@ public:
   smt::Expr getPrecondition() const;
   smt::Expr getWellDefined() const;
 
-  // If memRefTy is unsupported, return nullopt
-  static std::optional<Layout>
-      getLayout(mlir::MemRefType memRefTy, const std::vector<smt::Expr> &dims);
-  static std::optional<smt::Sort> getElemTy(mlir::MemRefType memRefTy);
+  static bool isTypeSupported(mlir::MemRefType memRefTy);
+  // memRefTy must pass isTypeSupported(memRefTy)
+  static Layout getLayout(
+      mlir::MemRefType memRefTy, const std::vector<smt::Expr> &dims);
 
   // Property getters
   smt::Expr getBID() const { return bid; }
@@ -300,7 +259,7 @@ public:
   void setMemory(Memory *m) { this->m = m; }
   bool isIdentityMap() const;
 
-  // Return a new memerf which is subview of source memref.
+  // Return a new memref which is a subview of the source memref.
   MemRef subview(const std::vector<smt::Expr> &offsets,
       const std::vector<smt::Expr> &sizes,
       const std::vector<smt::Expr> &strides,
@@ -324,12 +283,14 @@ private:
   smt::Expr bid; // blockID
   Index offset; // offset
   std::vector<smt::Expr> dims;
-  Layout layout; // memory layout defined by affine_map (ex. s0 * idx0 + s1 * idx1 + ... + offset)
+  Layout layout; // memory layout defined by affine_map
+                 // (ex. s0 * idx0 + s1 * idx1 + ... + offset)
 
   smt::Expr to1DArrayWithOfs(
       const std::vector<smt::Expr> &offbegins,
       const std::vector<smt::Expr> &sizes) const;
-  std::pair<smt::Expr, smt::Expr> to1DIdxWithLayout(const std::vector<smt::Expr> &idxs) const;
+  std::pair<smt::Expr, smt::Expr> to1DIdxWithLayout(
+      const std::vector<smt::Expr> &idxs) const;
 
   MemRef::Layout createSubViewLayout(const std::vector<smt::Expr> &indVars,
       const std::vector<smt::Expr> &offsets,

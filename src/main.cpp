@@ -1,3 +1,4 @@
+#include "abstractops.h"
 #include "memory.h"
 #include "smt.h"
 #include "vcgen.h"
@@ -7,6 +8,7 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
@@ -47,6 +49,11 @@ llvm::cl::opt<smt::SolverType> arg_solver("solver",
   )
 );
 
+llvm::cl::opt<int> fp_bits("fp-bits",
+  llvm::cl::desc("The number of bits for the abstract representation of"
+                 "float and double types (default=their bitwidths)"),
+  llvm::cl::init(-1), llvm::cl::value_desc("number"));
+
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::desc("Number of memory blocks required to validate translation"
                  " (default=8)"),
@@ -64,6 +71,11 @@ llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
     clEnumValN(MemEncoding::SINGLE_ARRAY, "SINGLE", "Using single array memory encoding"),
     clEnumValN(MemEncoding::MULTIPLE_ARRAY, "MULTIPLE", "Using multiple arrays memory encoding")
   ));
+
+llvm::cl::opt<bool> arg_multiset("multiset",
+  llvm::cl::desc("Use multiset when encoding the associativity of the floating"
+                 " point addition"),  llvm::cl::Hidden,
+  llvm::cl::init(false));
 
 // These functions are excerpted from ToolUtilities.cpp in mlir
 static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
@@ -85,11 +97,22 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     return 82;
   }
 
+  int fp_bits_arg = fp_bits.getValue();
+  pair<unsigned, unsigned> fp_bits;
+  if (fp_bits_arg == -1)
+    // TODO: Double is set to 63 instead of 64 (which is the correct bitwidth
+    // of double) because compilers do not support int128 in general.
+    fp_bits = {32, 63};
+  else
+    fp_bits = {fp_bits_arg, fp_bits_arg};
+
   return validate(ir_before, ir_after,
-    arg_dump_smt_to.getValue(),
-    num_memblocks.getValue(),
-    memory_encoding.getValue(),
-    arg_associative_sum.getValue()
+      arg_dump_smt_to.getValue(),
+      num_memblocks.getValue(),
+      memory_encoding.getValue(),
+      fp_bits,
+      arg_associative_sum.getValue(),
+      arg_multiset.getValue()
     ).code;
 }
 
@@ -120,6 +143,7 @@ int main(int argc, char* argv[]) {
   // dependency on some of those dialects
   registry.insert<StandardOpsDialect>();
   registry.insert<AffineDialect>();
+  registry.insert<arith::ArithmeticDialect>();
   registry.insert<linalg::LinalgDialect>();
   registry.insert<memref::MemRefDialect>();
   registry.insert<shape::ShapeDialect>();

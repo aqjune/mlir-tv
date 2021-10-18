@@ -1,6 +1,4 @@
-// VERIFY-INCORRECT
-
-// To verify this, add(x,y) = add(y,x) should be given as an axiom
+// VERIFY
 
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 #map1 = affine_map<(d0) -> (0, d0)>
@@ -15,7 +13,7 @@ func @consumer_with_reduction(%arg0: tensor<1x10xf32>,
     ins(%arg0, %arg1 : tensor<1x10xf32>, tensor<1x10xf32>)
     outs(%init : tensor<1x10xf32>) {
   ^bb0(%arg3: f32, %arg4: f32, %arg5: f32):  // no predecessors
-    %2 = addf %arg4, %arg3 : f32
+    %2 = arith.addf %arg4, %arg3 : f32
     linalg.yield %2 : f32
   } -> tensor<1x10xf32>
   %1 = linalg.generic
@@ -24,7 +22,7 @@ func @consumer_with_reduction(%arg0: tensor<1x10xf32>,
     ins(%0 : tensor<1x10xf32>)
     outs(%arg2 : tensor<1xf32>)  {
   ^bb0(%arg3: f32, %arg4: f32):  // no predecessors
-    %2 = addf %arg3, %arg4 : f32
+    %2 = arith.addf %arg3, %arg4 : f32
     linalg.yield %2 : f32
   } -> tensor<1xf32>
   return %1 : tensor<1xf32>

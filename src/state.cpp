@@ -45,15 +45,16 @@ void RegFile::add(mlir::Value v, ValueTy &&t) {
 
 void RegFile::add(mlir::Value v, const Expr &e, mlir::Type ty) {
   assert(!contains(v));
-  if (ty.isa<mlir::Float32Type>())
-    m.insert({v, Float(e)});
+  if (ty.isa<mlir::FloatType>())
+    m.insert({v, Float(e, ty)});
   else if (ty.isa<mlir::IntegerType>())
     m.insert({v, Integer(e)});
   else if (ty.isa<mlir::IndexType>())
     m.insert({v, Index(e)});
-  else
-    // TODO: tensor?
-    llvm_unreachable("Unsupported type");
+  else {
+    llvm::errs() << "Unsupported type: " << ty << "\n";
+    abort();
+  }
 }
 
 bool RegFile::contains(mlir::Value v) const {

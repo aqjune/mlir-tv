@@ -72,7 +72,12 @@ public:
     timeout_ms = 10000;
   }
 
-  IF_Z3_ENABLED(void useZ3() { this->z3.emplace(); })
+#ifdef SOLVER_Z3
+  void useZ3() {
+    this->z3.emplace();
+    this->z3->set("timeout", (int)timeout_ms);
+  }
+#endif
 #ifdef SOLVER_CVC5
   void useCVC5() {
     this->cvc5.emplace();
@@ -267,6 +272,10 @@ Sort Expr::sort() const {
   return s;
 }
 
+unsigned Expr::bitwidth() const {
+  return sort().bitwidth();
+}
+
 vector<Expr> Expr::toNDIndices(const vector<Expr> &dims) const {
   assert(dims.size() > 0);
 
@@ -392,6 +401,14 @@ Expr Expr::udiv(const Expr& rhs) const {
 
 EXPR_BVOP_UINT64(mod)
 Expr Expr::mod(const Expr& rhs) const {
+  uint64_t v;
+  if (rhs.isUInt(v) && v != 0) {
+    if (v == 1)
+      return mkBV(0, sort().bitwidth());
+    else if ((v & (v - 1)) == 0 && ((v & (1ull << 63ull)) == 0))
+      return *this & mkBV((v - 1), sort().bitwidth());
+  }
+
   Expr e;
   SET_Z3_USEOP(e, rhs, mod);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_SMOD);
@@ -514,6 +531,14 @@ Expr Expr::getMSB() const {
 }
 
 Expr Expr::extract(unsigned hbit, unsigned lbit) const {
+  uint64_t u;
+  if (isUInt(u) && hbit < 64) {
+    u = u >> lbit;
+    if (hbit != 63)
+      u = u & ((1ull << (uint64_t)(hbit + 1)) - 1);
+    return Expr::mkBV(u, hbit - lbit + 1);
+  }
+
   Expr e;
   SET_Z3(e, fmap(this->z3, [&hbit, &lbit](auto e) {
     return e.extract(hbit, lbit); 
@@ -562,8 +587,12 @@ Expr Expr::implies(const Expr &rhs) const {
   return e;
 }
 
+Expr Expr::isZero() const {
+  return *this == Expr::mkBV(0, sort().bitwidth());
+}
+
 Expr Expr::isNonZero() const {
-  return !(*this == Expr::mkBV(0, sort().bitwidth()));
+  return !isZero();
 }
 
 EXPR_BVOP_UINT64(operator+)
@@ -588,6 +617,11 @@ Expr Expr::operator*(const Expr &rhs) const {
   SET_Z3_USEOP(e, rhs, operator*);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_MULT);
   return e;
+}
+
+EXPR_BVOP_UINT64(operator%)
+Expr Expr::operator%(const Expr &rhs) const {
+  return mod(rhs);
 }
 
 Expr Expr::operator&(const Expr &rhs) const {
@@ -618,6 +652,10 @@ Expr Expr::operator|(const Expr &rhs) const {
   else if (rhs.isFalse() || isTrue())
     return *this;
 
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBV(a | b, sort().bitwidth());
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator|);
   if (sort().isBV()) {
@@ -638,6 +676,11 @@ EXPR_BVOP_UINT64(operator==)
 Expr Expr::operator==(const Expr &rhs) const {
   if (isIdentical(rhs, true))
     return mkBool(true);
+
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBool(a == b);
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator==);
   SET_CVC5_USEOP(e, rhs, EQUAL);
@@ -645,6 +688,11 @@ Expr Expr::operator==(const Expr &rhs) const {
 }
 
 Expr Expr::operator!() const {
+  if (isTrue())
+    return mkBool(false);
+  else if (isFalse())
+    return mkBool(true);
+
   Expr e;
   SET_Z3(e, fmap(this->z3, [&](auto e) { return !e; }));
   SET_CVC5(e, fmap(this->cvc5, [&](auto e) { return e.notTerm(); }));

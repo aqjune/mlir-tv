@@ -1,135 +1,269 @@
 #include "abstractops.h"
+#include "simplevalue.h"
 #include "smt.h"
-#include "value.h"
+#include "utils.h"
 #include <map>
 
 using namespace smt;
 using namespace std;
 
-static string freshName(string prefix) {
+namespace {
+string freshName(string prefix) {
   static int count = 0;
   return prefix + to_string(count ++);
 }
 
-namespace {
-// TODO: this must be properly set
-// What we need to do is to statically find how many 'different' fp values a
-// program may observe.
-// FP_BITS must be geq than 3 (otherwise it can't handle reserved values)
-const unsigned FP_BITS = 32;
+bool useMultiset;
+aop::UsedAbstractOps usedOps;
 
-// NaNs and Infs must not be used as keys
-// because they break the entire map.
-// So we keep them in separate variables
-optional<Expr> fpconst_nan_pos;
-optional<Expr> fpconst_nan_neg;
-optional<Expr> fpconst_inf_pos;
-optional<Expr> fpconst_inf_neg;
+// ----- Constants and global vars for abstract floating point operations ------
 
-// Abstract representation of fp constants other than NaN.
-map<float, Expr> fpconst_absrepr;
+aop::AbsLevelFpDot alFpDot;
+bool isFpAddAssociative;
+optional<aop::AbsFpEncoding> floatEnc;
+optional<aop::AbsFpEncoding> doubleEnc;
 
-unsigned fpconst_absrepr_num;
+// ----- Constants and global vars for abstract int operations ------
+
+aop::AbsLevelIntDot alIntDot;
+map<unsigned, FnDecl> int_sumfn;
+map<unsigned, FnDecl> int_dotfn;
+
+FnDecl getIntSumFn(unsigned bitwidth) {
+  auto itr = int_sumfn.find(bitwidth);
+  if (itr != int_sumfn.end())
+    return itr->second;
+
+  auto codomainty = Sort::bvSort(bitwidth);
+  auto arrty = Sort::arraySort(Index::sort(), codomainty).toFnSort();
+  FnDecl hashfn(arrty, Integer::sort(bitwidth),
+                "int_sum" + to_string(bitwidth));
+  int_sumfn.emplace(bitwidth, hashfn);
+  return hashfn;
 }
+
+FnDecl getIntDotFn(unsigned bitwidth) {
+  auto itr = int_dotfn.find(bitwidth);
+  if (itr != int_dotfn.end())
+    return itr->second;
+
+  auto codomainty = Sort::bvSort(bitwidth);
+  auto arrty = Sort::arraySort(Index::sort(), codomainty).toFnSort();
+  FnDecl hashfn({arrty, arrty}, codomainty, "int_dot" + to_string(bitwidth));
+  int_dotfn.emplace(bitwidth, hashfn);
+  return hashfn;
+}
+}
+
 
 namespace aop {
 
-static AbsLevelDot alDot;
-static bool isAddAssociative;
-static UsedAbstractOps usedOps;
-static vector<tuple<Expr, Expr, Expr>> staticArrays;
-
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
-void setAbstractionLevel(AbsLevelDot ad, bool addAssoc) {
-  alDot = ad;
-  isAddAssociative = addAssoc;
+void setAbstraction(
+    AbsLevelFpDot afd, AbsLevelIntDot aid, bool addAssoc,
+    unsigned floatBits, unsigned doubleBits) {
+  alFpDot = afd;
+  alIntDot = aid;
+  isFpAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
-  fpconst_absrepr.clear();
-  fpconst_absrepr_num = 0;
+  if (floatBits > 1)
+    floatBits--;
+  if (doubleBits > 1)
+    doubleBits--;
 
-  staticArrays.clear();
+  floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
+  doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
 }
 
-bool getAddAssociativity() { return isAddAssociative; }
-AbsLevelDot getDotAbstractionLevel() { return alDot; }
-
-
-Sort fpSort() {
-  return Sort::bvSort(FP_BITS);
+// A set of options that must not change the precision of validation.
+void setEncodingOptions(bool use_multiset) {
+  useMultiset = use_multiset;
 }
 
-Expr fpConst(float f) {
-  // NaNs and Infs are handled using separate variable
-  if (isnanf(f)) {
-    if (!fpconst_nan_pos)
-      fpconst_nan_pos = Expr::mkBV(3, FP_BITS);
-    return *fpconst_nan_pos;
-  }
+bool getFpAddAssociativity() { return isFpAddAssociative; }
 
-  if (isinff(f)) {
-    if (signbit(f)) {
-      if (!fpconst_inf_neg)
-        fpconst_inf_neg = Expr::mkBV(5, FP_BITS);
-      return *fpconst_inf_neg;
-    }
-    else {
-      if (!fpconst_inf_pos)
-        fpconst_inf_pos = Expr::mkBV(4, FP_BITS);
-      return *fpconst_inf_pos;
-    }
+AbsFpEncoding &getFloatEncoding() { return *floatEnc; }
+AbsFpEncoding &getDoubleEncoding() { return *doubleEnc; }
+AbsFpEncoding &getFpEncoding(mlir::Type ty) {
+  if (ty.isa<mlir::Float32Type>()) {
+    return getFloatEncoding();
+  } else if (ty.isa<mlir::Float64Type>()) {
+     return getDoubleEncoding();
   }
+  llvm_unreachable("Unknown type");
+}
+
+
+AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
+                             unsigned valuebits, string &&fn_suffix)
+     :semantics(semantics), fn_suffix(move(fn_suffix)) {
+  assert(valuebits > 0);
+  value_bv_bits = valuebits;
+  fp_bv_bits = SIGN_BITS + TYPE_BITS + value_bv_bits;
+  inf_value = 1ull << (uint64_t)value_bv_bits; // The type bit is set to 1
+  nan_value = inf_value + 1; // Type bit = 1 && Value bits != 0
+  signed_value = 1ull << (uint64_t)(TYPE_BITS + value_bv_bits);
+
+  fpconst_nan = Expr::mkBV(nan_value, fp_bv_bits);
+  fpconst_inf_pos = Expr::mkBV(inf_value, fp_bv_bits);
+  fpconst_inf_neg = Expr::mkBV(signed_value + inf_value, fp_bv_bits);
+  fpconst_zero_pos = Expr::mkBV(0, fp_bv_bits);
+  fpconst_zero_neg = Expr::mkBV(signed_value + 0, fp_bv_bits);
+
+  fp_sumfn.reset();
+  fp_assoc_sumfn.reset();
+  fp_dotfn.reset();
+  fp_addfn.reset();
+  fp_mulfn.reset();
+  fp_sum_relations.clear();
+}
+
+FnDecl AbsFpEncoding::getAddFn() {
+  if (!fp_addfn) {
+    auto fty = sort();
+    auto fty2 = Sort::bvSort(fp_bv_bits - SIGN_BITS);
+    fp_addfn.emplace({fty, fty}, fty2, "fp_add_" + fn_suffix);
+  }
+  return *fp_addfn;
+}
+
+FnDecl AbsFpEncoding::getMulFn() {
+  if (!fp_mulfn) {
+    auto fty = sort();
+    auto fty2 = Sort::bvSort(value_bv_bits);
+    fp_mulfn.emplace({fty, fty}, fty2, "fp_mul_" + fn_suffix);
+  }
+  return *fp_mulfn;
+}
+
+FnDecl AbsFpEncoding::getAssocSumFn() {
+  auto s = Expr::mkEmptyBag(sort()).sort();
+  if (!fp_assoc_sumfn)
+    fp_assoc_sumfn.emplace(s, sort(), "fp_assoc_sum_" + fn_suffix);
+  return *fp_assoc_sumfn;
+}
+
+FnDecl AbsFpEncoding::getSumFn() {
+  auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
+  if (!fp_sumfn)
+    fp_sumfn.emplace(arrs, sort(), "fp_sum_" + fn_suffix);
+  return *fp_sumfn;
+}
+
+FnDecl AbsFpEncoding::getDotFn() {
+  auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
+  if (!fp_dotfn)
+    fp_dotfn.emplace({arrs, arrs}, sort(), "fp_dot_" + fn_suffix);
+  return *fp_dotfn;
+}
+
+Expr AbsFpEncoding::constant(const llvm::APFloat &f) {
+  if (f.isNaN())
+    return *fpconst_nan;
+  else if (f.isInfinity())
+    return f.isNegative() ? *fpconst_inf_neg : *fpconst_inf_pos;
+  else if (f.isPosZero())
+    return *fpconst_zero_pos;
+  else if (f.isNegZero())
+    return *fpconst_zero_neg;
 
   // We don't explicitly encode f
   auto itr = fpconst_absrepr.find(f);
   if (itr != fpconst_absrepr.end())
     return itr->second;
 
-  uint64_t absval;
-  if (f == 0.0) {
-    absval = 0; // This is consistent with what mkZeroElemFromArr assumes
-  } else if (f == 1.0) {
-    absval = 1;
-  } else if (f == -0.0) {
-    absval = 2;
+  uint64_t value_id;
+  auto abs_f = f;
+  abs_f.clearSign();
+  if (abs_f.compare(llvm::APFloat(semantics, 1)) == llvm::APFloat::cmpEqual) {
+    value_id = 1;
   } else {
-    // #x3~5 is reserved for NaN and Inf
-    assert((unsigned long long)(6 + fpconst_absrepr_num) < (1ull << FP_BITS));
-    absval = 6 + fpconst_absrepr_num++;
+    assert(static_cast<uint64_t>(2 + fpconst_absrepr_num) < inf_value);
+    value_id = 2 + fpconst_absrepr_num++;
   }
-  Expr e = Expr::mkBV(absval, FP_BITS);
-  fpconst_absrepr.emplace(f, e);
-  return e;
+
+  uint64_t bw = fp_bv_bits;
+  Expr e_pos = Expr::mkBV(value_id, bw);
+  fpconst_absrepr.emplace(abs_f, e_pos);
+  Expr e_neg = Expr::mkBV(signed_value | value_id, bw);
+  fpconst_absrepr.emplace(-abs_f, e_neg);
+
+  return f.isNegative() ? e_neg : e_pos;
 }
 
-vector<float> fpPossibleConsts(const Expr &e) {
-  vector<float> vec;
+vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
+  vector<llvm::APFloat> vec;
+
   for (auto &[k, v]: fpconst_absrepr) {
     if (v.isIdentical(e))
       vec.push_back(k);
   }
+
+  // for 'reserved' values that do not belong to fpconst_absrepr
+  if (fpconst_nan && fpconst_nan->isIdentical(e)) {
+    vec.push_back(llvm::APFloat::getNaN(semantics));
+  } else if (fpconst_zero_pos && fpconst_zero_pos->isIdentical(e)) {
+    vec.push_back(llvm::APFloat::getZero(semantics));
+  } else if (fpconst_zero_neg && fpconst_zero_neg->isIdentical(e)) {
+    vec.push_back(llvm::APFloat::getZero(semantics, true));
+  } else if (fpconst_inf_pos && fpconst_inf_pos->isIdentical(e)) {
+    vec.push_back(llvm::APFloat::getInf(semantics));
+  } else if (fpconst_inf_neg && fpconst_inf_neg->isIdentical(e)) {
+    vec.push_back(llvm::APFloat::getInf(semantics, true));
+  }
+
   return vec;
 }
 
-Expr mkZeroElemFromArr(const Expr &arr) {
-  unsigned bvsz = arr.select(Index::zero()).sort().bitwidth();
-  return Expr::mkBV(0, bvsz);
+Expr AbsFpEncoding::zero(bool isNegative) {
+  return constant(llvm::APFloat::getZero(semantics, isNegative));
 }
 
-optional<FnDecl> sumfn, assoc_sumfn, dotfn, fpaddfn, fpmulfn;
+Expr AbsFpEncoding::one(bool isNegative) {
+  llvm::APFloat apf(semantics, 1);
+  if (isNegative)
+    apf.changeSign();
+  return constant(apf);
+}
 
-Expr fpAdd(const Expr &f1, const Expr &f2) {
-  usedOps.add = true;
-  auto fty = f1.sort();
+Expr AbsFpEncoding::infinity(bool isNegative) {
+  return constant(llvm::APFloat::getInf(semantics, isNegative));
+}
 
-  if (!fpaddfn)
-    fpaddfn.emplace({fty, fty}, fty, "fp_add");
+Expr AbsFpEncoding::nan() {
+  return constant(llvm::APFloat::getNaN(semantics));
+}
 
-  auto fp_id = Float(-0.0);
-  auto fp_inf_pos = Float(INFINITY);
-  auto fp_inf_neg = Float(-INFINITY);
-  auto fp_nan = Float(nanf("0"));
+Expr AbsFpEncoding::isnan(const Expr &f) {
+  const auto inf_value = infinity().extract(value_bv_bits - 1, 0);
+  const auto inf_type = infinity().extract(value_bv_bits, value_bv_bits);
+
+  const auto f_value = f.extract(value_bv_bits - 1, 0);
+  const auto f_type = f.extract(value_bv_bits, value_bv_bits);
+
+  return (f_value != inf_value) & (f_type == inf_type);
+}
+
+Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
+  usedOps.fpAdd = true;
+
+  const auto &fp_id = zero(true);
+  const auto fp_inf_pos = infinity();
+  const auto fp_inf_neg = infinity(true);
+  const auto fp_nan = nan();
+  const auto bv_true = Expr::mkBV(1, 1);
+  const auto bv_false = Expr::mkBV(0, 1);
+
+  // Handle non-canonical NaNs
+  const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
+  const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
+
+  // Encode commutativity
+  auto fp_add_res = getAddFn().apply({f1, f2}) + getAddFn().apply({f2, f1});
+  auto fp_add_sign = fp_add_res.getMSB();
+  auto fp_add_value = fp_add_res.extract(value_bv_bits - 1, 0);
 
   return Expr::mkIte(f1 == fp_id, f2,         // -0.0 + x -> x
     Expr::mkIte(f2 == fp_id, f1,              // x + -0.0 -> x
@@ -143,94 +277,202 @@ Expr fpAdd(const Expr &f1, const Expr &f2) {
     // IEEE 754-2019 section 6.1 'Infinity arithmetic'
     Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg), f1,
       Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg), f2,
-    // if both operands do not fall into any of the cases above,
-    // use fp_add for abstract representation
-    fpaddfn->apply({f1, f2})
+    // If both operands do not fall into any of the cases above,
+    // use fp_add for abstract representation.
+    // But fp_add only yields BV[SIGN_BITS + VALUE_BIT], so we must insert
+    // type bit(s) into the fp_add result.
+    // Fortunately we can just assume that type bit(s) is 0,
+    // because the result of fp_add is always some finite value
+    // as Infs and NaNs are already handled in the previous Ites.
+    // 
+    // There are two cases where we must override the sign bit of fp_add.
+    // If signbit(f1) == 0 /\ signbit(f2) == 0, signbit(fpAdd(f1, f2)) = 0.
+    // If signbit(f1) == 1 /\ signbit(f2) == 1, signbit(fpAdd(f1, f2)) = 1.
+    // Otherwise, we can just use the arbitrary sign yielded from fp_add.
+    Expr::mkIte(((f1.getMSB() == bv_false) & (f2.getMSB() == bv_false)),
+      // pos + pos -> pos
+      bv_false.concat(fp_add_value.zext(TYPE_BITS)),
+    Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
+      // neg + neg -> neg
+      bv_true.concat(fp_add_value.zext(TYPE_BITS)),
+    Expr::mkIte(f1.extract(value_bv_bits - 1, 0) ==
+                f2.extract(value_bv_bits - 1, 0),
+      // x + -x -> 0.0
+      zero(),
+      fp_add_sign.concat(fp_add_value.zext(TYPE_BITS))
+  ))))))))));
+}
+
+Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
+  usedOps.fpMul = true;
+
+  auto fp_zero_pos = zero();
+  auto fp_zero_neg = zero(true);
+  auto fp_id = one();
+  auto fp_neg = one(true);
+  auto fp_inf_pos = infinity();
+  auto fp_inf_neg = infinity(true);
+  auto fp_nan = nan();
+  auto bv_true = Expr::mkBV(1, 1);
+  auto bv_false = Expr::mkBV(0, 1);
+
+  // Handle non-canonical NaNs
+  const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
+  const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
+
+  // The sign bit(s) will be replaced in the next step,
+  // so it is better to completely ignore the signs in this step.
+  // (This is why there's so many | in the conditions...)
+  // 
+  // 1.0 * x -> x, -1.0 * x -> -x
+  auto fpmul_res = Expr::mkIte((f1 == fp_id) | (f1 == fp_neg), f2,
+  // x * 1.0 -> x, x * -1.0 -> -x
+  Expr::mkIte((f2 == fp_id) | (f2 == fp_neg), f1,
+  // NaN * x -> NaN
+  Expr::mkIte(f1 == fp_nan, f1,
+  // x * NaN -> NaN
+  Expr::mkIte(f2 == fp_nan, f2,
+  // +-Inf * +-0.0 -> NaN , +-Inf * x -> ?Inf (if x != 0.0)
+  // IEEE 754-2019 section 7.2 'Invalid operation'
+  Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg),
+    Expr::mkIte((f2 == fp_zero_pos) | (f2 == fp_zero_neg), fp_nan, fp_inf_pos),
+  // +-0.0 * +-Inf -> NaN , x * +-Inf -> ?Inf (if x != 0.0)
+  // IEEE 754-2019 section 7.2 'Invalid operation'
+  Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg),
+    Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg), fp_nan, fp_inf_pos),
+  // +-0.0 * x -> ?0.0, x * +-0.0 -> ?0.0
+  Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg) | (f2 == fp_zero_pos) |
+              (f2 == fp_zero_neg), 
+    fp_zero_pos,
+    // If both operands do not fall into any of the cases above,
+    // use fp_mul for abstract representation.
+    // But fp_mul only yields BV[VALUE_BITS], so we must prepend
+    // sign bit(s) and type bit(s) at the fp_mul result.
+    // For type bit(s), we can just assume that they are 0,
+    // because the result of fp_mul is always some finite value
+    // as Infs and NaNs are already handled in the previous Ites.
+    // For sign bits, as written in the comment above,
+    // it is safe to use any value as they will be overwritten anyway.
+    // Now that we know using 0 for both SIGN_BITS and TYPE_BITS is fine,
+    // we can simply zext(2) the fp_mul
+    // to obtain BV[SIGN_BITS + TYPE_BITS + VALUE_BITS] we want!
+    //
+    // We want the result of fp_mul to be an abstract and pairwise commutative value.
+    // therefore we return fp_mul(f1, f2) + fp_mul(f2, f1)
+    (getMulFn().apply({f1, f2}) + getMulFn().apply({f2, f1})).zext(2)
   )))))));
+
+  // And at last we replace the sign with signbit(f1) ^ signbit(f2)
+  // pos * pos | neg * neg -> pos, pos * neg | neg * pos -> neg
+  return Expr::mkIte(fpmul_res == fp_nan, fp_nan,
+    Expr::mkIte(f1.getMSB() == f2.getMSB(),
+      bv_false.concat(fpmul_res.extract(value_bv_bits, 0)),
+      bv_true.concat(fpmul_res.extract(value_bv_bits, 0))    
+  ));
 }
 
-Expr fpMul(const Expr &f1, const Expr &f2) {
-  usedOps.mul = true;
-  // TODO: check that a.get_Sort() == b.get_Sort()
-  auto exprSort = f1.sort();
+Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
+  uint64_t length;
+  if (!n.isUInt(length))
+    throw UnsupportedException("Only an array of constant length is supported.");
 
-  if (!fpmulfn)
-    fpmulfn.emplace({exprSort, exprSort}, Float::sort(), "fp_mul");
+  auto elemtSort = a.select(Index(0)).sort();
+  auto bag = Expr::mkEmptyBag(elemtSort);
+  for (unsigned i = 0; i < length; i ++) {
+    auto ai = a.select(Index(i));
+    bag = bag.insert(Expr::mkIte(isnan(ai), nan(), ai));
+    bag = bag.simplify();
+  }
 
-  auto fp_id = Float(1.0);
-  // if neither a nor b is 1.0, the result should be
-  // an abstract and pairwise commutative value.
-  // therefore we return fp_mul(f1, f2) + fp_mul(f2, f1)
-  return Expr::mkIte(f1 == fp_id, f2,                     // if f1 == 1.0, then f2
-    Expr::mkIte(f2 == fp_id, f1,                          // elif f2 == 1.0 , then f1
-      fpmulfn->apply({f1, f2}) + fpmulfn->apply({f2, f1}) // else fp_mul(f1, f2) + fp_mul(f2, f1)
-    )
-  );
-}
-
-Expr sum(const Expr &a, const Expr &n) {
-  usedOps.sum = true;
-  // TODO: check that a.Sort is Index::Sort() -> Float::Sort()
-
-  if (!sumfn)
-    sumfn.emplace(a.sort(), Float::sort(), "smt_sum");
-  auto i = Index::var("idx", VarType::BOUND);
-  Expr ai = a.select(i);
-  Expr zero = mkZeroElemFromArr(a);
-  Expr result = (*sumfn)(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
-
-  if (n.isNumeral())
-    staticArrays.push_back({a, n, result});
+  Expr result = getAssocSumFn()(bag);
+  fp_sum_relations.push_back({bag, n, result});
 
   return result;
 }
 
-Expr dot(const Expr &a, const Expr &b, const Expr &n) {
-  if (alDot == AbsLevelDot::FULLY_ABS) {
-    usedOps.dot = true;
-    // TODO: check that a.get_Sort() == b.get_Sort()
+Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
+  if (getFpAddAssociativity() && !n.isNumeral())
+    throw UnsupportedException("Only an array of constant length is supported.");
+
+  usedOps.fpSum = true;
+
+  if (getFpAddAssociativity() && useMultiset)
+    return multisetSum(a, n);
+
+  auto i = Index::var("idx", VarType::BOUND);
+  Expr ai = a.select(i);
+  Expr result = getSumFn()(
+      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
+        Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
+
+  if (getFpAddAssociativity())
+    fp_sum_relations.push_back({a, n, result});
+
+  return result;
+}
+
+Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
+  if (alFpDot == AbsLevelFpDot::FULLY_ABS) {
+    usedOps.fpDot = true;
     auto i = (Expr)Index::var("idx", VarType::BOUND);
-    auto fnSort = a.sort().toFnSort();
-    if (!dotfn)
-      dotfn.emplace({fnSort, fnSort}, Float::sort(), "smt_dot");
 
     Expr ai = a.select(i), bi = b.select(i);
-    Expr zero = mkZeroElemFromArr(a);
-    Expr lhs = dotfn->apply({
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero)),
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero))});
-    Expr rhs = dotfn->apply({
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero)),
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero))});
+    Expr identity = zero(true);
+    // Encode commutativity: dot(a, b) = dot(b, a)
+    Expr lhs = getDotFn().apply({
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity)),
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity))});
+    Expr rhs = getDotFn().apply({
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity)),
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity))});
     return lhs + rhs;
-  } else if (alDot == AbsLevelDot::SUM_MUL) {
-    usedOps.mul = usedOps.sum = true;
-    // TODO: check that a.get_Sort() == b.get_Sort()
+
+  } else if (alFpDot == AbsLevelFpDot::SUM_MUL) {
+    // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     Expr ai = a.select(i), bi = b.select(i);
-    Expr arr = Expr::mkLambda(i, fpMul(ai, bi));
+    Expr arr = Expr::mkLambda(i, mul(ai, bi));
 
     return sum(arr, n);
   }
-  llvm_unreachable("Unknown abstraction level for dot");
+  llvm_unreachable("Unknown abstraction level for fp dot");
 }
 
-Expr getAssociativePrecondition() {
+Expr AbsFpEncoding::getFpAssociativePrecondition() const {
+  if (useMultiset) {
+    // precondition between `bag equality <-> assoc_sumfn`
+    Expr precond = Expr::mkBool(true);
+    for (unsigned i = 0; i < fp_sum_relations.size(); i ++) {
+      for (unsigned j = i + 1; j < fp_sum_relations.size(); j ++) {
+        auto [abag, an, asum] = fp_sum_relations[i];
+        auto [bbag, bn, bsum] = fp_sum_relations[j];
+        uint64_t alen, blen;
+        if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
+        precond = precond & (abag == bbag).implies(asum == bsum);
+      }
+    }
+    precond = precond.simplify();
+    return precond;
+  }
+
+  // precondition between `hashfn <-> sumfn`
   Expr precond = Expr::mkBool(true);
-  for (unsigned i = 0; i < staticArrays.size(); i ++) {
-    for (unsigned j = i + 1; j < staticArrays.size(); j ++) {
-      auto [a, an, asum] = staticArrays[i];
-      auto [b, bn, bsum] = staticArrays[j];
+  for (unsigned i = 0; i < fp_sum_relations.size(); i ++) {
+    for (unsigned j = i + 1; j < fp_sum_relations.size(); j ++) {
+      auto [a, an, asum] = fp_sum_relations[i];
+      auto [b, bn, bsum] = fp_sum_relations[j];
       uint64_t alen, blen;
       if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
-      FnDecl hashfn(Float::sort(), Index::sort(), freshName("hash"));
+
+      auto domainSort = a.select(Index(0)).sort();
+      FnDecl hashfn(domainSort, Index::sort(), freshName("fp_hash"));
 
       auto aVal = hashfn.apply(a.select(Index(0)));
-      for (unsigned i = 1; i < alen; i ++)
-        aVal = aVal + hashfn.apply(a.select(Index(i)));
+      for (unsigned k = 1; k < alen; k ++)
+        aVal = aVal + hashfn.apply(a.select(Index(k)));
       auto bVal = hashfn.apply(b.select(Index(0)));
-      for (unsigned i = 1; i < blen; i ++)
-        bVal = bVal + hashfn.apply(b.select(Index(i)));
+      for (unsigned k = 1; k < blen; k ++)
+        bVal = bVal + hashfn.apply(b.select(Index(k)));
 
       // precond: sumfn(A) != sumfn(B) -> hashfn(A) != hashfn(B)
       // This means if two summations are different, we can find concrete hash function that hashes into different value.
@@ -240,6 +482,67 @@ Expr getAssociativePrecondition() {
   }
   precond = precond.simplify();
   return precond;
+}
+
+
+
+Expr getFpAssociativePrecondition() {
+  // Calling this function doesn't make sense if add is not associative
+  assert(isFpAddAssociative);
+
+  Expr cond = Expr::mkBool(true);
+  if (floatEnc)
+    cond &= floatEnc->getFpAssociativePrecondition();
+  // TODO: double
+
+  return cond;
+}
+
+
+
+// ----- Integer operations ------
+
+
+Expr intSum(const Expr &a, const Expr &n) {
+  usedOps.intSum = true;
+
+  auto i = Index::var("idx", VarType::BOUND);
+  Expr ai = a.select(i);
+  Expr zero = Integer(0, ai.bitwidth());
+
+  FnDecl sumfn = getIntSumFn(ai.sort().bitwidth());
+  Expr result = sumfn(
+      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
+
+  return result;
+}
+
+Expr intDot(const Expr &a, const Expr &b, const Expr &n) {
+  if (alIntDot == AbsLevelIntDot::FULLY_ABS) {
+    usedOps.intDot = true;
+
+    auto i = (Expr)Index::var("idx", VarType::BOUND);
+    Expr ai = a.select(i), bi = b.select(i);
+    assert(ai.sort().bitwidth() == bi.sort().bitwidth());
+
+    FnDecl dotfn = getIntDotFn(ai.sort().bitwidth());
+    Expr zero = Expr::mkBV(0, ai.bitwidth());
+    Expr lhs = dotfn.apply({
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero)),
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero))});
+    Expr rhs = dotfn.apply({
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, zero)),
+        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero))});
+    return lhs + rhs;
+
+  } else if (alIntDot == AbsLevelIntDot::SUM_MUL) {
+    auto i = (Expr)Index::var("idx", VarType::BOUND);
+    Expr ai = a.select(i), bi = b.select(i);
+    Expr arr = Expr::mkLambda(i, ai * bi);
+
+    return intSum(arr, n);
+  }
+  llvm_unreachable("Unknown abstraction level for int dot");
 }
 
 }

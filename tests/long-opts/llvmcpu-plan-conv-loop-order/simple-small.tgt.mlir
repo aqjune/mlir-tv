@@ -5,8 +5,8 @@ module  {
   func @conv(%arg0: memref<3x3x1x1xf32>, %arg1: memref<1x3x3x1xf32>, %arg2: memref<1x1x1x1xf32>) {
     linalg.generic {indexing_maps = [#map0, #map1, #map2], iterator_types = ["parallel", "parallel", "parallel", "window", "window", "reduction", "parallel"]} ins(%arg0, %arg1 : memref<3x3x1x1xf32>, memref<1x3x3x1xf32>) outs(%arg2 : memref<1x1x1x1xf32>) {
     ^bb0(%arg3: f32, %arg4: f32, %arg5: f32):  // no predecessors
-      %0 = mulf %arg3, %arg4 : f32
-      %1 = addf %0, %arg5 : f32
+      %0 = arith.mulf %arg3, %arg4 : f32
+      %1 = arith.addf %0, %arg5 : f32
       linalg.yield %1 : f32
     }
     return

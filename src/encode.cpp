@@ -1,11 +1,13 @@
 #include "encode.h"
+#include "utils.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
-#include "mlir/Dialect/MemRef/IR/MemRefOps.h.inc"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
-#include "mlir/Dialect/Tensor/IR/TensorOps.h.inc"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Matchers.h"
@@ -37,20 +39,10 @@ using namespace std;
 }
 
 
-static optional<Expr> getZero(mlir::Type eltType) {
-  if (eltType.isa<mlir::FloatType>())
-    return Float(0.0);
-  else if (eltType.isa<mlir::IntegerType>())
-    return Integer(0, eltType.getIntOrFloatBitWidth());
-  else if (eltType.isa<mlir::IndexType>())
-    return Index(0);
-  return {};
-}
-
 static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   auto ty = a.getType();
   if (ty.isa<mlir::FloatType>()) {
-    return Float(a.dyn_cast<mlir::FloatAttr>().getValue().convertToFloat());
+    return Float::constant(a.dyn_cast<mlir::FloatAttr>().getValue(), ty);
   } else if (ty.isa<mlir::IntegerType>()) {
     if (64 < ty.getIntOrFloatBitWidth())
       // size is too large
@@ -60,8 +52,9 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
   } else if (ty.isa<mlir::IndexType>()) {
     llvm::APInt i = a.dyn_cast<mlir::IntegerAttr>().getValue();
     assert(i.getBitWidth() == 64);
-    // TODO: The result may not fit in Index::BITS
-    return Index(i.getSExtValue());
+    int64_t ii = i.getSExtValue();
+    assert(-2147483648ll <= ii && ii <= 2147483647ll);
+    return Index(ii);
   }
   return {};
 }
@@ -69,8 +62,8 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
 static optional<ValueTy> fromExpr(Expr &&e, mlir::Type ty) {
   if (ty.isa<mlir::IndexType>())
     return Index(e);
-  else if (ty.isa<mlir::Float32Type>())
-    return Float(e);
+  else if (ty.isa<mlir::FloatType>())
+    return Float(e, ty);
   else if (ty.isa<mlir::IntegerType>()) {
     assert(e.sort().bitwidth() == ty.getIntOrFloatBitWidth());
     return Integer(e);
@@ -124,12 +117,53 @@ static mlir::Type getTensorElemTy(mlir::Value v) {
   return v.getType().dyn_cast<mlir::TensorType>().getElementType();
 }
 
+template<class OpTy>
+static optional<string>
+encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
+    function<Float(Float &&e1, Float &&e2)> f_float,
+    function<Integer(Integer &&e1, Integer &&e2)> f_int) {
+
+  if (arg0.getType().isa<mlir::FloatType>()) {
+    auto a = st.regs.get<Float>(arg0);
+    auto b = st.regs.get<Float>(arg1);
+    st.regs.add(op, f_float(move(a), move(b)));
+
+  } else if (auto tty = arg0.getType().dyn_cast<mlir::RankedTensorType>()) {
+    auto elemty = tty.getElementType();
+    if (!elemty.isIntOrFloat())
+      return "Unsupported element type";
+
+    auto a = st.regs.get<Tensor>(arg0);
+    auto b = st.regs.get<Tensor>(arg1);
+
+    auto f = [&](smt::Expr &&a, smt::Expr &&b) -> smt::Expr {
+      if (elemty.isa<mlir::FloatType>()) {
+        return f_float(Float(a, elemty), Float(b, elemty));
+      } else if (elemty.isa<mlir::IntegerType>()) {
+        return f_int(Integer(a), Integer(b));
+      }
+      llvm_unreachable("Unreachable case");
+    };
+    auto [res, welldef] = a.elementwiseBinOp(b, f);
+    st.regs.add(op, move(res));
+    st.wellDefined(op.getOperation(), move(welldef));
+
+  } else {
+    return "Unsupported type";
+  }
+  return {};
+}
+
 
 #define ENCODE(st, op, ty) { \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    auto errmsg = encodeOp(st, op2); \
-    if (errmsg) { \
-      RET_STR("Unknown op (" << op.getName() << "): " << op << "\n\t" << *errmsg << "\n") \
+    try { \
+      auto errmsg = encodeOp(st, op2); \
+      if (errmsg) { \
+        RET_STR("Unknown op (" << op.getName() << "): " << op << "\n\t" << *errmsg << "\n") \
+      } \
+    } catch (UnsupportedException& e) { \
+      RET_STR("Unknown op (" << op.getName() << "): " << op << "\n\t" << e.what() << "\n") \
     } \
     continue; \
   } \
@@ -148,52 +182,34 @@ encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op) {
   for (auto d: op.dilations())
     dilations.push_back(Index(d.getSExtValue()));
 
-  if (!op.hasTensorSemantics())
-    return "tensor semantics is supported only";
+  if (op.hasTensorSemantics()) {
+    auto t_input = st.regs.get<Tensor>(op.image());
+    auto t_filter = st.regs.get<Tensor>(op.filter());
 
-  auto inputs = op.getInputTensorOperands();
-  assert(inputs.size() == 2);
-  auto input = inputs[0]->get();
-  auto filter = inputs[1]->get();
+    auto t_res = t_input.conv(t_filter, strides, dilations);
+    st.regs.add(op.getResult(0), move(t_res));
+  } else {
+    auto input = st.regs.get<MemRef>(op.image());
+    auto filter = st.regs.get<MemRef>(op.filter());
+    auto output = st.regs.get<MemRef>(op.outputs()[0]);
 
-  // NOTE: conv's output tensor (op.getOutputTensorOperands()[0]->get())
-  // aqjune talked with mlir people and it is confirmed by them
+    if (!output.isIdentityMap())
+      return "Currently output MemRef should have identity layout..";
 
-  auto t_input = st.regs.get<Tensor>(input);
-  auto t_filter = st.regs.get<Tensor>(filter);
-
-  auto t_res = t_input.conv(t_filter, strides, dilations);
-  st.regs.add(op.getResult(0), move(t_res));
-
-  return {};
-}
-
-template<>
-optional<string>
-encodeOp(State &st, mlir::linalg::ConvOp op) {
-  vector<Expr> strides, dilations;
-  for (unsigned i = 0; i < op.getNumSpatialDimensions(); i ++) {
-    strides.push_back(Index(op.getStride(i)));
-    dilations.push_back(Index(op.getDilation(i)));
+    auto success = output.conv(input, filter, strides, dilations);
+    // add well defined
+    st.wellDefined(op, move(success));
   }
-  auto input = st.regs.get<MemRef>(op.input());
-  auto filter = st.regs.get<MemRef>(op.filter());
-  auto output = st.regs.get<MemRef>(op.output());
 
-  if (!output.isIdentityMap())
-    return "Currently output MemRef should have identity layout..";
-
-  auto success = output.conv(input, filter, strides, dilations);
-  // add well defined
-  st.wellDefined(op, move(success));
   return {};
 }
 
 template<>
 optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
   auto res = op.getResult();
-  auto ty = res.getType().dyn_cast<mlir::TensorType>();
-  assert(ty);
+  auto ty = res.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!ty || !Tensor::isTypeSupported(ty))
+    return "Unsupported tensor type";
 
   vector<Expr> sizes;
   if (ty.getRank() == 0) {
@@ -207,15 +223,11 @@ optional<string> encodeOp(State &st, mlir::linalg::InitTensorOp op) {
     }
   }
 
-  auto elemTy = Tensor::getElemTy(ty);
-  if (!elemTy)
-    return "Unsupported tensor type";
-
   // FIXME: can we use res's name?
   static int new_var_idx = 0;
   st.regs.add(res,
-      Tensor(string("init_tensor_") + to_string(new_var_idx++), sizes,
-             *elemTy));
+      Tensor(ty.getElementType(), ("init_tensor_") + to_string(new_var_idx++),
+             sizes));
 
   return {};
 }
@@ -228,18 +240,23 @@ optional<string> encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op) {
   auto reassocExprs = op.getReassociationIndices();
   assert(reassocExprs.size() == (size_t)resTy.getRank());
 
-  // If the collapsed size does not match op.getResultType(), it is UB.
   vector<Expr> newDims;
-  for (unsigned i = 0; i < reassocExprs.size(); ++i) {
-    Expr size = Index::one();
-    for (auto &idx: reassocExprs[i])
-      size = size * t.getDim(idx);
+  if (reassocExprs.size() == 0) {
+    newDims.push_back(Index(1));
+  } else {
+    // If the collapsed size does not match op.getResultType(), it is UB.
+    for (unsigned i = 0; i < reassocExprs.size(); ++i) {
+      Expr size = Index::one();
+      for (auto &idx: reassocExprs[i])
+        size = size * t.getDim(idx);
 
-    if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
-      st.wellDefined(op.getOperation(), size == resTy.getDimSize(i));
-    newDims.push_back(move(size));
+      if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
+        st.wellDefined(op.getOperation(), size == resTy.getDimSize(i));
+      newDims.push_back(move(size));
+    }
   }
 
+  st.wellDefined(op.getOperation(), t.get1DSize() == smt::get1DSize(newDims));
   st.regs.add(op.getResult(), t.reshape(newDims));
   return {};
 }
@@ -333,6 +350,23 @@ optional<string> encodeOp(State &st, mlir::tensor::DimOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::tensor::CastOp op) {
+  auto tty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!tty)
+    return "Unsupported type";
+
+  auto t = st.regs.get<Tensor>(op.getOperand());
+  for (size_t i = 0; i < tty.getRank(); ++i) {
+    if (tty.isDynamicDim(i))
+      continue;
+    st.wellDefined(op.getOperation(), (Expr)t.getDim(i) == tty.getDimSize(i));
+  }
+  st.regs.add(op, move(t));
+
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::tensor::InsertOp op) {
   auto val = st.regs.get<Float>(op.scalar());
   auto dest = st.regs.get<Tensor>(op.dest());
@@ -373,7 +407,7 @@ optional<string> encodeOp(State &st, mlir::tensor::FromElementsOp op) {
   for (unsigned i = 0; i < op.getNumOperands(); ++i)
     elems.push_back(st.regs.getExpr(op.getOperand(i)));
 
-  auto res = Tensor(elems);
+  auto res = Tensor(op.getType().getElementType(), move(elems));
   st.regs.add(op.getResult(), move(res));
   return {};
 }
@@ -398,22 +432,36 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   GET_OP(offsets, Offsets);
 #undef GET_OP
 
-  assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
-      strides.size() == (size_t)srcType.getRank());
+  if (offsets.size() != sizes.size() || sizes.size() != strides.size() ||
+      strides.size() != (size_t)srcType.getRank())
+    return "Unsupported form";
 
   vector<Expr> dims;
 
   // push output dimensions to dims
   unsigned j = 0;
   for (unsigned i = 0; i < resType.getRank(); i++) {
-    uint64_t v;
-    // lowers dimension if size is 1
-    while ((sizes[j].isUInt(v) && v == 1) && resType.getDimSize(i) != -1) {
+    if (!resType.isDynamicDim(i) && resType.getDimSize(i) == 1) {
+      dims.push_back(Index(1));
+      continue;
+    }
+
+    // Find the new size.
+    while (true) {
+      assert(j < sizes.size());
+      auto elem = op.getMixedSizes()[j];
+      if (!elem.is<mlir::Attribute>())
+        // Matched.
+        break;
+      auto szval = elem.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>();
+      if (szval.getInt() != 1)
+        break;
+      // Ignore the zero size, and look into the next one.
       j++;
     }
+    
     // check if output tensor matches size or size is unknown
-    assert((uint64_t)resType.getDimSize(i) == v || resType.getDimSize(i) == -1);
-    dims.push_back(Index(resType.getDimSize(i)));
+    dims.push_back(Index(sizes[j]));
     j++;
   }
 
@@ -431,7 +479,56 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
         offsets[i] : ((inIdxs[idx++] * strides[i])) + offsets[i]);
   }
   st.regs.add(res,
-      Tensor::mkLambda(move(dims), move(inIdxs), src.get(outIdxs).first));
+      Tensor::mkLambda(src.getElemType(), move(dims), move(inIdxs),
+                       src.get(outIdxs).first));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
+  vector<Expr> offsets, sizes, strides;
+  auto src1 = st.regs.get<Tensor>(op.getOperand(0));
+  auto src2 = st.regs.get<Tensor>(op.getOperand(1));
+  auto res = op.getResult();
+  auto rank = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>().getRank();
+  if (rank != op.getOperand(1).getType().dyn_cast<mlir::ShapedType>().getRank()
+      || rank != res.getType().dyn_cast<mlir::ShapedType>().getRank())
+    return "Unsupported tensor types of src and dest: their ranks do not match";
+
+#define GET_OP(vec, ee) { \
+    for (auto s: op.getMixed ## ee()) { \
+      vec.push_back(s.is<mlir::Value>() ? \
+      st.regs.get<Index>(s.get<mlir::Value>()) : \
+      Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
+    } \
+  }
+  GET_OP(strides, Strides);
+  GET_OP(sizes, Sizes);
+  GET_OP(offsets, Offsets);
+#undef GET_OP
+
+  assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
+         strides.size() == rank);
+
+  vector<Expr> indVars = Index::boundIndexVars(rank);
+  vector<Expr> dims = src2.getDims();
+  vector<Expr> src1Idxs;
+
+  Expr cond = Expr::mkBool(true);
+
+  for (unsigned i = 0; i < rank; i++) {
+    src1Idxs.push_back((indVars[i] - offsets[i]).udiv(strides[i]));
+    cond &= ((indVars[i] - offsets[i]) % strides[i]).isZero() &
+            (indVars[i] - offsets[i]).ult(sizes[i] * strides[i]);
+  }
+
+  // Picking the value from src1 must not be out of bounds.
+  auto [src1elem, src1wb] = src1.get(src1Idxs);
+  Expr output = Expr::mkIte(cond, move(src1elem), src2.get(indVars).first);
+
+  st.wellDefined(op.getOperation(), move(src1wb));
+  st.regs.add(res, Tensor::mkLambda(
+      src1.getElemType(), move(dims), move(indVars), output));
   return {};
 }
 
@@ -444,6 +541,7 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
 
   auto opty1 = optys[0].cast<mlir::RankedTensorType>();
   auto opty2 = optys[1].cast<mlir::RankedTensorType>();
+
   auto resRank = max(opty1.getRank(), opty2.getRank());
   auto swapped = false;
 
@@ -504,29 +602,29 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
                     : Tensor::mkLambda(move(resDims2), move(opInVars2),
                                         input2.get(opOutVars2).first);
 
-  auto [res, welldef] = t1.elementwiseBinOp(t2, [](auto &&e1, auto &&e2)
-      { return e1 + e2; });
-  st.wellDefined(op.getOperation(), move(welldef));
-  st.regs.add(op, move(res));
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1,
+      [](auto &&a, auto &&b) { return a.add(b); },
+      [](auto &&a, auto &&b) { return (Expr)a + (Expr)b; });
+  return {};
 
   return {};
 }
 
 static variant<string, MemRef> createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
-  auto elemtyOrNull = MemRef::getElemTy(memrefTy);
-  auto layoutOrNull = MemRef::getLayout(memrefTy, dims);
-  if (!elemtyOrNull)
+  if (!MemRef::isTypeSupported(memrefTy))
     return "unsupported element type";
-  else if (!layoutOrNull)
-    return "unsupported layout";
 
+  auto layout = MemRef::getLayout(memrefTy, dims);
   // Add a new local block
   auto bid = m->addLocalBlock(smt::get1DSize(dims), Expr::mkBool(writable));
   // Create MemRef which points to the newly created block
   auto memref =
-      MemRef(m, bid, Index::zero(), dims, move(*layoutOrNull),
-             move(*elemtyOrNull));
+      MemRef(m, memrefTy.getElementType(), bid, Index::zero(), dims,
+          move(layout));
 
   return {move(memref)};
 }
@@ -699,8 +797,9 @@ optional<string> encodeOp(State &st, mlir::memref::TensorLoadOp op) {
   // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
   vector<Expr> idxs = Index::boundIndexVars(dims.size());
-  auto Expr = m.get(idxs).first;
-  Tensor t_res = Tensor::mkLambda(move(dims), move(idxs), Expr);
+  auto expr = m.get(idxs).first;
+  Tensor t_res = Tensor::mkLambda(getTensorElemTy(op.getResult()),
+      move(dims), move(idxs), expr);
 
   st.regs.add(op.getResult(), t_res);
   st.wellDefined(op.getOperation(), m.isInBounds());
@@ -741,7 +840,8 @@ optional<string> encodeOp(State &st, mlir::linalg::FillOp op) {
     return "it has multiple results";
 
   auto t = st.regs.get<Tensor>(op.getOperand(1));
-  auto res = Tensor(st.regs.getExpr(op.getOperand(0)), t.getDims());
+  auto res = Tensor(t.getElemType(),
+      st.regs.getExpr(op.getOperand(0)), t.getDims());
   st.regs.add(op.getResult(0), move(res));
   return {};
 }
@@ -771,23 +871,30 @@ optional<string> encodeOp(State &st, mlir::linalg::DotOp op) {
   st.wellDefined(op.getOperation(), t1.get1DSize() == t2.get1DSize());
 
   auto res = t1.dot(t2);
-  st.regs.add(op.getResult(0), Tensor(move(res), move(outputDim)));
+  st.regs.add(op.getResult(0),
+      Tensor(t1.getElemType(), move(res), move(outputDim)));
   return {};
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::AddFOp op) {
-  auto a = st.regs.get<Float>(op.getOperand(0));
-  auto b = st.regs.get<Float>(op.getOperand(1));
-  st.regs.add(op, a.add(b));
+optional<string> encodeOp(State &st, mlir::arith::AddFOp op) {
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1,
+      [](auto &&a, auto &&b) { return a.add(b); },
+      [](auto &&a, auto &&b) { return (Expr)a + (Expr)b; });
   return {};
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::MulFOp op) {
-  auto a = st.regs.get<Float>(op.getOperand(0));
-  auto b = st.regs.get<Float>(op.getOperand(1));
-  st.regs.add(op, a.mul(b));
+optional<string> encodeOp(State &st, mlir::arith::MulFOp op) {
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1,
+      [](auto &&a, auto &&b) { return a.mul(b); },
+      [](auto &&a, auto &&b) { return (Expr)a * (Expr)b; });
   return {};
 }
 
@@ -800,7 +907,7 @@ static void addIntOrIndex(
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::AddIOp op) {
+optional<string> encodeOp(State &st, mlir::arith::AddIOp op) {
   auto a = st.regs.getExpr(op.getOperand(0));
   auto b = st.regs.getExpr(op.getOperand(1));
   addIntOrIndex(st, op, a + b, op.getType().isIndex());
@@ -808,7 +915,7 @@ optional<string> encodeOp(State &st, mlir::AddIOp op) {
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::SubIOp op) {
+optional<string> encodeOp(State &st, mlir::arith::SubIOp op) {
   auto a = st.regs.getExpr(op.getOperand(0));
   auto b = st.regs.getExpr(op.getOperand(1));
   addIntOrIndex(st, op, a - b, op.getType().isIndex());
@@ -816,33 +923,56 @@ optional<string> encodeOp(State &st, mlir::SubIOp op) {
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::MulIOp op) {
+optional<string> encodeOp(State &st, mlir::arith::MulIOp op) {
   auto a = st.regs.getExpr(op.getOperand(0));
   auto b = st.regs.getExpr(op.getOperand(1));
   addIntOrIndex(st, op, a * b, op.getType().isIndex());
   return {};
 }
 
-template<>
-optional<string> encodeOp(State &st, mlir::IndexCastOp op) {
-  auto src = st.regs.getExpr(op.getOperand());
-  assert(src.sort().isBV());
-  unsigned srcWidth = src.sort().bitwidth();
+static Expr evalIndexCastOp(mlir::Type src, mlir::Type tgt, Expr &&val) {
+  assert(val.sort().isBV());
+
+  unsigned srcWidth = val.sort().bitwidth();
 
   unsigned destWidth = 0;
-  if (auto dstty = op.getType().dyn_cast<mlir::IntegerType>())
+  if (auto dstty = tgt.dyn_cast<mlir::IntegerType>())
     destWidth = dstty.getWidth();
   else {
-    assert(op.getType().isa<mlir::IndexType>());
+    assert(tgt.isa<mlir::IndexType>());
     destWidth = Index::BITS;
   }
 
-  Expr casted = src;
+  Expr casted = val;
   if (srcWidth > destWidth)
-    casted = src.extract(destWidth - 1, 0);
+    casted = val.extract(destWidth - 1, 0);
   else if (srcWidth < destWidth)
-    casted = Expr::mkBV(0, destWidth - srcWidth).concat(casted);
-  st.regs.add(op, Integer(casted));
+    casted = val.sext(destWidth - srcWidth);
+  return casted;
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::arith::IndexCastOp op) {
+  auto srcty = op.getOperand().getType();
+  auto dstty = op.getType();
+
+  if (auto src_tensorty = srcty.dyn_cast<mlir::TensorType>()) {
+    auto dst_tensorty = dstty.dyn_cast<mlir::TensorType>();
+    if (!dst_tensorty)
+      return "Unknown type";
+
+    auto src = st.regs.get<Tensor>(op.getOperand());
+    auto dst_elemty = dst_tensorty.getElementType();
+    auto res = src.elementwiseUnaryOp(dst_elemty, [&](auto &&e) {
+      return evalIndexCastOp(src_tensorty.getElementType(),
+          dst_elemty, move(e));
+    });
+    st.regs.add(op, move(res));
+
+  } else {
+    auto src = st.regs.getExpr(op.getOperand());
+    st.regs.add(op, Integer(evalIndexCastOp(srcty, dstty, move(src))));
+  }
   return {};
 }
 
@@ -876,33 +1006,46 @@ optional<string> encodeOp(State &st, mlir::ReturnOp op) {
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::ConstantIndexOp op) {
-  st.regs.add(op, Index(op.getValue()));
+optional<string> encodeOp(State &st, mlir::arith::ConstantIndexOp op) {
+  st.regs.add(op, Index(op.value()));
   return {};
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::ConstantFloatOp op) {
-  auto fp = op.getValue();
-  st.regs.add(op, Float(fp));
+optional<string> encodeOp(State &st, mlir::arith::ConstantIntOp op) {
+  st.regs.add(op, Integer(op.value(), op.getType().getIntOrFloatBitWidth()));
   return {};
 }
 
 template<>
-optional<string> encodeOp(State &st, mlir::ConstantOp op) {
-  auto attr = op.getValue();
+optional<string> encodeOp(State &st, mlir::arith::ConstantFloatOp op) {
+  if (Float::sort(op.getType()) == nullopt)
+    return "unsupported constant type";
+
+  auto fp = op.value();
+  st.regs.add(op, Float::constant(fp, op.getType()));
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::arith::ConstantOp op) {
+  auto attr = op.value();
   if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
+    // splat
     if (!denseAttr.isSplat())
       return "a fp splat constant tensor is supported only";
+    if (!op.getType().isa<mlir::TensorType>())
+      return "unsupported constant type";
 
     // A constant tensor's type cannot have unknown dimensions
-    auto dims = ShapedValue::getDims(
-        op.getType().cast<mlir::TensorType>(), false);
+    auto tensorty = op.getType().cast<mlir::TensorType>();
+    auto dims = ShapedValue::getDims(tensorty, false);
     auto v = attrToValueTy(denseAttr.getSplatValue());
     if (!v)
       return "unsupported constant";
 
-    st.regs.add(op, Tensor(getExpr(*v), move(dims)));
+    st.regs.add(op,
+        Tensor(tensorty.getElementType(), getExpr(*v), move(dims)));
     return {};
 
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
@@ -919,13 +1062,14 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
       return "unsupported type";
 
     auto sparseIndexValues = sparseAttr.getIndices().getValues<uint64_t>();
+    auto elemTy = sparseType.getElementType();
     auto rank = sparseType.getRank();
     vector<uint64_t> dims;
     for (unsigned i = 0; i < rank; ++i)
       dims.push_back(sparseType.getDimSize(i));
 
     // Unspecified locations are filled with zero.
-    auto zero = getZero(sparseType.getElementType());
+    auto zero = getZero(elemTy);
     if (!zero)
       return "unsupported element type";
 
@@ -949,7 +1093,7 @@ optional<string> encodeOp(State &st, mlir::ConstantOp op) {
       sparseValues.push_back(getExpr(*e));
     }
     st.hasConstArray = true;
-    st.regs.add(op, Tensor(sparseIndices, sparseValues, dims, *zero));
+    st.regs.add(op, Tensor(elemTy, sparseIndices, sparseValues, dims, *zero));
     return {};
   }
   return "unsupported constant";
@@ -966,7 +1110,7 @@ optional<string> encodeOp(State &st, mlir::shape::ShapeOfOp op) {
     return "unsupported type";
 
   auto tt = st.regs.get<Tensor>(tensor);
-  st.regs.add(op, Tensor(tt.getDims()));
+  st.regs.add(op, Tensor(getTensorElemTy(op.getResult()), tt.getDims()));
   return {};
 }
 
@@ -1164,7 +1308,8 @@ static optional<string> initInputStateForLoopBody(
 
       // TODO: We do not encode UB in loops currently. How to deal with this?
       auto m_elem = m_input.get(affine_Exprs).first;
-      st.regs.add(block.getArgument(arg_i), Float(m_elem));
+      st.regs.add(block.getArgument(arg_i), 
+          Float(m_elem, memrefty.getElementType()));
     } else {
       return "unsupported block argument type";
     }
@@ -1200,6 +1345,25 @@ static vector<Expr> addOne(vector<Expr> &&vec) {
   return vec;
 }
 
+// Encode operations that
+// (1) do not change the current state except the definition of a new register
+// (2) never raise UB.
+#define ENCODE_SCALAR_OPS(st, op) \
+    ENCODE(st, op, mlir::arith::AddFOp); \
+    ENCODE(st, op, mlir::arith::AddIOp); \
+    ENCODE(st, op, mlir::arith::ConstantFloatOp); \
+    ENCODE(st, op, mlir::arith::ConstantIndexOp); \
+    ENCODE(st, op, mlir::arith::ConstantIntOp); \
+    ENCODE(st, op, mlir::arith::ConstantOp); \
+    ENCODE(st, op, mlir::arith::IndexCastOp); \
+    ENCODE(st, op, mlir::arith::MulFOp); \
+    ENCODE(st, op, mlir::arith::MulIOp); \
+    ENCODE(st, op, mlir::arith::SubIOp); \
+    ENCODE(st, op, mlir::AffineApplyOp); \
+    ENCODE(st, op, mlir::linalg::IndexOp); \
+    ENCODE(st, op, mlir::shape::ShapeOfOp);
+
+
 static optional<string> encodeParallelLoopBodyAndOutput(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
     const mlir::ShapedType &outputType, optional<Tensor> &t_res) {
@@ -1216,14 +1380,9 @@ static optional<string> encodeParallelLoopBodyAndOutput(
           " variable: " << opop);
       }
     }
-    ENCODE(newst, op, mlir::AddFOp);
-    ENCODE(newst, op, mlir::MulFOp);
-    ENCODE(newst, op, mlir::AddIOp);
-    ENCODE(newst, op, mlir::SubIOp);
-    ENCODE(newst, op, mlir::MulIOp);
-    ENCODE(newst, op, mlir::IndexCastOp);
-    ENCODE(newst, op, mlir::AffineApplyOp);
-    ENCODE(newst, op, mlir::linalg::IndexOp);
+
+    ENCODE_SCALAR_OPS(newst, op);
+
     if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
       yieldedValue = op2.getOperand(0);
       break;
@@ -1234,7 +1393,8 @@ static optional<string> encodeParallelLoopBodyAndOutput(
   auto &scope = newst.linalgGenericScopes.top();
   auto outputIndVars = doMap(scope.indVars, outputMap);
   auto tensorSz = addOne(doMap(scope.indVarUpperBounds, outputMap));
-  t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars),
+  t_res = Tensor::mkLambda(yieldedValue.getType(),
+      move(tensorSz), move(outputIndVars),
       newst.regs.getExpr(yieldedValue));
 
   return {};
@@ -1258,23 +1418,28 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   using mlir::matchers::m_Val;
   // Support this form:
   //   ...
-  //   %sum = addf %v, %arg_out or  %sum = addf %arg_out, %v
+  //   %sum = op %v, %arg_out or  %sum = op %arg_out, %v
+  //      where op = addf, addi
   //   yield %sum
   auto lastarg = block.getArgument(block.getNumArguments() - 1);
   assert(!newst.regs.contains(lastarg));
 
   auto p1 = m_Op<mlir::linalg::YieldOp>(
-      m_Op<mlir::AddFOp>(m_Val(lastarg), m_Any()));
+      m_Op<mlir::arith::AddFOp>(m_Val(lastarg), m_Any()));
   auto p2 = m_Op<mlir::linalg::YieldOp>(
-      m_Op<mlir::AddFOp>(m_Any(), m_Val(lastarg)));
+      m_Op<mlir::arith::AddFOp>(m_Any(), m_Val(lastarg)));
+  auto p3 = m_Op<mlir::linalg::YieldOp>(
+      m_Op<mlir::arith::AddIOp>(m_Val(lastarg), m_Any()));
+  auto p4 = m_Op<mlir::linalg::YieldOp>(
+      m_Op<mlir::arith::AddIOp>(m_Any(), m_Val(lastarg)));
 
-  mlir::Value sumvar;
-  if (p1.match(&ops.back()))
-    sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(1);
-  else if (p2.match(&ops.back()))
-    sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(0);
+  unsigned idx;
+  if (p1.match(&ops.back()) || p3.match(&ops.back()))      idx = 1;
+  else if (p2.match(&ops.back()) || p4.match(&ops.back())) idx = 0;
   else
     return errmsg;
+
+  auto sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(idx);
 
   unsigned cnt = 0;
   for (auto &op: ops) {
@@ -1282,8 +1447,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
       // Don't directly encode %sum
       break;
 
-    ENCODE(newst, op, mlir::AddFOp);
-    ENCODE(newst, op, mlir::MulFOp);
+    ENCODE_SCALAR_OPS(newst, op);
     RET_STR("has an unsupported operation" << op);
   }
 
@@ -1293,6 +1457,7 @@ static optional<string> encodeReductionLoopBodyAndOutput(
 
   // Represent %v as an element of a tensor.
   Tensor t_v = Tensor::mkLambda(
+      sumvar.getType(),
       addOne(vector(linalgInfo.indVarUpperBounds)),
       vector(linalgInfo.indVars),
       newst.regs.getExpr(sumvar));
@@ -1307,7 +1472,8 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
-    t_res = Tensor(t_v.sum(), makeCube(Index(1), outputType.getRank()));
+    t_res = Tensor(t_v.getElemType(), t_v.sum(),
+        makeCube(Index(1), outputType.getRank()));
     return {};
   } else {
     // in:  (i, j) -> (i, j)
@@ -1339,13 +1505,15 @@ static optional<string> encodeReductionLoopBodyAndOutput(
 
     auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
     auto t_sum = Tensor::mkLambda(
+          t_v.getElemType(),
           addOne(move(boundsForRes)),
           move(indVarsForRes),
           t_v.get(linalgInfo.indVars).first)
         .sum();
 
     auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
-    t_res = Tensor::mkLambda(move(tensorSz), move(outputIndVars), t_sum);
+    t_res = Tensor::mkLambda(
+        t_v.getElemType(), move(tensorSz), move(outputIndVars), t_sum);
     return {};
   }
 }
@@ -1434,25 +1602,18 @@ static optional<string> encodeRegion(
   for (auto &op: block) {
     if (printOps)
       llvm::outs() << "  " << op << "\n";
-    ENCODE(st, op, mlir::ConstantIndexOp);
-    ENCODE(st, op, mlir::ConstantFloatOp);
-    ENCODE(st, op, mlir::ConstantOp);
 
-    ENCODE(st, op, mlir::AddFOp);
-    ENCODE(st, op, mlir::AddIOp);
-    ENCODE(st, op, mlir::IndexCastOp);
-    ENCODE(st, op, mlir::MulFOp);
-    ENCODE(st, op, mlir::MulIOp);
+    ENCODE_SCALAR_OPS(st, op);
+
     ENCODE(st, op, mlir::ReturnOp);
-    ENCODE(st, op, mlir::SubIOp);
 
-    ENCODE(st, op, mlir::AffineApplyOp);
-
+    ENCODE(st, op, mlir::tensor::CastOp);
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::InsertOp);
     ENCODE(st, op, mlir::tensor::ExtractOp);
     ENCODE(st, op, mlir::tensor::FromElementsOp);
     ENCODE(st, op, mlir::tensor::ExtractSliceOp);
+    ENCODE(st, op, mlir::tensor::InsertSliceOp);
 
     ENCODE(st, op, mlir::tosa::AddOp);
 
@@ -1466,17 +1627,14 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::memref::TensorStoreOp);
 
     ENCODE(st, op, mlir::linalg::Conv2DNhwcHwcfOp);
-    ENCODE(st, op, mlir::linalg::ConvOp);
     ENCODE(st, op, mlir::linalg::DotOp);
     ENCODE(st, op, mlir::linalg::FillOp);
     ENCODE(st, op, mlir::linalg::GenericOp);
-    ENCODE(st, op, mlir::linalg::IndexOp);
     ENCODE(st, op, mlir::linalg::InitTensorOp);
     ENCODE(st, op, mlir::linalg::MatmulOp);
     ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp);
     ENCODE(st, op, mlir::linalg::TensorExpandShapeOp);
     
-    ENCODE(st, op, mlir::shape::ShapeOfOp);
     ENCODE(st, op, mlir::shape::ToExtentTensorOp);
 
     ENCODE(st, op, mlir::sparse_tensor::ConvertOp);
