@@ -592,14 +592,14 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
   auto input1 = st.regs.get<Tensor>(op.getOperand(0));
   auto input2 = st.regs.get<Tensor>(op.getOperand(1));
 
-  auto t1 = swapped ? Tensor::mkLambda(move(resDims), move(opInVars2),
+  auto t1 = swapped ? Tensor::mkLambda(input1.getElemType(), move(resDims), move(opInVars2),
                                         input1.get(opOutVars2).first)
-                    : Tensor::mkLambda(move(resDims), move(opInVars1),
+                    : Tensor::mkLambda(input1.getElemType(), move(resDims), move(opInVars1),
                                         input1.get(opOutVars1).first);
 
-  auto t2 = swapped ? Tensor::mkLambda(move(resDims2), move(opInVars1),
+  auto t2 = swapped ? Tensor::mkLambda(input2.getElemType(), move(resDims2), move(opInVars1),
                                         input2.get(opOutVars1).first) 
-                    : Tensor::mkLambda(move(resDims2), move(opInVars2),
+                    : Tensor::mkLambda(input2.getElemType(), move(resDims2), move(opInVars2),
                                         input2.get(opOutVars2).first);
 
   mlir::Value arg0 = op.getOperand(0);
