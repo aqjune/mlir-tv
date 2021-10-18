@@ -564,6 +564,20 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::tosa::AbsOp op) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    return "Unsupported type";
+  auto t = st.regs.get<Tensor>(op.getOperand());
+  auto ety = dty.getElementType();
+  st.regs.add(op.getResult(), t.elementwiseUnaryOp(ety, [&](auto &&e) {
+    return Float(e, ety).abs();
+  }));
+
+  return {};
+}
+
 static variant<string, MemRef> createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
   if (!MemRef::isTypeSupported(memrefTy))
@@ -1320,7 +1334,8 @@ static vector<Expr> addOne(vector<Expr> &&vec) {
     ENCODE(st, op, mlir::AffineApplyOp); \
     ENCODE(st, op, mlir::linalg::IndexOp); \
     ENCODE(st, op, mlir::math::AbsOp); \
-    ENCODE(st, op, mlir::shape::ShapeOfOp);
+    ENCODE(st, op, mlir::shape::ShapeOfOp); \
+    ENCODE(st, op, mlir::tosa::AbsOp);
 
 
 static optional<string> encodeParallelLoopBodyAndOutput(
