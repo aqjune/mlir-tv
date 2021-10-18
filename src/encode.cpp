@@ -602,8 +602,7 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
   encodeBinaryOp(st, op, arg0, arg1,
       [](auto &&a, auto &&b) { return a.add(b); },
       [](auto &&a, auto &&b) { return (Expr)a + (Expr)b; });
-  return {};
-
+      
   return {};
 }
 
