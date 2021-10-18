@@ -117,6 +117,63 @@ static mlir::Type getTensorElemTy(mlir::Value v) {
   return v.getType().dyn_cast<mlir::TensorType>().getElementType();
 }
 
+static pair<Tensor, Tensor> 
+getBroadcastTensor(State &st, mlir::Value arg0, mlir::Value arg1) {
+  // reference: https://numpy.org/doc/stable/user/basics.broadcasting.html
+  auto ty0 = arg0.getType().cast<mlir::RankedTensorType>();
+  auto ty1 = arg1.getType().cast<mlir::RankedTensorType>();
+  auto resRank = max(ty0.getRank(), ty1.getRank());
+  auto inVars0 = Index::boundIndexVars(resRank);
+  auto inVars1 = Index::boundIndexVars(resRank);
+
+  vector<Expr> outVars0, outVars1, resDims;
+  for(int i = 0; i < resRank; i++) {
+    auto idx0 = ty0.getRank() - 1 - i;
+    auto idx1 = ty1.getRank() - 1 - i;
+
+    if(idx0 >= 0 && idx1 >= 0) {
+      auto d1 = ty0.getDimSize(idx0);
+      auto d2 = ty1.getDimSize(idx1);
+      assert(d1 == 1 || d2 == 1 || d1 == d2);
+      resDims.insert(resDims.begin(), Index(max(d1,d2)));
+
+      if(d1 == 1)
+        outVars0.insert(outVars0.begin(), Index(0));
+      else 
+        outVars0.insert(outVars0.begin(), inVars0[idx0]);
+
+      if(d2 == 1)
+        outVars1.insert(outVars1.begin(), Index(0));
+      else 
+        outVars1.insert(outVars1.begin(), inVars1[idx1]);
+    }
+    else {
+      if(idx0 >= 0) {
+        resDims.insert(resDims.begin(), Index(ty0.getDimSize(idx0)));
+        outVars0.insert(outVars0.begin(), inVars0[idx0]);
+      }
+      else if(idx1 >= 0) {
+        resDims.insert(resDims.begin(), Index(ty1.getDimSize(idx1)));
+        outVars1.insert(outVars1.begin(), inVars1[idx1]);
+      }
+      else{
+        llvm_unreachable("Unreachable case");
+      }
+    }
+  }
+
+  auto resDims2 = resDims;
+  auto t0 = st.regs.get<Tensor>(arg0);
+  auto t1 = st.regs.get<Tensor>(arg1);
+  auto m0 = Tensor::mkLambda(t0.getElemType(), move(resDims), move(inVars0),
+                              t0.get(outVars0).first);
+
+  auto m1 = Tensor::mkLambda(t1.getElemType(), move(resDims2), move(inVars1),
+                              t1.get(outVars1).first);
+
+  return {m0, m1};
+}
+
 template<class OpTy>
 static optional<string>
 encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
@@ -133,8 +190,9 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
     if (!elemty.isIntOrFloat())
       return "Unsupported element type";
 
-    auto a = st.regs.get<Tensor>(arg0);
-    auto b = st.regs.get<Tensor>(arg1);
+    auto tPair = getBroadcastTensor(st, arg0, arg1);
+    auto a = tPair.first;
+    auto b = tPair.second;
 
     auto f = [&](smt::Expr &&a, smt::Expr &&b) -> smt::Expr {
       if (elemty.isa<mlir::FloatType>()) {
@@ -153,7 +211,6 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
   }
   return {};
 }
-
 
 #define ENCODE(st, op, ty) { \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
@@ -538,69 +595,6 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
   if (!optys[0].isa<mlir::RankedTensorType>() ||
       !optys[1].isa<mlir::RankedTensorType>())
     return "Unsupported operand types";
-
-  auto opty1 = optys[0].cast<mlir::RankedTensorType>();
-  auto opty2 = optys[1].cast<mlir::RankedTensorType>();
-
-  auto resRank = max(opty1.getRank(), opty2.getRank());
-  auto swapped = false;
-
-  // if dimensions differ, op2 broadcasts
-  if(resRank > opty1.getRank()) {
-    opty1 = optys[1].cast<mlir::RankedTensorType>();
-    opty2 = optys[0].cast<mlir::RankedTensorType>();
-    swapped = true;
-  }
-
-  auto opIdx2 = 0;
-  auto opInVars1 = Index::boundIndexVars(resRank);
-  auto opInVars2 = Index::boundIndexVars(resRank);
-  vector<Expr> opOutVars1, opOutVars2, resDims;
-
-  for (unsigned i = 0; i < resRank; ++i) {
-    auto d1 = opty1.getDimSize(i);
-    auto d2 = opIdx2 < opty2.getRank() ? opty2.getDimSize(opIdx2) : 1;
-    if (d1 == d2) {
-      opOutVars1.push_back(opInVars1[i]);
-      opOutVars2.push_back(opInVars2[opIdx2++]);
-      resDims.push_back(Index(d1));
-    }
-    else {
-      assert((resRank > opty2.getRank()) || (d1 == 1 || d2 == 1));
-      if(resRank > opty2.getRank()) {
-        while(opIdx2 < opty2.getRank() && opty2.getDimSize(opIdx2) == 1){
-          opOutVars2.push_back(Index(0));
-          opIdx2++;
-        }
-        opOutVars1.push_back(opInVars1[i]);
-        resDims.push_back(Index(d1));
-      }
-      else if(d1 == 1) {
-        opOutVars1.push_back(Index(0));
-        opOutVars2.push_back(opInVars2[opIdx2++]);
-        resDims.push_back(Index(d2));
-      }
-      else {
-        opOutVars1.push_back(opInVars1[i]);
-        opOutVars2.push_back(Index(0));
-        resDims.push_back(Index(d1));
-      }
-    }
-  }
-
-  vector<Expr> resDims2 = resDims;
-  auto input1 = st.regs.get<Tensor>(op.getOperand(0));
-  auto input2 = st.regs.get<Tensor>(op.getOperand(1));
-
-  auto t1 = swapped ? Tensor::mkLambda(input1.getElemType(), move(resDims), move(opInVars2),
-                                        input1.get(opOutVars2).first)
-                    : Tensor::mkLambda(input1.getElemType(), move(resDims), move(opInVars1),
-                                        input1.get(opOutVars1).first);
-
-  auto t2 = swapped ? Tensor::mkLambda(input2.getElemType(), move(resDims2), move(opInVars1),
-                                        input2.get(opOutVars1).first) 
-                    : Tensor::mkLambda(input2.getElemType(), move(resDims2), move(opInVars2),
-                                        input2.get(opOutVars2).first);
 
   mlir::Value arg0 = op.getOperand(0);
   mlir::Value arg1 = op.getOperand(1);
