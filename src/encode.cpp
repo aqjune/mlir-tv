@@ -605,6 +605,23 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::tosa::MulOp op) {
+  auto optys = op.getOperandTypes();
+  if (!optys[0].isa<mlir::RankedTensorType>() ||
+      !optys[1].isa<mlir::RankedTensorType>())
+    return "Unsupported operand types";
+  if (op.shift() != 0)
+    return "Mul with shift is unsupported";
+
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  return encodeBinaryOp(st, op, arg0, arg1,
+      [](auto &&a, auto &&b) { return a.mul(b); },
+      [](auto &&a, auto &&b) { return (Expr)a * (Expr)b; });
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::tosa::AbsOp op) {
   auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
   if (!dty)
@@ -1630,6 +1647,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::InsertSliceOp);
 
     ENCODE(st, op, mlir::tosa::AddOp);
+    ENCODE(st, op, mlir::tosa::MulOp);
 
     ENCODE(st, op, mlir::memref::AllocOp);
     ENCODE(st, op, mlir::memref::BufferCastOp);
