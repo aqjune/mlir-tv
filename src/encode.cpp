@@ -118,6 +118,61 @@ static mlir::Type getTensorElemTy(mlir::Value v) {
   return v.getType().dyn_cast<mlir::TensorType>().getElementType();
 }
 
+static optional<pair<Tensor, Tensor>>
+broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
+  // reference: https://numpy.org/doc/stable/user/basics.broadcasting.html
+  auto ty0 = arg0.getType().cast<mlir::RankedTensorType>();
+  auto ty1 = arg1.getType().cast<mlir::RankedTensorType>();
+  auto ty0rank = ty0.getRank(), ty1rank = ty1.getRank();
+
+  auto resRank = max(ty0rank, ty1rank);
+  auto inVars0 = Index::boundIndexVars(resRank);
+  auto inVars1 = Index::boundIndexVars(resRank);
+  Expr izero = Index(0);
+
+  vector<Expr> outVars0, outVars1, resDims;
+  for (int64_t i = 0; i < min(ty0rank, ty1rank); i++) {
+    int64_t idx0 = ty0rank - 1 - i;
+    int64_t idx1 = ty1rank - 1 - i;
+
+    auto d1 = ty0.getDimSize(idx0);
+    auto d2 = ty1.getDimSize(idx1);
+
+    bool dyn0 = d1 == mlir::ShapedType::kDynamicSize;
+    bool dyn1 = d2 == mlir::ShapedType::kDynamicSize;
+    if (dyn0 ^ dyn1)
+      return nullopt;
+
+    assert(d1 == 1 || d2 == 1 || d1 == d2);
+    resDims.insert(resDims.begin(), Index(max(d1,d2)));
+    outVars0.insert(outVars0.begin(), d1 == 1 ? izero : inVars0[idx0]);
+    outVars1.insert(outVars1.begin(), d2 == 1 ? izero : inVars1[idx1]);
+  }
+
+  if (ty0rank < ty1rank) {
+    for (int64_t i = ty1rank - ty0rank - 1; i >= 0; --i) {
+      resDims.insert(resDims.begin(), Index(ty1.getDimSize(i)));
+      outVars1.insert(outVars1.begin(), inVars1[i]);
+    }
+  } else if (ty1rank < ty0rank) {
+    for (int64_t i = ty0rank - ty1rank - 1; i >= 0; --i) {
+      resDims.insert(resDims.begin(), Index(ty0.getDimSize(i)));
+      outVars0.insert(outVars0.begin(), inVars0[i]);
+    }
+  }
+
+  auto resDims2 = resDims;
+  auto t0 = st.regs.get<Tensor>(arg0);
+  auto t1 = st.regs.get<Tensor>(arg1);
+  auto m0 = Tensor::mkLambda(t0.getElemType(), move(resDims), move(inVars0),
+                              t0.get(outVars0).first);
+
+  auto m1 = Tensor::mkLambda(t1.getElemType(), move(resDims2), move(inVars1),
+                              t1.get(outVars1).first);
+
+  return {{m0, m1}};
+}
+
 template<class OpTy>
 static optional<string>
 encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
@@ -134,8 +189,10 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
     if (!elemty.isIntOrFloat())
       return "Unsupported element type";
 
-    auto a = st.regs.get<Tensor>(arg0);
-    auto b = st.regs.get<Tensor>(arg1);
+    auto bts = broadcastTensors(st, arg0, arg1);
+    if (!bts)
+      return "Unsupported broadcast form";
+    auto [a, b] = *bts;
 
     auto f = [&](smt::Expr &&a, smt::Expr &&b) -> smt::Expr {
       if (elemty.isa<mlir::FloatType>()) {
@@ -154,7 +211,6 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
   }
   return {};
 }
-
 
 #define ENCODE(st, op, ty) { \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
@@ -540,28 +596,12 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
       !optys[1].isa<mlir::RankedTensorType>())
     return "Unsupported operand types";
 
-  auto opty1 = optys[0].cast<mlir::RankedTensorType>();
-  auto opty2 = optys[1].cast<mlir::RankedTensorType>();
-  if (opty1.getRank() != opty2.getRank())
-    return "Broadcasting is not implemented yet";
-
-  // Broadcasting is not implemented yet
-  for (unsigned i = 0; i < opty1.getRank(); ++i) {
-    auto d1 = opty1.getDimSize(i), d2 = opty2.getDimSize(i);
-    if (d1 != d2) {
-      return "Broadcasting is not implemented yet";
-    }
-  }
-
   mlir::Value arg0 = op.getOperand(0);
   mlir::Value arg1 = op.getOperand(1);
 
-  encodeBinaryOp(st, op, arg0, arg1,
+  return encodeBinaryOp(st, op, arg0, arg1,
       [](auto &&a, auto &&b) { return a.add(b); },
       [](auto &&a, auto &&b) { return (Expr)a + (Expr)b; });
-  return {};
-
-  return {};
 }
 
 template<>
