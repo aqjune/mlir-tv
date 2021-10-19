@@ -123,9 +123,6 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
   auto ty0 = arg0.getType().cast<mlir::RankedTensorType>();
   auto ty1 = arg1.getType().cast<mlir::RankedTensorType>();
   auto ty0rank = ty0.getRank(), ty1rank = ty1.getRank();
-  if (ty0rank != ty1rank &&
-      (ty0.getNumDynamicDims() != 0 || ty1.getNumDynamicDims() != 0))
-    return nullopt;
 
   auto resRank = max(ty0rank, ty1rank);
   auto inVars0 = Index::boundIndexVars(resRank);
@@ -139,6 +136,11 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
 
     auto d1 = ty0.getDimSize(idx0);
     auto d2 = ty1.getDimSize(idx1);
+
+    bool dyn0 = d1 == mlir::ShapedType::kDynamicSize;
+    bool dyn1 = d2 == mlir::ShapedType::kDynamicSize;
+    if (dyn0 ^ dyn1)
+      return nullopt;
 
     assert(d1 == 1 || d2 == 1 || d1 == d2);
     resDims.insert(resDims.begin(), Index(max(d1,d2)));
@@ -596,11 +598,9 @@ optional<string> encodeOp(State &st, mlir::tosa::AddOp op) {
   mlir::Value arg0 = op.getOperand(0);
   mlir::Value arg1 = op.getOperand(1);
 
-  encodeBinaryOp(st, op, arg0, arg1,
+  return encodeBinaryOp(st, op, arg0, arg1,
       [](auto &&a, auto &&b) { return a.add(b); },
       [](auto &&a, auto &&b) { return (Expr)a + (Expr)b; });
-      
-  return {};
 }
 
 static variant<string, MemRef> createNewLocalBlk(
