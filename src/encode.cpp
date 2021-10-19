@@ -170,8 +170,6 @@ getBroadcastTensor(State &st, mlir::Value arg0, mlir::Value arg1) {
   auto m1 = Tensor::mkLambda(t1.getElemType(), move(resDims2), move(inVars1),
                               t1.get(outVars1).first);
 
-  llvm::outs() << m0 << "\n" << m1 << "\n\n";
-
   return {m0, m1};
 }
 
