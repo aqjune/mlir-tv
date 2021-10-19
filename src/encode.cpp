@@ -117,52 +117,44 @@ static mlir::Type getTensorElemTy(mlir::Value v) {
   return v.getType().dyn_cast<mlir::TensorType>().getElementType();
 }
 
-static pair<Tensor, Tensor> 
-getBroadcastTensor(State &st, mlir::Value arg0, mlir::Value arg1) {
+static optional<pair<Tensor, Tensor>>
+broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
   // reference: https://numpy.org/doc/stable/user/basics.broadcasting.html
   auto ty0 = arg0.getType().cast<mlir::RankedTensorType>();
   auto ty1 = arg1.getType().cast<mlir::RankedTensorType>();
-  auto resRank = max(ty0.getRank(), ty1.getRank());
+  auto ty0rank = ty0.getRank(), ty1rank = ty1.getRank();
+  if (ty0rank != ty1rank &&
+      (ty0.getNumDynamicDims() != 0 || ty1.getNumDynamicDims() != 0))
+    return nullopt;
+
+  auto resRank = max(ty0rank, ty1rank);
   auto inVars0 = Index::boundIndexVars(resRank);
   auto inVars1 = Index::boundIndexVars(resRank);
+  Expr izero = Index(0);
 
   vector<Expr> outVars0, outVars1, resDims;
-  for(int64_t i = 0; i < resRank; i++) {
-    int64_t idx0 = ty0.getRank() - 1 - i;
-    int64_t idx1 = ty1.getRank() - 1 - i;
+  for (int64_t i = 0; i < min(ty0rank, ty1rank); i++) {
+    int64_t idx0 = ty0rank - 1 - i;
+    int64_t idx1 = ty1rank - 1 - i;
 
-    if(idx0 >= 0 && idx1 >= 0) {
-      auto d1 = ty0.getDimSize(idx0);
-      auto d2 = ty1.getDimSize(idx1);
+    auto d1 = ty0.getDimSize(idx0);
+    auto d2 = ty1.getDimSize(idx1);
 
-      // if dimension is ?, broadcast is not supported
-      if(d1 == -1 || d2 == -1)
-        return {st.regs.get<Tensor>(arg0), st.regs.get<Tensor>(arg1)};
-      
-      assert(d1 == 1 || d2 == 1 || d1 == d2);
-      resDims.insert(resDims.begin(), Index(max(d1,d2)));
+    assert(d1 == 1 || d2 == 1 || d1 == d2);
+    resDims.insert(resDims.begin(), Index(max(d1,d2)));
+    outVars0.insert(outVars0.begin(), d1 == 1 ? izero : inVars0[idx0]);
+    outVars1.insert(outVars1.begin(), d2 == 1 ? izero : inVars1[idx1]);
+  }
 
-      if(d1 == 1)
-        outVars0.insert(outVars0.begin(), Index(0));
-      else 
-        outVars0.insert(outVars0.begin(), inVars0[idx0]);
-
-      if(d2 == 1)
-        outVars1.insert(outVars1.begin(), Index(0));
-      else 
-        outVars1.insert(outVars1.begin(), inVars1[idx1]);
-    } else {
-      if(idx0 >= 0) {
-        resDims.insert(resDims.begin(), Index(ty0.getDimSize(idx0)));
-        outVars0.insert(outVars0.begin(), inVars0[idx0]);
-      }
-      else if(idx1 >= 0) {
-        resDims.insert(resDims.begin(), Index(ty1.getDimSize(idx1)));
-        outVars1.insert(outVars1.begin(), inVars1[idx1]);
-      }
-      else{
-        llvm_unreachable("Unreachable case");
-      }
+  if (ty0rank < ty1rank) {
+    for (int64_t i = ty1rank - ty0rank - 1; i >= 0; --i) {
+      resDims.insert(resDims.begin(), Index(ty1.getDimSize(i)));
+      outVars1.insert(outVars1.begin(), inVars1[i]);
+    }
+  } else if (ty1rank < ty0rank) {
+    for (int64_t i = ty0rank - ty1rank - 1; i >= 0; --i) {
+      resDims.insert(resDims.begin(), Index(ty0.getDimSize(i)));
+      outVars0.insert(outVars0.begin(), inVars0[i]);
     }
   }
 
@@ -175,7 +167,7 @@ getBroadcastTensor(State &st, mlir::Value arg0, mlir::Value arg1) {
   auto m1 = Tensor::mkLambda(t1.getElemType(), move(resDims2), move(inVars1),
                               t1.get(outVars1).first);
 
-  return {m0, m1};
+  return {{m0, m1}};
 }
 
 template<class OpTy>
@@ -194,7 +186,10 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
     if (!elemty.isIntOrFloat())
       return "Unsupported element type";
 
-    auto [a, b] = getBroadcastTensor(st, arg0, arg1);
+    auto bts = broadcastTensors(st, arg0, arg1);
+    if (!bts)
+      return "Unsupported broadcast form";
+    auto [a, b] = *bts;
 
     auto f = [&](smt::Expr &&a, smt::Expr &&b) -> smt::Expr {
       if (elemty.isa<mlir::FloatType>()) {
