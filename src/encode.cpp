@@ -134,6 +134,11 @@ getBroadcastTensor(State &st, mlir::Value arg0, mlir::Value arg1) {
     if(idx0 >= 0 && idx1 >= 0) {
       auto d1 = ty0.getDimSize(idx0);
       auto d2 = ty1.getDimSize(idx1);
+
+      // if dimension is ?, broadcast is not supported
+      if(d1 == -1 || d2 == -1)
+        return {st.regs.get<Tensor>(arg0), st.regs.get<Tensor>(arg1)};
+      
       assert(d1 == 1 || d2 == 1 || d1 == d2);
       resDims.insert(resDims.begin(), Index(max(d1,d2)));
 
