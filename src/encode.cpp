@@ -194,9 +194,7 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
     if (!elemty.isIntOrFloat())
       return "Unsupported element type";
 
-    auto tPair = getBroadcastTensor(st, arg0, arg1);
-    auto a = tPair.first;
-    auto b = tPair.second;
+    auto [a, b] = getBroadcastTensor(st, arg0, arg1);
 
     auto f = [&](smt::Expr &&a, smt::Expr &&b) -> smt::Expr {
       if (elemty.isa<mlir::FloatType>()) {
