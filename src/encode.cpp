@@ -127,9 +127,9 @@ getBroadcastTensor(State &st, mlir::Value arg0, mlir::Value arg1) {
   auto inVars1 = Index::boundIndexVars(resRank);
 
   vector<Expr> outVars0, outVars1, resDims;
-  for(int i = 0; i < resRank; i++) {
-    auto idx0 = ty0.getRank() - 1 - i;
-    auto idx1 = ty1.getRank() - 1 - i;
+  for(int64_t i = 0; i < resRank; i++) {
+    int64_t idx0 = ty0.getRank() - 1 - i;
+    int64_t idx1 = ty1.getRank() - 1 - i;
 
     if(idx0 >= 0 && idx1 >= 0) {
       auto d1 = ty0.getDimSize(idx0);
@@ -146,8 +146,7 @@ getBroadcastTensor(State &st, mlir::Value arg0, mlir::Value arg1) {
         outVars1.insert(outVars1.begin(), Index(0));
       else 
         outVars1.insert(outVars1.begin(), inVars1[idx1]);
-    }
-    else {
+    } else {
       if(idx0 >= 0) {
         resDims.insert(resDims.begin(), Index(ty0.getDimSize(idx0)));
         outVars0.insert(outVars0.begin(), inVars0[idx0]);
@@ -170,6 +169,8 @@ getBroadcastTensor(State &st, mlir::Value arg0, mlir::Value arg1) {
 
   auto m1 = Tensor::mkLambda(t1.getElemType(), move(resDims2), move(inVars1),
                               t1.get(outVars1).first);
+
+  llvm::outs() << m0 << "\n" << m1 << "\n\n";
 
   return {m0, m1};
 }
