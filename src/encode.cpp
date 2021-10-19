@@ -828,6 +828,50 @@ optional<string> encodeOp(State &st, mlir::tensor::FromElementsOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::tensor::GenerateOp op) {
+  auto exts = op.dynamicExtents();
+  auto retty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!retty)
+    return "Unsupported type";
+  auto *blk = op.getBody();
+  if (!blk)
+    return "Unsupported form";
+
+  vector<Index> upperbound;
+  {
+    int j = 0;
+    for (int i = 0; i < retty.getRank(); ++i) {
+      auto d = retty.getDimSize(i);
+      if (d == mlir::ShapedType::kDynamicSize) {
+        auto newd = exts[j++];
+        upperbound.push_back(st.regs.get<Index>(newd).ofs(-1));
+      } else {
+        upperbound.push_back(Index(d).ofs(-1));
+      }
+    }
+  }
+
+  State newst = st;
+  newst.linalgGenericScopes.push(State::LinalgGenericScope{move(upperbound)});
+  for (int i = 0; i < blk->getNumArguments(); ++i) {
+    Expr idxvar = newst.linalgGenericScopes.top().indVars[i];
+    newst.regs.add(blk->getArgument(i), Index(idxvar));
+  }
+
+  auto identityMap = mlir::AffineMap::getMultiDimIdentityMap(
+      retty.getRank(), op.getContext());
+  optional<Tensor> t_res;
+  if (auto msg = encodeParallelLoopBodyAndOutput(newst, *blk,
+      identityMap, retty, t_res))
+    return *msg;
+
+  newst.linalgGenericScopes.pop();
+
+  st.regs.add(op.getResult(), move(*t_res));
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   vector<Expr> offsets, sizes, strides;
   auto src = st.regs.get<Tensor>(op.getOperand(0));
@@ -1650,6 +1694,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::ExtractOp);
     ENCODE(st, op, mlir::tensor::ExtractSliceOp);
     ENCODE(st, op, mlir::tensor::FromElementsOp);
+    ENCODE(st, op, mlir::tensor::GenerateOp);
     ENCODE(st, op, mlir::tensor::InsertSliceOp);
 
     ENCODE(st, op, mlir::tosa::AddOp);
