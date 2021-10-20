@@ -88,15 +88,27 @@ static vector<Expr> doMap(
   return output;
 }
 
+template<class T>
+static vector<T> vecAddElem(const vector<T> &a, const T &b) {
+  vector<T> c;
+  for (unsigned i = 0; i < a.size(); ++i)
+    c.push_back(a[i] + b);
+  return c;
+}
+
 static vector<Expr> addOne(vector<Expr> &&vec) {
-  for (unsigned i = 0; i < vec.size(); ++i) {
-    uint64_t v;
-    if (vec[i].sort().isBV() && vec[i].isUInt(v))
-      vec[i] = Expr::mkBV(v + 1, vec[i].sort().bitwidth());
-    else
-      vec[i] = vec[i] + 1;
-  }
-  return vec;
+  if (vec.empty())
+    return {};
+  return vecAddElem(vec, Expr::mkBV(1, vec[0].bitwidth()));
+}
+
+template<class T>
+static vector<T> vecAdd(const vector<T> &a, const vector<T> &b) {
+  assert(a.size() == b.size());
+  vector<T> c;
+  for (unsigned i = 0; i < a.size(); ++i)
+    c.push_back(a[i] + b[i]);
+  return c;
 }
 
 static Expr evalIndexCastOp(mlir::Type src, mlir::Type tgt, Expr &&val) {
@@ -120,6 +132,17 @@ static Expr evalIndexCastOp(mlir::Type src, mlir::Type tgt, Expr &&val) {
   return casted;
 }
 
+template<class ValTy>
+vector<ValTy> getFromMixedOps(
+    const State &st, const llvm::SmallVector<mlir::OpFoldResult> &mixedOps) {
+  vector<ValTy> vec;
+  for (auto s: mixedOps) {
+    vec.push_back(s.is<mlir::Value>() ?
+      st.regs.get<ValTy>(s.get<mlir::Value>()) :
+      Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt()));
+  }
+  return vec;
+}
 
 
 
@@ -547,7 +570,10 @@ optional<string> encodeOp(State &st, mlir::tosa::AbsOp op) {
 
 static optional<string> encodeParallelLoopBodyAndOutput(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
-    const mlir::ShapedType &outputType, optional<Tensor> &t_res) {
+    const mlir::ShapedType &outputType, optional<Tensor> &t_res,
+    // (yielded value, ind var) -> newly mapped value
+    optional<function<Expr(const Expr&, const vector<Expr>&)>>
+        outputValMap = nullopt) {
   // Encode the loop body
   // TODO: deal with merging UBs and memorys
   auto &ops = block.getOperations();
@@ -578,9 +604,12 @@ static optional<string> encodeParallelLoopBodyAndOutput(
   auto &scope = newst.linalgGenericScopes.top();
   auto outputIndVars = doMap(scope.indVars, outputMap);
   auto tensorSz = addOne(doMap(scope.indVarUpperBounds, outputMap));
+  auto yieldedExpr = newst.regs.getExpr(yieldedValue);
+  if (outputValMap)
+    yieldedExpr = (*outputValMap)(yieldedExpr, outputIndVars);
+
   t_res = Tensor::mkLambda(yieldedValue.getType(),
-      move(tensorSz), move(outputIndVars),
-      newst.regs.getExpr(yieldedValue));
+      move(tensorSz), move(outputIndVars), yieldedExpr);
 
   return {};
 }
@@ -743,6 +772,60 @@ optional<string> encodeOp(State &st, mlir::linalg::MatmulOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::linalg::PadTensorOp op) {
+  auto retty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!retty)
+    return "Unsupported type";
+
+  auto &region = op.getRegion();
+  if (!region.hasOneBlock())
+    return "Unsupported region";
+  auto &blk = *region.getBlocks().begin();
+
+  vector<Index> padSizeLow = getFromMixedOps<Index>(st, op.getMixedLowPad());
+  vector<Index> padSizeHigh = getFromMixedOps<Index>(st, op.getMixedHighPad());
+
+  auto sourceTensor = st.regs.get<Tensor>(op.source());
+  auto newTensorSize =
+      vecAdd(vecAdd(sourceTensor.getDimsAsIndices(), padSizeLow), padSizeHigh);
+
+  State newst = st;
+  auto loopUpperBound = vecAddElem(newTensorSize, Index(-1));
+  newst.linalgGenericScopes.push(State::LinalgGenericScope{
+      move(loopUpperBound)});
+  for (int i = 0; i < blk.getNumArguments(); ++i) {
+    Expr idxvar = newst.linalgGenericScopes.top().indVars[i];
+    newst.regs.add(blk.getArgument(i), Index(idxvar));
+  }
+
+  auto identityMap = mlir::AffineMap::getMultiDimIdentityMap(
+      retty.getRank(), op.getContext());
+  auto paddingOrSource = [&](const Expr &pad, const vector<Expr> &indvars) {
+    Expr isSource = Expr::mkBool(true);
+    assert(indvars.size() == padSizeLow.size() &&
+           indvars.size() == padSizeHigh.size());
+    vector<Expr> sourceIndices;
+    for (unsigned i = 0; i < indvars.size(); ++i) {
+      Expr l = padSizeLow[i];
+      Expr h = padSizeLow[i] + sourceTensor.getDim(i);
+      isSource &= l.ule(indvars[i]) & indvars[i].ult(h);
+      sourceIndices.push_back(indvars[i] - l);
+    }
+    return Expr::mkIte(isSource, sourceTensor.get(sourceIndices).first, pad);
+  };
+
+  optional<Tensor> t_res;
+  if (auto msg = encodeParallelLoopBodyAndOutput(newst, blk,
+      identityMap, retty, t_res, paddingOrSource))
+    return *msg;
+
+  newst.linalgGenericScopes.pop();
+
+  st.regs.add(op.getResult(), move(*t_res));
+  return {};
+}
+
 static pair<Expr, Expr> encodeDimOp(
     State &st, vector<Expr> &&dims, mlir::Value index) {
   auto idx = st.regs.get<Index>(index);
@@ -873,23 +956,15 @@ optional<string> encodeOp(State &st, mlir::tensor::GenerateOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
-  vector<Expr> offsets, sizes, strides;
+  vector<Index> offsets, sizes, strides;
   auto src = st.regs.get<Tensor>(op.getOperand(0));
   auto srcType = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>();
   auto res = op.getResult();
   auto resType = res.getType().dyn_cast<mlir::ShapedType>();
 
-#define GET_OP(vec, ee) { \
-    for (auto s: op.getMixed ## ee()) { \
-      vec.push_back(s.is<mlir::Value>() ? \
-      st.regs.get<Index>(s.get<mlir::Value>()) : \
-      Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
-    } \
-  }
-  GET_OP(strides, Strides);
-  GET_OP(sizes, Sizes);
-  GET_OP(offsets, Offsets);
-#undef GET_OP
+  strides = getFromMixedOps<Index>(st, op.getMixedStrides());
+  sizes = getFromMixedOps<Index>(st, op.getMixedSizes());
+  offsets = getFromMixedOps<Index>(st, op.getMixedOffsets());
 
   if (offsets.size() != sizes.size() || sizes.size() != strides.size() ||
       strides.size() != (size_t)srcType.getRank())
@@ -920,7 +995,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
     }
     
     // check if output tensor matches size or size is unknown
-    dims.push_back(Index(sizes[j]));
+    dims.push_back(sizes[j]);
     j++;
   }
 
@@ -933,9 +1008,10 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
   for (unsigned i = 0; i < srcType.getRank(); i++) {
     uint64_t v;
     bool isDimSizeOne = idx >= resType.getRank() ||
-        ((sizes[i].isUInt(v) && v == 1) && resType.getDimSize(idx) != -1);
+        ((((Expr)sizes[i]).isUInt(v) && v == 1) &&
+          resType.getDimSize(idx) != -1);
     outIdxs.push_back(isDimSizeOne ?
-        offsets[i] : ((inIdxs[idx++] * strides[i])) + offsets[i]);
+        (Expr)offsets[i] : (Expr)((inIdxs[idx++] * strides[i])) + offsets[i]);
   }
   st.regs.add(res,
       Tensor::mkLambda(src.getElemType(), move(dims), move(inIdxs),
@@ -945,7 +1021,7 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
-  vector<Expr> offsets, sizes, strides;
+  vector<Index> offsets, sizes, strides;
   auto src1 = st.regs.get<Tensor>(op.getOperand(0));
   auto src2 = st.regs.get<Tensor>(op.getOperand(1));
   auto res = op.getResult();
@@ -954,17 +1030,9 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
       || rank != res.getType().dyn_cast<mlir::ShapedType>().getRank())
     return "Unsupported tensor types of src and dest: their ranks do not match";
 
-#define GET_OP(vec, ee) { \
-    for (auto s: op.getMixed ## ee()) { \
-      vec.push_back(s.is<mlir::Value>() ? \
-      st.regs.get<Index>(s.get<mlir::Value>()) : \
-      Index(s.get<mlir::Attribute>().dyn_cast<mlir::IntegerAttr>().getInt())); \
-    } \
-  }
-  GET_OP(strides, Strides);
-  GET_OP(sizes, Sizes);
-  GET_OP(offsets, Offsets);
-#undef GET_OP
+  strides = getFromMixedOps<Index>(st, op.getMixedStrides());
+  sizes = getFromMixedOps<Index>(st, op.getMixedSizes());
+  offsets = getFromMixedOps<Index>(st, op.getMixedOffsets());
 
   assert(offsets.size() == sizes.size() && sizes.size() == strides.size() &&
          strides.size() == rank);
@@ -978,7 +1046,7 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
   for (unsigned i = 0; i < rank; i++) {
     src1Idxs.push_back((indVars[i] - offsets[i]).udiv(strides[i]));
     cond &= ((indVars[i] - offsets[i]) % strides[i]).isZero() &
-            (indVars[i] - offsets[i]).ult(sizes[i] * strides[i]);
+            (indVars[i] - offsets[i]).ult((Expr)sizes[i] * strides[i]);
   }
 
   // Picking the value from src1 must not be out of bounds.
@@ -1715,6 +1783,7 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::linalg::GenericOp);
     ENCODE(st, op, mlir::linalg::InitTensorOp);
     ENCODE(st, op, mlir::linalg::MatmulOp);
+    ENCODE(st, op, mlir::linalg::PadTensorOp);
     ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp);
     ENCODE(st, op, mlir::linalg::TensorExpandShapeOp);
     

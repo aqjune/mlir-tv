@@ -54,7 +54,19 @@ public:
   mlir::Type getElemType() const { return elemType; }
 
   virtual std::vector<smt::Expr> getDims() const = 0;
-  virtual std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const = 0;
+  std::vector<Index> getDimsAsIndices() const {
+    std::vector<Index> vec;
+    auto dims = getDims();
+    for (auto &d: dims)
+      vec.emplace_back(d);
+    return vec;
+  }
+  // Returns (element value, inbounds?)
+  //   auto [v, inbounds] = shaped_value.get(indices)
+  //   useAsInt(Integer(v)) // valid only if shaped_value has integer elems
+  //   useAsFloat(Float(v)) // valid only if shaped_value has float elems
+  virtual std::pair<smt::Expr, smt::Expr> get(
+      const std::vector<smt::Expr> &indices) const = 0;
 
   // Basic dimension operation
   Index getDim(uint64_t idx) const { return Index(getDims()[idx]); }
@@ -95,10 +107,6 @@ public:
   smt::Expr asArray() const { return arr; }
   smt::Expr getWellDefined() const;
 
-  // Return the element at indices.
-  //   Expr v = tensor.get(indices)
-  //   useAsInt(Integer(v)) // valid only if tensor had integer elems
-  //   useAsFloat(Float(v)) // valid only if tensor had float elems
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
       const override;
 

@@ -26,6 +26,8 @@ public:
   Index(smt::Expr &&e): e(std::move(e)) {}
 
   operator smt::Expr() const { return e; }
+  Index operator+(const Index &b) const { return Index(e + b.e); }
+  Index operator-(const Index &b) const { return Index(e - b.e); }
   Index ofs(int i) const {
     uint64_t v;
     if (e.isUInt(v))
