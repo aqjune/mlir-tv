@@ -87,9 +87,9 @@ bool getFpAddAssociativity() { return isFpAddAssociative; }
 AbsFpEncoding &getFloatEncoding() { return *floatEnc; }
 AbsFpEncoding &getDoubleEncoding() { return *doubleEnc; }
 AbsFpEncoding &getFpEncoding(mlir::Type ty) {
-  if (ty.isa<mlir::Float32Type>()) {
+  if (ty.isF32()) {
     return getFloatEncoding();
-  } else if (ty.isa<mlir::Float64Type>()) {
+  } else if (ty.isF64()) {
      return getDoubleEncoding();
   }
   llvm_unreachable("Unknown type");

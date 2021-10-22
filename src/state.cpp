@@ -49,7 +49,7 @@ void RegFile::add(mlir::Value v, const Expr &e, mlir::Type ty) {
     m.insert({v, Float(e, ty)});
   else if (ty.isa<mlir::IntegerType>())
     m.insert({v, Integer(e)});
-  else if (ty.isa<mlir::IndexType>())
+  else if (ty.isIndex())
     m.insert({v, Index(e)});
   else {
     llvm::errs() << "Unsupported type: " << ty << "\n";
