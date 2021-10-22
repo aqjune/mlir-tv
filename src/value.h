@@ -26,6 +26,7 @@ public:
 
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
+  Integer ult(const Float &b) const;
   Float abs() const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);

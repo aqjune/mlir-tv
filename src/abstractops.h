@@ -74,6 +74,7 @@ private:
   std::optional<smt::FnDecl> fp_dotfn;
   std::optional<smt::FnDecl> fp_addfn;
   std::optional<smt::FnDecl> fp_mulfn;
+  std::optional<smt::FnDecl> fp_ultfn;
   std::string fn_suffix;
 
 public:
@@ -95,6 +96,7 @@ private:
   smt::FnDecl getAssocSumFn();
   smt::FnDecl getSumFn();
   smt::FnDecl getDotFn();
+  smt::FnDecl getUltFn();
 
 public:
   smt::Expr constant(const llvm::APFloat &f);
@@ -110,6 +112,7 @@ public:
   smt::Expr mul(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
+  smt::Expr ult(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr getFpAssociativePrecondition() const;
 
 private:

@@ -178,6 +178,10 @@ Float Float::mul(const Float &b) const {
   return Float(aop::getFpEncoding(type).mul(e, b.e), type);
 }
 
+Integer Float::ult(const Float &b) const {
+  return Integer(aop::getFpEncoding(type).ult(e, b.e));
+}
+
 Float Float::abs() const {
   return Float(aop::getFpEncoding(type).abs(e), type);
 }
@@ -203,6 +207,9 @@ Integer Integer::var(std::string &&name, unsigned bw, VarType varty) {
   }
   llvm_unreachable("Unknown case");
 }
+
+Integer Integer::boolTrue() { return Integer(1, 1); }
+Integer Integer::boolFalse() { return Integer(0, 1); }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
   os << or_omit((Expr)i);
