@@ -1110,8 +1110,8 @@ static variant<string, MemRef> createNewLocalBlk(
 template<>
 optional<string> encodeOp(State &st, mlir::memref::AllocOp op) {
   auto memrefTy = op.getType().cast<mlir::MemRefType>();
-  if (!memrefTy.getAffineMaps().empty())
-    return "unsupported memref type for alloc: it has an affine map";
+  if (!memrefTy.getLayout().isIdentity())
+    return "unsupported memref type for alloc: it has a non-identity layout map";
 
   auto dsizes = op.dynamicSizes();
   vector<Expr> dszExprs;
@@ -1225,7 +1225,7 @@ optional<string> encodeOp(State &st, mlir::memref::SubViewOp op) {
 static void storeTensorTo(
     State &st, mlir::Operation *op, Tensor &&tensor, const MemRef &memref,
     mlir::MemRefType memrefTy) {
-  if (memrefTy.getAffineMaps().empty()) {
+  if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
     auto success = memref.storeArray(tensor.asArray(), Index::zero(),
         tensor.get1DSize(), false);
