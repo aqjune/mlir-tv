@@ -117,6 +117,7 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_dotfn.reset();
   fp_addfn.reset();
   fp_mulfn.reset();
+  fp_ultfn.reset();
   fp_sum_relations.clear();
 }
 
@@ -157,6 +158,15 @@ FnDecl AbsFpEncoding::getDotFn() {
   if (!fp_dotfn)
     fp_dotfn.emplace({arrs, arrs}, sort(), "fp_dot_" + fn_suffix);
   return *fp_dotfn;
+}
+
+FnDecl AbsFpEncoding::getUltFn() {
+  if (!fp_ultfn) {
+    auto fty = Sort::bvSort(fp_bv_bits);
+    auto fty2 = Sort::bvSort(1); // i1 type (boolean value)
+    fp_ultfn.emplace({fty, fty}, fty2, "fp_ult_" + fn_suffix);
+  }
+  return *fp_ultfn;
 }
 
 Expr AbsFpEncoding::constant(const llvm::APFloat &f) {
@@ -443,6 +453,10 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
     return sum(arr, n);
   }
   llvm_unreachable("Unknown abstraction level for fp dot");
+}
+
+Expr AbsFpEncoding::ult(const Expr &f1, const Expr &f2) {
+  return getUltFn().apply({f1, f2});
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() const {

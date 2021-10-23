@@ -60,6 +60,8 @@ public:
 
   static smt::Sort sort(unsigned bw);
   static Integer var(std::string &&name, unsigned bw, VarType vty);
+  static Integer boolTrue();
+  static Integer boolFalse();
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
   // (refinement, {})

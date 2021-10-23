@@ -356,6 +356,20 @@ optional<string> encodeOp(State &st, mlir::arith::MulIOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::arith::CmpFOp op) {
+  switch (op.predicate()) {
+  case mlir::arith::CmpFPredicate::OLT: { // ordered (unsinged) less than "<"
+    auto a = st.regs.get<Float>(op.getOperand(0));
+    auto b = st.regs.get<Float>(op.getOperand(1));
+    addIntOrIndex(st, op, a.ult(b), false);
+    return {};
+  }
+  default:
+    return "Unsupported cmpf predicate";
+  }
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::arith::ConstantIndexOp op) {
   st.regs.add(op, Index(op.value()));
   return {};
@@ -520,6 +534,16 @@ optional<string> encodeOp(State &st, mlir::ReturnOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::SelectOp op) {
+  auto cond = st.regs.get<Integer>(op.condition());
+  auto trueValue = st.regs.getExpr(op.true_value());
+  auto falseValue = st.regs.getExpr(op.false_value());
+  auto isTrue = (Expr) cond == Integer::boolTrue();
+  st.regs.add(op, Expr::mkIte(isTrue, trueValue, falseValue), op.getType());
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::shape::ShapeOfOp op) {
   if (!op.getType().isa<mlir::TensorType>())
     return "unsupported type";
@@ -561,11 +585,13 @@ optional<string> encodeOp(State &st, mlir::tosa::AbsOp op) {
     ENCODE(st, op, mlir::arith::MulFOp); \
     ENCODE(st, op, mlir::arith::MulIOp); \
     ENCODE(st, op, mlir::arith::SubIOp); \
+    ENCODE(st, op, mlir::arith::CmpFOp); \
     ENCODE(st, op, mlir::AffineApplyOp); \
     ENCODE(st, op, mlir::linalg::IndexOp); \
     ENCODE(st, op, mlir::math::AbsOp); \
     ENCODE(st, op, mlir::shape::ShapeOfOp); \
-    ENCODE(st, op, mlir::tosa::AbsOp);
+    ENCODE(st, op, mlir::tosa::AbsOp); \
+    ENCODE(st, op, mlir::SelectOp);
 
 
 static optional<string> encodeParallelLoopBodyAndOutput(
