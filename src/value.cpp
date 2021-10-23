@@ -743,8 +743,7 @@ MemRef::Layout MemRef::getLayout(
     mlir::MemRefType memRefTy, const vector<Expr> &dims) {
   assert(mlir::isStrided(memRefTy));
 
-  auto affineMaps = memRefTy.getAffineMaps();
-  if (affineMaps.empty())
+  if (memRefTy.getLayout().isIdentity())
     return MemRef::Layout(dims);
 
   int64_t offset;
