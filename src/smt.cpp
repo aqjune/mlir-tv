@@ -938,7 +938,7 @@ Sort Sort::toFnSort() const {
 unsigned Sort::bitwidth() const {
   optional<unsigned> res;
   IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->bv_size()));
-  IF_CVC5_ENABLED(if(cvc5) writeOrCheck(res, cvc5->getBVSize()));
+  IF_CVC5_ENABLED(if(cvc5) writeOrCheck(res, cvc5->getBitVectorSize()));
   return *res;
 }
 
