@@ -17,7 +17,7 @@ optional<smt::Sort> convertTypeToSort(mlir::Type elemty) {
     return Integer::sort(ielemty.getWidth());
   } else if (auto felemty = elemty.dyn_cast<mlir::FloatType>()) {
     return Float::sort(felemty);
-  } else if (elemty.isa<mlir::IndexType>()) {
+  } else if (elemty.isIndex()) {
     return Index::sort();
   }
 
@@ -32,7 +32,7 @@ optional<Expr> getZero(mlir::Type eltType) {
     return Float::constant(llvm::APFloat(0.0), eltType);
   else if (eltType.isa<mlir::IntegerType>())
     return Integer(0, eltType.getIntOrFloatBitWidth());
-  else if (eltType.isa<mlir::IndexType>())
+  else if (eltType.isIndex())
     return Index(0);
   return {};
 }
@@ -116,9 +116,9 @@ Index Index::eval(Model m) const {
 }
 
 optional<Sort> Float::sort(mlir::Type t) {
-  if (t.isa<mlir::Float32Type>()) {
+  if (t.isF32()) {
     return aop::getFloatEncoding().sort();
-  } else if (t.isa<mlir::Float64Type>()) {
+  } else if (t.isF64()) {
     return aop::getDoubleEncoding().sort();
   }
   return nullopt;
@@ -736,7 +736,7 @@ bool MemRef::isTypeSupported(mlir::MemRefType memRefTy) {
 
   auto elemty = memRefTy.getElementType();
   // Currently we only support f32 element type.
-  return elemty.isa<mlir::Float32Type>();
+  return elemty.isF32();
 }
 
 MemRef::Layout MemRef::getLayout(

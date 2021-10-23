@@ -50,7 +50,7 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
       return {};
 
     return Integer(a.dyn_cast<mlir::IntegerAttr>().getValue());
-  } else if (ty.isa<mlir::IndexType>()) {
+  } else if (ty.isIndex()) {
     llvm::APInt i = a.dyn_cast<mlir::IntegerAttr>().getValue();
     assert(i.getBitWidth() == 64);
     int64_t ii = i.getSExtValue();
@@ -61,7 +61,7 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
 }
 
 static optional<ValueTy> fromExpr(Expr &&e, mlir::Type ty) {
-  if (ty.isa<mlir::IndexType>())
+  if (ty.isIndex())
     return Index(e);
   else if (ty.isa<mlir::FloatType>())
     return Float(e, ty);
@@ -120,7 +120,7 @@ static Expr evalIndexCastOp(mlir::Type src, mlir::Type tgt, Expr &&val) {
   if (auto dstty = tgt.dyn_cast<mlir::IntegerType>())
     destWidth = dstty.getWidth();
   else {
-    assert(tgt.isa<mlir::IndexType>());
+    assert(tgt.isIndex());
     destWidth = Index::BITS;
   }
 
@@ -1168,7 +1168,7 @@ optional<string> encodeOp(State &st, mlir::memref::StoreOp op) {
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
-  if (op.getOperand(0).getType().isa<mlir::Float32Type>()) {
+  if (op.getOperand(0).getType().isF32()) {
     auto val = st.regs.get<Float>(op.getOperand(0));
     auto success = m.store(val, indices);
     st.wellDefined(op.getOperation(), move(success));
