@@ -13,6 +13,7 @@ struct UsedAbstractOps {
   bool fpAdd;
   bool fpMul;
   bool fpSum;
+  bool fpUlt;
   // Int ops
   bool intDot;
   bool intSum;
@@ -37,6 +38,7 @@ void setEncodingOptions(bool use_multiset);
 bool getFpAddAssociativity();
 
 smt::Expr getFpAssociativePrecondition();
+smt::Expr getFpUltPrecondition();
 
 smt::Expr intSum(const smt::Expr &arr, const smt::Expr &n);
 smt::Expr intDot(const smt::Expr &arr1, const smt::Expr &arr2,
@@ -105,6 +107,7 @@ public:
   smt::Expr infinity(bool isNegative = false);
   smt::Expr nan();
 
+  std::vector<std::pair<llvm::APFloat, smt::Expr>> getAllConstants() const;
   std::vector<llvm::APFloat> possibleConsts(const smt::Expr &e) const;
   smt::Expr isnan(const smt::Expr &f);
   smt::Expr abs(const smt::Expr &f);
@@ -112,7 +115,7 @@ public:
   smt::Expr mul(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
-  smt::Expr ult(const smt::Expr &f1, const smt::Expr &f2);
+  smt::Expr fult(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr getFpAssociativePrecondition() const;
 
 private:
