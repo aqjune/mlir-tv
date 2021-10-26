@@ -68,7 +68,7 @@ public:
     // indVars[i] <= indVarUpperBounds[i]
     std::vector<smt::Expr> indVarUpperBounds;
 
-    LinalgGenericScope(std::vector<Index> &&upperbounds);
+    LinalgGenericScope(const std::vector<Index> &upperbounds);
   };
 
   RegFile regs;
