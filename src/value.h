@@ -108,6 +108,7 @@ public:
   smt::Expr asArray() const { return arr; }
   smt::Expr getWellDefined() const;
 
+  smt::Expr isInBounds(const std::vector<smt::Expr> &indices) const;
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
       const override;
 

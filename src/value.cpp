@@ -325,28 +325,29 @@ Expr Tensor::getWellDefined() const {
   return e.simplify();
 }
 
-pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
-  auto elem = arr.select(to1DIdx(indices, dims));
+Expr Tensor::isInBounds(const vector<smt::Expr> &indices) const {
+  assert(indices.size() == dims.size());
+
   auto inbounds = Expr::mkBool(true);
   for (unsigned i = 0; i < indices.size(); ++i)
     inbounds = inbounds & indices[i].ult(dims[i]);
+  return inbounds.simplify();
+}
 
-  return {elem, inbounds.simplify()};
+pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
+  auto elem = arr.select(to1DIdx(indices, dims));
+  return {elem, isInBounds(indices)};
 }
 
 pair<Tensor, Expr> Tensor::insert(const smt::Expr &value,
     const std::vector<smt::Expr> &indices) const {
-  auto inbounds = Expr::mkBool(true);
-  for (unsigned i = 0; i < indices.size(); ++i)
-    inbounds = inbounds & indices[i].ult(dims[i]);
-
   auto idxvar = Index::var("idx", VarType::BOUND);
   auto cond = (Expr)idxvar == to1DIdx(indices, dims);
   auto originValue = get(from1DIdx(idxvar, dims)).first;
 
   auto newdims = dims;
   auto lambda = Expr::mkLambda(idxvar, Expr::mkIte(cond, value, originValue));
-  return {{elemType, move(newdims), move(lambda)}, inbounds};
+  return {{elemType, move(newdims), move(lambda)}, isInBounds(indices)};
 }
 
 Tensor Tensor::affine(

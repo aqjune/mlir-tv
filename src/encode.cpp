@@ -195,7 +195,15 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
   // reference: https://numpy.org/doc/stable/user/basics.broadcasting.html
   auto ty0 = arg0.getType().cast<mlir::RankedTensorType>();
   auto ty1 = arg1.getType().cast<mlir::RankedTensorType>();
-  auto ty0rank = ty0.getRank(), ty1rank = ty1.getRank();
+  auto ty0rank = max(ty0.getRank(), (int64_t)1);
+  auto ty1rank = max(ty1.getRank(), (int64_t)1);
+  auto getDimSize = [](mlir::RankedTensorType ty, int idx) -> int64_t {
+    if (ty.getRank() == 0) {
+      assert(idx == 0);
+      return 1;
+    }
+    return ty.getDimSize(idx);
+  };
 
   auto resRank = max(ty0rank, ty1rank);
   auto inVars0 = Index::boundIndexVars(resRank);
@@ -207,8 +215,8 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
     int64_t idx0 = ty0rank - 1 - i;
     int64_t idx1 = ty1rank - 1 - i;
 
-    auto d1 = ty0.getDimSize(idx0);
-    auto d2 = ty1.getDimSize(idx1);
+    auto d1 = getDimSize(ty0, idx0);
+    auto d2 = getDimSize(ty1, idx1);
 
     bool dyn0 = d1 == mlir::ShapedType::kDynamicSize;
     bool dyn1 = d2 == mlir::ShapedType::kDynamicSize;
@@ -223,12 +231,12 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
 
   if (ty0rank < ty1rank) {
     for (int64_t i = ty1rank - ty0rank - 1; i >= 0; --i) {
-      resDims.insert(resDims.begin(), Index(ty1.getDimSize(i)));
+      resDims.insert(resDims.begin(), Index(getDimSize(ty1, i)));
       outVars1.insert(outVars1.begin(), inVars1[i]);
     }
   } else if (ty1rank < ty0rank) {
     for (int64_t i = ty0rank - ty1rank - 1; i >= 0; --i) {
-      resDims.insert(resDims.begin(), Index(ty0.getDimSize(i)));
+      resDims.insert(resDims.begin(), Index(getDimSize(ty0, i)));
       outVars0.insert(outVars0.begin(), inVars0[i]);
     }
   }
@@ -820,8 +828,9 @@ optional<string> encodeOp(State &st, mlir::linalg::PadTensorOp op) {
   auto loopUpperBound = vecAddElem(newTensorSize, Index(-1));
   newst.linalgGenericScopes.push(State::LinalgGenericScope{
       move(loopUpperBound)});
+  auto &indVars = newst.linalgGenericScopes.top().indVars;
   for (int i = 0; i < blk.getNumArguments(); ++i) {
-    Expr idxvar = newst.linalgGenericScopes.top().indVars[i];
+    Expr idxvar = indVars[i];
     newst.regs.add(blk.getArgument(i), Index(idxvar));
   }
 
@@ -914,6 +923,9 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
   vector<Expr> indices;
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
+  if (indices.empty())
+    // Deal with the zero-rank tensor case
+    indices.push_back(Index(0));
 
   auto [elem, inbounds] = t.get(indices);
   if (auto v = fromExpr(move(elem), op.getType()))
@@ -1426,6 +1438,13 @@ vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
         viewSizes.push_back(t.getDim(i));
       }
     }
+  }
+
+  if (viewSizes.empty()) {
+    // Return [0] if all operands have zero rank, because there exists only
+    // one element.
+    // This is consistent with what ShapedValue::getDims does.
+    return {Index(0)};
   }
 
   mlir::AffineMap map = op.getLoopsToShapesMap();
