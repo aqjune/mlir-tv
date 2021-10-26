@@ -361,7 +361,7 @@ optional<string> encodeOp(State &st, mlir::arith::CmpFOp op) {
   case mlir::arith::CmpFPredicate::OLT: { // ordered (unsinged) less than "<"
     auto a = st.regs.get<Float>(op.getOperand(0));
     auto b = st.regs.get<Float>(op.getOperand(1));
-    addIntOrIndex(st, op, a.ult(b), false);
+    addIntOrIndex(st, op, a.fult(b), false);
     return {};
   }
   default:
