@@ -178,8 +178,8 @@ Float Float::mul(const Float &b) const {
   return Float(aop::getFpEncoding(type).mul(e, b.e), type);
 }
 
-Integer Float::ult(const Float &b) const {
-  return Integer(aop::getFpEncoding(type).ult(e, b.e));
+Integer Float::fult(const Float &b) const {
+  return Integer(aop::getFpEncoding(type).fult(e, b.e));
 }
 
 Float Float::abs() const {

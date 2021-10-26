@@ -203,6 +203,24 @@ Expr AbsFpEncoding::constant(const llvm::APFloat &f) {
   return f.isNegative() ? e_neg : e_pos;
 }
 
+std::vector<std::pair<llvm::APFloat, smt::Expr>> AbsFpEncoding::getAllConstants() const {
+  vector<pair<llvm::APFloat, smt::Expr>> constants;
+  for (auto &[k, v]: fpconst_absrepr) constants.emplace_back(k, v);
+
+  if (fpconst_nan)
+    constants.emplace_back(llvm::APFloat::getNaN(semantics), *fpconst_nan);
+  if (fpconst_zero_pos)
+    constants.emplace_back(llvm::APFloat::getZero(semantics), *fpconst_zero_pos);
+  if (fpconst_zero_neg)
+    constants.emplace_back(llvm::APFloat::getZero(semantics, true), *fpconst_zero_neg);
+  if (fpconst_inf_pos)
+    constants.emplace_back(llvm::APFloat::getInf(semantics), *fpconst_inf_pos);
+  if (fpconst_inf_neg)
+    constants.emplace_back(llvm::APFloat::getInf(semantics, true), *fpconst_inf_neg);
+
+  return constants;
+}
+
 vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
   vector<llvm::APFloat> vec;
 
@@ -455,7 +473,8 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
   llvm_unreachable("Unknown abstraction level for fp dot");
 }
 
-Expr AbsFpEncoding::ult(const Expr &f1, const Expr &f2) {
+Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
+  usedOps.fpUlt = true;
   return getUltFn().apply({f1, f2});
 }
 
@@ -519,6 +538,24 @@ Expr getFpAssociativePrecondition() {
   return cond;
 }
 
+Expr getFpUltPrecondition() {
+  Expr cond = Expr::mkBool(true);
+
+  if (floatEnc) {
+    auto constants = floatEnc->getAllConstants();
+    for (auto &[const1, expr1]: constants) {
+      for (auto &[const2, expr2]: constants) {
+        if (const1.compare(const2) == llvm::APFloat::cmpLessThan ||
+              const1.compare(const2) == llvm::APFloat::cmpUnordered) {
+          cond = cond & floatEnc->fult(expr1, expr2) == Integer::boolTrue();
+        }
+      }
+    }
+  }
+  // TODO: double
+
+  return cond;
+}
 
 
 // ----- Integer operations ------

@@ -351,6 +351,9 @@ static tuple<State, State, Expr> encodeFinalStates(
   if (aop::getFpAddAssociativity())
     preconds.push_back(aop::getFpAssociativePrecondition());
 
+  if(aop::getUsedAbstractOps().fpUlt)
+    preconds.push_back(aop::getFpUltPrecondition());
+
   Expr precond =
       exprAnd(preconds) & st_src.precondition() & st_tgt.precondition();
   precond = precond.simplify();
