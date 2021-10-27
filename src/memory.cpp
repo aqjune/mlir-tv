@@ -100,6 +100,18 @@ Expr SingleArrayMemory::store(
   return idx.ult(block.numelem) & block.writable;
 }
 
+static Expr isSafeToWrite(
+    const Expr &offset, const Expr &size, const Expr &block_numelem,
+    const Expr &block_writable, bool ubIfReadonly) {
+  return size.isZero() | // If size = 0, it does not touch the block
+      // 1. If size != 0, no offset overflow
+      (Expr::mkAddNoOverflow(offset, size - 1, false) &
+      // 2. high < block.numelem
+       (offset + size - 1).ult(block_numelem) &
+      // 3. Can write
+      (block_writable | !ubIfReadonly));
+}
+
 Expr SingleArrayMemory::storeArray(
     const Expr &arr, const Expr &bid, const Expr &offset, const Expr &size,
     bool ubIfReadonly) {
@@ -114,9 +126,8 @@ Expr SingleArrayMemory::storeArray(
   auto stored = Expr::mkLambda(idx, Expr::mkIte(cond, arrayVal, currentVal));
   arrayMaps = arrayMaps.store(bid, stored);
 
-  return Expr::mkAddNoOverflow(offset, size - 1, false) & // to prevent overflow
-      high.ult(block.numelem) & // high < block.numelem
-      (block.writable | !ubIfReadonly);
+  return isSafeToWrite(offset, size, block.numelem, block.writable,
+      ubIfReadonly);
 }
 
 pair<Expr, Expr> SingleArrayMemory::load(
@@ -236,9 +247,8 @@ Expr MultipleArrayMemory::storeArray(
       return Expr::mkLambda(idx, Expr::mkIte(cond, arrayVal, currentVal));
     });
 
-  return Expr::mkAddNoOverflow(offset, size - 1, false) & // to prevent overflow
-      high.ult(getNumElementsOfMemBlock(bid)) & // high < block.numelem
-      (getWritable(bid) | !ubIfReadonly);
+  return isSafeToWrite(offset, size, getNumElementsOfMemBlock(bid),
+      getWritable(bid), ubIfReadonly);
 }
 
 pair<Expr, Expr> MultipleArrayMemory::load(
