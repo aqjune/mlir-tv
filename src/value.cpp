@@ -437,20 +437,16 @@ Tensor Tensor::matmul(const Tensor &b) const {
   return mkLambda(elemType, {dims[0], bt.dims[0]}, {i, j}, move(res));
 }
 
-pair<Tensor, Expr> Tensor::elementwiseBinOp(
+Tensor Tensor::elementwiseBinOp(
       const Tensor &b, const function<Expr(Expr &&e1, Expr &&e2)> &f)
       const {
   assert(getRank() == b.getRank());
   assert(elemType == b.elemType);
 
-  Expr equalSize = Expr::mkBool(true);
   auto idxvars = Index::boundIndexVars(getRank());
-  for (unsigned i = 0; i < getRank(); ++i)
-    equalSize = equalSize & (Expr)getDim(i) == (Expr)b.getDim(i);
   Expr elemout = f(get(idxvars).first, b.get(idxvars).first);
 
-  return { mkLambda(elemType, getDims(), move(idxvars), elemout),
-           move(equalSize) };
+  return mkLambda(elemType, getDims(), move(idxvars), elemout);
 }
 
 Tensor Tensor::elementwiseUnaryOp(

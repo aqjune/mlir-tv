@@ -195,6 +195,8 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
   // reference: https://numpy.org/doc/stable/user/basics.broadcasting.html
   auto ty0 = arg0.getType().cast<mlir::RankedTensorType>();
   auto ty1 = arg1.getType().cast<mlir::RankedTensorType>();
+  auto t0 = st.regs.get<Tensor>(arg0);
+  auto t1 = st.regs.get<Tensor>(arg1);
   auto ty0rank = max(ty0.getRank(), (int64_t)1);
   auto ty1rank = max(ty1.getRank(), (int64_t)1);
   auto getDimSize = [](mlir::RankedTensorType ty, int idx) -> int64_t {
@@ -210,7 +212,11 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
   auto inVars1 = Index::boundIndexVars(resRank);
   Expr izero = Index(0);
 
-  vector<Expr> outVars0, outVars1, resDims;
+  vector<Expr> outVars0, outVars1;
+  // The dimensions of broadcasted t0 and t1 are separately maintained (not
+  // mixed). This is for a correct encoding of shape check (shape mismatch is
+  // UB)
+  vector<Expr> resDims0, resDims1;
   for (int64_t i = 0; i < min(ty0rank, ty1rank); i++) {
     int64_t idx0 = ty0rank - 1 - i;
     int64_t idx1 = ty1rank - 1 - i;
@@ -224,30 +230,39 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
       return nullopt;
 
     assert(d1 == 1 || d2 == 1 || d1 == d2);
-    resDims.insert(resDims.begin(), Index(max(d1,d2)));
+
+    if (dyn0 && dyn1) {
+      resDims0.insert(resDims0.begin(), t0.getDim(idx0));
+      resDims1.insert(resDims1.begin(), t1.getDim(idx1));
+    } else {
+      resDims0.insert(resDims0.begin(), Index(max(d1,d2)));
+      resDims1.insert(resDims1.begin(), Index(max(d1,d2)));
+    }
+
     outVars0.insert(outVars0.begin(), d1 == 1 ? izero : inVars0[idx0]);
     outVars1.insert(outVars1.begin(), d2 == 1 ? izero : inVars1[idx1]);
   }
 
   if (ty0rank < ty1rank) {
     for (int64_t i = ty1rank - ty0rank - 1; i >= 0; --i) {
-      resDims.insert(resDims.begin(), Index(getDimSize(ty1, i)));
+      auto d = t1.getDim(i);
+      resDims0.insert(resDims0.begin(), d);
+      resDims1.insert(resDims1.begin(), d);
       outVars1.insert(outVars1.begin(), inVars1[i]);
     }
   } else if (ty1rank < ty0rank) {
     for (int64_t i = ty0rank - ty1rank - 1; i >= 0; --i) {
-      resDims.insert(resDims.begin(), Index(getDimSize(ty0, i)));
+      auto d = t0.getDim(i);
+      resDims0.insert(resDims0.begin(), d);
+      resDims1.insert(resDims1.begin(), d);
       outVars0.insert(outVars0.begin(), inVars0[i]);
     }
   }
 
-  auto resDims2 = resDims;
-  auto t0 = st.regs.get<Tensor>(arg0);
-  auto t1 = st.regs.get<Tensor>(arg1);
-  auto m0 = Tensor::mkLambda(t0.getElemType(), move(resDims), move(inVars0),
+  auto m0 = Tensor::mkLambda(t0.getElemType(), move(resDims0), move(inVars0),
                               t0.get(outVars0).first);
 
-  auto m1 = Tensor::mkLambda(t1.getElemType(), move(resDims2), move(inVars1),
+  auto m1 = Tensor::mkLambda(t1.getElemType(), move(resDims1), move(inVars1),
                               t1.get(outVars1).first);
 
   return {{m0, m1}};
@@ -282,9 +297,8 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
       }
       llvm_unreachable("Unreachable case");
     };
-    auto [res, welldef] = a.elementwiseBinOp(b, f);
-    st.regs.add(op, move(res));
-    st.wellDefined(op.getOperation(), move(welldef));
+    st.regs.add(op, a.elementwiseBinOp(b, f));
+    st.wellDefined(op.getOperation(), listsEqual(a.getDims(), b.getDims()));
 
   } else {
     return "Unsupported type";

@@ -141,10 +141,9 @@ public:
 
   Tensor matmul(const Tensor &b) const;
 
-  // Return the result of an elementwise operation
-  // (the resulting tensor, shape check)
-  std::pair<Tensor, smt::Expr> elementwiseBinOp(
-      const Tensor &b,
+  // Return the result of an elementwise operation.
+  // Assume that the shapes are equivalent.
+  Tensor elementwiseBinOp(const Tensor &b,
       const std::function<smt::Expr(smt::Expr &&, smt::Expr &&)> &op) const;
 
   Tensor elementwiseUnaryOp(
