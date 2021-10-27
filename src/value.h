@@ -163,6 +163,13 @@ public:
       std::vector<smt::Expr> &&newdims,
       std::vector<smt::Expr> &&indexvars, smt::Expr body);
 
+  // Returns (cond ? trueValue : falseValue).
+  // The shapes of trueValue and falseValue must be equivalent.
+  static Tensor mkIte(
+      // Index -> boolean function
+      std::function<smt::Expr(const std::vector<smt::Expr> &)> condFn,
+      const Tensor &trueValue, const Tensor &falseValue);
+
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
   // Returns (arr[idx] == src.arr[idx], unbound idx vars)
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
@@ -193,7 +200,8 @@ public:
     // ex) mapping := (d0, d1) -> (4 * d0 + d1)
     smt::Expr mapping;
     // Inverse layout mapping of indVars (1D Index -> indVars)
-    // If we can not give exact definition of inverseMappings, then encode it with uninterpreted function.
+    // If we can not give exact definition of inverseMappings, then encode it
+    // with uninterpreted function.
     // ex)
     // - If we can give exact definition
     //    inverseMappings := (idx) -> {(idx / 4), (idx % 4)}
@@ -201,10 +209,13 @@ public:
     //    inverseMappings := (idx) -> {inverse0(idx), inverse1(idx)}
     std::vector<smt::Expr> inverseMappings;
     // Precondition for inverse mapping function.
-    // If we cannot give exact definition of inverseMappings, then give its meaning with forall quantifier.
-    // This will be added to state's precondition only when inverseMappings are used explicitly.
-    // If the layout has simple identity mapping, this will be constantly true.
-    // ex) forall indVars, if (indVars are inbounds) then inverse0(mapping(d0, d1)) = d0 && inverse1(mapping(d0, d1)) = d1
+    // If we cannot give exact definition of inverseMappings, then give its
+    // meaning with forall quantifier.
+    // This will be added to state's precondition only when inverseMappings are
+    // used explicitly.
+    // If the layout has a simple identity mapping, this will be constantly true
+    // ex) forall indVars, if (indVars are inbounds) then
+    //     inverse0(mapping(d0, d1)) = d0 && inverse1(mapping(d0, d1)) = d1
     smt::Expr precondition;
 
     Layout(const std::vector<smt::Expr> &dims);
@@ -257,7 +268,8 @@ public:
   Index getOffset() const { return offset; }
   std::vector<smt::Expr> getDims() const override { return dims; }
 
-  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices) const override;
+  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
+      const override;
   smt::Expr store(const smt::Expr &value, const std::vector<smt::Expr> &indices)
       const;
   smt::Expr storeArray(const smt::Expr &array, const smt::Expr &startOffset,
@@ -282,6 +294,13 @@ public:
       const MemRef &filter,
       const std::vector<smt::Expr> strides,
       const std::vector<smt::Expr> dilations);
+
+  // Returns (cond ? trueValue : falseValue).
+  // It is assumed that trueValue.layout is equivalent to falseValue.layout.
+  // Also trueValue.dims == falseValue.dims is assumed, to be consistent with
+  // layout info.
+  static MemRef mkIte(smt::Expr cond,
+      const MemRef &trueValue, const MemRef &falseValue);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
   // (refinement, unbound variables used in the refinement formula)

@@ -598,6 +598,23 @@ Tensor Tensor::mkLambda(
   return { elemType, move(newdims), Expr::mkLambda(idx, body) };
 }
 
+Tensor Tensor::mkIte(
+    function<smt::Expr(const vector<smt::Expr> &)> condFn,
+    const Tensor &trueValue, const Tensor &falseValue) {
+  auto trueDims = trueValue.getDims();
+  auto falseDims = falseValue.getDims();
+  assert(trueDims.size() == falseDims.size() &&
+         trueValue.elemType == falseValue.elemType);
+
+  auto indVars = Index::boundIndexVars(trueDims.size());
+  auto isTrue = condFn(indVars) == Integer::boolTrue();
+
+  auto retExpr = Expr::mkIte(
+      isTrue, trueValue.get(indVars).first, falseValue.get(indVars).first);
+  return Tensor::mkLambda(
+      trueValue.elemType, move(trueDims), move(indVars), move(retExpr));
+}
+
 Expr Tensor::to1DArrayWithOfs(
       const vector<Expr> &offbegins,
       const vector<Expr> &sizes) const {
@@ -873,6 +890,22 @@ Expr MemRef::conv(const MemRef &input,
     noalias(input) & noalias(filter) & storeArray(outputArray, Index::zero(), get1DSize());
 
   return success;
+}
+
+MemRef MemRef::mkIte(smt::Expr cond,
+    const MemRef &trueValue, const MemRef &falseValue) {
+  auto trueDims = trueValue.getDims();
+  auto falseDims = trueValue.getDims();
+  assert(trueValue.m == falseValue.m);
+  assert(trueDims.size() == falseDims.size() &&
+         trueValue.elemType == falseValue.elemType);
+
+  auto isTrue = (Expr) cond == Integer::boolTrue();
+  auto bid = Expr::mkIte(isTrue, trueValue.bid, falseValue.bid);
+  auto offset = Expr::mkIte(isTrue, trueValue.offset, falseValue.offset);
+  // Assumes that trueValue.layout is equivalent to falseValue.layout.
+  return MemRef(trueValue.m, trueValue.elemType,
+      bid, offset, trueValue.dims, trueValue.layout);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {

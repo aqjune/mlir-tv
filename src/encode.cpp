@@ -274,7 +274,7 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
       return "Unsupported broadcast form";
     auto [a, b] = *bts;
 
-    auto f = [&](smt::Expr &&a, smt::Expr &&b) -> smt::Expr {
+    auto f = [&](Expr &&a, Expr &&b) -> Expr {
       if (elemty.isa<mlir::FloatType>()) {
         return f_float(Float(a, elemty), Float(b, elemty));
       } else if (elemty.isa<mlir::IntegerType>()) {
@@ -543,11 +543,65 @@ optional<string> encodeOp(State &st, mlir::ReturnOp op) {
 
 template<>
 optional<string> encodeOp(State &st, mlir::SelectOp op) {
-  auto cond = st.regs.get<Integer>(op.condition());
-  auto trueValue = st.regs.getExpr(op.true_value());
-  auto falseValue = st.regs.getExpr(op.false_value());
-  auto isTrue = (Expr) cond == Integer::boolTrue();
-  st.regs.add(op, Expr::mkIte(isTrue, trueValue, falseValue), op.getType());
+  auto condTy = op.condition().getType();
+  auto trueTy = op.true_value().getType();
+  auto falseTy = op.true_value().getType();
+
+  if (trueTy.isa<mlir::TensorType>() && falseTy.isa<mlir::TensorType>()) {
+    if (trueTy.isa<mlir::UnrankedTensorType>() ||
+        falseTy.isa<mlir::UnrankedTensorType>())
+      return "Unsupported operands";
+    // It is guaranteed by mlir's verifier that condTy cannot be unranked
+    assert(!condTy.isa<mlir::UnrankedTensorType>());
+
+    auto trueValue = st.regs.get<Tensor>(op.true_value());
+    auto falseValue = st.regs.get<Tensor>(op.false_value());
+    // Encoding UB is necessary to support select of tensors -> linalg.generic
+    Expr welldef = listsEqual(trueValue.getDims(), falseValue.getDims());
+    function<Expr(const vector<Expr>&)> condFn =
+        [&](const vector<Expr> &indices) -> Expr {
+      return st.regs.get<Integer>(op.condition());
+    };
+    if (condTy.isa<mlir::RankedTensorType>()) {
+      auto condValue = st.regs.get<Tensor>(op.condition());
+      // Copy condValue
+      condFn = [condValue](const vector<Expr> &indices) -> Expr {
+        return condValue.get(indices).first;
+      };
+      welldef &= listsEqual(trueValue.getDims(), condValue.getDims());
+    }
+
+    auto result = Tensor::mkIte(condFn, trueValue, falseValue);
+    st.regs.add(op, result);
+    st.wellDefined(op, move(welldef));
+
+  } else if (trueTy.isa<mlir::MemRefType>() &&
+             falseTy.isa<mlir::MemRefType>()) {
+    if (trueTy.isa<mlir::UnrankedMemRefType>() ||
+        falseTy.isa<mlir::UnrankedMemRefType>())
+      return "Unsupported operands";
+    if (!condTy.isa<mlir::IntegerType>())
+      return "For MemRef operands, i1 typed condition is supported only";
+
+    auto trueValue = st.regs.get<MemRef>(op.true_value());
+    auto falseValue = st.regs.get<MemRef>(op.false_value());
+    auto condValue = st.regs.get<Integer>(op.condition());
+    auto result = MemRef::mkIte(condValue, trueValue, falseValue);
+
+    st.regs.add(op, result);
+    // Constrain the dimensions to be equivalent, otherwise the layout info
+    // becomes bogus.
+    st.wellDefined(op, listsEqual(trueValue.getDims(), falseValue.getDims()));
+
+  } else {
+    assert(trueTy.isIntOrFloat() || trueTy.isIndex());
+
+    auto trueValue = st.regs.getExpr(op.true_value());
+    auto falseValue = st.regs.getExpr(op.false_value());
+    auto condValue = st.regs.get<Integer>(op.condition());
+    auto isTrue = (Expr)condValue == Integer::boolTrue();
+    st.regs.add(op, Expr::mkIte(isTrue, trueValue, falseValue), op.getType());
+  }
   return {};
 }
 

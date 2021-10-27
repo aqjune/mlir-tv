@@ -166,6 +166,16 @@ Expr fitsInDims(
   return cond;
 }
 
+Expr listsEqual(const vector<Expr> &v1, const vector<Expr> &v2) {
+  assert(v1.size() == v2.size());
+
+  Expr c = Expr::mkBool(true);
+  for (unsigned i = 0;  i < v1.size(); ++i) {
+    c &= v1[i] == v2[i];
+  }
+  return c;
+}
+
 
 string or_omit(const Expr &e) {
   string s;
