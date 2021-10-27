@@ -673,6 +673,7 @@ optional<string> encodeOp(State &st, mlir::tosa::AbsOp op) {
 static optional<string> encodeParallelLoopBodyAndOutput(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
     const mlir::ShapedType &outputType, optional<Tensor> &t_res,
+    optional<Expr> &t_welldef,
     // (yielded value, ind var) -> newly mapped value
     optional<function<Expr(const Expr&, const vector<Expr>&)>>
         outputValMap = nullopt) {
@@ -680,6 +681,8 @@ static optional<string> encodeParallelLoopBodyAndOutput(
   // TODO: deal with merging UBs and memorys
   auto &ops = block.getOperations();
   mlir::Value yieldedValue;
+  t_welldef.emplace(Expr::mkBool(true));
+
   for (auto &op: ops) {
     auto op_operands = op.getOperands();
     for (const auto &opop: op_operands) {
@@ -691,6 +694,7 @@ static optional<string> encodeParallelLoopBodyAndOutput(
     }
 
     ENCODE_SCALAR_OPS(newst, op);
+    t_welldef = *t_welldef & newst.isOpWellDefined(&op);
 
     if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
       yieldedValue = op2.getOperand(0);
@@ -919,13 +923,18 @@ optional<string> encodeOp(State &st, mlir::linalg::PadTensorOp op) {
   };
 
   optional<Tensor> t_res;
+  optional<Expr> t_welldef;
   if (auto msg = encodeParallelLoopBodyAndOutput(newst, blk,
-      identityMap, retty, t_res, paddingOrSource))
+      identityMap, retty, t_res, t_welldef, paddingOrSource))
     return *msg;
+
+  Expr welldef = Expr::mkForall(indVars,
+      t_res->isInBounds(indVars).implies(*t_welldef));
 
   newst.linalgGenericScopes.pop();
 
   st.regs.add(op.getResult(), move(*t_res));
+  st.wellDefined(op.getOperation(), move(welldef));
   return {};
 }
 
@@ -1050,13 +1059,19 @@ optional<string> encodeOp(State &st, mlir::tensor::GenerateOp op) {
   auto identityMap = mlir::AffineMap::getMultiDimIdentityMap(
       retty.getRank(), op.getContext());
   optional<Tensor> t_res;
+  optional<Expr> t_welldef;
   if (auto msg = encodeParallelLoopBodyAndOutput(newst, *blk,
-      identityMap, retty, t_res))
+      identityMap, retty, t_res, t_welldef))
     return *msg;
+
+  auto &indVars = newst.linalgGenericScopes.top().indVars;
+  Expr welldef = Expr::mkForall(indVars,
+      t_res->isInBounds(indVars).implies(*t_welldef));
 
   newst.linalgGenericScopes.pop();
 
   st.regs.add(op.getResult(), move(*t_res));
+  st.wellDefined(op.getOperation(), move(welldef));
   return {};
 }
 
@@ -1665,7 +1680,8 @@ static optional<string> initInputStateForLoopBody(
 static optional<string> encodeReductionLoopBodyAndOutput(
     State &newst, mlir::Block &block,
     const mlir::ArrayRef<mlir::Attribute> &indexingMaps,
-    const mlir::ShapedType &outputType, optional<Tensor> &t_res) {
+    const mlir::ShapedType &outputType, optional<Tensor> &t_res,
+    optional<Expr> &t_welldef) {
   // Deal with simple reduction loops.
   // TODO: support more kinds of reduction loops!
   string errmsg = "permutated output map or simple reduction form is"
@@ -1704,14 +1720,17 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   auto sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(idx);
 
   unsigned cnt = 0;
+  Expr welldef = Expr::mkBool(true);
   for (auto &op: ops) {
     if (cnt++ == ops.size() - 2)
       // Don't directly encode %sum
       break;
 
     ENCODE_SCALAR_OPS(newst, op);
+    welldef &= newst.isOpWellDefined(&op);
     RET_STR("has an unsupported operation" << op);
   }
+  t_welldef = welldef;
 
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
 
@@ -1805,41 +1824,57 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
   }))
     return "unsupported iterator type";
 
+  // Find the inclusive upper bounds
   auto loopBounds = findLoopBounds(st, op);
 
   if (auto errmsg = encodeUBForTensorShapeMatch(st, op, loopBounds))
     return errmsg;
 
   // Start from newst
-  State newst = st;
-  newst.linalgGenericScopes.push(State::LinalgGenericScope{move(loopBounds)});
-
-  if (auto msg = initInputStateForLoopBody(newst, op))
-    return msg;
-
   optional<Tensor> t_res;
-  auto indexingMaps = op.indexing_maps().getValue();
-  auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
-  auto outputType = op.getOutputOperand(0)->get().getType()
-      .cast<mlir::ShapedType>();
+  optional<Expr> t_welldef;
+  {
+    State newst = st;
+    newst.linalgGenericScopes.push(State::LinalgGenericScope{loopBounds});
 
-  if (outputMap.isPermutation()) {
-    if (auto errmsg = encodeParallelLoopBodyAndOutput(newst, block, outputMap,
-          outputType, t_res))
-      return errmsg;
+    if (auto msg = initInputStateForLoopBody(newst, op))
+      return msg;
 
-  } else {
-    if (auto errmsg = encodeReductionLoopBodyAndOutput(newst, block,
-          indexingMaps, outputType, t_res))
-      return errmsg;
+    auto &indVars = newst.linalgGenericScopes.top().indVars;
+    auto indexingMaps = op.indexing_maps().getValue();
+    auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
+    auto outputType = op.getOutputOperand(0)->get().getType()
+        .cast<mlir::ShapedType>();
+
+    if (outputMap.isPermutation()) {
+      if (auto errmsg = encodeParallelLoopBodyAndOutput(newst, block, outputMap,
+            outputType, t_res, t_welldef))
+        return errmsg;
+
+    } else {
+      if (auto errmsg = encodeReductionLoopBodyAndOutput(newst, block,
+            indexingMaps, outputType, t_res, t_welldef))
+        return errmsg;
+    }
+
+    assert(t_res->getDims().size() != 0);
+
+    // Encode UB of linalg.generic.
+    // For all induction vars' values, there must be no UB.
+    Expr inbounds = Expr::mkBool(true);
+    for (int i = 0; i < indVars.size(); ++i) {
+      inbounds &= indVars[i].ult(loopBounds[i] + 1);
+    }
+    t_welldef = Expr::mkForall(indVars, inbounds.implies(*t_welldef));
   }
 
-  assert(t_res->getDims().size() != 0);
-  newst.linalgGenericScopes.pop();
+
+  st.wellDefined(op.getOperation(), move(*t_welldef));
 
   if (op.hasTensorSemantics()) {
     if (op.getNumResults() != 0) {
-      // NOTE: op's output tensor (op.getOutputOperand()[0]->get()) isn't updated;
+      // NOTE: op's output tensor (op.getOutputOperand()[0]->get())
+      // isn't updated;
       // aqjune talked with mlir people and confirmed
       assert(op.getNumResults() == 1);
       st.regs.add(op.getResult(0), move(*t_res));
@@ -1847,7 +1882,8 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     return {};
   } else if (op.hasBufferSemantics()) {
     auto m_res = st.regs.get<MemRef>(op.getOutputOperand(0)->get());
-    auto success = m_res.storeArray(t_res->asArray(), Index::zero(), t_res->get1DSize());
+    auto success = m_res.storeArray(t_res->asArray(), Index::zero(),
+        t_res->get1DSize());
     st.wellDefined(op, move(success));
     return {};
   }

@@ -78,7 +78,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, State &s) {
 }
 
 State::LinalgGenericScope::LinalgGenericScope(
-    std::vector<Index> &&upperbounds) {
+    const std::vector<Index> &upperbounds) {
   for (unsigned i = 0; i < upperbounds.size(); ++i) {
     indVarUpperBounds.push_back(upperbounds[i]);
     indVars.emplace_back(
