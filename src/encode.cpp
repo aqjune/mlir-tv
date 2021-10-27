@@ -543,7 +543,11 @@ optional<string> encodeOp(State &st, mlir::ReturnOp op) {
 
 Integer encodeCondition(State &st, mlir::Value condition) {
   if (condition.getType().isa<mlir::TensorType>()) {
+    uint64_t v;
     auto tensor = st.regs.get<Tensor>(condition);
+    if (tensor.getDims().size() > 1 || !((Expr)tensor.getDim(0)).isUInt(v) || v != 1)
+      throw UnsupportedException("std.select supports simple one element tensor type condition");
+
     return Integer(tensor.get({Index(0)}).first);
   } else {
     return st.regs.get<Integer>(condition);
