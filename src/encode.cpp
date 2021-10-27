@@ -541,9 +541,18 @@ optional<string> encodeOp(State &st, mlir::ReturnOp op) {
   return {};
 }
 
+Integer encodeCondition(State &st, mlir::Value condition) {
+  if (condition.getType().isa<mlir::TensorType>()) {
+    auto tensor = st.regs.get<Tensor>(condition);
+    return Integer(tensor.get({Index(0)}).first);
+  } else {
+    return st.regs.get<Integer>(condition);
+  }
+}
+
 template<>
 optional<string> encodeOp(State &st, mlir::SelectOp op) {
-  auto cond = st.regs.get<Integer>(op.condition());
+  auto cond = encodeCondition(st, op.condition());
   auto trueTy = op.true_value().getType();
   auto falseTy = op.true_value().getType();
 
