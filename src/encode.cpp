@@ -544,10 +544,27 @@ optional<string> encodeOp(State &st, mlir::ReturnOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::SelectOp op) {
   auto cond = st.regs.get<Integer>(op.condition());
-  auto trueValue = st.regs.getExpr(op.true_value());
-  auto falseValue = st.regs.getExpr(op.false_value());
-  auto isTrue = (Expr) cond == Integer::boolTrue();
-  st.regs.add(op, Expr::mkIte(isTrue, trueValue, falseValue), op.getType());
+  auto trueTy = op.true_value().getType();
+  auto falseTy = op.true_value().getType();
+
+  if (trueTy.isa<mlir::TensorType>() && falseTy.isa<mlir::TensorType>()) {
+    auto trueValue = st.regs.get<Tensor>(op.true_value());
+    auto falseValue = st.regs.get<Tensor>(op.false_value());
+    auto [welldef, result] = Tensor::select(cond, trueValue, falseValue);
+    st.regs.add(op, result);
+    st.wellDefined(op, move(welldef));
+  } else if (trueTy.isa<mlir::MemRefType>() && falseTy.isa<mlir::MemRefType>()) {
+    auto trueValue = st.regs.get<MemRef>(op.true_value());
+    auto falseValue = st.regs.get<MemRef>(op.false_value());
+    auto [welldef, result] = MemRef::select(cond, trueValue, falseValue);
+    st.regs.add(op, result);
+    st.wellDefined(op, move(welldef));
+  } else {
+    auto trueValue = st.regs.getExpr(op.true_value());
+    auto falseValue = st.regs.getExpr(op.false_value());
+    auto isTrue = (Expr) cond == Integer::boolTrue();
+    st.regs.add(op, Expr::mkIte(isTrue, trueValue, falseValue), op.getType());
+  }
   return {};
 }
 

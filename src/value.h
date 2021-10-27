@@ -162,6 +162,8 @@ public:
       mlir::Type elemType,
       std::vector<smt::Expr> &&newdims,
       std::vector<smt::Expr> &&indexvars, smt::Expr body);
+    
+  static std::pair<smt::Expr, Tensor> select(smt::Expr cond, Tensor trueValue, Tensor falseValue);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
   // Returns (arr[idx] == src.arr[idx], unbound idx vars)
@@ -282,6 +284,8 @@ public:
       const MemRef &filter,
       const std::vector<smt::Expr> strides,
       const std::vector<smt::Expr> dilations);
+
+  static std::pair<smt::Expr, MemRef> select(smt::Expr cond, MemRef trueValue, MemRef falseValue);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const MemRef &);
   // (refinement, unbound variables used in the refinement formula)
