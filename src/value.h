@@ -130,6 +130,11 @@ public:
       std::vector<smt::Expr> srcidxs,
       std::vector<smt::Expr> &&newsizes) const;
 
+  // Concatenates this and t2 along a given axis.
+  // ex) If this: <2x3xf32>, t2:<2x5xf32> and axis = 1, the result is a tensor
+  //     of size <2x8xf32>.
+  Tensor concat(const Tensor &t2, size_t axis);
+
   // Return a new tensor which is convolution of this tensor and filter.
   Tensor conv(const Tensor &filter,
       const std::vector<smt::Expr> strides,

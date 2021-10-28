@@ -380,6 +380,22 @@ Tensor Tensor::affine(
   };
 }
 
+Tensor Tensor::concat(const Tensor &t2, size_t axis) {
+  size_t r = getRank();
+  assert(r == t2.getRank() && getElemType() == t2.getElemType() && axis < r);
+
+  auto idx = Index::boundIndexVars(r);
+  auto idxForT2 = idx;
+  idxForT2[axis] = idxForT2[axis] - getDim(axis);
+
+  auto dim = getDims();
+  dim[axis] = dim[axis] + t2.getDim(axis);
+
+  return Tensor::mkLambda(getElemType(), move(dim), move(idx),
+      Expr::mkIte(idx[axis].ult(getDim(axis)),
+        get(idx).first, t2.get(idxForT2).first));
+}
+
 Tensor Tensor::conv(const Tensor &filter,
     const vector<Expr> strides,
     const vector<Expr> dilations) const {

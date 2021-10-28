@@ -26,8 +26,10 @@ public:
   Index(smt::Expr &&e): e(std::move(e)) {}
 
   operator smt::Expr() const { return e; }
+  Index operator*(const Index &b) const { return Index(e * b.e); }
   Index operator+(const Index &b) const { return Index(e + b.e); }
   Index operator-(const Index &b) const { return Index(e - b.e); }
+  smt::Expr operator==(const Index &b) const { return e == b.e; }
   Index ofs(int i) const {
     uint64_t v;
     if (e.isUInt(v))
@@ -39,7 +41,8 @@ public:
   static Index one();
   static Index zero();
   static Index var(std::string &&name, enum VarType);
-  static std::vector<smt::Expr> boundIndexVars(unsigned);
+  // Creates N variables that must be bound to forall/lambda/exists.
+  static std::vector<smt::Expr> boundIndexVars(unsigned N);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
   // (refinement, unbound variables used in the refinement formula)

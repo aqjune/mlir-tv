@@ -647,6 +647,29 @@ optional<string> encodeOp(State &st, mlir::tosa::AbsOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::tosa::ConcatOp op) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    return "Unsupported type";
+
+  uint64_t axis = op.axis();
+  auto t = st.regs.get<Tensor>(op.getOperand(0));
+
+  for (auto tensor: op.getOperands().drop_front()) {
+    auto t2 = st.regs.get<Tensor>(tensor);
+    for (unsigned i = 0; i < t2.getRank(); ++i) {
+      if (i != axis)
+        st.wellDefined(op.getOperation(), t.getDim(i) == t2.getDim(i));
+    }
+
+    t = t.concat(t2, axis);
+  }
+
+  st.regs.add(op.getResult(), t);
+  return {};
+}
+
 // Encode operations that do not change the current state except the definition
 // of a new register. They can raise UB however. This list is emphirically
 // determined.
@@ -665,9 +688,10 @@ optional<string> encodeOp(State &st, mlir::tosa::AbsOp op) {
     ENCODE(st, op, mlir::AffineApplyOp); \
     ENCODE(st, op, mlir::linalg::IndexOp); \
     ENCODE(st, op, mlir::math::AbsOp); \
+    ENCODE(st, op, mlir::SelectOp); \
     ENCODE(st, op, mlir::shape::ShapeOfOp); \
     ENCODE(st, op, mlir::tosa::AbsOp); \
-    ENCODE(st, op, mlir::SelectOp);
+    ENCODE(st, op, mlir::tosa::ConcatOp);
 
 
 static optional<string> encodeParallelLoopBodyAndOutput(
@@ -1143,8 +1167,8 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractSliceOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
   vector<Index> offsets, sizes, strides;
-  auto src1 = st.regs.get<Tensor>(op.getOperand(0));
-  auto src2 = st.regs.get<Tensor>(op.getOperand(1));
+  auto src = st.regs.get<Tensor>(op.getOperand(0));
+  auto tgt = st.regs.get<Tensor>(op.getOperand(1));
   auto res = op.getResult();
   auto rank = op.getOperand(0).getType().dyn_cast<mlir::ShapedType>().getRank();
   if (rank != op.getOperand(1).getType().dyn_cast<mlir::ShapedType>().getRank()
@@ -1159,24 +1183,28 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertSliceOp op) {
          strides.size() == rank);
 
   vector<Expr> indVars = Index::boundIndexVars(rank);
-  vector<Expr> dims = src2.getDims();
-  vector<Expr> src1Idxs;
+  vector<Expr> dims = tgt.getDims();
+  vector<Expr> srcIdxs;
 
   Expr cond = Expr::mkBool(true);
 
   for (unsigned i = 0; i < rank; i++) {
-    src1Idxs.push_back((indVars[i] - offsets[i]).udiv(strides[i]));
+    srcIdxs.push_back((indVars[i] - offsets[i]).udiv(strides[i]));
     cond &= ((indVars[i] - offsets[i]) % strides[i]).isZero() &
-            (indVars[i] - offsets[i]).ult((Expr)sizes[i] * strides[i]);
+            (indVars[i] - offsets[i]).ult(sizes[i] * strides[i]);
   }
 
   // Picking the value from src1 must not be out of bounds.
-  auto [src1elem, src1wb] = src1.get(src1Idxs);
-  Expr output = Expr::mkIte(cond, move(src1elem), src2.get(indVars).first);
+  auto [srcelem, srcwb] = src.get(srcIdxs);
+  auto [tgtelem, tgtwb] = tgt.get(indVars);
+  Expr output = Expr::mkIte(cond, move(srcelem), move(tgtelem));
 
-  st.wellDefined(op.getOperation(), move(src1wb));
+  // If tgt[indVars] is inbounds and the src[indVars] is to be chosen,
+  // src[indVars] must be inbounds as well.
+  st.wellDefined(op.getOperation(),
+      Expr::mkForall(indVars, (tgtwb & cond).implies(srcwb)));
   st.regs.add(res, Tensor::mkLambda(
-      src1.getElemType(), move(dims), move(indVars), output));
+      src.getElemType(), move(dims), move(indVars), output));
   return {};
 }
 
