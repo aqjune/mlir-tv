@@ -759,14 +759,6 @@ static optional<string> encodeParallelLoopBodyAndOutput(
 
   for (auto &op: ops) {
     auto op_operands = op.getOperands();
-    for (const auto &opop: op_operands) {
-      if (!newst.regs.contains(opop)) {
-        RET_STR("This is a bug in mlir-tv or the loop is ill-formed: "
-          "the result of a block in a parallel loop depends on the output"
-          " variable: " << opop);
-      }
-    }
-
     ENCODE_SCALAR_OPS(newst, op);
     welldef &= newst.isOpWellDefined(&op);
 
@@ -1687,21 +1679,27 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
 }
 
 static optional<string> initInputStateForLoopBody(
-    State &st, mlir::linalg::GenericOp op, Expr &welldef) {
+    State &st, mlir::linalg::GenericOp op, Expr &welldef,
+    bool isParallelLoop) {
   auto indexingMaps = op.indexing_maps().getValue();
   auto &block = *op.region().begin();
 
   const vector<Expr> &inductionVars = st.linalgGenericScopes.top().indVars;
 
-  // Fill in args
   assert(op.getInputOperands().size() + op.getNumOutputs() ==
          indexingMaps.size());
+  assert(op.getNumInputs() == op.getInputOperands().size());
 
-  // Output variables are not encoded! Reduction loops are dealt specially
-  size_t numout = (size_t)op.getNumOutputs();
-  for (size_t arg_i = 0; arg_i + numout < indexingMaps.size(); ++arg_i) {
-    auto inputMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
-    auto op_i = op.getInputOperand(arg_i)->get();
+  // The output variables contain the initial value of the tensor
+  //   (see github issue #164)
+  // For parallel loops: whole iterations contain the initial value
+  // For reduction loops: only the first iteration contains the value
+  size_t upperbound = op.getNumInputs() + op.getNumOutputs();
+  for (size_t arg_i = 0; arg_i < upperbound; ++arg_i) {
+    auto indexMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
+    mlir::Value op_i = arg_i >= op.getNumInputs() ?
+        op.getOutputOperand(arg_i - op.getNumInputs())->get() :
+        op.getInputOperand(arg_i)->get();
 
     if (op_i.getType().isa<mlir::FloatType>()) {
       // A scalar value.
@@ -1713,16 +1711,16 @@ static optional<string> initInputStateForLoopBody(
       auto elemty = tensorty.getElementType();
       Tensor t_input = st.regs.get<Tensor>(op_i);
 
-      if (inputMap.getNumResults() == 0) {
+      if (indexMap.getNumResults() == 0) {
         // A tensor with a single element; e.g. tensor<f32>.
         st.regs.add(block.getArgument(arg_i), t_input.get({Index::zero()}).first, elemty);
       } else {
         vector<Expr> affine_Exprs;
-        for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
-          auto ae_res = encodeAffineExpr(inputMap.getResult(i), inductionVars, {});
+        for (unsigned i = 0; i < indexMap.getNumResults(); ++i) {
+          auto ae_res = encodeAffineExpr(indexMap.getResult(i), inductionVars, {});
           if (!ae_res)
             RET_STR_WITH_PREFIX("unsupported affine Expr ",
-                                inputMap.getResult(i));
+                                indexMap.getResult(i));
 
           affine_Exprs.emplace_back(move(*ae_res));
         }
@@ -1737,11 +1735,11 @@ static optional<string> initInputStateForLoopBody(
       MemRef m_input = st.regs.get<MemRef>(op_i);
 
       vector<Expr> affine_Exprs;
-      for (unsigned i = 0; i < inputMap.getNumResults(); ++i) {
-        auto ae_res = encodeAffineExpr(inputMap.getResult(i), inductionVars, {});
+      for (unsigned i = 0; i < indexMap.getNumResults(); ++i) {
+        auto ae_res = encodeAffineExpr(indexMap.getResult(i), inductionVars, {});
         if (!ae_res)
           RET_STR_WITH_PREFIX("unsupported affine expr ",
-                              inputMap.getResult(i));
+                              indexMap.getResult(i));
 
         affine_Exprs.emplace_back(move(*ae_res));
       }
@@ -1781,7 +1779,6 @@ static optional<string> encodeReductionLoopBodyAndOutput(
   //      where op = addf, addi
   //   yield %sum
   auto lastarg = block.getArgument(block.getNumArguments() - 1);
-  assert(!newst.regs.contains(lastarg));
 
   auto p1 = m_Op<mlir::linalg::YieldOp>(
       m_Op<mlir::arith::AddFOp>(m_Val(lastarg), m_Any()));
@@ -1805,6 +1802,12 @@ static optional<string> encodeReductionLoopBodyAndOutput(
     if (cnt++ == ops.size() - 2)
       // Don't directly encode %sum
       break;
+
+    auto op_operands = op.getOperands();
+    for (const auto &opop: op_operands) {
+      if (lastarg == opop)
+        RET_STR("Unsupported reduction form because it contains " << op);
+    }
 
     ENCODE_SCALAR_OPS(newst, op);
     welldef &= newst.isOpWellDefined(&op);
@@ -1917,16 +1920,19 @@ optional<string> encodeOp(State &st, mlir::linalg::GenericOp op) {
     State newst = st;
     newst.linalgGenericScopes.push(State::LinalgGenericScope{loopBounds});
 
-    if (auto msg = initInputStateForLoopBody(newst, op, welldef))
+    auto indexingMaps = op.indexing_maps().getValue();
+    auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
+    bool isParallelLoop = outputMap.isPermutation();
+
+    if (auto msg =
+        initInputStateForLoopBody(newst, op, welldef, isParallelLoop))
       return msg;
 
     auto &indVars = newst.linalgGenericScopes.top().indVars;
-    auto indexingMaps = op.indexing_maps().getValue();
-    auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
     auto outputType = op.getOutputOperand(0)->get().getType()
         .cast<mlir::ShapedType>();
 
-    if (outputMap.isPermutation()) {
+    if (isParallelLoop) {
       if (auto errmsg = encodeParallelLoopBodyAndOutput(newst, block, outputMap,
             outputType, t_res, welldef))
         return errmsg;
