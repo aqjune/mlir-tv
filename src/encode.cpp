@@ -40,14 +40,13 @@ using namespace std;
 }
 
 
-static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
+static ValueTy attrToValueTy(mlir::Attribute a) {
   auto ty = a.getType();
   if (ty.isa<mlir::FloatType>()) {
     return Float::constant(a.dyn_cast<mlir::FloatAttr>().getValue(), ty);
   } else if (ty.isa<mlir::IntegerType>()) {
     if (64 < ty.getIntOrFloatBitWidth())
-      // size is too large
-      return {};
+      throw UnsupportedException("Integer size is too large");
 
     return Integer(a.dyn_cast<mlir::IntegerAttr>().getValue());
   } else if (ty.isIndex()) {
@@ -57,7 +56,91 @@ static optional<ValueTy> attrToValueTy(mlir::Attribute a) {
     assert(-2147483648ll <= ii && ii <= 2147483647ll);
     return Index(ii);
   }
-  return {};
+
+  throw UnsupportedException("Unsupported type");
+}
+
+static Tensor elemAttrToTensor(
+    mlir::ElementsAttr attr, mlir::RankedTensorType tensorty) {
+
+  mlir::Type elemType = tensorty.getElementType();
+
+  if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
+    if (denseAttr.isSplat()) {
+      // A constant tensor's type cannot have unknown dimensions
+      auto dims = ShapedValue::getDims(tensorty, false);
+      auto v = attrToValueTy(denseAttr.getSplatValue());
+
+      return Tensor(elemType, getExpr(v), move(dims));
+
+    } else {
+      int64_t rank = tensorty.getRank();
+      vector<int64_t> dims;
+      vector<Expr> dimExprs;
+      for (int i = 0; i < rank; ++i) {
+        auto dsize = tensorty.getDimSize(i);
+        assert(dsize != mlir::ShapedType::kDynamicSize);
+        dims.push_back(dsize);
+        dimExprs.push_back(Index(dsize));
+      }
+
+      vector<uint64_t> elems(rank);
+      vector<Expr> exprs;
+
+      while (true) {
+        if (elems.back() == dims.back()) {
+          int focus = rank - 1;
+          while (1 <= focus && elems[focus] == dims[focus]) {
+            elems[focus] = 0;
+            elems[focus - 1]++;
+            focus--;
+          }
+
+          if (elems[0] == dims[0])
+            break;
+        }
+
+        exprs.push_back(getExpr(attrToValueTy(denseAttr.getValue(elems))));
+        elems.back()++;
+      }
+
+      return Tensor(elemType, move(exprs)).reshape(dimExprs);
+    }
+
+  } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
+    auto sparseIndexValues = sparseAttr.getIndices().getValues<uint64_t>();
+    auto elemTy = tensorty.getElementType();
+    auto rank = tensorty.getRank();
+    vector<uint64_t> dims;
+    for (unsigned i = 0; i < rank; ++i)
+      dims.push_back(tensorty.getDimSize(i));
+
+    // Unspecified locations are filled with zero.
+    auto zero = getZero(elemTy);
+    if (!zero)
+      throw UnsupportedException("unsupported element type");
+
+    vector<vector<uint64_t>> sparseIndices;
+    vector<Expr> sparseValues;
+
+    auto sparseIndBeg = sparseIndexValues.begin();
+    while (sparseIndBeg != sparseIndexValues.end()) {
+      vector<uint64_t> curIndices;
+      for (unsigned i = 0; i < rank; ++i) {
+        curIndices.push_back(*sparseIndBeg);
+        sparseIndBeg++;
+      }
+
+      auto value = sparseAttr.getValue(curIndices);
+      sparseIndices.push_back(move(curIndices));
+
+      auto e = attrToValueTy(value);
+      sparseValues.push_back(getExpr(e));
+    }
+    return Tensor(elemTy, sparseIndices, sparseValues, dims, *zero);
+  }
+
+  throw UnsupportedException("unsupported attribute");
 }
 
 static optional<ValueTy> fromExpr(Expr &&e, mlir::Type ty) {
@@ -416,73 +499,24 @@ optional<string> encodeOp(State &st, mlir::arith::ConstantFloatOp op) {
 template<>
 optional<string> encodeOp(State &st, mlir::arith::ConstantOp op) {
   auto attr = op.value();
-  if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
-    // splat
-    if (!denseAttr.isSplat())
-      return "a fp splat constant tensor is supported only";
-    if (!op.getType().isa<mlir::TensorType>())
-      return "unsupported constant type";
+  auto ty = op.getType();
 
-    // A constant tensor's type cannot have unknown dimensions
-    auto tensorty = op.getType().cast<mlir::TensorType>();
-    auto dims = ShapedValue::getDims(tensorty, false);
-    auto v = attrToValueTy(denseAttr.getSplatValue());
-    if (!v)
-      return "unsupported constant";
+  if (ty.isa<mlir::RankedTensorType>() && attr.isa<mlir::ElementsAttr>()) {
+    auto te = elemAttrToTensor(
+        attr.cast<mlir::ElementsAttr>(), ty.cast<mlir::RankedTensorType>());
 
-    st.regs.add(op,
-        Tensor(tensorty.getElementType(), getExpr(*v), move(dims)));
+    if (attr.isa<mlir::SparseElementsAttr>())
+      st.hasConstArray = true;
+
+    st.regs.add(op, move(te));
     return {};
 
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
-    auto v = attrToValueTy(intAttr);
-    if (!v)
-      return "unsupported constant";
-
-    st.regs.add(op, move(*v));
-    return {};
-
-  } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
-    mlir::ShapedType sparseType = sparseAttr.getType();
-    if (!sparseType.isa<mlir::TensorType>())
-      return "unsupported type";
-
-    auto sparseIndexValues = sparseAttr.getIndices().getValues<uint64_t>();
-    auto elemTy = sparseType.getElementType();
-    auto rank = sparseType.getRank();
-    vector<uint64_t> dims;
-    for (unsigned i = 0; i < rank; ++i)
-      dims.push_back(sparseType.getDimSize(i));
-
-    // Unspecified locations are filled with zero.
-    auto zero = getZero(elemTy);
-    if (!zero)
-      return "unsupported element type";
-
-    vector<vector<uint64_t>> sparseIndices;
-    vector<Expr> sparseValues;
-
-    auto sparseIndBeg = sparseIndexValues.begin();
-    while (sparseIndBeg != sparseIndexValues.end()) {
-      vector<uint64_t> curIndices;
-      for (unsigned i = 0; i < rank; ++i) {
-        curIndices.push_back(*sparseIndBeg);
-        sparseIndBeg++;
-      }
-
-      auto value = sparseAttr.getValue(curIndices);
-      sparseIndices.push_back(move(curIndices));
-
-      auto e = attrToValueTy(value);
-      if (!e)
-        return "unsupported element";
-      sparseValues.push_back(getExpr(*e));
-    }
-    st.hasConstArray = true;
-    st.regs.add(op, Tensor(elemTy, sparseIndices, sparseValues, dims, *zero));
+    st.regs.add(op, attrToValueTy(intAttr));
     return {};
   }
-  return "unsupported constant";
+
+  return "Unsupported constant";
 }
 
 template<>
@@ -670,6 +704,22 @@ optional<string> encodeOp(State &st, mlir::tosa::ConcatOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::tosa::ConstOp op) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    return "Unsupported type";
+  auto eattr = op.value().dyn_cast<mlir::ElementsAttr>();
+  if (!eattr)
+    return "Unsupported attribute";
+
+  st.regs.add(op, elemAttrToTensor(eattr, dty));
+  if (eattr.isa<mlir::SparseElementsAttr>())
+    st.hasConstArray = true;
+
+  return {};
+}
+
 // Encode operations that do not change the current state except the definition
 // of a new register. They can raise UB however. This list is emphirically
 // determined.
@@ -691,7 +741,8 @@ optional<string> encodeOp(State &st, mlir::tosa::ConcatOp op) {
     ENCODE(st, op, mlir::SelectOp); \
     ENCODE(st, op, mlir::shape::ShapeOfOp); \
     ENCODE(st, op, mlir::tosa::AbsOp); \
-    ENCODE(st, op, mlir::tosa::ConcatOp);
+    ENCODE(st, op, mlir::tosa::ConcatOp); \
+    ENCODE(st, op, mlir::tosa::ConstOp);
 
 
 static optional<string> encodeParallelLoopBodyAndOutput(

@@ -268,16 +268,23 @@ std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   return {move(outputIdxs), move(outputExpr)};
 }
 
+static Sort arraySortForTensor(Sort elemSort) {
+  return Sort::arraySort(Index::sort(), elemSort);
+}
+
+static Expr splatArrayForTensor(const Expr &elem) {
+  return Expr::mkSplatArray(Index::sort(), elem);
+}
+
 Tensor::Tensor(mlir::Type elemType, Expr &&splat_elem, vector<Expr> &&dimvec):
     ShapedValue(elemType),
     dims(move(dimvec)),
-    arr(Expr::mkSplatArray(Index::sort(), move(splat_elem))) {}
+    arr(splatArrayForTensor(move(splat_elem))) {}
 
 Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d):
     ShapedValue(elemType),
     dims({ (Expr)Index(elems1d.size()) }),
-    arr(Expr::mkFreshVar(Sort::arraySort(Index::sort(), elems1d[0].sort()),
-        "tensor_val")) {
+    arr(Expr::mkFreshVar(arraySortForTensor(elems1d[0].sort()), "tensor_val")) {
   for (unsigned i = 0; i < elems1d.size(); ++i)
     arr = arr.store(i, elems1d[i]);
 }
@@ -286,15 +293,27 @@ Tensor::Tensor(
     mlir::Type elemType, string &&name, const vector<Expr> &dimvec):
   ShapedValue(elemType),
   dims(dimvec),
-  arr(Expr::mkVar(Sort::arraySort(Index::sort(),
-      *convertTypeToSort(elemType)), move(name))) {}
+  arr(Expr::mkVar(arraySortForTensor(*convertTypeToSort(elemType)),
+      move(name))) {}
+
+Tensor::Tensor(
+    mlir::Type elemType, const std::vector<smt::Expr> &elems,
+    const smt::Expr &zero):
+  ShapedValue(elemType),
+  arr(splatArrayForTensor(zero)) {
+
+  dims.push_back(Index(elems.size()));
+
+  for (unsigned i = 0; i < elems.size(); ++i)
+    arr = arr.store(i, elems[i]);
+}
 
 Tensor::Tensor(
     mlir::Type elemType,
     const vector<vector<uint64_t>> &indices,
     const vector<Expr> &elems,
     const vector<uint64_t> &dims, const Expr &zero):
-  ShapedValue(elemType), arr(Expr::mkSplatArray(Index::sort(), zero)) {
+  ShapedValue(elemType), arr(splatArrayForTensor(zero)) {
 
   assert(indices.size() == elems.size());
 
