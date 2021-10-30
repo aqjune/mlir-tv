@@ -111,6 +111,7 @@ public:
   std::vector<llvm::APFloat> possibleConsts(const smt::Expr &e) const;
   smt::Expr isnan(const smt::Expr &f);
   smt::Expr abs(const smt::Expr &f);
+  smt::Expr neg(const smt::Expr &f);
   smt::Expr add(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr mul(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);

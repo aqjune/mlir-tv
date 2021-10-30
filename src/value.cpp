@@ -186,6 +186,10 @@ Float Float::abs() const {
   return Float(aop::getFpEncoding(type).abs(e), type);
 }
 
+Float Float::neg() const {
+  return Float(aop::getFpEncoding(type).neg(e), type);
+}
+
 
 Integer::Integer(int64_t i, unsigned bw):
   e(Expr::mkBV(i, bw)) {}

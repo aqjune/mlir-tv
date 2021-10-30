@@ -375,6 +375,40 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
   }
 }
 
+template<class OpTy>
+static void
+encodeUnaryOp(State &st, OpTy op, mlir::Value arg,
+    function<Float(Float &&e)> f_float,
+    function<Integer(Integer &&e)> f_int) {
+
+  mlir::Operation *opr = op.getOperation();
+
+  if (arg.getType().isa<mlir::FloatType>()) {
+    auto a = st.regs.get<Float>(arg);
+    st.regs.add(op, f_float(move(a)));
+
+  } else if (auto tty = arg.getType().dyn_cast<mlir::RankedTensorType>()) {
+    auto elemty = tty.getElementType();
+    if (!elemty.isIntOrFloat())
+      throw UnsupportedException(opr, "Unsupported element type");
+
+    auto a = st.regs.get<Tensor>(arg);
+
+    auto f = [&](Expr &&a) -> Expr {
+      if (elemty.isa<mlir::FloatType>()) {
+        return f_float(Float(a, elemty));
+      } else if (elemty.isa<mlir::IntegerType>()) {
+        return f_int(Integer(a));
+      }
+      throw UnsupportedException(opr, "Unknown value type");
+    };
+    st.regs.add(op, a.elementwiseUnaryOp(elemty, f));
+
+  } else {
+    throw UnsupportedException(opr, "Unsupported type");
+  }
+}
+
 
 template<class T>
 static void encodeOp(State &st, T op, bool encodeMemWriteOp);
@@ -393,8 +427,7 @@ void encodeOp(State &st, mlir::arith::AddFOp op, bool) {
   mlir::Value arg1 = op.getOperand(1);
 
   encodeBinaryOp(st, op, arg0, arg1,
-      [](auto &&a, auto &&b) { return a.add(b); },
-      [](auto &&a, auto &&b) { return (Expr)a + (Expr)b; });
+      [](auto &&a, auto &&b) { return a.add(b); }, {});
 }
 
 template<>
@@ -403,8 +436,15 @@ void encodeOp(State &st, mlir::arith::MulFOp op, bool) {
   mlir::Value arg1 = op.getOperand(1);
 
   encodeBinaryOp(st, op, arg0, arg1,
-      [](auto &&a, auto &&b) { return a.mul(b); },
-      [](auto &&a, auto &&b) { return (Expr)a * (Expr)b; });
+      [](auto &&a, auto &&b) { return a.mul(b); }, {});
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::NegFOp op, bool) {
+  mlir::Value arg = op.getOperand();
+
+  encodeUnaryOp(st, op, arg,
+      [](auto &&a) { return a.neg(); }, {});
 }
 
 static void addIntOrIndex(
@@ -1239,6 +1279,21 @@ void encodeOp(State &st, mlir::tosa::MulOp op, bool) {
       [](auto &&a, auto &&b) { return (Expr)a * (Expr)b; });
 }
 
+template<>
+void encodeOp(State &st, mlir::tosa::NegateOp op, bool) {
+  auto opty = op.getOperand().getType();
+  if (!opty.isa<mlir::RankedTensorType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported operand type");
+  else if (op.quantization_info())
+    throw UnsupportedException(op.getOperation(), "Quantization is unsupported");
+
+  mlir::Value arg0 = op.getOperand();
+
+  encodeUnaryOp(st, op, arg0,
+      [](auto &&a) { return a.neg(); },
+      [](auto &&a) { return Expr::mkBV(0, a.bitwidth()) - (Expr)a; });
+}
+
 static variant<string, MemRef> createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
   if (!MemRef::isTypeSupported(memrefTy))
@@ -1978,6 +2033,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::IndexCastOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::NegFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
@@ -2021,6 +2077,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::ConcatOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
 

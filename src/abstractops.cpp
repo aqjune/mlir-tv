@@ -278,6 +278,12 @@ Expr AbsFpEncoding::abs(const Expr &f) {
   return Expr::mkBV(0, 1).concat(f.extract(fp_bv_bits - 2, 0));
 }
 
+Expr AbsFpEncoding::neg(const Expr &f) {
+  auto sign = f.extract(fp_bv_bits - 1, fp_bv_bits - 1);
+  auto sign_negated = sign ^ 1;
+  return sign_negated.concat(f.extract(fp_bv_bits - 2, 0));
+}
+
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   usedOps.fpAdd = true;
 
