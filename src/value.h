@@ -145,6 +145,10 @@ public:
 
   Tensor reshape(const std::vector<smt::Expr> &ns2) const;
 
+  // Return a new tensor t s.t.
+  // t[i1]..[i_axis]..[iN] = this[i1]..[dim_axis - i_axis - 1]..[iN]
+  Tensor reverse(unsigned axis) const;
+
   Tensor transpose() const;
 
   Tensor matmul(const Tensor &b) const;

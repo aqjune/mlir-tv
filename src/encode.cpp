@@ -720,6 +720,43 @@ optional<string> encodeOp(State &st, mlir::tosa::ConstOp op) {
   return {};
 }
 
+template<>
+optional<string> encodeOp(State &st, mlir::tosa::ReverseOp op) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    return "Unsupported type";
+
+  auto t = st.regs.get<Tensor>(op.input());
+  auto axis = op.axis();
+
+  st.regs.add(op, t.reverse(axis));
+
+  return {};
+}
+
+template<>
+optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
+  // TODO: The MLIR doc isn't explicit about what happens if indices are
+  // out-of-bounds. It is currently encoded as UB.
+
+  auto t = st.regs.get<Tensor>(op.getOperand(0));
+  vector<Expr> indices;
+  for (auto idx0: op.indices())
+    indices.emplace_back(st.regs.get<Index>(idx0));
+  if (indices.empty())
+    // Deal with the zero-rank tensor case
+    indices.push_back(Index(0));
+
+  auto [elem, inbounds] = t.get(indices);
+  if (auto v = fromExpr(move(elem), op.getType()))
+    st.regs.add(op, move(*v));
+  else
+    return "unsupported type";
+
+  st.wellDefined(op.getOperation(), move(inbounds));
+  return {};
+}
+
 // Encode operations that do not change the current state except the definition
 // of a new register. They can raise UB however. This list is emphirically
 // determined.
@@ -740,9 +777,11 @@ optional<string> encodeOp(State &st, mlir::tosa::ConstOp op) {
     ENCODE(st, op, mlir::math::AbsOp); \
     ENCODE(st, op, mlir::SelectOp); \
     ENCODE(st, op, mlir::shape::ShapeOfOp); \
+    ENCODE(st, op, mlir::tensor::ExtractOp); \
     ENCODE(st, op, mlir::tosa::AbsOp); \
     ENCODE(st, op, mlir::tosa::ConcatOp); \
-    ENCODE(st, op, mlir::tosa::ConstOp);
+    ENCODE(st, op, mlir::tosa::ConstOp); \
+    ENCODE(st, op, mlir::tosa::ReverseOp);
 
 
 static optional<string> encodeParallelLoopBodyAndOutput(
@@ -1053,29 +1092,6 @@ optional<string> encodeOp(State &st, mlir::tensor::InsertOp op) {
 
   auto [tensor, inbounds] = dest.insert(val, indices);
   st.regs.add(op, move(tensor));
-  st.wellDefined(op.getOperation(), move(inbounds));
-  return {};
-}
-
-template<>
-optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
-  // TODO: The MLIR doc isn't explicit about what happens if indices are
-  // out-of-bounds. It is currently encoded as UB.
-
-  auto t = st.regs.get<Tensor>(op.getOperand(0));
-  vector<Expr> indices;
-  for (auto idx0: op.indices())
-    indices.emplace_back(st.regs.get<Index>(idx0));
-  if (indices.empty())
-    // Deal with the zero-rank tensor case
-    indices.push_back(Index(0));
-
-  auto [elem, inbounds] = t.get(indices);
-  if (auto v = fromExpr(move(elem), op.getType()))
-    st.regs.add(op, move(*v));
-  else
-    return "unsupported type";
-
   st.wellDefined(op.getOperation(), move(inbounds));
   return {};
 }
@@ -1994,7 +2010,6 @@ static optional<string> encodeRegion(
     ENCODE(st, op, mlir::tensor::CastOp);
     ENCODE(st, op, mlir::tensor::DimOp);
     ENCODE(st, op, mlir::tensor::InsertOp);
-    ENCODE(st, op, mlir::tensor::ExtractOp);
     ENCODE(st, op, mlir::tensor::ExtractSliceOp);
     ENCODE(st, op, mlir::tensor::FromElementsOp);
     ENCODE(st, op, mlir::tensor::GenerateOp);

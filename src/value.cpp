@@ -594,6 +594,16 @@ Tensor Tensor::eval(Model m) const {
   return { elemType, move(dims_ev), m.eval(arr, true).simplify() };
 }
 
+Tensor Tensor::reverse(unsigned axis) const {
+  assert(axis < dims.size());
+  auto indVars = Index::boundIndexVars(dims.size());
+  auto accessIdx = indVars;
+  accessIdx[axis] = dims[axis] - accessIdx[axis] - 1;
+
+  return Tensor::mkLambda(elemType, vector(dims), move(indVars),
+      get(accessIdx).first);
+}
+
 Tensor Tensor::transpose() const {
   assert(dims.size() == 2);
   auto i = Index::var("i", VarType::BOUND);
