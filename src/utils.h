@@ -56,10 +56,4 @@ public:
 
   std::string getReason() const { return reason; }
   auto getObject() const { return obj; }
-  UnsupportedException withOp(mlir::Operation *op) const
-  { return {op, reason}; }
-  UnsupportedException withOp(mlir::Type ty) const
-  { return {ty, reason}; }
-  UnsupportedException withReason(std::string &&reason) const
-  { return {obj, move(reason)}; }
 };
