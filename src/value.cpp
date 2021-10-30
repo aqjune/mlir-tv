@@ -297,18 +297,6 @@ Tensor::Tensor(
       move(name))) {}
 
 Tensor::Tensor(
-    mlir::Type elemType, const std::vector<smt::Expr> &elems,
-    const smt::Expr &zero):
-  ShapedValue(elemType),
-  arr(splatArrayForTensor(zero)) {
-
-  dims.push_back(Index(elems.size()));
-
-  for (unsigned i = 0; i < elems.size(); ++i)
-    arr = arr.store(i, elems[i]);
-}
-
-Tensor::Tensor(
     mlir::Type elemType,
     const vector<vector<uint64_t>> &indices,
     const vector<Expr> &elems,

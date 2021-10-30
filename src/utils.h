@@ -1,6 +1,8 @@
 #pragma once
 
 #include <optional>
+#include <string>
+#include <variant>
 
 // optional::map from
 // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0798r0.html
@@ -27,12 +29,37 @@ auto fupdate2(std::optional<T1> &x, const std::optional<T2> &x2, Fn fn) {
   return std::optional<decltype(fn(*x, *x2))>();
 }
 
+#define TO_STRING(msg, V) { \
+  llvm::raw_string_ostream rso(msg); \
+  rso << V; \
+  rso.flush(); \
+  msg = rso.str(); }
+
 class UnsupportedException : public std::exception {
-  const char* reason;
+  // 0: the operation is unsupported
+  // 1: the type is unsupported
+  std::variant<mlir::Operation *, mlir::Type> obj;
+  std::string reason;
+
+  UnsupportedException(decltype(obj) obj, decltype(reason) reason)
+      : obj(obj), reason(reason) {}
 
 public:
-  UnsupportedException(const char* reason) : reason(reason) {}
-  const char* what() {
-    return reason;
-  }
+  UnsupportedException(std::string &&reason)
+      : obj((mlir::Operation *)nullptr), reason(move(reason)) {}
+  UnsupportedException(mlir::Operation *obj): obj(obj) {}
+  UnsupportedException(mlir::Operation *obj, std::string &&reason)
+      : obj(obj), reason(move(reason)) {}
+  UnsupportedException(mlir::Type ty): obj(ty) {}
+  UnsupportedException(mlir::Type ty, std::string &&reason)
+      : obj(ty), reason(move(reason)) {}
+
+  std::string getReason() const { return reason; }
+  auto getObject() const { return obj; }
+  UnsupportedException withOp(mlir::Operation *op) const
+  { return {op, reason}; }
+  UnsupportedException withOp(mlir::Type ty) const
+  { return {ty, reason}; }
+  UnsupportedException withReason(std::string &&reason) const
+  { return {obj, move(reason)}; }
 };

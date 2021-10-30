@@ -20,14 +20,6 @@
 using namespace smt;
 using namespace std;
 
-#define RET_STR(V) { \
-  string msg; \
-  llvm::raw_string_ostream rso(msg); \
-  rso << V; \
-  rso.flush(); \
-  return msg; \
-}
-
 namespace {
 class Defer {
 private:
@@ -55,22 +47,24 @@ public:
 static optional<string> checkFunctionSignatures(
     mlir::FuncOp src, mlir::FuncOp tgt) {
   if (src.getNumArguments() != tgt.getNumArguments())
-    RET_STR("The source and target program have different number of arguments.");
+    return "The source and target program have different number of arguments.";
 
   unsigned n = src.getNumArguments();
   for (unsigned i = 0; i < n; ++i) {
     auto srcArgTy = src.getArgument(i).getType();
     auto tgtArgTy = tgt.getArgument(i).getType();
-    if (srcArgTy != tgtArgTy)
-      RET_STR("The source and target argument type is different.\n"
+    if (srcArgTy != tgtArgTy) {
+      string msg;
+      TO_STRING(msg, "The source and target argument type is different.\n"
           << "Src: " << srcArgTy << ", Tgt: " << tgtArgTy);
+      return msg;
+    }
   }
 
   return {};
 }
 
-static variant<string, State>
-createInputState(
+static State createInputState(
     mlir::FuncOp fn, std::unique_ptr<Memory> &&initMem,
     ArgInfo &args, vector<Expr> &preconds) {
   State s(move(initMem));
@@ -95,7 +89,7 @@ createInputState(
     // Encode arguments of the source function.
     if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
       if (!Tensor::isTypeSupported(ty))
-        RET_STR("Unsupported type: " << ty);
+        throw UnsupportedException(ty);
 
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
@@ -108,7 +102,7 @@ createInputState(
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
       if (!MemRef::isTypeSupported(ty))
-        RET_STR("Unsupported type: " << ty);
+        throw UnsupportedException(ty);
 
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
@@ -125,7 +119,7 @@ createInputState(
 
     } else {
       if (convertTypeToSort(argty) == nullopt) {
-        RET_STR("Unsupported type: " << arg.getType());
+        throw UnsupportedException(arg.getType());
       }
 
       string name = "arg" + to_string(arg.getArgNumber());
@@ -293,8 +287,33 @@ static Results checkRefinement(
   return Results::SUCCESS;
 }
 
-static void raiseUnsupported(const string &msg) {
-  llvm::errs() << msg << "\n";
+static void raiseUnsupported(const UnsupportedException &ue) {
+  auto obj = ue.getObject();
+  string reason = ue.getReason();
+
+  if (holds_alternative<mlir::Operation*>(obj)) {
+    mlir::Operation *op = get<0>(obj);
+
+    if (op == nullptr) {
+      llvm::errs() << "This function is not supported.\n";
+    } else {
+      llvm::errs() << "Unknown op (" << op->getName() << "): " << *op << "\n";
+    }
+    if (!reason.empty())
+      llvm::errs() << "\t" << reason << "\n";
+
+  } else {
+    mlir::Type ty = get<1>(obj);
+    llvm::errs() << "Unsupported type: " << ty << "\n";
+    if (!reason.empty())
+      llvm::errs() << "\t" << reason << "\n";
+  }
+
+  exit(UNSUPPORTED_EXIT_CODE);
+}
+
+static void raiseUnsupported(const string &s) {
+  llvm::errs() << s << "\n";
   exit(UNSUPPORTED_EXIT_CODE);
 }
 
@@ -303,17 +322,19 @@ static State encodeFinalState(
     bool printOps, bool issrc, ArgInfo &args, vector<Expr> &preconds) {
   mlir::FuncOp fn = issrc ? vinput.src : vinput.tgt;
 
-  auto st_or_err = createInputState(fn, move(initMem), args, preconds);
-  if (holds_alternative<string>(st_or_err))
-    raiseUnsupported(get<string>(st_or_err));
-  auto st = get<State>(st_or_err);
+  optional<State> st;
+  try {
+    st = createInputState(fn, move(initMem), args, preconds);
 
-  if (printOps)
-    llvm::outs() << (issrc ? "<src>" : "<tgt>") << "\n";
-  if (auto msg = encode(st, fn, printOps))
-    raiseUnsupported(*msg);
+    if (printOps)
+      llvm::outs() << (issrc ? "<src>" : "<tgt>") << "\n";
 
-  return st;
+    encode(*st, fn, printOps);
+  } catch (UnsupportedException ue) {
+    raiseUnsupported(ue);
+  }
+
+  return *st;
 }
 
 // 'conjunction' overlaps with std::conjunction

@@ -5,4 +5,5 @@
 #include <optional>
 #include <string>
 
-std::optional<std::string> encode(State &st, mlir::FuncOp &fn, bool printOps);
+// encode can throw UnsupportedException.
+void encode(State &st, mlir::FuncOp &fn, bool printOps);
