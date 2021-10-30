@@ -555,7 +555,11 @@ optional<string> encodeOp(State &st, mlir::arith::IndexCastOp op) {
 
   } else {
     auto src = st.regs.getExpr(op.getOperand());
-    st.regs.add(op, Integer(evalIndexCastOp(srcty, dstty, move(src))));
+    auto res = evalIndexCastOp(srcty, dstty, move(src));
+    if (dstty.isIndex())
+      st.regs.add(op, Index(res));
+    else
+      st.regs.add(op, Integer(res));
   }
   return {};
 }
