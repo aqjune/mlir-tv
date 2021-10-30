@@ -604,6 +604,21 @@ Tensor Tensor::reverse(unsigned axis) const {
       get(accessIdx).first);
 }
 
+Tensor Tensor::tile(const vector<unsigned> &repeat) const {
+  assert(repeat.size() == dims.size());
+  vector<Expr> newDims;
+  for (int i = 0; i < repeat.size(); ++i)
+    newDims.push_back((Expr)dims[i] * repeat[i]);
+
+  auto indVars = Index::boundIndexVars(dims.size());
+  auto accessIdx = indVars;
+  for (int i = 0; i < repeat.size(); ++i)
+    accessIdx[i] = accessIdx[i] % dims[i];
+
+  return Tensor::mkLambda(elemType, vector(newDims), move(indVars),
+      get(accessIdx).first);
+}
+
 Tensor Tensor::transpose() const {
   assert(dims.size() == 2);
   auto i = Index::var("i", VarType::BOUND);

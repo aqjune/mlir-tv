@@ -149,6 +149,9 @@ public:
   // t[i_0]..[i_axis]..[i_(N-1)] = this[i_0]..[dim_axis - i_axis - 1]..[i_(N-1)]
   Tensor reverse(unsigned axis) const;
 
+  // Return a new tensor that repeats for the given amount in each axis.
+  Tensor tile(const std::vector<unsigned> &repeat) const;
+
   Tensor transpose() const;
 
   Tensor matmul(const Tensor &b) const;

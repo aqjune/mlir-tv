@@ -739,6 +739,22 @@ optional<string> encodeOp(State &st, mlir::tosa::ReverseOp op) {
 }
 
 template<>
+optional<string> encodeOp(State &st, mlir::tosa::TileOp op) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    return "Unsupported type";
+
+  auto t = st.regs.get<Tensor>(op.input1());
+  vector<unsigned> repeat;
+  for (mlir::Attribute val: op.multiples())
+    repeat.push_back(val.cast<mlir::IntegerAttr>().getValue().getSExtValue());
+
+  st.regs.add(op, t.tile(repeat));
+
+  return {};
+}
+
+template<>
 optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
@@ -785,7 +801,8 @@ optional<string> encodeOp(State &st, mlir::tensor::ExtractOp op) {
     ENCODE(st, op, mlir::tosa::AbsOp); \
     ENCODE(st, op, mlir::tosa::ConcatOp); \
     ENCODE(st, op, mlir::tosa::ConstOp); \
-    ENCODE(st, op, mlir::tosa::ReverseOp);
+    ENCODE(st, op, mlir::tosa::ReverseOp); \
+    ENCODE(st, op, mlir::tosa::TileOp);
 
 
 static optional<string> encodeParallelLoopBodyAndOutput(
