@@ -9,4 +9,3 @@ module  {
     return %0 : tensor<8xi32>
   }
 }
-

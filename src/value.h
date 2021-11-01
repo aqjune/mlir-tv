@@ -159,6 +159,7 @@ public:
   // Return the result of an elementwise operation.
   // Assume that the shapes are equivalent.
   Tensor elementwiseBinOp(const Tensor &b,
+      mlir::Type resultElemType,
       const std::function<smt::Expr(smt::Expr &&, smt::Expr &&)> &op) const;
 
   Tensor elementwiseUnaryOp(

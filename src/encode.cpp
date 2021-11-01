@@ -367,7 +367,7 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
       }
       throw UnsupportedException(opr, "Unknown value type");
     };
-    st.regs.add(op, a.elementwiseBinOp(b, f));
+    st.regs.add(op, a.elementwiseBinOp(b, elemty, f));
     st.wellDefined(op.getOperation(), listsEqual(a.getDims(), b.getDims()));
 
   } else {
@@ -480,9 +480,31 @@ template<>
 void encodeOp(State &st, mlir::arith::CmpFOp op, bool) {
   switch (op.predicate()) {
   case mlir::arith::CmpFPredicate::OLT: { // ordered (unsinged) less than "<"
-    auto a = st.regs.get<Float>(op.getOperand(0));
-    auto b = st.regs.get<Float>(op.getOperand(1));
-    addIntOrIndex(st, op, a.fult(b), false);
+    auto op1Type = op.getOperand(0).getType();
+    auto op2Type = op.getOperand(1).getType();
+
+    if (op1Type.isa<mlir::TensorType>() && op2Type.isa<mlir::TensorType>()) {
+      auto a = st.regs.get<Tensor>(op.getOperand(0));
+      auto b = st.regs.get<Tensor>(op.getOperand(1));
+      assert(a.getElemType() == b.getElemType());
+
+      auto elemty = a.getElemType();
+      auto resultElemTy = getTensorElemTy(op.getResult());
+      auto f = [&](Expr &&a, Expr &&b) -> Expr {
+        if (elemty.isa<mlir::FloatType>()) {
+          return Float(a, elemty).fult(Float(b, elemty));
+        }
+        throw UnsupportedException(op.getOperation(), "cmpf only accepts floating-like elemtype");
+      };
+      st.regs.add(op, a.elementwiseBinOp(b, resultElemTy, f));
+      st.wellDefined(op.getOperation(), listsEqual(a.getDims(), b.getDims()));
+    } else if (op1Type.isa<mlir::FloatType>() && op2Type.isa<mlir::FloatType>()) {
+      auto a = st.regs.get<Float>(op.getOperand(0));
+      auto b = st.regs.get<Float>(op.getOperand(1));
+      addIntOrIndex(st, op, a.fult(b), false);
+    } else {
+      throw UnsupportedException(op.getOperation(), "Unsupported cmpf operand");
+    }
     break;
   }
   default:

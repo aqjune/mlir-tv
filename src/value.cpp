@@ -465,7 +465,9 @@ Tensor Tensor::matmul(const Tensor &b) const {
 }
 
 Tensor Tensor::elementwiseBinOp(
-      const Tensor &b, const function<Expr(Expr &&e1, Expr &&e2)> &f)
+      const Tensor &b,
+      mlir::Type resultElemType,
+      const function<Expr(Expr &&e1, Expr &&e2)> &f)
       const {
   assert(getRank() == b.getRank());
   assert(elemType == b.elemType);
@@ -473,7 +475,7 @@ Tensor Tensor::elementwiseBinOp(
   auto idxvars = Index::boundIndexVars(getRank());
   Expr elemout = f(get(idxvars).first, b.get(idxvars).first);
 
-  return mkLambda(elemType, getDims(), move(idxvars), elemout);
+  return mkLambda(resultElemType, getDims(), move(idxvars), elemout);
 }
 
 Tensor Tensor::elementwiseUnaryOp(
