@@ -1469,6 +1469,14 @@ static void storeTensorTo(
   }
 }
 
+static Tensor loadTensorFrom(const MemRef &m) {
+  // Step 2. Create a new Tensor using Tensor::mkLambda
+  auto dims = m.getDims();
+  vector<Expr> idxs = Index::boundIndexVars(dims.size());
+  auto expr = m.get(idxs).first;
+  return Tensor::mkLambda(m.getElemType(), move(dims), move(idxs), expr);
+}
+
 template<>
 void encodeOp(State &st, mlir::memref::BufferCastOp op, bool encodeMemWrite) {
   if (!encodeMemWrite)
@@ -1492,18 +1500,11 @@ void encodeOp(State &st, mlir::memref::BufferCastOp op, bool encodeMemWrite) {
 template<>
 void encodeOp(State &st, mlir::memref::TensorLoadOp op, bool encodeMemWrite) {
   auto m = st.regs.get<MemRef>(op.getOperand());
-  // Step 1. Mark the MemBlock pointed by the memref as read-only.
+  // Mark the MemBlock pointed by the memref as read-only.
   auto &memory = *(st.m);
   memory.setWritable(m.getBID(), false);
 
-  // Step 2. Create a new Tensor using Tensor::mkLambda
-  auto dims = m.getDims();
-  vector<Expr> idxs = Index::boundIndexVars(dims.size());
-  auto expr = m.get(idxs).first;
-  Tensor t_res = Tensor::mkLambda(getTensorElemTy(op.getResult()),
-      move(dims), move(idxs), expr);
-
-  st.regs.add(op.getResult(), t_res);
+  st.regs.add(op.getResult(), loadTensorFrom(m));
   st.wellDefined(op.getOperation(), m.isInBounds());
 }
 
@@ -1523,6 +1524,31 @@ void encodeOp(State &st, mlir::memref::TensorStoreOp op, bool encodeMemWrite) {
 
   storeTensorTo(st, op.getOperation(), move(t), m,
       op.memref().getType().cast<mlir::MemRefType>());
+}
+
+template<>
+void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
+  if (!encodeMemWrite)
+    throw UnsupportedException(op.getOperation(),
+        "We do not support memory writes in this scope");
+  else if (op.inputPermutation() || op.outputPermutation())
+    // Well, this might be straightforward...
+    throw UnsupportedException("linalg.copy with permutations is not supported");
+
+  auto *opr = op.getOperation();
+  auto mrIn = st.regs.get<MemRef>(op.input());
+  auto mrOut = st.regs.get<MemRef>(op.output());
+
+  // Src and tgt's shapes & element types must match
+  for (unsigned i = 0; i < mrIn.getRank(); ++i)
+    st.wellDefined(opr, (Expr)mrIn.getDim(i) == (Expr)mrOut.getDim(i));
+
+  // They must not overlap, according to
+  // https://mlir.llvm.org/docs/Dialects/Linalg/#linalgcopy-mlirlinalgcopyop
+  st.wellDefined(opr, mrIn.noalias(mrOut));
+
+  storeTensorTo(st, opr, loadTensorFrom(mrIn), mrOut,
+      op.output().getType().cast<mlir::MemRefType>());
 }
 
 template<>
@@ -2070,6 +2096,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::memref::TensorStoreOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::linalg::Conv2DNhwcHwcfOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::linalg::CopyOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::DotOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::FillOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::GenericOp, encodeMemWriteOps);

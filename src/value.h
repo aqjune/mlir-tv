@@ -56,6 +56,8 @@ public:
   mlir::Type getElemType() const { return elemType; }
 
   virtual std::vector<smt::Expr> getDims() const = 0;
+  uint64_t getRank() const { return getDims().size(); }
+
   std::vector<Index> getDimsAsIndices() const {
     std::vector<Index> vec;
     auto dims = getDims();

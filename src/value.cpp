@@ -3,6 +3,7 @@
 #include "smt.h"
 #include "smtmatchers.h"
 #include "memory.h"
+#include "utils.h"
 
 using namespace smt;
 using namespace std;
@@ -876,7 +877,8 @@ Expr MemRef::isLocalBlock() const {
 
 smt::Expr MemRef::noalias(const MemRef &other) const {
   if (!isIdentityMap() || !other.isIdentityMap())
-    assert("Noalias check with arbitrary layout memref is not supported yet");
+    throw UnsupportedException("Noalias check with arbitrary layout memref is"
+        " not supported yet");
 
   auto l1 = (Expr) offset;
   auto r1 = (Expr) offset + get1DSize();
