@@ -537,11 +537,11 @@ Results validate(
     // TODO: check fn signature
     auto tgtfn = itr->second;
 
-    auto res1 = analysis(srcfn, false);
-    auto res2 = analysis(tgtfn, false);
+    auto res1 = analyze(srcfn, false);
+    auto res2 = analyze(tgtfn, false);
     // TODO: need some more tight bounds..?
-    auto totalFpCounts = 2 + // reseved for zero, inf constant
-      res1.argFpCount + // # of variable in argument lists
+    auto totalFpCounts = 2 + // reserved for zero, inf constants
+      res1.argFpCount + // # of variables in argument lists
       res1.constFpCount * 2 + res2.constFpCount * 2 + // # of constants needed
       res1.varFpCount + res2.varFpCount ; // # of variables in virtual register
     auto bits = calculateRequiredBITS(totalFpCounts);
