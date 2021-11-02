@@ -1470,7 +1470,6 @@ static void storeTensorTo(
 }
 
 static Tensor loadTensorFrom(const MemRef &m) {
-  // Step 2. Create a new Tensor using Tensor::mkLambda
   auto dims = m.getDims();
   vector<Expr> idxs = Index::boundIndexVars(dims.size());
   auto expr = m.get(idxs).first;
