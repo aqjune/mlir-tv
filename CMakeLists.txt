@@ -23,6 +23,7 @@ set(CVC5_LIB_DIR "${CVC5_DIR}/lib")
 set(PROJECT_OBJ "mlirtvobj")
 add_library(${PROJECT_OBJ} OBJECT
     src/abstractops.cpp
+    src/analysis.cpp
     src/encode.cpp
     src/memory.cpp
     src/print.cpp

@@ -7,6 +7,7 @@
 #include "utils.h"
 #include "value.h"
 #include "vcgen.h"
+#include "analysis.h"
 
 #include <chrono>
 #include <fstream>
@@ -443,6 +444,13 @@ static Results validate(ValidationInput vinput) {
   });
 
   using namespace aop;
+
+/////////////////////////////////////////////////////////////////////////////////
+  auto src_result = analysis(vinput.src, false);
+  auto tgt_result = analysis(vinput.tgt, false);
+  llvm::outs() << "Soource Analysis: " << src_result.varFpCount << " " << src_result.constFpCount << "\n";
+  llvm::outs() << "Target Analysis: " << tgt_result.varFpCount << " " << tgt_result.constFpCount << "\n";
+/////////////////////////////////////////////////////////////////////////////////
 
   // Don't enable fp add associativity even if vinput.associativeAdd is true
   // because simply encoding it as UF is more efficient.
