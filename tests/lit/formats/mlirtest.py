@@ -28,6 +28,13 @@ def _executeCommand(dir_tv: str, dir_src: str, dir_tgt: str,
 def _has_unknown_keyword(errs: str) -> bool:
     return "Unknown" in errs
 
+# Python 3.8 or earlier does not have removesuffix
+def remove_suffix(input_string, suffix):
+    if suffix and input_string.endswith(suffix):
+        return input_string[:-len(suffix)]
+    return input_string
+
+
 class TestKeyword(Enum):
     NOTEST = auto()
     VERIFY = auto()
@@ -149,7 +156,7 @@ class SrcTgtPairTest(TestFormat):
                         and name.endswith(self.__suffix_src))
                     , os.listdir(pass_path)):
                 yield lit.Test.Test(testSuite, path_in_suite 
-                    + (os.path.join(pass_name, case_name.removesuffix(self.__suffix_src)),), localConfig)
+                    + (os.path.join(pass_name, remove_suffix(case_name, self.__suffix_src)),), localConfig)
 
     def execute(self, test, litConfig) -> Tuple[ResultCode, str]:
         test = test.getSourcePath()
