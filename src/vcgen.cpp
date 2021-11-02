@@ -551,8 +551,13 @@ Results validate(
     vinput.tgt = tgtfn;
     vinput.dumpSMTPath = dumpSMTPath;
     vinput.numBlocks = numBlocks;
-    vinput.floatBits = max(fpBits.first, min(bits, 32u));
-    vinput.doubleBits = max(fpBits.second, min(bits * 2, 63u));
+    if (fpBits.first) {
+      vinput.floatBits = fpBits.first;
+      vinput.doubleBits = fpBits.second;
+    } else {
+      vinput.floatBits = bits;
+      vinput.doubleBits = bits;
+    }
     vinput.encoding = encoding;
     vinput.isFpAddAssociative = isFpAddAssociative;
     vinput.useMultisetForFpSum = useMultiset;
