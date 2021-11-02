@@ -51,7 +51,7 @@ llvm::cl::opt<smt::SolverType> arg_solver("solver",
 );
 
 llvm::cl::opt<int> fp_bits("fp-bits",
-  llvm::cl::desc("The number of bits for the abstract representation of"
+  llvm::cl::desc("The number of bits for the abstract representation of "
                  "float and double types (default=their bitwidths)"),
   llvm::cl::init(-1), llvm::cl::value_desc("number"));
 
@@ -101,9 +101,7 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   int fp_bits_arg = fp_bits.getValue();
   pair<unsigned, unsigned> fp_bits;
   if (fp_bits_arg == -1)
-    // TODO: Double is set to 63 instead of 64 (which is the correct bitwidth
-    // of double) because compilers do not support int128 in general.
-    fp_bits = {32, 63};
+    fp_bits = {0, 0};
   else
     fp_bits = {fp_bits_arg, fp_bits_arg};
 

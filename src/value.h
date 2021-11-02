@@ -91,7 +91,7 @@ class Tensor: public ShapedValue {
       ShapedValue(elemType), dims(std::move(dims)), arr(std::move(arr)) {}
 
 public:
-  // This may be parameterized later..
+  // This should be parameterized later..
   static const unsigned MAX_TENSOR_SIZE = 10000;
   static const unsigned MAX_DIM_SIZE = 25;
 
@@ -201,7 +201,7 @@ private:
 
 class MemRef: public ShapedValue {
 public:
-  // This may be parameterized later..
+  // This should be parameterized later..
   static const unsigned MAX_MEMREF_SIZE = 1000000;
   static const unsigned MAX_DIM_SIZE = 1000;
 
