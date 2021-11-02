@@ -5,10 +5,9 @@
 #include <algorithm>
 
 struct AnalysisResult {
+    int argFpCount;
     int varFpCount;
     int constFpCount;
 };
 
-// encode can throw UnsupportedException.
-// {constant count, variable count}
 AnalysisResult analysis(mlir::FuncOp &fn, bool isFullyAbstract);

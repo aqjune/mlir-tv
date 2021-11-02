@@ -444,14 +444,6 @@ static Results validate(ValidationInput vinput) {
   });
 
   using namespace aop;
-
-/////////////////////////////////////////////////////////////////////////////////
-  auto src_result = analysis(vinput.src, false);
-  auto tgt_result = analysis(vinput.tgt, false);
-  llvm::outs() << "Soource Analysis: " << src_result.varFpCount << " " << src_result.constFpCount << "\n";
-  llvm::outs() << "Target Analysis: " << tgt_result.varFpCount << " " << tgt_result.constFpCount << "\n";
-/////////////////////////////////////////////////////////////////////////////////
-
   // Don't enable fp add associativity even if vinput.associativeAdd is true
   // because simply encoding it as UF is more efficient.
   // We can turn it on in the next iteration.
@@ -512,6 +504,11 @@ static Results validate(ValidationInput vinput) {
   return res;
 }
 
+static unsigned calculateRequiredBITS(int fpCount) {
+  unsigned BITS = 0;
+  for (int count = 1; count < fpCount; count <<= 1, BITS ++);
+  return std::max(BITS, 1u);
+}
 
 Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
@@ -538,14 +535,24 @@ Results validate(
       continue;
     }
     // TODO: check fn signature
+    auto tgtfn = itr->second;
+
+    auto res1 = analysis(srcfn, false);
+    auto res2 = analysis(tgtfn, false);
+    // TODO: need some more tight bounds..?
+    auto totalFpCounts = 2 + // reseved for zero, inf constant
+      res1.argFpCount + // # of variable in argument lists
+      res1.constFpCount * 2 + res2.constFpCount * 2 + // # of constants needed
+      res1.varFpCount + res2.varFpCount ; // # of variables in virtual register
+    auto bits = calculateRequiredBITS(totalFpCounts);
 
     ValidationInput vinput;
     vinput.src = srcfn;
-    vinput.tgt = itr->second;
+    vinput.tgt = tgtfn;
     vinput.dumpSMTPath = dumpSMTPath;
     vinput.numBlocks = numBlocks;
-    vinput.floatBits = fpBits.first;
-    vinput.doubleBits = fpBits.second;
+    vinput.floatBits = max(fpBits.first, min(bits, 32u));
+    vinput.doubleBits = max(fpBits.second, min(bits * 2, 63u));
     vinput.encoding = encoding;
     vinput.isFpAddAssociative = isFpAddAssociative;
     vinput.useMultisetForFpSum = useMultiset;

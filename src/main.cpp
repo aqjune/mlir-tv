@@ -103,7 +103,7 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   if (fp_bits_arg == -1)
     // TODO: Double is set to 63 instead of 64 (which is the correct bitwidth
     // of double) because compilers do not support int128 in general.
-    fp_bits = {32, 63};
+    fp_bits = {0, 0};
   else
     fp_bits = {fp_bits_arg, fp_bits_arg};
 

@@ -11,6 +11,7 @@ using namespace std;
 
 static set<llvm::APFloat> fpconstSet;
 static int fpCount = 0;
+static int fpArg = 0;
 
 static void analysisAttr(const mlir::Attribute &a) {
   auto ty = a.getType();
@@ -35,34 +36,31 @@ static void analysisElemAttr(const mlir::ElementsAttr &attr) {
   }
 }
 
-static void analysisOpResult(const mlir::OpResult &result, bool isFullyAbstract) {
-  if (isFullyAbstract) {
-    fpCount += 1;
-    return;
-  }
-
-  auto ty = result.getType();
+static int analysisVariableCount(const mlir::Value &value) {
+  auto ty = value.getType();
   if (ty.isa<mlir::FloatType>()) {
-    fpCount += 1;
+    return 1;
   } else if (ty.isa<mlir::TensorType>()) {
     auto tensorty = ty.cast<mlir::TensorType>();
     if (!tensorty.getElementType().isa<mlir::FloatType>())
-      return;
+      return 0;
 
     if (tensorty.hasStaticShape()) 
-      fpCount += tensorty.getNumElements();
+      return tensorty.getNumElements();
     else 
-      fpCount += Tensor::MAX_TENSOR_SIZE;
+      return Tensor::MAX_TENSOR_SIZE;
 
   } else if (ty.isa<mlir::MemRefType>()) {
     auto memrefty = ty.cast<mlir::MemRefType>();
     if (!memrefty.getElementType().isa<mlir::FloatType>())
-      return;
+      return 0;
 
     if (memrefty.hasStaticShape()) 
-      fpCount += memrefty.getNumElements();
+      return memrefty.getNumElements();
     else 
-      fpCount += MemRef::MAX_MEMREF_SIZE;
+      return MemRef::MAX_MEMREF_SIZE;
+  } else {
+    return 0;
   }
 }
 
@@ -105,22 +103,31 @@ void analysisBlock(mlir::Block &block, bool isFullyAbstract) {
     ANALYSIS(op, mlir::arith::ConstantOp, isFullyAbstract);
     ANALYSIS(op, mlir::tosa::ConstOp, isFullyAbstract);
 
-    for (const auto &result: op.getResults()) {
-      analysisOpResult(result, isFullyAbstract);
-    }
+    for (const auto &result: op.getResults())
+      fpCount += isFullyAbstract ? 1 : analysisVariableCount(result);
   }
 }
 
 AnalysisResult analysis(mlir::FuncOp &fn, bool isFullyAbstract) {
+  fpArg = 0;
+  fpCount = 0;
+  fpconstSet.clear();
+
   auto &region = fn.getRegion();
   if (!llvm::hasSingleElement(region))
     throw UnsupportedException(
         region.getParentOp(), "Only a region with one block is supported");
 
+  // Step1. analysis arguments
+  for (const auto& arg: fn.getArguments())
+    fpArg += isFullyAbstract ? 1 : analysisVariableCount(arg);
+
+  // Step2. analysis block
   auto &block = region.front();
   analysisBlock(block, isFullyAbstract);
 
   return {
+    .argFpCount = fpArg,
     .varFpCount = fpCount,
     .constFpCount= static_cast<int>(fpconstSet.size())
   };
