@@ -253,8 +253,8 @@ optional<Expr> encodeAffineExpr(
   }
 }
 
-static mlir::Type getTensorElemTy(mlir::Value v) {
-  return v.getType().dyn_cast<mlir::TensorType>().getElementType();
+static mlir::Type getElemTy(mlir::Value v) {
+  return v.getType().dyn_cast<mlir::ShapedType>().getElementType();
 }
 
 
@@ -489,7 +489,7 @@ void encodeOp(State &st, mlir::arith::CmpFOp op, bool) {
       assert(a.getElemType() == b.getElemType());
 
       auto elemty = a.getElemType();
-      auto resultElemTy = getTensorElemTy(op.getResult());
+      auto resultElemTy = getElemTy(op.getResult());
       auto f = [&](Expr &&a, Expr &&b) -> Expr {
         if (elemty.isa<mlir::FloatType>()) {
           return Float(a, elemty).fult(Float(b, elemty));
@@ -698,7 +698,7 @@ void encodeOp(State &st, mlir::shape::ShapeOfOp op, bool) {
     throw UnsupportedException(op.getOperation(), "unsupported type");
 
   auto tt = st.regs.get<Tensor>(tensor);
-  auto elemTy = getTensorElemTy(op.getResult());
+  auto elemTy = getElemTy(op.getResult());
   st.regs.add(op, Tensor(elemTy, tt.getDims()));
 }
 
@@ -980,8 +980,8 @@ void encodeOp(State &st, mlir::linalg::MatmulOp op, bool) {
     throw UnsupportedException(op.getOperation(),
         "unsupported form");
 
-  if (getTensorElemTy(op.getOperand(0)) != getTensorElemTy(op.getOperand(1)) ||
-      getTensorElemTy(op.getOperand(0)) != getTensorElemTy(op.getResult(0)))
+  if (getElemTy(op.getOperand(0)) != getElemTy(op.getOperand(1)) ||
+      getElemTy(op.getOperand(0)) != getElemTy(op.getResult(0)))
     throw UnsupportedException(op.getOperation(),
         "unsupported types");
 
@@ -1552,17 +1552,28 @@ void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
 
 template<>
 void encodeOp(State &st, mlir::linalg::FillOp op, bool encodeMemWrite) {
-  if (!op.hasTensorSemantics())
+  if (op.hasBufferSemantics() && !encodeMemWrite)
     throw UnsupportedException(op.getOperation(),
-        "tensor semantics is supported only");
-  if (op.getNumResults() != 1)
+        "We do not support memory writes in this scope");
+  if (op.getNumResults() > 1)
     throw UnsupportedException(op.getOperation(),
         "it has multiple results");
 
-  auto t = st.regs.get<Tensor>(op.getOperand(1));
-  auto res = Tensor(t.getElemType(),
-      st.regs.getExpr(op.getOperand(0)), t.getDims());
-  st.regs.add(op.getResult(0), move(res));
+  auto elemval = st.regs.getExpr(op.getOperand(0));
+  auto op1 = op.getOperand(1);
+  auto ety = getElemTy(op1);
+
+  if (op.hasTensorSemantics()) {
+    auto t = st.regs.get<Tensor>(op1);
+    auto filled = Tensor(ety, move(elemval), t.getDims());
+    st.regs.add(op.getResult(0), move(filled));
+  } else {
+    assert(op.hasBufferSemantics());
+    auto m = st.regs.get<MemRef>(op1);
+    auto filled = Tensor(ety, move(elemval), m.getDims());
+    storeTensorTo(st, op.getOperation(), move(filled), m,
+        op1.getType().cast<mlir::MemRefType>());
+  }
 }
 
 template<>
