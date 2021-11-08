@@ -717,6 +717,18 @@ Expr Expr::operator!() const {
   return e;
 }
 
+Expr Expr::operator~() const {
+  if (isTrue())
+    return mkBool(false);
+  else if (isFalse())
+    return mkBool(true);
+
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [&](auto e) { return ~e; }));
+  SET_CVC5(e, fmap(this->cvc5, [&](auto e) { return e.BITVECTOR_NOT(); }));
+  return e;
+}
+
 Expr &Expr::operator&=(const Expr &rhs) {
   Expr e = *this & rhs;
   SET_Z3(*this, move(e.z3));

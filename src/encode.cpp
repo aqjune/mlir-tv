@@ -795,21 +795,21 @@ void encodeOp(State &st, mlir::tosa::BitwiseAndOp op, bool) {
       [](auto &&a, auto &&b) { return (Expr)a & (Expr)b; });
 }
 
-// template<>
-// void encodeOp(State &st, mlir::tosa::BitwiseNotOp op, bool) {
-//   auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
-//   if (!dty)
-//     throw UnsupportedException(op.getOperation(), "Unsupported type");
+template<>
+void encodeOp(State &st, mlir::tosa::BitwiseNotOp op, bool) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-//   if(!getElemTy(op.input1()).isa<mlir::IntegerType>())
-//     throw UnsupportedException(op.getOperation(), "Unsupported element type");
+  if(!getElemTy(op.input1()).isa<mlir::IntegerType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported element type");
 
-//   mlir::Value i1 = op.input1();
+  mlir::Value i1 = op.input1();
 
-//   encodeUnaryOp(st, op, i1,
-//       nullptr,
-//       [](auto &&a) { return ~a });
-// }
+  encodeUnaryOp(st, op, i1,
+      nullptr,
+      [](auto &&a) { return ~(Expr)a; });
+}
 
 template<>
 void encodeOp(State &st, mlir::tosa::BitwiseOrOp op, bool) {
@@ -2211,7 +2211,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseAndOp, encodeMemWriteOps);
-    // ENCODE(st, op, mlir::tosa::BitwiseNotOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::BitwiseNotOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseOrOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseXorOp, encodeMemWriteOps);
 
