@@ -725,7 +725,7 @@ Expr Expr::operator~() const {
 
   Expr e;
   SET_Z3(e, fmap(this->z3, [&](auto e) { return ~e; }));
-  SET_CVC5(e, fmap(this->cvc5, [&](auto e) { return e.~Term(); }));
+  SET_CVC5(e, fmap(this->cvc5, [&](auto e) { return e.notTerm(); }));
   return e;
 }
 
