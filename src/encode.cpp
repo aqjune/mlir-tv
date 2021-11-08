@@ -778,6 +778,77 @@ void encodeOp(State &st, mlir::tosa::TileOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::tosa::BitwiseAndOp op, bool) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+
+  if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
+      !getElemTy(op.input2()).isa<mlir::IntegerType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported element type"); 
+  
+  mlir::Value i1 = op.input1();
+  mlir::Value i2 = op.input2();
+
+  encodeBinaryOp(st, op, i1, i2,
+      nullptr,
+      [](auto &&a, auto &&b) { return (Expr)a & (Expr)b; });
+}
+
+template<>
+void encodeOp(State &st, mlir::tosa::BitwiseNotOp op, bool) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+
+  if(!getElemTy(op.input1()).isa<mlir::IntegerType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported element type");
+
+  mlir::Value i1 = op.input1();
+
+  encodeUnaryOp(st, op, i1,
+      nullptr,
+      [](auto &&a) { return ~(Expr)a; });
+}
+
+template<>
+void encodeOp(State &st, mlir::tosa::BitwiseOrOp op, bool) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+
+  if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
+      !getElemTy(op.input2()).isa<mlir::IntegerType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported element type"); 
+  
+  mlir::Value i1 = op.input1();
+  mlir::Value i2 = op.input2();
+
+  encodeBinaryOp(st, op, i1, i2,
+      nullptr,
+      [](auto &&a, auto &&b) { return (Expr)a | (Expr)b; });
+}
+
+template<>
+void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+
+  if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
+      !getElemTy(op.input2()).isa<mlir::IntegerType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported element type"); 
+  
+  mlir::Value i1 = op.input1();
+  mlir::Value i2 = op.input2();
+
+  encodeBinaryOp(st, op, i1, i2,
+      nullptr,
+      [](auto &&a, auto &&b) { return (Expr)a ^ (Expr)b; });
+}
+
+
+template<>
 void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
@@ -2139,6 +2210,10 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::BitwiseAndOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::BitwiseNotOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::BitwiseOrOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::BitwiseXorOp, encodeMemWriteOps);
 
     throw UnsupportedException(&op);
   }
