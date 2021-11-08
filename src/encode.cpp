@@ -778,6 +778,27 @@ void encodeOp(State &st, mlir::tosa::TileOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::tosa::BitwiseAndOp op, bool) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+
+  if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
+      !getElemTy(op.input2()).isa<mlir::IntegerType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported element type"); 
+  
+  auto t1 = st.regs.get<Tensor>(op.input1());
+  auto t2 = st.regs.get<Tensor>(op.input2());
+
+  mlir::Value i1 = op.input1();
+  mlir::Value i2 = op.input2();
+
+  encodeBinaryOp(st, op, i1, i2,
+      nullptr,
+      [](auto &&a, auto &&b) { return (Expr)a & (Expr)b; });
+}
+
+template<>
 void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
   // TODO: The MLIR doc isn't explicit about what happens if indices are
   // out-of-bounds. It is currently encoded as UB.
@@ -2139,6 +2160,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::BitwiseAndOp, encodeMemWriteOps);
 
     throw UnsupportedException(&op);
   }
