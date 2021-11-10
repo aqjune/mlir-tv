@@ -54,7 +54,7 @@ static Tensor elemAttrToTensor(
     if (denseAttr.isSplat()) {
       // A constant tensor's type cannot have unknown dimensions
       auto dims = ShapedValue::getDims(tensorty, false);
-      auto v = attrToValueTy(denseAttr.getSplatValue());
+      auto v = attrToValueTy(denseAttr.getSplatValue<mlir::Attribute>());
 
       return Tensor(elemType, getExpr(v), move(dims));
 
@@ -85,7 +85,7 @@ static Tensor elemAttrToTensor(
             break;
         }
 
-        exprs.push_back(getExpr(attrToValueTy(denseAttr.getValue(elems))));
+        exprs.push_back(getExpr(attrToValueTy(denseAttr.getValues<mlir::Attribute>()[elems])));
         elems.back()++;
       }
 
@@ -116,7 +116,7 @@ static Tensor elemAttrToTensor(
         sparseIndBeg++;
       }
 
-      auto value = sparseAttr.getValue(curIndices);
+      auto value = sparseAttr.getValues<mlir::Attribute>()[curIndices];
       sparseIndices.push_back(move(curIndices));
 
       auto e = attrToValueTy(value);
