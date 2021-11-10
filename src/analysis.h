@@ -5,7 +5,8 @@
 struct AnalysisResult {
     int argFpCount;
     int varFpCount;
-    int constFpCount;
+    int constF32Count;
+    int constF64Count;
 };
 
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract);

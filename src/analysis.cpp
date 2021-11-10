@@ -9,7 +9,8 @@
 
 using namespace std;
 
-static set<llvm::APFloat> fpconstSet;
+static set<llvm::APFloat> constF32Set;
+static set<llvm::APFloat> constF64Set;
 static int fpCount = 0;
 static int fpArg = 0;
 
@@ -17,8 +18,25 @@ static void analyzeAttr(const mlir::Attribute &a) {
   assert(!a.isa<mlir::ElementsAttr>());
 
   auto ty = a.getType();
-  if (ty.isa<mlir::FloatType>()) 
-    fpconstSet.insert(a.dyn_cast<mlir::FloatAttr>().getValue());
+  if (ty.isa<mlir::FloatType>()) {
+    const auto val = a.dyn_cast<mlir::FloatAttr>().getValue();
+    auto val_f32 = val;
+    auto val_f64 = val;
+    bool is_rounded; // dummy
+
+    if (ty.isF32()) {
+      val_f64.convert(llvm::APFloat::IEEEdouble(),
+                      llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+    } else if (ty.isF64()) {
+      val_f32.convert(llvm::APFloat::IEEEsingle(),
+                      llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+    } else {
+        throw UnsupportedException(ty, "Unsupported type");
+    }
+
+    constF32Set.insert(val_f32);
+    constF64Set.insert(val_f64);
+  }
 }
 
 static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
@@ -72,7 +90,23 @@ static void analyzeOp(T op, bool isFullyAbstract);
 
 template<>
 void analyzeOp(mlir::arith::ConstantFloatOp op, bool isFullyAbstract) {
-  fpconstSet.insert(op.value());
+  auto ty = op.getType();
+  const auto val = op.value();
+  auto val_f32 = val, val_f64 = val;
+  bool is_rounded; // dummy
+
+  if (ty.isF32()) {
+    val_f64.convert(llvm::APFloat::IEEEdouble(),
+                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+  } else if (ty.isF64()) {
+    val_f32.convert(llvm::APFloat::IEEEsingle(),
+                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+  } else {
+      throw UnsupportedException(ty, "Unsupported type");
+  }
+
+  constF32Set.insert(val_f32);
+  constF64Set.insert(val_f64);
 }
 
 template<>
@@ -114,7 +148,8 @@ void analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
   fpArg = 0;
   fpCount = 0;
-  fpconstSet.clear();
+  constF32Set.clear();
+  constF64Set.clear();
 
   auto &region = fn.getRegion();
   if (!llvm::hasSingleElement(region))
@@ -132,6 +167,7 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
   return {
     .argFpCount = fpArg,
     .varFpCount = fpCount,
-    .constFpCount = static_cast<int>(fpconstSet.size())
+    .constF32Count = static_cast<int>(constF32Set.size()),
+    .constF64Count = static_cast<int>(constF64Set.size())
   };
 }

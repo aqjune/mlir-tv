@@ -537,13 +537,14 @@ Results validate(
     // TODO: check fn signature
     auto tgtfn = itr->second;
 
-    auto res1 = analyze(srcfn, false);
-    auto res2 = analyze(tgtfn, false);
+    auto src_res = analyze(srcfn, false);
+    auto tgt_res = analyze(tgtfn, false);
     // TODO: need some more tight bounds..?
     auto totalFpCounts = 2 + // reserved for zero, inf constants
-      res1.argFpCount + // # of variables in argument lists
-      res1.constFpCount * 2 + res2.constFpCount * 2 + // # of constants needed
-      res1.varFpCount + res2.varFpCount ; // # of variables in virtual register
+      src_res.argFpCount + // # of variables in argument lists
+      // we only count F64 consts because they contain F32 consts as well
+      src_res.constF64Count * 2 + tgt_res.constF64Count * 2 + // # of constants needed
+      src_res.varFpCount + tgt_res.varFpCount ; // # of variables in virtual register
     auto bits = calculateRequiredBITS(totalFpCounts);
 
     ValidationInput vinput;
