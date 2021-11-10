@@ -62,14 +62,34 @@ UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(
     AbsLevelFpDot afd, AbsLevelIntDot aid, bool addAssoc,
-    unsigned floatBits, unsigned doubleBits) {
+    unsigned floatBits, unsigned doubleBits, bool preserveUsedOpsInfo) {
   alFpDot = afd;
   alIntDot = aid;
   isFpAddAssociative = addAssoc;
-  memset(&usedOps, 0, sizeof(usedOps));
+  if (!preserveUsedOpsInfo)
+    memset(&usedOps, 0, sizeof(usedOps));
+
+  if (floatBits > 1)
+    floatBits--;
+  if (doubleBits > 1)
+    doubleBits--;
+
+  unsigned limitBits, precBits;
+  if (usedOps.fpCastRound) {
+    limitBits = 1;
+    if (doubleBits > floatBits + 2) {
+      precBits = doubleBits - floatBits - 1;
+    } else {
+      precBits = 1;
+    }
+  } else {
+    limitBits = 0;
+    precBits = 0;
+  }
 
   floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
-  doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
+  doubleEnc.emplace(llvm::APFloat::IEEEdouble(), limitBits, precBits,
+      &*floatEnc, "double");
 }
 
 // A set of options that must not change the precision of validation.
@@ -90,12 +110,17 @@ AbsFpEncoding &getFpEncoding(mlir::Type ty) {
   llvm_unreachable("Unknown type");
 }
 
-
 AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
-                             unsigned valuebits, string &&fn_suffix)
+      unsigned limitbits, unsigned precbits, unsigned valuebits,
+      AbsFpEncoding* larger_fpty_enc, std::string &&fn_suffix)
      :semantics(semantics), fn_suffix(move(fn_suffix)) {
   assert(valuebits > 0);
-  value_bv_bits = valuebits;
+  // BWs for casting
+  limit_bv_bits = limitbits;
+  prec_bv_bits = precbits;
+  this->larger_fpty_enc = larger_fpty_enc;
+
+  value_bv_bits = limitbits + precbits + valuebits;
   fp_bv_bits = SIGN_BITS + value_bv_bits;
 
   // INF: s11..10 where s is a sign bit
@@ -476,6 +501,61 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
 Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
   usedOps.fpUlt = true;
   return getUltFn().apply({f1, f2});
+}
+
+Expr AbsFpEncoding::fext(const smt::Expr &f, const aop::AbsFpEncoding &tgt) {
+  usedOps.fpCastRound = true;
+  
+  if (tgt.value_bv_bits <= value_bv_bits) {
+    // try abstract ExtF if the encodings do not support casting
+    return FnDecl(sort(), tgt.sort(), "fp_ext_" + fn_suffix).apply(f);
+  }
+
+  auto sign_type_bits = f.extract(fp_bv_bits - 1, value_bv_bits);
+  // simply zext value_bits
+  auto limit_prec_bits = Expr::mkBV(0, tgt.value_bv_bits - value_bv_bits);
+  auto value_bits = f.extract(value_bv_bits - 1, 0);
+
+  auto extended_float = sign_type_bits.concat(limit_prec_bits).concat(value_bits);
+  return extended_float;
+}
+
+Expr AbsFpEncoding::ftrunc(const smt::Expr &f, const aop::AbsFpEncoding &tgt) {
+  usedOps.fpCastRound = true;
+
+  if (tgt.value_bv_bits >= value_bv_bits) {
+    // try abstract TruncF if the encodings do not support rounding
+    return FnDecl(sort(), tgt.sort(), "fp_trunc_" + fn_suffix).apply(f);
+  }
+
+  auto sign_type_bits = f.extract(fp_bv_bits - 1, value_bv_bits);
+  unsigned limit_bit_lsb = value_bv_bits - limit_bv_bits;
+  auto limit_bits = f.extract(value_bv_bits - 1, limit_bit_lsb);
+  unsigned prec_bit_lsb = limit_bit_lsb - prec_bv_bits;
+  auto prec_bits = f.extract(limit_bit_lsb - 1, prec_bit_lsb);
+  auto lower_value_bits = f.extract(prec_bit_lsb - 1, 0);
+  llvm::outs() << "src limit bits: " << limit_bv_bits << ", src prec bits: " << prec_bv_bits << "\n";
+  llvm::outs() << "src value bits: " << value_bv_bits << ", tgt value bits: " << tgt.value_bv_bits << "\n";
+
+  auto trunc_result = sign_type_bits.concat(lower_value_bits);
+  if (next_hp_encoding->value_bv_bits > tgt.value_bv_bits) {
+    // if src cannot be truncated directly into tgt
+    trunc_result = next_hp_encoding->ftrunc(trunc_result, tgt);
+  } else if (next_hp_encoding->value_bv_bits < tgt.value_bv_bits) {
+    llvm_unreachable("TruncF tgt bitwidth larger than src bitwidth");
+  }
+
+  auto bv_true = Expr::mkBV(1, 1);
+  auto sign_bits = sign_type_bits.getMSB();
+
+  return Expr::mkIte(isnan(f), *tgt.fpconst_nan,              // override if NaN
+    Expr::mkIte(f == *fpconst_inf_pos, *tgt.fpconst_inf_pos,  // override if Inf
+      Expr::mkIte(f == *fpconst_inf_neg, *tgt.fpconst_inf_neg,
+        Expr::mkIte(limit_bits == bv_true,
+          // if f != Inf/NaN but the LIMIT bit is set, truncate into Inf
+          Expr::mkIte(sign_bits == bv_true, *tgt.fpconst_inf_neg, *tgt.fpconst_inf_pos),
+          // otherwise, use truncated result as is
+          trunc_result))));
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() const {

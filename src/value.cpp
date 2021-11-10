@@ -191,6 +191,18 @@ Float Float::neg() const {
   return Float(aop::getFpEncoding(type).neg(e), type);
 }
 
+Float Float::ext(const mlir::Type &tgt_type) const {
+  auto src_encoding = aop::getFpEncoding(type);
+  auto tgt_encoding = aop::getFpEncoding(tgt_type);
+  return Float(src_encoding.fext(e, tgt_encoding), tgt_type);
+}
+
+Float Float::trunc(const mlir::Type &tgt_type) const {
+  auto src_encoding = aop::getFpEncoding(type);
+  auto tgt_encoding = aop::getFpEncoding(tgt_type);
+  return Float(src_encoding.ftrunc(e, tgt_encoding), tgt_type);
+}
+
 
 Integer::Integer(int64_t i, unsigned bw):
   e(Expr::mkBV(i, bw)) {}

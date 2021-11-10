@@ -471,8 +471,9 @@ static Results validate(ValidationInput vinput) {
   // dot = mul + sum?
   bool useSumMulForFpDot = usedOps.fpDot && usedOps.fpSum && usedOps.fpMul;
   bool useSumMulForIntDot = usedOps.intDot && usedOps.intSum; // Eh.. int mul?
+  bool fpCastRound = usedOps.fpCastRound;
   bool tryRefinedAbstraction =
-      fpAssocAdd || useSumMulForFpDot || useSumMulForIntDot;
+      fpAssocAdd || useSumMulForFpDot || useSumMulForIntDot || fpCastRound;
 
   if (!tryRefinedAbstraction)
     return res;
@@ -484,7 +485,8 @@ static Results validate(ValidationInput vinput) {
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
       fpAssocAdd,
       vinput.floatBits,
-      vinput.doubleBits);
+      vinput.doubleBits,
+      true);
   setEncodingOptions(vinput.useMultisetForFpSum);
 
   if (!vinput.dumpSMTPath.empty())
