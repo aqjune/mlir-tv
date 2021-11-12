@@ -540,12 +540,16 @@ Results validate(
     auto src_res = analyze(srcfn, false);
     auto tgt_res = analyze(tgtfn, false);
     // TODO: need some more tight bounds..?
-    auto totalFpCounts = 2 + // reserved for zero, inf constants
-      src_res.argFpCount + // # of variables in argument lists
+    auto totalF32Counts = 4 + // reserved for 0.0, 1.0, Inf, NaN constants
+      src_res.argF32Count +// # of variables in argument lists
       // we only count F64 consts because they contain F32 consts as well
-      src_res.constF64Count * 2 + tgt_res.constF64Count * 2 + // # of constants needed
-      src_res.varFpCount + tgt_res.varFpCount ; // # of variables in virtual register
-    auto bits = calculateRequiredBITS(totalFpCounts);
+      src_res.constF32Count * 2 + tgt_res.constF32Count * 2 + // # of constants needed
+      src_res.varF32Count + tgt_res.varF32Count; // # of variables in virtual register
+    auto totalF64Counts = 4 + src_res.argF64Count +
+      src_res.constF64Count * 2 + tgt_res.constF64Count * 2 +
+      src_res.varF64Count + tgt_res.varF64Count;
+    auto bitsF32 = calculateRequiredBITS(totalF32Counts);
+    auto bitsF64 = calculateRequiredBITS(totalF64Counts);
 
     ValidationInput vinput;
     vinput.src = srcfn;
@@ -556,8 +560,8 @@ Results validate(
       vinput.floatBits = fpBits.first;
       vinput.doubleBits = fpBits.second;
     } else {
-      vinput.floatBits = bits;
-      vinput.doubleBits = bits;
+      vinput.floatBits = bitsF32;
+      vinput.doubleBits = bitsF64;
     }
     vinput.encoding = encoding;
     vinput.isFpAddAssociative = isFpAddAssociative;

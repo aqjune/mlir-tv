@@ -6,13 +6,17 @@
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 
 #include <set>
+#include <type_traits>
 
 using namespace std;
 
 static set<llvm::APFloat> constF32Set;
+static int varF32Count = 0;
+static int argF32Count = 0;
+
 static set<llvm::APFloat> constF64Set;
-static int fpCount = 0;
-static int fpArg = 0;
+static int varF64Count = 0;
+static int argF64Count = 0;
 
 static void analyzeAttr(const mlir::Attribute &a) {
   assert(!a.isa<mlir::ElementsAttr>());
@@ -56,14 +60,16 @@ static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
   }
 }
 
+template<class FT>
 static int analyzeVariable(const mlir::Value &value) {
+  static_assert(is_base_of<mlir::FloatType, FT>::value, "FT must be mlir::FloatType");
   auto ty = value.getType();
-  if (ty.isa<mlir::FloatType>()) {
+  if (ty.isa<FT>()) {
     return 1;
 
   } else if (ty.isa<mlir::TensorType>()) {
     auto tensorty = ty.cast<mlir::TensorType>();
-    if (!tensorty.getElementType().isa<mlir::FloatType>())
+    if (!tensorty.getElementType().isa<FT>())
       return 0;
 
     if (tensorty.hasStaticShape()) 
@@ -73,7 +79,7 @@ static int analyzeVariable(const mlir::Value &value) {
 
   } else if (ty.isa<mlir::MemRefType>()) {
     auto memrefty = ty.cast<mlir::MemRefType>();
-    if (!memrefty.getElementType().isa<mlir::FloatType>())
+    if (!memrefty.getElementType().isa<FT>())
       return 0;
 
     if (memrefty.hasStaticShape()) 
@@ -140,14 +146,16 @@ void analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
     ANALYSIS(op, mlir::arith::ConstantOp, isFullyAbstract);
     ANALYSIS(op, mlir::tosa::ConstOp, isFullyAbstract);
 
-    for (const auto &result: op.getResults())
-      fpCount += isFullyAbstract ? 1 : analyzeVariable(result);
+    for (const auto &result: op.getResults()) {
+      varF32Count += isFullyAbstract ? 1 : analyzeVariable<mlir::Float32Type>(result);
+      varF64Count += isFullyAbstract ? 1 : analyzeVariable<mlir::Float64Type>(result);
+    }
   }
 }
 
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
-  fpArg = 0;
-  fpCount = 0;
+  argF32Count = 0, argF64Count = 0;
+  varF32Count = 0, varF64Count = 0;
   constF32Set.clear();
   constF64Set.clear();
 
@@ -157,17 +165,22 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
         region.getParentOp(), "Only a region with one block is supported");
 
   // Step1. analyze arguments
-  for (const auto& arg: fn.getArguments())
-    fpArg += isFullyAbstract ? 1 : analyzeVariable(arg);
+  for (const auto& arg: fn.getArguments()){
+    argF32Count += isFullyAbstract ? 1 : analyzeVariable<mlir::Float32Type>(arg);
+    argF64Count += isFullyAbstract ? 1 : analyzeVariable<mlir::Float64Type>(arg);
+  }
+    
 
   // Step2. analyze the block
   auto &block = region.front();
   analyzeBlock(block, isFullyAbstract);
 
   return {
-    .argFpCount = fpArg,
-    .varFpCount = fpCount,
     .constF32Count = static_cast<int>(constF32Set.size()),
-    .constF64Count = static_cast<int>(constF64Set.size())
+    .varF32Count = varF32Count,
+    .argF32Count = argF32Count,
+    .constF64Count = static_cast<int>(constF64Set.size()),
+    .varF64Count = varF64Count,
+    .argF64Count = argF64Count
   };
 }
