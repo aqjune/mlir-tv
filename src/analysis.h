@@ -5,8 +5,8 @@
 
 struct SolePrecisionAnalysisResult {
   std::set<llvm::APFloat> fpConstSet;
-  size_t fpVarCount;
-  size_t fpArgCount;
+  size_t fpVarCount = 0;
+  size_t fpArgCount = 0;
 };
 
 struct AnalysisResult {
