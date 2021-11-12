@@ -42,16 +42,16 @@ static void analyzeAttr(const mlir::Attribute &a) {
 static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
   if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
     if (denseAttr.isSplat()) {
-      analyzeAttr(denseAttr.getSplatValue());
+      analyzeAttr(denseAttr.getSplatValue<mlir::Attribute>());
     } else {
-      for (unsigned i = 0; i < denseAttr.getNumElements(); i++) {
-        analyzeAttr(denseAttr.getFlatValue<mlir::Attribute>(i));
+      for (const auto& attr: denseAttr.getValues<mlir::Attribute>()) {
+        analyzeAttr(attr);
       }
     }
   } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
     auto denseAttr = sparseAttr.getValues();
-    for (unsigned i = 0; i < denseAttr.getNumElements(); i++) {
-      analyzeAttr(denseAttr.getFlatValue<mlir::Attribute>(i));
+    for (const auto& attr: denseAttr.getValues<mlir::Attribute>()) {
+      analyzeAttr(attr);
     }
   }
 }
