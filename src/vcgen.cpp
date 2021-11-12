@@ -538,16 +538,24 @@ Results validate(
     auto tgtfn = itr->second;
 
     auto src_res = analyze(srcfn, false);
+    auto src_f32_res = src_res.F32;
+    auto src_f64_res = src_res.F64;
+
     auto tgt_res = analyze(tgtfn, false);
-    // TODO: need some more tight bounds..?
-    auto totalF32Counts = 4 + // reserved for 0.0, 1.0, Inf, NaN constants
-      src_res.argF32Count +// # of variables in argument lists
-      // we only count F64 consts because they contain F32 consts as well
-      src_res.constF32Count * 2 + tgt_res.constF32Count * 2 + // # of constants needed
-      src_res.varF32Count + tgt_res.varF32Count; // # of variables in virtual register
-    auto totalF64Counts = 4 + src_res.argF64Count +
-      src_res.constF64Count * 2 + tgt_res.constF64Count * 2 +
-      src_res.varF64Count + tgt_res.varF64Count;
+    auto tgt_f32_res = tgt_res.F32;
+    auto tgt_f64_res = tgt_res.F64;
+    
+    auto calculateTotalFpCounts = [](const auto& src_res, const auto& tgt_res) {
+      size_t total = 4 + // reserved for 0.0, 1.0, Inf, NaN constants
+      src_res.fpArgCount + // # of variables in argument lists
+      src_res.fpConstSet.size() * 2 + tgt_res.fpConstSet.size() * 2 + // # of constants needed
+      src_res.fpVarCount + tgt_res.fpVarCount; // # of variables in virtual register
+      
+      return total;
+    };
+
+    auto totalF32Counts = calculateTotalFpCounts(src_f32_res, tgt_f32_res);
+    auto totalF64Counts = calculateTotalFpCounts(src_f64_res, tgt_f64_res);
     auto bitsF32 = calculateRequiredBITS(totalF32Counts);
     auto bitsF64 = calculateRequiredBITS(totalF64Counts);
 

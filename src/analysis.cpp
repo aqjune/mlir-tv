@@ -11,12 +11,7 @@
 using namespace std;
 
 static set<llvm::APFloat> constF32Set;
-static int varF32Count = 0;
-static int argF32Count = 0;
-
 static set<llvm::APFloat> constF64Set;
-static int varF64Count = 0;
-static int argF64Count = 0;
 
 static void analyzeAttr(const mlir::Attribute &a) {
   assert(!a.isa<mlir::ElementsAttr>());
@@ -61,7 +56,7 @@ static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
 }
 
 template<class FT>
-static int analyzeVariable(const mlir::Value &value) {
+static size_t analyzeVariable(const mlir::Value &value) {
   static_assert(is_base_of<mlir::FloatType, FT>::value, "FT must be mlir::FloatType");
   auto ty = value.getType();
   if (ty.isa<FT>()) {
@@ -139,23 +134,26 @@ void analyzeOp(mlir::tosa::ConstOp op, bool isFullyAbstract) {
     continue; \
   }
 
-void analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
+template<class FT>
+static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
+  static_assert(is_base_of<mlir::FloatType, FT>::value, "FT must be mlir::FloatType");
+  
+  size_t fpVarCount = 0;
   for (auto &op: block) {
     // Analyze constant fp operations
     ANALYSIS(op, mlir::arith::ConstantFloatOp, isFullyAbstract);
     ANALYSIS(op, mlir::arith::ConstantOp, isFullyAbstract);
     ANALYSIS(op, mlir::tosa::ConstOp, isFullyAbstract);
 
-    for (const auto &result: op.getResults()) {
-      varF32Count += isFullyAbstract ? 1 : analyzeVariable<mlir::Float32Type>(result);
-      varF64Count += isFullyAbstract ? 1 : analyzeVariable<mlir::Float64Type>(result);
-    }
+    for (const auto &result: op.getResults())
+      fpVarCount += isFullyAbstract ? 1 : analyzeVariable<FT>(result);
   }
+
+  return fpVarCount;
 }
 
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
-  argF32Count = 0, argF64Count = 0;
-  varF32Count = 0, varF64Count = 0;
+  SolePrecisionAnalysisResult F32, F64;
   constF32Set.clear();
   constF64Set.clear();
 
@@ -166,21 +164,20 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
 
   // Step1. analyze arguments
   for (const auto& arg: fn.getArguments()){
-    argF32Count += isFullyAbstract ? 1 : analyzeVariable<mlir::Float32Type>(arg);
-    argF64Count += isFullyAbstract ? 1 : analyzeVariable<mlir::Float64Type>(arg);
+    F32.fpArgCount += isFullyAbstract ? 1 : analyzeVariable<mlir::Float32Type>(arg);
+    F64.fpArgCount += isFullyAbstract ? 1 : analyzeVariable<mlir::Float64Type>(arg);
   }
     
-
   // Step2. analyze the block
   auto &block = region.front();
-  analyzeBlock(block, isFullyAbstract);
+  F32.fpVarCount = analyzeBlock<mlir::Float32Type>(block, isFullyAbstract);
+  F64.fpVarCount = analyzeBlock<mlir::Float64Type>(block, isFullyAbstract);
+
+  F32.fpConstSet = move(constF32Set);
+  F64.fpConstSet = move(constF64Set);
 
   return {
-    .constF32Count = static_cast<int>(constF32Set.size()),
-    .varF32Count = varF32Count,
-    .argF32Count = argF32Count,
-    .constF64Count = static_cast<int>(constF64Set.size()),
-    .varF64Count = varF64Count,
-    .argF64Count = argF64Count
+    .F32 = F32,
+    .F64 = F64
   };
 }
