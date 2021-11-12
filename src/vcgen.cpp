@@ -537,14 +537,27 @@ Results validate(
     // TODO: check fn signature
     auto tgtfn = itr->second;
 
-    auto res1 = analyze(srcfn, false);
-    auto res2 = analyze(tgtfn, false);
-    // TODO: need some more tight bounds..?
-    auto totalFpCounts = 2 + // reserved for zero, inf constants
-      res1.argFpCount + // # of variables in argument lists
-      res1.constFpCount * 2 + res2.constFpCount * 2 + // # of constants needed
-      res1.varFpCount + res2.varFpCount ; // # of variables in virtual register
-    auto bits = calculateRequiredBITS(totalFpCounts);
+    auto src_res = analyze(srcfn, false);
+    auto src_f32_res = src_res.F32;
+    auto src_f64_res = src_res.F64;
+
+    auto tgt_res = analyze(tgtfn, false);
+    auto tgt_f32_res = tgt_res.F32;
+    auto tgt_f64_res = tgt_res.F64;
+    
+    auto calculateTotalFpCounts = [](const auto& src_res, const auto& tgt_res) {
+      size_t total = 4 + // reserved for 0.0, 1.0, Inf, NaN constants
+      src_res.fpArgCount + // # of variables in argument lists
+      src_res.fpConstSet.size() * 2 + tgt_res.fpConstSet.size() * 2 + // # of constants needed
+      src_res.fpVarCount + tgt_res.fpVarCount; // # of variables in virtual register
+      
+      return total;
+    };
+
+    auto totalF32Counts = calculateTotalFpCounts(src_f32_res, tgt_f32_res);
+    auto totalF64Counts = calculateTotalFpCounts(src_f64_res, tgt_f64_res);
+    auto bitsF32 = calculateRequiredBITS(totalF32Counts);
+    auto bitsF64 = calculateRequiredBITS(totalF64Counts);
 
     ValidationInput vinput;
     vinput.src = srcfn;
@@ -555,8 +568,8 @@ Results validate(
       vinput.floatBits = fpBits.first;
       vinput.doubleBits = fpBits.second;
     } else {
-      vinput.floatBits = bits;
-      vinput.doubleBits = bits;
+      vinput.floatBits = bitsF32;
+      vinput.doubleBits = bitsF64;
     }
     vinput.encoding = encoding;
     vinput.isFpAddAssociative = isFpAddAssociative;

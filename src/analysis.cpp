@@ -6,19 +6,36 @@
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 
 #include <set>
+#include <type_traits>
 
 using namespace std;
 
-static set<llvm::APFloat> fpconstSet;
-static int fpCount = 0;
-static int fpArg = 0;
+static set<llvm::APFloat> constF32Set;
+static set<llvm::APFloat> constF64Set;
 
 static void analyzeAttr(const mlir::Attribute &a) {
   assert(!a.isa<mlir::ElementsAttr>());
 
   auto ty = a.getType();
-  if (ty.isa<mlir::FloatType>()) 
-    fpconstSet.insert(a.dyn_cast<mlir::FloatAttr>().getValue());
+  if (ty.isa<mlir::FloatType>()) {
+    const auto val = a.dyn_cast<mlir::FloatAttr>().getValue();
+    auto val_f32 = val;
+    auto val_f64 = val;
+    bool is_rounded; // dummy
+
+    if (ty.isF32()) {
+      val_f64.convert(llvm::APFloat::IEEEdouble(),
+                      llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+    } else if (ty.isF64()) {
+      val_f32.convert(llvm::APFloat::IEEEsingle(),
+                      llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+    } else {
+        throw UnsupportedException(ty, "Unsupported type");
+    }
+
+    constF32Set.insert(val_f32);
+    constF64Set.insert(val_f64);
+  }
 }
 
 static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
@@ -38,14 +55,16 @@ static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
   }
 }
 
-static int analyzeVariable(const mlir::Value &value) {
+template<class FT>
+static size_t analyzeVariable(const mlir::Value &value) {
+  static_assert(is_base_of<mlir::FloatType, FT>::value, "FT must be mlir::FloatType");
   auto ty = value.getType();
-  if (ty.isa<mlir::FloatType>()) {
+  if (ty.isa<FT>()) {
     return 1;
 
   } else if (ty.isa<mlir::TensorType>()) {
     auto tensorty = ty.cast<mlir::TensorType>();
-    if (!tensorty.getElementType().isa<mlir::FloatType>())
+    if (!tensorty.getElementType().isa<FT>())
       return 0;
 
     if (tensorty.hasStaticShape()) 
@@ -55,7 +74,7 @@ static int analyzeVariable(const mlir::Value &value) {
 
   } else if (ty.isa<mlir::MemRefType>()) {
     auto memrefty = ty.cast<mlir::MemRefType>();
-    if (!memrefty.getElementType().isa<mlir::FloatType>())
+    if (!memrefty.getElementType().isa<FT>())
       return 0;
 
     if (memrefty.hasStaticShape()) 
@@ -72,7 +91,23 @@ static void analyzeOp(T op, bool isFullyAbstract);
 
 template<>
 void analyzeOp(mlir::arith::ConstantFloatOp op, bool isFullyAbstract) {
-  fpconstSet.insert(op.value());
+  auto ty = op.getType();
+  const auto val = op.value();
+  auto val_f32 = val, val_f64 = val;
+  bool is_rounded; // dummy
+
+  if (ty.isF32()) {
+    val_f64.convert(llvm::APFloat::IEEEdouble(),
+                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+  } else if (ty.isF64()) {
+    val_f32.convert(llvm::APFloat::IEEEsingle(),
+                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+  } else {
+      throw UnsupportedException(ty, "Unsupported type");
+  }
+
+  constF32Set.insert(val_f32);
+  constF64Set.insert(val_f64);
 }
 
 template<>
@@ -99,7 +134,11 @@ void analyzeOp(mlir::tosa::ConstOp op, bool isFullyAbstract) {
     continue; \
   }
 
-void analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
+template<class FT>
+static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
+  static_assert(is_base_of<mlir::FloatType, FT>::value, "FT must be mlir::FloatType");
+  
+  size_t fpVarCount = 0;
   for (auto &op: block) {
     // Analyze constant fp operations
     ANALYSIS(op, mlir::arith::ConstantFloatOp, isFullyAbstract);
@@ -107,14 +146,16 @@ void analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
     ANALYSIS(op, mlir::tosa::ConstOp, isFullyAbstract);
 
     for (const auto &result: op.getResults())
-      fpCount += isFullyAbstract ? 1 : analyzeVariable(result);
+      fpVarCount += isFullyAbstract ? 1 : analyzeVariable<FT>(result);
   }
+
+  return fpVarCount;
 }
 
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
-  fpArg = 0;
-  fpCount = 0;
-  fpconstSet.clear();
+  SolePrecisionAnalysisResult F32, F64;
+  constF32Set.clear();
+  constF64Set.clear();
 
   auto &region = fn.getRegion();
   if (!llvm::hasSingleElement(region))
@@ -122,16 +163,21 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
         region.getParentOp(), "Only a region with one block is supported");
 
   // Step1. analyze arguments
-  for (const auto& arg: fn.getArguments())
-    fpArg += isFullyAbstract ? 1 : analyzeVariable(arg);
-
+  for (const auto& arg: fn.getArguments()){
+    F32.fpArgCount += isFullyAbstract ? 1 : analyzeVariable<mlir::Float32Type>(arg);
+    F64.fpArgCount += isFullyAbstract ? 1 : analyzeVariable<mlir::Float64Type>(arg);
+  }
+    
   // Step2. analyze the block
   auto &block = region.front();
-  analyzeBlock(block, isFullyAbstract);
+  F32.fpVarCount = analyzeBlock<mlir::Float32Type>(block, isFullyAbstract);
+  F64.fpVarCount = analyzeBlock<mlir::Float64Type>(block, isFullyAbstract);
+
+  F32.fpConstSet = move(constF32Set);
+  F64.fpConstSet = move(constF64Set);
 
   return {
-    .argFpCount = fpArg,
-    .varFpCount = fpCount,
-    .constFpCount = static_cast<int>(fpconstSet.size())
+    .F32 = F32,
+    .F64 = F64
   };
 }
