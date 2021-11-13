@@ -280,6 +280,50 @@ std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   return {move(outputIdxs), move(outputExpr)};
 }
 
+std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv2(
+    const ShapedValue &filter,
+    const vector<Expr> &strides,
+    const vector<Expr> &dilations) const {
+  // input: Batch_size x Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
+  // filter: Output_channel x Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
+  // output: Batch_size x Output_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
+  assert(getDims().size() == filter.getDims().size());
+  assert(getDims().size() > 2);
+  auto dim = getDims().size() - 2;
+
+  // outputIdxs: Batch, Output_channel, Dim_0, Dim_1, ... Dim_{n-1}
+  vector<Expr> outputIdxs;
+  for (unsigned i = 0; i < getDims().size(); i ++)
+    outputIdxs.push_back(Index::var("i" + to_string(i), VarType::BOUND));
+
+  // cubeSize =  Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
+  vector<Expr> cubeSize;
+  cubeSize.push_back(filter.getDim(1));
+  for (unsigned i = 0; i < dim; i ++)
+    cubeSize.push_back(filter.getDim(i + 2));
+  auto cubeIdx = Index::var("cubeIdx", VarType::BOUND);
+  auto cubeIdxs = from1DIdx(cubeIdx, cubeSize);
+
+  vector<Expr> filterIdxs;
+  // filterIdxs: Output_channel, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
+  filterIdxs.push_back(outputIdxs[1]);
+  for (auto idx: cubeIdxs) filterIdxs.push_back(idx);
+
+  vector<Expr> inputIdxs;
+  // inputIdxs: Batch, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
+  inputIdxs.push_back(outputIdxs.front());
+  inputIdxs.push_back(cubeIdxs.front()); // Input_channel
+  for (unsigned i = 0; i < dim; i ++)
+    inputIdxs.push_back(outputIdxs[i + 2] * strides[i] + cubeIdxs[i + 1] * dilations[i]);
+
+  Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
+  Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
+  Expr outputExpr = aop::getFpEncoding(elemType).dot(
+      inputExpr, filterExpr, ::get1DSize(cubeSize));
+
+  return {move(outputIdxs), move(outputExpr)};
+}
+
 static Sort arraySortForTensor(Sort elemSort) {
   return Sort::arraySort(Index::sort(), elemSort);
 }
@@ -445,6 +489,23 @@ Tensor Tensor::conv(const Tensor &filter,
   outputDims.push_back(filter.getDims().back()); // Output Channel
 
   auto [indices, res] = ShapedValue::conv(filter, strides, dilations);
+  return Tensor::mkLambda(elemType, move(outputDims), move(indices), move(res));
+}
+
+Tensor Tensor::conv2(const Tensor &filter,
+    const vector<Expr> strides,
+    const vector<Expr> dilations) const {
+  vector<Expr> outputDims;
+  outputDims.push_back(getDim(0)); // Input Batch Size
+  outputDims.push_back(filter.getDim(0)); // Output Channel
+  for (unsigned i = 0; i < getDims().size() - 2; i++) {
+    Expr originalSize = getDim(i + 2);
+    Expr filterSize = dilations[i] * filter.getDim(i + 2);
+    Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
+    outputDims.push_back(expr);
+  }
+
+  auto [indices, res] = ShapedValue::conv2(filter, strides, dilations);
   return Tensor::mkLambda(elemType, move(outputDims), move(indices), move(res));
 }
 
@@ -937,6 +998,25 @@ Expr MemRef::conv(const MemRef &input,
     const std::vector<smt::Expr> strides,
     const std::vector<smt::Expr> dilations) {
   auto [indices, expr] = input.ShapedValue::conv(filter, strides, dilations);
+
+  // we splat results into 1D memory layout
+  auto idx = Index::var("outputIdx", VarType::BOUND);
+  auto outputIndices = layout.getInverseIndices(idx);
+  auto outputExpr = expr.substitute(indices, outputIndices);
+  auto outputArray = Expr::mkLambda(idx, outputExpr);
+
+  // store output memref
+  auto success = isInBounds() & input.isInBounds() & filter.isInBounds() &
+    noalias(input) & noalias(filter) & storeArray(outputArray, Index::zero(), get1DSize());
+
+  return success;
+}
+
+Expr MemRef::conv2(const MemRef &input,
+    const MemRef &filter,
+    const std::vector<smt::Expr> strides,
+    const std::vector<smt::Expr> dilations) {
+  auto [indices, expr] = input.ShapedValue::conv2(filter, strides, dilations);
 
   // we splat results into 1D memory layout
   auto idx = Index::var("outputIdx", VarType::BOUND);

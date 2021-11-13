@@ -82,6 +82,10 @@ public:
   std::pair<std::vector<smt::Expr>, smt::Expr> conv(const ShapedValue &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations) const;
+
+  std::pair<std::vector<smt::Expr>, smt::Expr> conv2(const ShapedValue &filter,
+      const std::vector<smt::Expr> &strides,
+      const std::vector<smt::Expr> &dilations) const;
 };
 
 class Tensor: public ShapedValue {
@@ -143,6 +147,10 @@ public:
 
   // Return a new tensor which is convolution of this tensor and filter.
   Tensor conv(const Tensor &filter,
+      const std::vector<smt::Expr> strides,
+      const std::vector<smt::Expr> dilations) const;
+
+  Tensor conv2(const Tensor &filter,
       const std::vector<smt::Expr> strides,
       const std::vector<smt::Expr> dilations) const;
 
@@ -312,6 +320,12 @@ public:
       const MemRef &filter,
       const std::vector<smt::Expr> strides,
       const std::vector<smt::Expr> dilations);
+
+  smt::Expr conv2(const MemRef &input,
+      const MemRef &filter,
+      const std::vector<smt::Expr> strides,
+      const std::vector<smt::Expr> dilations);
+
 
   // Returns (cond ? trueValue : falseValue).
   // It is assumed that trueValue.layout is equivalent to falseValue.layout.
