@@ -1438,6 +1438,23 @@ void encodeOp(State &st, mlir::tosa::NegateOp op, bool) {
       [](auto &&a) { return Expr::mkBV(0, a.bitwidth()) - (Expr)a; });
 }
 
+template<>
+void encodeOp(State &st, mlir::tosa::ReshapeOp op, bool) {
+  auto t = st.regs.get<Tensor>(op.getOperand());
+  auto attrs = op.new_shape();
+  vector<Expr> newDims;
+  mlir::Operation *oper = op.getOperation();
+
+  for (auto a: attrs) {
+    auto ia = a.cast<mlir::IntegerAttr>();
+    if (ia.getInt() == -1)
+      throw UnsupportedException(oper, "Dynamic shape is unsupported");
+    newDims.push_back(Index(ia.getInt()));
+  }
+  st.wellDefined(oper, t.get1DSize() == smt::get1DSize(newDims));
+  st.regs.add(op.getResult(), t.reshape(newDims));
+}
+
 static variant<string, MemRef> createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
   if (!MemRef::isTypeSupported(memrefTy))
@@ -2257,16 +2274,17 @@ static void encodeBlock(
 
     ENCODE(st, op, mlir::tosa::AbsOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::AddOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tosa::ConcatOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseAndOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseNotOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseOrOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseXorOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ConcatOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ReshapeOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
 
     throw UnsupportedException(&op);
   }
