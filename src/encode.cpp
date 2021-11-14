@@ -878,7 +878,7 @@ void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
 
   if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
       !getElemTy(op.input2()).isa<mlir::IntegerType>())
-    throw UnsupportedException(op.getOperation(), "Unsupported element type"); 
+    throw UnsupportedException(op.getOperation(), "Unsupported element type");
   
   mlir::Value i1 = op.input1();
   mlir::Value i2 = op.input2();
@@ -949,10 +949,8 @@ static void encodeParallelLoopBodyAndOutput(
       move(tensorSz), move(outputIndVars), yieldedExpr);
 }
 
-
-
-template<> void
-encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op, bool encodeMemWriteOp) {
+template<class T>
+static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
   vector<Expr> strides, dilations;
   // TODO: The result may not fit in Index::BITS
   for (auto s: op.strides())
@@ -964,12 +962,9 @@ encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op, bool encodeMemWriteOp) {
     auto t_input = st.regs.get<Tensor>(op.image());
     auto t_filter = st.regs.get<Tensor>(op.filter());
 
-    auto t_res = t_input.conv(t_filter, strides, dilations);
+    auto t_res = t_input.conv(t_filter, strides, dilations, clayout);
     st.regs.add(op.getResult(0), move(t_res));
   } else {
-    if (!encodeMemWriteOp)
-      throw UnsupportedException(op.getOperation());
-
     auto input = st.regs.get<MemRef>(op.image());
     auto filter = st.regs.get<MemRef>(op.filter());
     auto output = st.regs.get<MemRef>(op.outputs()[0]);
@@ -977,10 +972,25 @@ encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op, bool encodeMemWriteOp) {
     if (!output.isIdentityMap())
       throw UnsupportedException(op.getOperation(),
           "The output MemRef should have identity layout.");
-
-    auto success = output.conv(input, filter, strides, dilations);
+    auto success = output.conv(input, filter, strides, dilations, clayout);
     st.wellDefined(op, move(success));
   }
+}
+
+template<> void
+encodeOp(State &st, mlir::linalg::Conv2DNchwFchwOp op, bool encodeMemWriteOp) {
+  if (!op.hasTensorSemantics() && !encodeMemWriteOp)
+    throw UnsupportedException(op.getOperation());
+
+  encodeConv(st, op, ShapedValue::ConvLayout::NCHW_FCHW);
+}
+
+template<> void
+encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op, bool encodeMemWriteOp) {
+  if (!op.hasTensorSemantics() && !encodeMemWriteOp)
+    throw UnsupportedException(op.getOperation());
+
+  encodeConv(st, op, ShapedValue::ConvLayout::NHWC_HWCF);
 }
 
 template<>
@@ -2218,6 +2228,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::memref::TensorLoadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::TensorStoreOp, encodeMemWriteOps);
 
+    ENCODE(st, op, mlir::linalg::Conv2DNchwFchwOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::Conv2DNhwcHwcfOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::CopyOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::DotOp, encodeMemWriteOps);
