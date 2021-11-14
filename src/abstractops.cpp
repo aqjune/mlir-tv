@@ -503,7 +503,7 @@ Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
   return getUltFn().apply({f1, f2});
 }
 
-Expr AbsFpEncoding::fext(const smt::Expr &f, const aop::AbsFpEncoding &tgt) {
+Expr AbsFpEncoding::extend(const smt::Expr &f, const aop::AbsFpEncoding &tgt) {
   usedOps.fpCastRound = true;
   
   if (tgt.value_bv_bits <= value_bv_bits) {
@@ -518,42 +518,6 @@ Expr AbsFpEncoding::fext(const smt::Expr &f, const aop::AbsFpEncoding &tgt) {
 
   auto extended_float = sign_type_bits.concat(limit_prec_bits).concat(value_bits);
   return extended_float;
-}
-
-Expr AbsFpEncoding::ftrunc(const smt::Expr &f, const aop::AbsFpEncoding &tgt) {
-  usedOps.fpCastRound = true;
-
-  if (tgt.value_bv_bits >= value_bv_bits) {
-    // try abstract TruncF if the encodings do not support rounding
-    return FnDecl(sort(), tgt.sort(), "fp_trunc_" + fn_suffix).apply(f);
-  }
-
-  auto sign_type_bits = f.extract(fp_bv_bits - 1, value_bv_bits);
-  unsigned limit_bit_lsb = value_bv_bits - limit_bv_bits;
-  auto limit_bits = f.extract(value_bv_bits - 1, limit_bit_lsb);
-  unsigned prec_bit_lsb = limit_bit_lsb - prec_bv_bits;
-  auto prec_bits = f.extract(limit_bit_lsb - 1, prec_bit_lsb);
-  auto lower_value_bits = f.extract(prec_bit_lsb - 1, 0);
-
-  auto trunc_result = sign_type_bits.concat(lower_value_bits);
-  if (smaller_fpty_enc->value_bv_bits > tgt.value_bv_bits) {
-    // if src cannot be truncated directly into tgt
-    trunc_result = smaller_fpty_enc->ftrunc(trunc_result, tgt);
-  } else if (smaller_fpty_enc->value_bv_bits < tgt.value_bv_bits) {
-    llvm_unreachable("TruncF tgt bitwidth larger than src bitwidth");
-  }
-
-  auto bv_true = Expr::mkBV(1, 1);
-  auto sign_bits = sign_type_bits.getMSB();
-
-  return Expr::mkIte(isnan(f), *tgt.fpconst_nan,              // override if NaN
-    Expr::mkIte(f == *fpconst_inf_pos, *tgt.fpconst_inf_pos,  // override if Inf
-      Expr::mkIte(f == *fpconst_inf_neg, *tgt.fpconst_inf_neg,
-        Expr::mkIte(limit_bits == bv_true,
-          // if f != Inf/NaN but the LIMIT bit is set, truncate into Inf
-          Expr::mkIte(sign_bits == bv_true, *tgt.fpconst_inf_neg, *tgt.fpconst_inf_pos),
-          // otherwise, use truncated result as is
-          trunc_result))));
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() const {

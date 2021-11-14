@@ -582,6 +582,7 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
   FPPrecision src_prec = getPrecision(operand_type);
 
   if (src_prec == tgt_prec) {
+    st.regs.add(op.getResult(), st.regs.get<Float>(op.getOperand()));
     return; // casting into identical type is a no-op
   } else if (src_prec > tgt_prec) {
     throw UnsupportedException(op.getOperation(),
@@ -589,26 +590,8 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
   }
 
   auto arg = op.getOperand();
-  encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.ext(op_type); }, {});
-}
-
-template<>
-void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
-  auto op_type = op.getType();
-  FPPrecision tgt_prec = getPrecision(op_type);
-
-  auto operand_type = op.getOperand().getType();
-  FPPrecision src_prec = getPrecision(operand_type);
-
-  if (src_prec == tgt_prec) {
-    return; // rounding identical type is a no-op
-  } else if (src_prec < tgt_prec) {
-    throw UnsupportedException(op.getOperation(),
-      "cannot TruncF into higher precision type!");
-  }
-
-  auto arg = op.getOperand();
-  encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.trunc(op_type); }, {});
+  encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.ext(op_type); },
+      {});
 }
 
 template<>

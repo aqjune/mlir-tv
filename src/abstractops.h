@@ -92,6 +92,7 @@ public:
   AbsFpEncoding(const llvm::fltSemantics &semantics, unsigned valuebits,
       std::string &&fn_suffix)
       : AbsFpEncoding(semantics, 0u, 0u, valuebits, nullptr, std::move(fn_suffix)) {}
+  // Use smaller_fpty_enc's value_bv_bits to calculate this type's value_bv_bits
   AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limitbits, unsigned precbits, AbsFpEncoding* smaller_fpty_enc,
       std::string &&fn_suffix)
@@ -135,8 +136,7 @@ public:
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
   smt::Expr fult(const smt::Expr &f1, const smt::Expr &f2);
-  smt::Expr fext(const smt::Expr &f, const aop::AbsFpEncoding &tgt);
-  smt::Expr ftrunc(const smt::Expr &f, const aop::AbsFpEncoding &tgt);
+  smt::Expr extend(const smt::Expr &f, const aop::AbsFpEncoding &tgt);
   smt::Expr getFpAssociativePrecondition() const;
 
 private:
