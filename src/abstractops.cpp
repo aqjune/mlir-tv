@@ -534,8 +534,6 @@ Expr AbsFpEncoding::ftrunc(const smt::Expr &f, const aop::AbsFpEncoding &tgt) {
   unsigned prec_bit_lsb = limit_bit_lsb - prec_bv_bits;
   auto prec_bits = f.extract(limit_bit_lsb - 1, prec_bit_lsb);
   auto lower_value_bits = f.extract(prec_bit_lsb - 1, 0);
-  llvm::outs() << "src limit bits: " << limit_bv_bits << ", src prec bits: " << prec_bv_bits << "\n";
-  llvm::outs() << "src value bits: " << value_bv_bits << ", tgt value bits: " << tgt.value_bv_bits << "\n";
 
   auto trunc_result = sign_type_bits.concat(lower_value_bits);
   if (next_hp_encoding->value_bv_bits > tgt.value_bv_bits) {
