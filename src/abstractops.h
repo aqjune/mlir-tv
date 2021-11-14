@@ -31,6 +31,7 @@ enum class AbsLevelIntDot {
 };
 
 // This resets the used abstract ops record.
+// floatBits: # of bits required to represent distinct *absolute* f32 values
 void setAbstraction(AbsLevelFpDot, AbsLevelIntDot, bool isFpAddAssociative,
                     unsigned floatBits, unsigned doubleBits);
 void setEncodingOptions(bool use_multiset);

@@ -10,6 +10,7 @@
 
 using namespace std;
 
+// Contains absolute values of constants.
 static set<llvm::APFloat> constF32Set;
 static set<llvm::APFloat> constF64Set;
 
@@ -17,25 +18,35 @@ static void analyzeAttr(const mlir::Attribute &a) {
   assert(!a.isa<mlir::ElementsAttr>());
 
   auto ty = a.getType();
-  if (ty.isa<mlir::FloatType>()) {
-    const auto val = a.dyn_cast<mlir::FloatAttr>().getValue();
-    auto val_f32 = val;
-    auto val_f64 = val;
-    bool is_rounded; // dummy
+  if (!ty.isa<mlir::FloatType>())
+    return;
 
-    if (ty.isF32()) {
-      val_f64.convert(llvm::APFloat::IEEEdouble(),
-                      llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
-    } else if (ty.isF64()) {
-      val_f32.convert(llvm::APFloat::IEEEsingle(),
-                      llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
-    } else {
-        throw UnsupportedException(ty, "Unsupported type");
-    }
+  const auto val = a.dyn_cast<mlir::FloatAttr>().getValue();
+  if (val.isNaN() || val.isInfinity())
+    // Already specially treated in vcgen.cpp.
+    return;
 
-    constF32Set.insert(val_f32);
-    constF64Set.insert(val_f64);
+  auto val_f32 = val;
+  auto val_f64 = val;
+  bool is_rounded; // dummy
+
+  if (ty.isF32()) {
+    val_f64.convert(llvm::APFloat::IEEEdouble(),
+                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+  } else if (ty.isF64()) {
+    val_f32.convert(llvm::APFloat::IEEEsingle(),
+                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+  } else {
+      throw UnsupportedException(ty, "Unsupported type");
   }
+
+  if (val_f32.isNegative())
+    val_f32.clearSign();
+  if (val_f64.isNegative())
+    val_f64.clearSign();
+
+  constF32Set.insert(val_f32);
+  constF64Set.insert(val_f64);
 }
 
 static void analyzeElemAttr(const mlir::ElementsAttr &attr) {

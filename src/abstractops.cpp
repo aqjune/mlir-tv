@@ -68,12 +68,6 @@ void setAbstraction(
   isFpAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
-  // Ignore the sign bit
-  if (floatBits > 1)
-    floatBits--;
-  if (doubleBits > 1)
-    doubleBits--;
-
   floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
   doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
 }

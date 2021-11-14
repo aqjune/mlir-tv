@@ -544,12 +544,13 @@ Results validate(
     auto tgt_res = analyze(tgtfn, false);
     auto tgt_f32_res = tgt_res.F32;
     auto tgt_f64_res = tgt_res.F64;
-    
+
+    // Calculate # of floating points whose absolute values are distinct.
     auto calculateTotalFpCounts = [](const auto& src_res, const auto& tgt_res) {
-      size_t total = 7 + // reserved for +-0.0, +-1.0, +-Inf, NaN
+      size_t total = 4 + // reserved for +0.0, +1.0, +Inf, +NaN
         src_res.fpArgCount + // # of variables in argument lists
         // # of constants needed
-        src_res.fpConstSet.size() * 2 + tgt_res.fpConstSet.size() * 2 +
+        src_res.fpConstSet.size() + tgt_res.fpConstSet.size() +
         // # of variables in virtual register
         src_res.fpVarCount + tgt_res.fpVarCount;
 
