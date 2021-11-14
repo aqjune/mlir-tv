@@ -326,7 +326,6 @@ public:
       const std::vector<smt::Expr> strides,
       const std::vector<smt::Expr> dilations);
 
-
   // Returns (cond ? trueValue : falseValue).
   // It is assumed that trueValue.layout is equivalent to falseValue.layout.
   // Also trueValue.dims == falseValue.dims is assumed, to be consistent with
