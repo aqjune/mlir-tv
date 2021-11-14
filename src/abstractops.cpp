@@ -112,13 +112,13 @@ AbsFpEncoding &getFpEncoding(mlir::Type ty) {
 
 AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limitbits, unsigned precbits, unsigned valuebits,
-      AbsFpEncoding* larger_fpty_enc, std::string &&fn_suffix)
+      AbsFpEncoding* smaller_fpty_enc, std::string &&fn_suffix)
      :semantics(semantics), fn_suffix(move(fn_suffix)) {
   assert(valuebits > 0);
   // BWs for casting
   limit_bv_bits = limitbits;
   prec_bv_bits = precbits;
-  this->larger_fpty_enc = larger_fpty_enc;
+  this->smaller_fpty_enc = smaller_fpty_enc;
 
   value_bv_bits = limitbits + precbits + valuebits;
   fp_bv_bits = SIGN_BITS + value_bv_bits;
@@ -536,10 +536,10 @@ Expr AbsFpEncoding::ftrunc(const smt::Expr &f, const aop::AbsFpEncoding &tgt) {
   auto lower_value_bits = f.extract(prec_bit_lsb - 1, 0);
 
   auto trunc_result = sign_type_bits.concat(lower_value_bits);
-  if (next_hp_encoding->value_bv_bits > tgt.value_bv_bits) {
+  if (smaller_fpty_enc->value_bv_bits > tgt.value_bv_bits) {
     // if src cannot be truncated directly into tgt
-    trunc_result = next_hp_encoding->ftrunc(trunc_result, tgt);
-  } else if (next_hp_encoding->value_bv_bits < tgt.value_bv_bits) {
+    trunc_result = smaller_fpty_enc->ftrunc(trunc_result, tgt);
+  } else if (smaller_fpty_enc->value_bv_bits < tgt.value_bv_bits) {
     llvm_unreachable("TruncF tgt bitwidth larger than src bitwidth");
   }
 

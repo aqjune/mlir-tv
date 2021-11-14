@@ -70,7 +70,7 @@ private:
   unsigned limit_bv_bits;
   unsigned prec_bv_bits;
 
-  AbsFpEncoding* larger_fpty_enc;
+  AbsFpEncoding* smaller_fpty_enc;
 
   std::vector<std::tuple<smt::Expr, smt::Expr, smt::Expr>> fp_sum_relations;
 
@@ -86,18 +86,18 @@ private:
 private:
   AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limitbits, unsigned precbits, unsigned valuebits,
-      AbsFpEncoding* larger_fpty_enc, std::string &&fn_suffix);
+      AbsFpEncoding* smaller_fpty_enc, std::string &&fn_suffix);
 
 public:
   AbsFpEncoding(const llvm::fltSemantics &semantics, unsigned valuebits,
       std::string &&fn_suffix)
       : AbsFpEncoding(semantics, 0u, 0u, valuebits, nullptr, std::move(fn_suffix)) {}
   AbsFpEncoding(const llvm::fltSemantics &semantics,
-      unsigned limitbits, unsigned precbits, AbsFpEncoding* larger_fpty_enc,
+      unsigned limitbits, unsigned precbits, AbsFpEncoding* smaller_fpty_enc,
       std::string &&fn_suffix)
       : AbsFpEncoding(semantics, limitbits, precbits,
-        larger_fpty_enc->value_bv_bits,
-        larger_fpty_enc, std::move(fn_suffix)) {}
+        smaller_fpty_enc->value_bv_bits,
+        smaller_fpty_enc, std::move(fn_suffix)) {}
 
   smt::Sort sort() const {
     return smt::Sort::bvSort(fp_bv_bits);
