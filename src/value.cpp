@@ -502,6 +502,7 @@ Tensor Tensor::conv(const Tensor &filter,
       Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
       outputDims.push_back(expr);
     }
+    break;
   }
   }
 

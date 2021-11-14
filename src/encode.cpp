@@ -878,7 +878,7 @@ void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
 
   if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
       !getElemTy(op.input2()).isa<mlir::IntegerType>())
-    throw UnsupportedException(op.getOperation(), "Unsupported element type"); 
+    throw UnsupportedException(op.getOperation(), "Unsupported element type");
   
   mlir::Value i1 = op.input1();
   mlir::Value i2 = op.input2();
@@ -961,7 +961,7 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
   if (op.hasTensorSemantics()) {
     auto t_input = st.regs.get<Tensor>(op.image());
     auto t_filter = st.regs.get<Tensor>(op.filter());
-                       
+
     auto t_res = t_input.conv(t_filter, strides, dilations, clayout);
     st.regs.add(op.getResult(0), move(t_res));
   } else {
