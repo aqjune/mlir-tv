@@ -29,6 +29,7 @@ public:
   Integer fult(const Float &b) const;
   Float abs() const;
   Float neg() const;
+  Float extend(const mlir::Type &tgt_type) const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Float &);
   // (refinement, {})

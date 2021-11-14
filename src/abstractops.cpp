@@ -19,6 +19,7 @@ aop::UsedAbstractOps usedOps;
 // ----- Constants and global vars for abstract floating point operations ------
 
 aop::AbsLevelFpDot alFpDot;
+aop::AbsLevelFpCast alFpCast;
 bool isFpAddAssociative;
 optional<aop::AbsFpEncoding> floatEnc;
 optional<aop::AbsFpEncoding> doubleEnc;
@@ -61,15 +62,29 @@ namespace aop {
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(
-    AbsLevelFpDot afd, AbsLevelIntDot aid, bool addAssoc,
+    AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, bool addAssoc,
     unsigned floatBits, unsigned doubleBits) {
   alFpDot = afd;
+  alFpCast = afc;
   alIntDot = aid;
   isFpAddAssociative = addAssoc;
-  memset(&usedOps, 0, sizeof(usedOps));
+
+  unsigned doubleLimitBits, doublePrecBits;
+  if (afc == AbsLevelFpCast::PRECISE) {
+    doubleLimitBits = 1;
+    if (doubleBits > floatBits + 2) {
+      doublePrecBits = doubleBits - floatBits - 1;
+    } else {
+      doublePrecBits = 1;
+    }
+  } else {
+    doubleLimitBits = 0;
+    doublePrecBits = 0;
+  }
 
   floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
-  doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
+  doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
+      doublePrecBits, &*floatEnc, "double");
 }
 
 // A set of options that must not change the precision of validation.
@@ -90,12 +105,17 @@ AbsFpEncoding &getFpEncoding(mlir::Type ty) {
   llvm_unreachable("Unknown type");
 }
 
-
 AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
-                             unsigned valuebits, string &&fn_suffix)
+      unsigned limitbits, unsigned precbits, unsigned valuebits,
+      AbsFpEncoding* smaller_fpty_enc, std::string &&fn_suffix)
      :semantics(semantics), fn_suffix(move(fn_suffix)) {
   assert(valuebits > 0);
-  value_bv_bits = valuebits;
+  // BWs for casting
+  limit_bv_bits = limitbits;
+  prec_bv_bits = precbits;
+  this->smaller_fpty_enc = smaller_fpty_enc;
+
+  value_bv_bits = limitbits + precbits + valuebits;
   fp_bv_bits = SIGN_BITS + value_bv_bits;
 
   // INF: s11..10 where s is a sign bit
@@ -166,6 +186,15 @@ FnDecl AbsFpEncoding::getUltFn() {
   return *fp_ultfn;
 }
 
+FnDecl AbsFpEncoding::getExtendFn() {
+  if (!fp_extendfn) {
+    // In the fully abstract world, double and float have same bitwidth.
+    auto fty = Sort::bvSort(fp_bv_bits);
+    fp_extendfn.emplace({fty}, fty, "fp_extract_" + fn_suffix);
+  }
+  return *fp_extendfn;
+}
+
 uint64_t AbsFpEncoding::getSignBit() const {
   assert(value_bv_bits + SIGN_BITS == fp_bv_bits);
   return 1ull << value_bv_bits;
@@ -206,7 +235,7 @@ Expr AbsFpEncoding::constant(const llvm::APFloat &f) {
   return f.isNegative() ? e_neg : e_pos;
 }
 
-std::vector<std::pair<llvm::APFloat, smt::Expr>> AbsFpEncoding::getAllConstants() const {
+vector<pair<llvm::APFloat, Expr>> AbsFpEncoding::getAllConstants() const {
   vector<pair<llvm::APFloat, smt::Expr>> constants;
   for (auto &[k, v]: fpconst_absrepr) constants.emplace_back(k, v);
 
@@ -476,6 +505,35 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
 Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
   usedOps.fpUlt = true;
   return getUltFn().apply({f1, f2});
+}
+
+Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
+  usedOps.fpCastRound = true;
+
+  if (value_bv_bits == tgt.value_bv_bits) {
+    // Fully abstract encoding 
+    return getExtendFn().apply(f);
+  }
+
+  assert(value_bv_bits < tgt.value_bv_bits &&
+         "tgt cannot have smaller value_bv_bits than src");
+
+  if (limit_bv_bits != 0 || prec_bv_bits != 0)
+    throw UnsupportedException("Casting from middle-size type to large-size "
+        "type is not supported");
+
+  auto sign_bit = f.extract(fp_bv_bits - 1, value_bv_bits);
+  auto limit_zero = Expr::mkBV(0, tgt.limit_bv_bits);
+  auto value_bits = f.extract(value_bv_bits - 1, 0);
+  auto prec_zero = Expr::mkBV(0, tgt.prec_bv_bits);
+
+  auto extended_float = sign_bit.concat(limit_zero).concat(value_bits)
+      .concat(prec_zero);
+  assert(extended_float.bitwidth() == tgt.sort().bitwidth());
+  return Expr::mkIte(isnan(f), tgt.nan(),
+      Expr::mkIte(f == infinity(), tgt.infinity(),
+      Expr::mkIte(f == infinity(true), tgt.infinity(true),
+      extended_float)));
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() const {

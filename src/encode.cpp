@@ -1,5 +1,6 @@
 #include "encode.h"
 #include "utils.h"
+#include "abstractops.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
@@ -551,6 +552,46 @@ void encodeOp(State &st, mlir::arith::ConstantOp op, bool) {
   } else {
     throw UnsupportedException(op.getOperation(), "Unsupported constant");
   }
+}
+
+enum class FPPrecision {
+  // F16,
+  F32,
+  F64
+};
+
+static FPPrecision getPrecision(mlir::Type &type) {
+  if (type.isF16()) {
+    // tgt_prec = FPPrecision::F16;
+    throw UnsupportedException(type, "F16 is not supported yet");
+  } else if (type.isF32()) {
+    return FPPrecision::F32;
+  } else if (type.isF64()) {
+    return FPPrecision::F64;
+  } else {
+    throw UnsupportedException(type, "unsupported FP type");
+  }
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
+  auto op_type = op.getType();
+  FPPrecision tgt_prec = getPrecision(op_type);
+
+  auto operand_type = op.getOperand().getType();
+  FPPrecision src_prec = getPrecision(operand_type);
+
+  if (src_prec == tgt_prec) {
+    st.regs.add(op.getResult(), st.regs.get<Float>(op.getOperand()));
+    return; // casting into identical type is a no-op
+  } else if (src_prec > tgt_prec) {
+    throw UnsupportedException(op.getOperation(),
+      "cannot ExtF into lower precision type!");
+  }
+
+  auto arg = op.getOperand();
+  encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.extend(op_type); },
+      {});
 }
 
 template<>
@@ -2159,6 +2200,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::ConstantIndexOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ConstantIntOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ConstantOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ExtFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::IndexCastOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulIOp, encodeMemWriteOps);

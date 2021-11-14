@@ -14,6 +14,7 @@ struct UsedAbstractOps {
   bool fpMul;
   bool fpSum;
   bool fpUlt;
+  bool fpCastRound;
   // Int ops
   bool intDot;
   bool intSum;
@@ -25,6 +26,11 @@ enum class AbsLevelFpDot {
   SUM_MUL   = 1, // FP Dot is a summation of pairwisely multiplied values
 };
 
+enum class AbsLevelFpCast {
+  FULLY_ABS = 0, // FP Cast is a fully unknown function
+  PRECISE   = 1, // FP Cast's semantics is precisely encoded
+};
+
 enum class AbsLevelIntDot {
   FULLY_ABS = 0, // Int Dot is a fully unknown function
   SUM_MUL   = 1, // Int Dot is a summation of pairwisely multiplied values
@@ -32,8 +38,9 @@ enum class AbsLevelIntDot {
 
 // This resets the used abstract ops record.
 // floatBits: # of bits required to represent distinct *absolute* f32 values
-void setAbstraction(AbsLevelFpDot, AbsLevelIntDot, bool isFpAddAssociative,
-                    unsigned floatBits, unsigned doubleBits);
+void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
+                    bool isFpAddAssociative, unsigned floatBits,
+                    unsigned doubleBits);
 void setEncodingOptions(bool use_multiset);
 
 bool getFpAddAssociativity();
@@ -65,6 +72,11 @@ private:
   // fp_bv_bits = SIGN_BITS + value_bv_bits
   unsigned fp_bv_bits;
   unsigned value_bv_bits;
+  // Bits for casting.
+  unsigned limit_bv_bits;
+  unsigned prec_bv_bits;
+
+  AbsFpEncoding* smaller_fpty_enc;
 
   std::vector<std::tuple<smt::Expr, smt::Expr, smt::Expr>> fp_sum_relations;
 
@@ -75,11 +87,25 @@ private:
   std::optional<smt::FnDecl> fp_addfn;
   std::optional<smt::FnDecl> fp_mulfn;
   std::optional<smt::FnDecl> fp_ultfn;
+  std::optional<smt::FnDecl> fp_extendfn;
   std::string fn_suffix;
+
+private:
+  AbsFpEncoding(const llvm::fltSemantics &semantics,
+      unsigned limitbits, unsigned precbits, unsigned valuebits,
+      AbsFpEncoding* smaller_fpty_enc, std::string &&fn_suffix);
 
 public:
   AbsFpEncoding(const llvm::fltSemantics &semantics, unsigned valuebits,
-      std::string &&fn_suffix);
+      std::string &&fn_suffix)
+      : AbsFpEncoding(semantics, 0u, 0u, valuebits, nullptr, std::move(fn_suffix)) {}
+  // Use smaller_fpty_enc's value_bv_bits to calculate this type's value_bv_bits
+  AbsFpEncoding(const llvm::fltSemantics &semantics,
+      unsigned limitbits, unsigned precbits, AbsFpEncoding* smaller_fpty_enc,
+      std::string &&fn_suffix)
+      : AbsFpEncoding(semantics, limitbits, precbits,
+        smaller_fpty_enc->value_bv_bits,
+        smaller_fpty_enc, std::move(fn_suffix)) {}
 
   smt::Sort sort() const {
     return smt::Sort::bvSort(fp_bv_bits);
@@ -97,6 +123,7 @@ private:
   smt::FnDecl getSumFn();
   smt::FnDecl getDotFn();
   smt::FnDecl getUltFn();
+  smt::FnDecl getExtendFn();
 
   uint64_t getSignBit() const;
 
@@ -117,6 +144,7 @@ public:
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
   smt::Expr fult(const smt::Expr &f1, const smt::Expr &f2);
+  smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr getFpAssociativePrecondition() const;
 
 private:
