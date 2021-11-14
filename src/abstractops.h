@@ -103,7 +103,7 @@ public:
     return smt::Sort::bvSort(fp_bv_bits);
   }
 
-private:    
+private:
   // Returns a fully abstract add fn fp_add(fty, fty) -> fty2
   // where fty is BV(fp_bv_bits) and fty2 is BV(fp_bv_bits - TYPE_BITS).
   // It is the user of this function that fills in TYPE_BITS.
