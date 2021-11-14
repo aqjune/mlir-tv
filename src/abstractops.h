@@ -60,13 +60,10 @@ private:
   uint64_t fpconst_absrepr_num = 0;
 
   const static unsigned SIGN_BITS = 1;
-  const static unsigned TYPE_BITS = 1;
-
-  unsigned value_bv_bits;
+  // The BV width of abstract fp encoding.
+  // fp_bv_bits = SIGN_BITS + value_bv_bits
   unsigned fp_bv_bits;
-  uint64_t inf_value;
-  uint64_t nan_value;
-  uint64_t signed_value;
+  unsigned value_bv_bits;
 
   std::vector<std::tuple<smt::Expr, smt::Expr, smt::Expr>> fp_sum_relations;
 
@@ -99,6 +96,8 @@ private:
   smt::FnDecl getSumFn();
   smt::FnDecl getDotFn();
   smt::FnDecl getUltFn();
+
+  uint64_t getSignBit() const;
 
 public:
   smt::Expr constant(const llvm::APFloat &f);

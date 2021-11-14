@@ -128,7 +128,7 @@ void analyzeOp(mlir::tosa::ConstOp op, bool isFullyAbstract) {
   analyzeElemAttr(eattr);
 }
 
-#define ANALYSIS(op, ty, isFullyAbstract) \
+#define ANALYZE(op, ty, isFullyAbstract) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
     analyzeOp(op2, isFullyAbstract); \
     continue; \
@@ -136,14 +136,15 @@ void analyzeOp(mlir::tosa::ConstOp op, bool isFullyAbstract) {
 
 template<class FT>
 static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
-  static_assert(is_base_of<mlir::FloatType, FT>::value, "FT must be mlir::FloatType");
+  static_assert(is_base_of<mlir::FloatType, FT>::value,
+      "FT must be mlir::FloatType");
   
   size_t fpVarCount = 0;
   for (auto &op: block) {
     // Analyze constant fp operations
-    ANALYSIS(op, mlir::arith::ConstantFloatOp, isFullyAbstract);
-    ANALYSIS(op, mlir::arith::ConstantOp, isFullyAbstract);
-    ANALYSIS(op, mlir::tosa::ConstOp, isFullyAbstract);
+    ANALYZE(op, mlir::arith::ConstantFloatOp, isFullyAbstract);
+    ANALYZE(op, mlir::arith::ConstantOp, isFullyAbstract);
+    ANALYZE(op, mlir::tosa::ConstOp, isFullyAbstract);
 
     for (const auto &result: op.getResults())
       fpVarCount += isFullyAbstract ? 1 : analyzeVariable<FT>(result);

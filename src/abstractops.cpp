@@ -68,6 +68,7 @@ void setAbstraction(
   isFpAddAssociative = addAssoc;
   memset(&usedOps, 0, sizeof(usedOps));
 
+  // Ignore the sign bit
   if (floatBits > 1)
     floatBits--;
   if (doubleBits > 1)
@@ -101,10 +102,13 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
      :semantics(semantics), fn_suffix(move(fn_suffix)) {
   assert(valuebits > 0);
   value_bv_bits = valuebits;
-  fp_bv_bits = SIGN_BITS + TYPE_BITS + value_bv_bits;
-  inf_value = 1ull << (uint64_t)value_bv_bits; // The type bit is set to 1
-  nan_value = inf_value + 1; // Type bit = 1 && Value bits != 0
-  signed_value = 1ull << (uint64_t)(TYPE_BITS + value_bv_bits);
+  fp_bv_bits = SIGN_BITS + value_bv_bits;
+
+  // INF: s11..10 where s is a sign bit
+  const uint64_t inf_value = (1ull << (uint64_t)value_bv_bits) - 2;
+  // NAN: s11..11 where s is a sign bit
+  const uint64_t nan_value = (1ull << (uint64_t)value_bv_bits) - 1;
+  const uint64_t signed_value = 1ull << (uint64_t)value_bv_bits;
 
   fpconst_nan = Expr::mkBV(nan_value, fp_bv_bits);
   fpconst_inf_pos = Expr::mkBV(inf_value, fp_bv_bits);
@@ -124,15 +128,14 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
 FnDecl AbsFpEncoding::getAddFn() {
   if (!fp_addfn) {
     auto fty = sort();
-    auto fty2 = Sort::bvSort(fp_bv_bits - SIGN_BITS);
-    fp_addfn.emplace({fty, fty}, fty2, "fp_add_" + fn_suffix);
+    fp_addfn.emplace({fty, fty}, fty, "fp_add_" + fn_suffix);
   }
   return *fp_addfn;
 }
 
 FnDecl AbsFpEncoding::getMulFn() {
   if (!fp_mulfn) {
-    auto fty = Sort::bvSort(fp_bv_bits - SIGN_BITS);
+    auto fty = Sort::bvSort(value_bv_bits);
     auto fty2 = Sort::bvSort(value_bv_bits);
     fp_mulfn.emplace({fty, fty}, fty2, "fp_mul_" + fn_suffix);
   }
@@ -169,6 +172,11 @@ FnDecl AbsFpEncoding::getUltFn() {
   return *fp_ultfn;
 }
 
+uint64_t AbsFpEncoding::getSignBit() const {
+  assert(value_bv_bits + SIGN_BITS == fp_bv_bits);
+  return 1ull << value_bv_bits;
+}
+
 Expr AbsFpEncoding::constant(const llvm::APFloat &f) {
   if (f.isNaN())
     return *fpconst_nan;
@@ -187,17 +195,18 @@ Expr AbsFpEncoding::constant(const llvm::APFloat &f) {
   uint64_t value_id;
   auto abs_f = f;
   abs_f.clearSign();
+  // value_id is 0: zero, 1: one, 2: others
   if (abs_f.compare(llvm::APFloat(semantics, 1)) == llvm::APFloat::cmpEqual) {
     value_id = 1;
   } else {
-    assert(static_cast<uint64_t>(2 + fpconst_absrepr_num) < inf_value);
+    assert(static_cast<uint64_t>(2 + fpconst_absrepr_num) <
+        (1ull << (uint64_t)value_bv_bits) - 2);
     value_id = 2 + fpconst_absrepr_num++;
   }
 
-  uint64_t bw = fp_bv_bits;
-  Expr e_pos = Expr::mkBV(value_id, bw);
+  Expr e_pos = Expr::mkBV(value_id, fp_bv_bits);
   fpconst_absrepr.emplace(abs_f, e_pos);
-  Expr e_neg = Expr::mkBV(signed_value | value_id, bw);
+  Expr e_neg = Expr::mkBV(getSignBit() | value_id, fp_bv_bits);
   fpconst_absrepr.emplace(-abs_f, e_neg);
 
   return f.isNegative() ? e_neg : e_pos;
@@ -265,13 +274,8 @@ Expr AbsFpEncoding::nan() {
 }
 
 Expr AbsFpEncoding::isnan(const Expr &f) {
-  const auto inf_value = infinity().extract(value_bv_bits - 1, 0);
-  const auto inf_type = infinity().extract(value_bv_bits, value_bv_bits);
-
-  const auto f_value = f.extract(value_bv_bits - 1, 0);
-  const auto f_type = f.extract(value_bv_bits, value_bv_bits);
-
-  return (f_value != inf_value) & (f_type == inf_type);
+  // Modulo the sign bit, there is only one NaN representation in abs encoding.
+  return f.extract(value_bv_bits - 1, 0) == nan().extract(value_bv_bits - 1, 0);
 }
 
 Expr AbsFpEncoding::abs(const Expr &f) {
@@ -298,8 +302,12 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
   const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
 
-  // Encode commutativity
+  // Encode commutativity without loss of generality
   auto fp_add_res = getAddFn().apply({f1, f2}) + getAddFn().apply({f2, f1});
+  // The result of addition cannot be NaN if inputs aren't.
+  // This NaN case is specially treated below.
+  // Simply redirect the result to zero.
+  fp_add_res = Expr::mkIte(isnan(fp_add_res), zero(), fp_add_res);
   auto fp_add_sign = fp_add_res.getMSB();
   auto fp_add_value = fp_add_res.extract(value_bv_bits - 1, 0);
 
@@ -317,11 +325,6 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
       Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg), f2,
     // If both operands do not fall into any of the cases above,
     // use fp_add for abstract representation.
-    // But fp_add only yields BV[SIGN_BITS + VALUE_BIT], so we must insert
-    // type bit(s) into the fp_add result.
-    // Fortunately we can just assume that type bit(s) is 0,
-    // because the result of fp_add is always some finite value
-    // as Infs and NaNs are already handled in the previous Ites.
     // 
     // There are two cases where we must override the sign bit of fp_add.
     // If signbit(f1) == 0 /\ signbit(f2) == 0, signbit(fpAdd(f1, f2)) = 0.
@@ -329,15 +332,15 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     // Otherwise, we can just use the arbitrary sign yielded from fp_add.
     Expr::mkIte(((f1.getMSB() == bv_false) & (f2.getMSB() == bv_false)),
       // pos + pos -> pos
-      bv_false.concat(fp_add_value.zext(TYPE_BITS)),
+      bv_false.concat(fp_add_value),
     Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
       // neg + neg -> neg
-      bv_true.concat(fp_add_value.zext(TYPE_BITS)),
+      bv_true.concat(fp_add_value),
     Expr::mkIte(f1.extract(value_bv_bits - 1, 0) ==
                 f2.extract(value_bv_bits - 1, 0),
       // x + -x -> 0.0
       zero(),
-      fp_add_sign.concat(fp_add_value.zext(TYPE_BITS))
+      fp_add_res
   ))))))))));
 }
 
@@ -347,7 +350,7 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   auto fp_zero_pos = zero();
   auto fp_zero_neg = zero(true);
   auto fp_id = one();
-  auto fp_neg = one(true);
+  auto fp_minusone = one(true);
   auto fp_inf_pos = infinity();
   auto fp_inf_neg = infinity(true);
   auto fp_nan = nan();
@@ -360,14 +363,25 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   const auto f1_nosign = f1.extract(fp_bv_bits - 2, 0);
   const auto f2_nosign = f2.extract(fp_bv_bits - 2, 0);
 
+  // Encode commutativity of mul.
+  // getMulFn()'s range is BV[VALUE_BITS] because it encodes absolute size of
+  // mul.
+  // We zero-extend 1 bit (SIGN-BIT) which is actually a dummy bit.
+  auto mul_abs_res = (getMulFn().apply({f1_nosign, f2_nosign}) +
+                  getMulFn().apply({f2_nosign, f1_nosign})).zext(1);
+  // Absolute size of mul cannot be NaN (Inf * 0.0 and NaN * x will be special-
+  // cased).
+  mul_abs_res = Expr::mkIte(isnan(mul_abs_res), fp_id, mul_abs_res);
+
+  // Calculate the absolute value of f1 * f2.
   // The sign bit(s) will be replaced in the next step,
   // so it is better to completely ignore the signs in this step.
   // (This is why there's so many | in the conditions...)
   // 
   // 1.0 * x -> x, -1.0 * x -> -x
-  auto fpmul_res = Expr::mkIte((f1 == fp_id) | (f1 == fp_neg), f2,
+  auto fpmul_res = Expr::mkIte((f1 == fp_id) | (f1 == fp_minusone), f2,
   // x * 1.0 -> x, x * -1.0 -> -x
-  Expr::mkIte((f2 == fp_id) | (f2 == fp_neg), f1,
+  Expr::mkIte((f2 == fp_id) | (f2 == fp_minusone), f1,
   // NaN * x -> NaN
   Expr::mkIte(f1 == fp_nan, f1,
   // x * NaN -> NaN
@@ -386,29 +400,15 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
     fp_zero_pos,
     // If both operands do not fall into any of the cases above,
     // use fp_mul for abstract representation.
-    // But fp_mul only yields BV[VALUE_BITS], so we must prepend
-    // sign bit(s) and type bit(s) at the fp_mul result.
-    // For type bit(s), we can just assume that they are 0,
-    // because the result of fp_mul is always some finite value
-    // as Infs and NaNs are already handled in the previous Ites.
-    // For sign bits, as written in the comment above,
-    // it is safe to use any value as they will be overwritten anyway.
-    // Now that we know using 0 for both SIGN_BITS and TYPE_BITS is fine,
-    // we can simply zext(2) the fp_mul
-    // to obtain BV[SIGN_BITS + TYPE_BITS + VALUE_BITS] we want!
-    //
-    // We want the result of fp_mul to be an abstract and pairwise commutative value.
-    // therefore we return fp_mul(f1, f2) + fp_mul(f2, f1)
-    (getMulFn().apply({f1_nosign, f2_nosign}) +
-     getMulFn().apply({f2_nosign, f1_nosign})).zext(2)
+    mul_abs_res
   )))))));
 
   // And at last we replace the sign with signbit(f1) ^ signbit(f2)
   // pos * pos | neg * neg -> pos, pos * neg | neg * pos -> neg
   return Expr::mkIte(fpmul_res == fp_nan, fp_nan,
     Expr::mkIte(f1.getMSB() == f2.getMSB(),
-      bv_false.concat(fpmul_res.extract(value_bv_bits, 0)),
-      bv_true.concat(fpmul_res.extract(value_bv_bits, 0))    
+      bv_false.concat(fpmul_res.extract(value_bv_bits - 1, 0)),
+      bv_true.concat(fpmul_res.extract(value_bv_bits - 1, 0))
   ));
 }
 
