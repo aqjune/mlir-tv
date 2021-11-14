@@ -402,6 +402,7 @@ static void checkIsSrcAlwaysUB(
   // be able to detect always-UB cases
   aop::setAbstraction(
       aop::AbsLevelFpDot::SUM_MUL,
+      aop::AbsLevelFpCast::PRECISE,
       aop::AbsLevelIntDot::SUM_MUL,
       vinput.isFpAddAssociative,
       vinput.floatBits,
@@ -449,6 +450,7 @@ static Results validate(ValidationInput vinput) {
   // We can turn it on in the next iteration.
   setAbstraction(
       AbsLevelFpDot::FULLY_ABS,
+      AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
       /*isFpAddAssociative*/false,
       /*fp bits*/vinput.floatBits,
@@ -482,11 +484,11 @@ static Results validate(ValidationInput vinput) {
   setAbstraction(
       (useSumMulForFpDot || fpAssocAdd) ?
           AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
+      fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
       fpAssocAdd,
       vinput.floatBits,
-      vinput.doubleBits,
-      true);
+      vinput.doubleBits);
   setEncodingOptions(vinput.useMultisetForFpSum);
 
   if (!vinput.dumpSMTPath.empty())

@@ -590,7 +590,7 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
   }
 
   auto arg = op.getOperand();
-  encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.ext(op_type); },
+  encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.extend(op_type); },
       {});
 }
 
@@ -2206,7 +2206,6 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::MulIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::NegFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::arith::TruncFOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
 

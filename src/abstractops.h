@@ -26,6 +26,11 @@ enum class AbsLevelFpDot {
   SUM_MUL   = 1, // FP Dot is a summation of pairwisely multiplied values
 };
 
+enum class AbsLevelFpCast {
+  FULLY_ABS = 0, // FP Cast is a fully unknown function
+  PRECISE   = 1, // FP Cast's semantics is precisely encoded
+};
+
 enum class AbsLevelIntDot {
   FULLY_ABS = 0, // Int Dot is a fully unknown function
   SUM_MUL   = 1, // Int Dot is a summation of pairwisely multiplied values
@@ -33,8 +38,9 @@ enum class AbsLevelIntDot {
 
 // This resets the used abstract ops record.
 // floatBits: # of bits required to represent distinct *absolute* f32 values
-void setAbstraction(AbsLevelFpDot, AbsLevelIntDot, bool isFpAddAssociative,
-                    unsigned floatBits, unsigned doubleBits, bool preserveUsedOpsInfo = false);
+void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
+                    bool isFpAddAssociative, unsigned floatBits,
+                    unsigned doubleBits);
 void setEncodingOptions(bool use_multiset);
 
 bool getFpAddAssociativity();
@@ -81,6 +87,7 @@ private:
   std::optional<smt::FnDecl> fp_addfn;
   std::optional<smt::FnDecl> fp_mulfn;
   std::optional<smt::FnDecl> fp_ultfn;
+  std::optional<smt::FnDecl> fp_extendfn;
   std::string fn_suffix;
 
 private:
@@ -116,6 +123,7 @@ private:
   smt::FnDecl getSumFn();
   smt::FnDecl getDotFn();
   smt::FnDecl getUltFn();
+  smt::FnDecl getExtendFn();
 
   uint64_t getSignBit() const;
 
@@ -136,7 +144,7 @@ public:
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
   smt::Expr fult(const smt::Expr &f1, const smt::Expr &f2);
-  smt::Expr extend(const smt::Expr &f, const aop::AbsFpEncoding &tgt);
+  smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr getFpAssociativePrecondition() const;
 
 private:

@@ -1,4 +1,6 @@
-// VERIFY
+// VERIFY-INCORRECT
+
+// TODO: to validate this, f32 3.0 and f64 -3.0 must be correlated.
 
 func @f() -> f64 {
   %a = arith.constant 3.0 : f32
