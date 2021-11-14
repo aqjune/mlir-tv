@@ -992,7 +992,7 @@ encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op, bool encodeMemWriteOp) {
   if (op.hasTensorSemantics()) {
     auto t_input = st.regs.get<Tensor>(op.image());
     auto t_filter = st.regs.get<Tensor>(op.filter());
-    
+
     auto t_res = t_input.conv(t_filter, strides, dilations);
     st.regs.add(op.getResult(0), move(t_res));
   } else {
