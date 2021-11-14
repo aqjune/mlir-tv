@@ -949,8 +949,8 @@ static void encodeParallelLoopBodyAndOutput(
       move(tensorSz), move(outputIndVars), yieldedExpr);
 }
 
-template<> void
-encodeOp(State &st, mlir::linalg::Conv2DNchwFchwOp op, bool encodeMemWriteOp) {
+template<class T>
+static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
   vector<Expr> strides, dilations;
   // TODO: The result may not fit in Index::BITS
   for (auto s: op.strides())
@@ -962,12 +962,9 @@ encodeOp(State &st, mlir::linalg::Conv2DNchwFchwOp op, bool encodeMemWriteOp) {
     auto t_input = st.regs.get<Tensor>(op.image());
     auto t_filter = st.regs.get<Tensor>(op.filter());
                        
-    auto t_res = t_input.conv2(t_filter, strides, dilations);
+    auto t_res = t_input.conv(t_filter, strides, dilations, clayout);
     st.regs.add(op.getResult(0), move(t_res));
   } else {
-    if (!encodeMemWriteOp)
-      throw UnsupportedException(op.getOperation());
-
     auto input = st.regs.get<MemRef>(op.image());
     auto filter = st.regs.get<MemRef>(op.filter());
     auto output = st.regs.get<MemRef>(op.outputs()[0]);
@@ -975,41 +972,25 @@ encodeOp(State &st, mlir::linalg::Conv2DNchwFchwOp op, bool encodeMemWriteOp) {
     if (!output.isIdentityMap())
       throw UnsupportedException(op.getOperation(),
           "The output MemRef should have identity layout.");
-    auto success = output.conv2(input, filter, strides, dilations);
+    auto success = output.conv(input, filter, strides, dilations, clayout);
     st.wellDefined(op, move(success));
   }
 }
 
 template<> void
+encodeOp(State &st, mlir::linalg::Conv2DNchwFchwOp op, bool encodeMemWriteOp) {
+  if (!op.hasTensorSemantics() && !encodeMemWriteOp)
+    throw UnsupportedException(op.getOperation());
+
+  encodeConv(st, op, ShapedValue::ConvLayout::NCHW_FCHW);
+}
+
+template<> void
 encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op, bool encodeMemWriteOp) {
-  vector<Expr> strides, dilations;
-  // TODO: The result may not fit in Index::BITS
-  for (auto s: op.strides())
-    strides.push_back(Index(s.getSExtValue()));
-  for (auto d: op.dilations())
-    dilations.push_back(Index(d.getSExtValue()));
+  if (!op.hasTensorSemantics() && !encodeMemWriteOp)
+    throw UnsupportedException(op.getOperation());
 
-  if (op.hasTensorSemantics()) {
-    auto t_input = st.regs.get<Tensor>(op.image());
-    auto t_filter = st.regs.get<Tensor>(op.filter());
-
-    auto t_res = t_input.conv(t_filter, strides, dilations);
-    st.regs.add(op.getResult(0), move(t_res));
-  } else {
-    if (!encodeMemWriteOp)
-      throw UnsupportedException(op.getOperation());
-
-    auto input = st.regs.get<MemRef>(op.image());
-    auto filter = st.regs.get<MemRef>(op.filter());
-    auto output = st.regs.get<MemRef>(op.outputs()[0]);
-
-    if (!output.isIdentityMap())
-      throw UnsupportedException(op.getOperation(),
-          "The output MemRef should have identity layout.");
-
-    auto success = output.conv(input, filter, strides, dilations);
-    st.wellDefined(op, move(success));
-  }
+  encodeConv(st, op, ShapedValue::ConvLayout::NHWC_HWCF);
 }
 
 template<>

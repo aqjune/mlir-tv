@@ -77,15 +77,17 @@ public:
   Index getDim(uint64_t idx) const { return Index(getDims()[idx]); }
   smt::Expr get1DSize() const { return smt::get1DSize(getDims()); }
 
-  // Linalg convoluion operation
-  // (indices, expr)
+  enum class ConvLayout {
+    NHWC_HWCF, // image: nhwc, filter: hwcf, output: nhwf
+    NCHW_FCHW  // image: nchw, filter: fchw, output: nfhw
+  };
+
+  // Linalg convolution operation
+  // returns: (indices, expr)
   std::pair<std::vector<smt::Expr>, smt::Expr> conv(const ShapedValue &filter,
       const std::vector<smt::Expr> &strides,
-      const std::vector<smt::Expr> &dilations) const;
-
-  std::pair<std::vector<smt::Expr>, smt::Expr> conv2(const ShapedValue &filter,
-      const std::vector<smt::Expr> &strides,
-      const std::vector<smt::Expr> &dilations) const;
+      const std::vector<smt::Expr> &dilations,
+      ConvLayout layout) const;
 };
 
 class Tensor: public ShapedValue {
@@ -147,12 +149,9 @@ public:
 
   // Return a new tensor which is convolution of this tensor and filter.
   Tensor conv(const Tensor &filter,
-      const std::vector<smt::Expr> strides,
-      const std::vector<smt::Expr> dilations) const;
-
-  Tensor conv2(const Tensor &filter,
-      const std::vector<smt::Expr> strides,
-      const std::vector<smt::Expr> dilations) const;
+      const std::vector<smt::Expr> &strides,
+      const std::vector<smt::Expr> &dilations,
+      ConvLayout layout) const;
 
   Tensor reshape(const std::vector<smt::Expr> &ns2) const;
 
@@ -318,13 +317,9 @@ public:
   // Store results which is convolution of input, filter and return wellDefined.
   smt::Expr conv(const MemRef &input,
       const MemRef &filter,
-      const std::vector<smt::Expr> strides,
-      const std::vector<smt::Expr> dilations);
-
-  smt::Expr conv2(const MemRef &input,
-      const MemRef &filter,
-      const std::vector<smt::Expr> strides,
-      const std::vector<smt::Expr> dilations);
+      const std::vector<smt::Expr> &strides,
+      const std::vector<smt::Expr> &dilations,
+      ConvLayout convLayout);
 
   // Returns (cond ? trueValue : falseValue).
   // It is assumed that trueValue.layout is equivalent to falseValue.layout.

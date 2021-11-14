@@ -239,82 +239,77 @@ Integer Integer::eval(Model m) const {
 std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(
     const ShapedValue &filter,
     const vector<Expr> &strides,
-    const vector<Expr> &dilations) const {
-  // input: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
-  // filter: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel x Output_channel
-  // output: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Output_channel
+    const vector<Expr> &dilations,
+    ConvLayout convLayout) const {
+  // 1. NHWC_HWCF:
+  //   input: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
+  //   filter: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel x Output_channel
+  //   output: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Output_channel
+  // 2. NCHW_FCHW:
+  //   input: Batch_size x Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
+  //   filter: Output_channel x Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
+  //   output: Batch_size x Output_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
   assert(getDims().size() == filter.getDims().size());
   assert(getDims().size() > 2);
   auto dim = getDims().size() - 2;
 
-  // outputIdxs: Batch, Dim_0, Dim_1, ... Dim_{n-1}, Output_channel
   vector<Expr> outputIdxs;
   for (unsigned i = 0; i < getDims().size(); i ++)
     outputIdxs.push_back(Index::var("i" + to_string(i), VarType::BOUND));
 
-  // cubeSize = Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
+  // cubeSize = 
+  // 1. NHWC_HWCF: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
+  // 2. NCHW_FCHW: Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
   vector<Expr> cubeSize;
-  for (unsigned i = 0; i < dim; i ++)
-    cubeSize.push_back(filter.getDim(i));
-  cubeSize.push_back(filter.getDim(dim));
+  switch (convLayout) {
+  case ConvLayout::NHWC_HWCF: {
+    for (unsigned i = 0; i < dim; i++)
+      cubeSize.push_back(filter.getDim(i));
+    cubeSize.push_back(filter.getDim(dim));
+    break;
+  }
+  case ConvLayout::NCHW_FCHW: {
+    cubeSize.push_back(filter.getDim(1));
+    for (unsigned i = 0; i < dim; i++)
+      cubeSize.push_back(filter.getDim(i + 2));
+    break;
+  }
+  }
   auto cubeIdx = Index::var("cubeIdx", VarType::BOUND);
   auto cubeIdxs = from1DIdx(cubeIdx, cubeSize);
 
   vector<Expr> filterIdxs;
-  // filterIdxs: Dim_0, Dim_1, ... Dim_{n-1}, Input_channel, Output_channel
-  for (auto idx: cubeIdxs) filterIdxs.push_back(idx);
-  filterIdxs.push_back(outputIdxs.back());
-
   vector<Expr> inputIdxs;
-  // inputIdxs: Batch, Dim_0, Dim_1, ... Dim_{n-1}, Input_channel
-  inputIdxs.push_back(outputIdxs.front());
-  for (unsigned i = 0; i < dim; i ++)
-    inputIdxs.push_back(outputIdxs[i + 1] * strides[i] + cubeIdxs[i] * dilations[i]);
-  inputIdxs.push_back(cubeIdxs.back()); // Input_channel
+  switch (convLayout) {
+  case ConvLayout::NHWC_HWCF: {
+    // filterIdxs: Dim_0, Dim_1, ... Dim_{n-1}, Input_channel, Output_channel
+    for (auto idx: cubeIdxs) filterIdxs.push_back(idx);
+    filterIdxs.push_back(outputIdxs.back());
 
-  Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
-  Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
-  Expr outputExpr = aop::getFpEncoding(elemType).dot(
-      inputExpr, filterExpr, ::get1DSize(cubeSize));
+    // inputIdxs: Batch, Dim_0, Dim_1, ... Dim_{n-1}, Input_channel
+    inputIdxs.push_back(outputIdxs.front());
+    for (unsigned i = 0; i < dim; i ++)
+      inputIdxs.push_back(outputIdxs[i + 1] * strides[i] +
+          cubeIdxs[i] * dilations[i]);
+    inputIdxs.push_back(cubeIdxs.back()); // Input_channel
 
-  return {move(outputIdxs), move(outputExpr)};
-}
+    break;
+  }
+  case ConvLayout::NCHW_FCHW: {
+    // filterIdxs: Output_channel, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
+    filterIdxs.push_back(outputIdxs[1]);
+    for (auto idx: cubeIdxs) filterIdxs.push_back(idx);
 
-std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv2(
-    const ShapedValue &filter,
-    const vector<Expr> &strides,
-    const vector<Expr> &dilations) const {
-  // input: Batch_size x Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
-  // filter: Output_channel x Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
-  // output: Batch_size x Output_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
-  assert(getDims().size() == filter.getDims().size());
-  assert(getDims().size() > 2);
-  auto dim = getDims().size() - 2;
+    // inputIdxs: Batch, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
+    inputIdxs.push_back(outputIdxs.front());
+    inputIdxs.push_back(cubeIdxs.front()); // Input_channel
+    for (unsigned i = 0; i < dim; i ++)
+      inputIdxs.push_back(outputIdxs[i + 2] * strides[i] +
+          cubeIdxs[i + 1] * dilations[i]);
 
-  // outputIdxs: Batch, Output_channel, Dim_0, Dim_1, ... Dim_{n-1}
-  vector<Expr> outputIdxs;
-  for (unsigned i = 0; i < getDims().size(); i ++)
-    outputIdxs.push_back(Index::var("i" + to_string(i), VarType::BOUND));
-
-  // cubeSize =  Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
-  vector<Expr> cubeSize;
-  cubeSize.push_back(filter.getDim(1));
-  for (unsigned i = 0; i < dim; i ++)
-    cubeSize.push_back(filter.getDim(i + 2));
-  auto cubeIdx = Index::var("cubeIdx", VarType::BOUND);
-  auto cubeIdxs = from1DIdx(cubeIdx, cubeSize);
-
-  vector<Expr> filterIdxs;
-  // filterIdxs: Output_channel, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
-  filterIdxs.push_back(outputIdxs[1]);
-  for (auto idx: cubeIdxs) filterIdxs.push_back(idx);
-
-  vector<Expr> inputIdxs;
-  // inputIdxs: Batch, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
-  inputIdxs.push_back(outputIdxs.front());
-  inputIdxs.push_back(cubeIdxs.front()); // Input_channel
-  for (unsigned i = 0; i < dim; i ++)
-    inputIdxs.push_back(outputIdxs[i + 2] * strides[i] + cubeIdxs[i + 1] * dilations[i]);
+    break;
+  }
+  }
 
   Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
   Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
@@ -460,8 +455,10 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
 }
 
 Tensor Tensor::conv(const Tensor &filter,
-    const vector<Expr> strides,
-    const vector<Expr> dilations) const {
+    const vector<Expr> &strides,
+    const vector<Expr> &dilations,
+    ConvLayout layout) const {
+  // If layout is NHWC_HWCF:
   // output[b, x[0], ..., x[N-1], k] =
   //     sum_{z[0], ..., z[N-1], q}
   //         filter[z[0], ..., z[N-1], q, k] *
@@ -470,42 +467,45 @@ Tensor Tensor::conv(const Tensor &filter,
   //                      ...,
   //                      x[N-1]*strides[N-1] + dilation_rate[N-1]*z[N-1],
   //                      q]
-  // So we can calculate output dims bounds as follow. (Assuming zero based index)
+  // So we can calculate output dims bounds as follow. (Assuming zero based
+  // index)
   // x[0]*strides[0] + dilation_rate[0]*z[0] < Original_Dim
   // x[0]*strides[0] + dilation_rate[0] * Filter_Dim - 1 < Original_Dim
   // x[0] < (Original_Dim + 1 - diltaion_rate[0] * Filter_Dim) / strides[0]
   // x[0] < ceil((Original_Dim + 1 - diltaion_rate[0] * Filter_Dim) / strides[0])
-  // x[0] < (Original_Dim + 1 - diltaion_rate[0] * Filter_Dim + (strides[0] - 1)).udiv(strides[0])
-  // x[0] < (Original_Dim - diltaion_rate[0] * Filter_Dim + strides[0]).udiv(strides[0])
-  // Output Dim = (Original_Dim - diltaion_rate[0] * Filter_Dim + strides[0]).udiv(strides[0])
+  // x[0] < (Original_Dim + 1 - diltaion_rate[0] * Filter_Dim +
+  //    (strides[0] - 1)).udiv(strides[0])
+  // x[0] < (Original_Dim - diltaion_rate[0] * Filter_Dim + strides[0])
+  //    .udiv(strides[0])
+  // Output Dim = (Original_Dim - diltaion_rate[0] * Filter_Dim +
+  //    strides[0]).udiv(strides[0])
   vector<Expr> outputDims;
-  outputDims.push_back(getDim(0)); // Input Batch Size
-  for (unsigned i = 0; i < getDims().size() - 2; i ++) {
-    Expr originalSize = getDim(i + 1);
-    Expr filterSize = dilations[i] * filter.getDim(i);
-    Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
-    outputDims.push_back(expr);
+
+  switch (layout) {
+  case ConvLayout::NHWC_HWCF: {
+    outputDims.push_back(getDim(0)); // Input Batch Size
+    for (unsigned i = 0; i < getDims().size() - 2; i ++) {
+      Expr originalSize = getDim(i + 1);
+      Expr filterSize = dilations[i] * filter.getDim(i);
+      Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
+      outputDims.push_back(expr);
+    }
+    outputDims.push_back(filter.getDims().back()); // Output Channel
+    break;
   }
-  outputDims.push_back(filter.getDims().back()); // Output Channel
-
-  auto [indices, res] = ShapedValue::conv(filter, strides, dilations);
-  return Tensor::mkLambda(elemType, move(outputDims), move(indices), move(res));
-}
-
-Tensor Tensor::conv2(const Tensor &filter,
-    const vector<Expr> strides,
-    const vector<Expr> dilations) const {
-  vector<Expr> outputDims;
-  outputDims.push_back(getDim(0)); // Input Batch Size
-  outputDims.push_back(filter.getDim(0)); // Output Channel
-  for (unsigned i = 0; i < getDims().size() - 2; i++) {
-    Expr originalSize = getDim(i + 2);
-    Expr filterSize = dilations[i] * filter.getDim(i + 2);
-    Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
-    outputDims.push_back(expr);
+  case ConvLayout::NCHW_FCHW: {
+    outputDims.push_back(getDim(0)); // Input Batch Size
+    outputDims.push_back(filter.getDim(0)); // Output Channel
+    for (unsigned i = 0; i < getDims().size() - 2; i++) {
+      Expr originalSize = getDim(i + 2);
+      Expr filterSize = dilations[i] * filter.getDim(i + 2);
+      Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
+      outputDims.push_back(expr);
+    }
+  }
   }
 
-  auto [indices, res] = ShapedValue::conv2(filter, strides, dilations);
+  auto [indices, res] = ShapedValue::conv(filter, strides, dilations, layout);
   return Tensor::mkLambda(elemType, move(outputDims), move(indices), move(res));
 }
 
@@ -995,28 +995,11 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
 
 Expr MemRef::conv(const MemRef &input,
     const MemRef &filter,
-    const std::vector<smt::Expr> strides,
-    const std::vector<smt::Expr> dilations) {
-  auto [indices, expr] = input.ShapedValue::conv(filter, strides, dilations);
-
-  // we splat results into 1D memory layout
-  auto idx = Index::var("outputIdx", VarType::BOUND);
-  auto outputIndices = layout.getInverseIndices(idx);
-  auto outputExpr = expr.substitute(indices, outputIndices);
-  auto outputArray = Expr::mkLambda(idx, outputExpr);
-
-  // store output memref
-  auto success = isInBounds() & input.isInBounds() & filter.isInBounds() &
-    noalias(input) & noalias(filter) & storeArray(outputArray, Index::zero(), get1DSize());
-
-  return success;
-}
-
-Expr MemRef::conv2(const MemRef &input,
-    const MemRef &filter,
-    const std::vector<smt::Expr> strides,
-    const std::vector<smt::Expr> dilations) {
-  auto [indices, expr] = input.ShapedValue::conv2(filter, strides, dilations);
+    const std::vector<smt::Expr> &strides,
+    const std::vector<smt::Expr> &dilations,
+    ConvLayout clayout) {
+  auto [indices, expr] = input.ShapedValue::conv(filter, strides, dilations,
+      clayout);
 
   // we splat results into 1D memory layout
   auto idx = Index::var("outputIdx", VarType::BOUND);
