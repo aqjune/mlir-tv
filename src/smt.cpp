@@ -528,8 +528,8 @@ Expr Expr::insert(const Expr &elem) const {
     return z3::store(arrayz3, idx, z3::select(arrayz3, idx) + 1);
   }));
   SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
-    auto newBag = solver.mkTerm(cvc5::api::MK_BAG, *elem.cvc5, solver.mkInteger(1));
-    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *cvc5, newBag);
+    auto newBag = solver.mkTerm(cvc5::api::BAG_MAKE, *elem.cvc5, solver.mkInteger(1));
+    return solver.mkTerm(cvc5::api::BAG_UNION_DISJOINT, *cvc5, newBag);
   }));
   return e;
 }
