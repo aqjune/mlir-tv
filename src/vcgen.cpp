@@ -541,11 +541,16 @@ Results validate(
     // TODO: check fn signature
     auto tgtfn = itr->second;
 
-    auto src_res = analyze(srcfn, false);
+    AnalysisResult src_res, tgt_res;
+    try {
+      src_res = analyze(srcfn, false);
+      tgt_res = analyze(tgtfn, false);
+    } catch (UnsupportedException ue) {
+      raiseUnsupported(ue);
+    }
     auto src_f32_res = src_res.F32;
     auto src_f64_res = src_res.F64;
 
-    auto tgt_res = analyze(tgtfn, false);
     auto tgt_f32_res = tgt_res.F32;
     auto tgt_f64_res = tgt_res.F64;
 
