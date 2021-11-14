@@ -961,16 +961,6 @@ encodeOp(State &st, mlir::linalg::Conv2DNchwFchwOp op, bool encodeMemWriteOp) {
   if (op.hasTensorSemantics()) {
     auto t_input = st.regs.get<Tensor>(op.image());
     auto t_filter = st.regs.get<Tensor>(op.filter());
-    // auto inIdxs = Index::boundIndexVars(i_src.getRank());
-    // auto fIdxs = Index::boundIndexVars(f_src.getRank());
-    // vector<Expr> i_srcd = i_src.getDims();
-    // vector<Expr> f_srcd = f_src.getDims();
-    // vector<Expr> i_dims, f_dims;
-    // i_dims.push_back(i_srcd[0]);i_dims.push_back(i_srcd[]);
-    // auto t_input = Tensor::mkLambda(i_src.getElemType(), move(i_dims), move(inIdxs),
-    //                    i_src.get(outIdxs).first);
-    // auto t_filter = Tensor::mkLambda(f_src.getElemType(), move(f_dims), move(fIdxs),
-    //                    f_src.get(outIdxs).first);
                        
     auto t_res = t_input.conv2(t_filter, strides, dilations);
     st.regs.add(op.getResult(0), move(t_res));
