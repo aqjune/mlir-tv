@@ -1176,6 +1176,15 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
 
   newst.linalgGenericScopes.pop();
 
+  // If pad_tensor's output dimension sizes are known, the padding sizes must
+  // match
+  if (retty.hasStaticShape()) {
+    for (unsigned i = 0; i < retty.getRank(); ++i) {
+      st.wellDefined(op.getOperation(),
+          t_res->getDim(i) == retty.getDimSize(i));
+    }
+  }
+
   st.regs.add(op.getResult(), move(*t_res));
   st.wellDefined(op.getOperation(), move(welldef));
 }
