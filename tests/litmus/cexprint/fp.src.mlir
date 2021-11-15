@@ -1,4 +1,4 @@
-// EXPECT: "Tgt: 2.000000e+00"
+// EXPECT: "Tgt: 2"
 
 func @f() -> (f32, f32) {
   %c0 = arith.constant 0.0: f32
