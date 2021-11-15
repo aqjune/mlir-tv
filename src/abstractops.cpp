@@ -106,29 +106,28 @@ AbsFpEncoding &getFpEncoding(mlir::Type ty) {
 }
 
 AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
-      unsigned limitbits, unsigned precbits, unsigned valuebits,
+      unsigned limit_bw, unsigned smaller_value_bw, unsigned prec_bw,
       AbsFpEncoding* smaller_fpty_enc, std::string &&fn_suffix)
      :semantics(semantics), fn_suffix(move(fn_suffix)) {
-  assert(valuebits > 0);
+  assert(smaller_value_bw > 0);
   // BWs for casting
-  limit_bv_bits = limitbits;
-  prec_bv_bits = precbits;
+  value_bit_info = { limit_bw, smaller_value_bw, prec_bw };
+  value_bitwidth = value_bit_info.get_value_bitwidth();
   this->smaller_fpty_enc = smaller_fpty_enc;
 
-  value_bv_bits = limitbits + precbits + valuebits;
-  fp_bv_bits = SIGN_BITS + value_bv_bits;
+  fp_bitwidth = SIGN_BITS + value_bitwidth;
 
   // INF: s11..10 where s is a sign bit
-  const uint64_t inf_value = (1ull << (uint64_t)value_bv_bits) - 2;
+  const uint64_t inf_value = (1ull << (uint64_t)value_bitwidth) - 2;
   // NAN: s11..11 where s is a sign bit
-  const uint64_t nan_value = (1ull << (uint64_t)value_bv_bits) - 1;
-  const uint64_t signed_value = 1ull << (uint64_t)value_bv_bits;
+  const uint64_t nan_value = (1ull << (uint64_t)value_bitwidth) - 1;
+  const uint64_t signed_value = 1ull << (uint64_t)value_bitwidth;
 
-  fpconst_nan = Expr::mkBV(nan_value, fp_bv_bits);
-  fpconst_inf_pos = Expr::mkBV(inf_value, fp_bv_bits);
-  fpconst_inf_neg = Expr::mkBV(signed_value + inf_value, fp_bv_bits);
-  fpconst_zero_pos = Expr::mkBV(0, fp_bv_bits);
-  fpconst_zero_neg = Expr::mkBV(signed_value + 0, fp_bv_bits);
+  fpconst_nan = Expr::mkBV(nan_value, fp_bitwidth);
+  fpconst_inf_pos = Expr::mkBV(inf_value, fp_bitwidth);
+  fpconst_inf_neg = Expr::mkBV(signed_value + inf_value, fp_bitwidth);
+  fpconst_zero_pos = Expr::mkBV(0, fp_bitwidth);
+  fpconst_zero_neg = Expr::mkBV(signed_value + 0, fp_bitwidth);
 
   fp_sumfn.reset();
   fp_assoc_sumfn.reset();
@@ -149,8 +148,8 @@ FnDecl AbsFpEncoding::getAddFn() {
 
 FnDecl AbsFpEncoding::getMulFn() {
   if (!fp_mulfn) {
-    auto fty = Sort::bvSort(value_bv_bits);
-    auto fty2 = Sort::bvSort(value_bv_bits);
+    auto fty = Sort::bvSort(value_bitwidth);
+    auto fty2 = Sort::bvSort(value_bitwidth);
     fp_mulfn.emplace({fty, fty}, fty2, "fp_mul_" + fn_suffix);
   }
   return *fp_mulfn;
@@ -179,7 +178,7 @@ FnDecl AbsFpEncoding::getDotFn() {
 
 FnDecl AbsFpEncoding::getUltFn() {
   if (!fp_ultfn) {
-    auto fty = Sort::bvSort(fp_bv_bits);
+    auto fty = Sort::bvSort(fp_bitwidth);
     auto fty2 = Sort::bvSort(1); // i1 type (boolean value)
     fp_ultfn.emplace({fty, fty}, fty2, "fp_ult_" + fn_suffix);
   }
@@ -189,15 +188,15 @@ FnDecl AbsFpEncoding::getUltFn() {
 FnDecl AbsFpEncoding::getExtendFn() {
   if (!fp_extendfn) {
     // In the fully abstract world, double and float have same bitwidth.
-    auto fty = Sort::bvSort(fp_bv_bits);
+    auto fty = Sort::bvSort(fp_bitwidth);
     fp_extendfn.emplace({fty}, fty, "fp_extract_" + fn_suffix);
   }
   return *fp_extendfn;
 }
 
 uint64_t AbsFpEncoding::getSignBit() const {
-  assert(value_bv_bits + SIGN_BITS == fp_bv_bits);
-  return 1ull << value_bv_bits;
+  assert(value_bitwidth + SIGN_BITS == fp_bitwidth);
+  return 1ull << value_bitwidth;
 }
 
 Expr AbsFpEncoding::constant(const llvm::APFloat &f) {
@@ -223,13 +222,13 @@ Expr AbsFpEncoding::constant(const llvm::APFloat &f) {
     value_id = 1;
   } else {
     assert(static_cast<uint64_t>(2 + fpconst_absrepr_num) <
-        (1ull << (uint64_t)value_bv_bits) - 2);
+        (1ull << (uint64_t)value_bitwidth) - 2);
     value_id = 2 + fpconst_absrepr_num++;
   }
 
-  Expr e_pos = Expr::mkBV(value_id, fp_bv_bits);
+  Expr e_pos = Expr::mkBV(value_id, fp_bitwidth);
   fpconst_absrepr.emplace(abs_f, e_pos);
-  Expr e_neg = Expr::mkBV(getSignBit() | value_id, fp_bv_bits);
+  Expr e_neg = Expr::mkBV(getSignBit() | value_id, fp_bitwidth);
   fpconst_absrepr.emplace(-abs_f, e_neg);
 
   return f.isNegative() ? e_neg : e_pos;
@@ -298,17 +297,17 @@ Expr AbsFpEncoding::nan() {
 
 Expr AbsFpEncoding::isnan(const Expr &f) {
   // Modulo the sign bit, there is only one NaN representation in abs encoding.
-  return f.extract(value_bv_bits - 1, 0) == nan().extract(value_bv_bits - 1, 0);
+  return f.extract(value_bitwidth - 1, 0) == nan().extract(value_bitwidth - 1, 0);
 }
 
 Expr AbsFpEncoding::abs(const Expr &f) {
-  return Expr::mkBV(0, 1).concat(f.extract(fp_bv_bits - 2, 0));
+  return Expr::mkBV(0, 1).concat(f.extract(fp_bitwidth - 2, 0));
 }
 
 Expr AbsFpEncoding::neg(const Expr &f) {
-  auto sign = f.extract(fp_bv_bits - 1, fp_bv_bits - 1);
+  auto sign = f.extract(fp_bitwidth - 1, fp_bitwidth - 1);
   auto sign_negated = sign ^ 1;
-  return sign_negated.concat(f.extract(fp_bv_bits - 2, 0));
+  return sign_negated.concat(f.extract(fp_bitwidth - 2, 0));
 }
 
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
@@ -332,7 +331,7 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   // Simply redirect the result to zero.
   fp_add_res = Expr::mkIte(isnan(fp_add_res), zero(), fp_add_res);
   auto fp_add_sign = fp_add_res.getMSB();
-  auto fp_add_value = fp_add_res.extract(value_bv_bits - 1, 0);
+  auto fp_add_value = fp_add_res.extract(value_bitwidth - 1, 0);
 
   return Expr::mkIte(f1 == fp_id, f2,         // -0.0 + x -> x
     Expr::mkIte(f2 == fp_id, f1,              // x + -0.0 -> x
@@ -359,8 +358,8 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
       // neg + neg -> neg
       bv_true.concat(fp_add_value),
-    Expr::mkIte(f1.extract(value_bv_bits - 1, 0) ==
-                f2.extract(value_bv_bits - 1, 0),
+    Expr::mkIte(f1.extract(value_bitwidth - 1, 0) ==
+                f2.extract(value_bitwidth - 1, 0),
       // x + -x -> 0.0
       zero(),
       fp_add_res
@@ -383,8 +382,8 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   // Handle non-canonical NaNs
   const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
   const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
-  const auto f1_nosign = f1.extract(fp_bv_bits - 2, 0);
-  const auto f2_nosign = f2.extract(fp_bv_bits - 2, 0);
+  const auto f1_nosign = f1.extract(fp_bitwidth - 2, 0);
+  const auto f2_nosign = f2.extract(fp_bitwidth - 2, 0);
 
   // Encode commutativity of mul.
   // getMulFn()'s range is BV[VALUE_BITS] because it encodes absolute size of
@@ -430,8 +429,8 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   // pos * pos | neg * neg -> pos, pos * neg | neg * pos -> neg
   return Expr::mkIte(fpmul_res == fp_nan, fp_nan,
     Expr::mkIte(f1.getMSB() == f2.getMSB(),
-      bv_false.concat(fpmul_res.extract(value_bv_bits - 1, 0)),
-      bv_true.concat(fpmul_res.extract(value_bv_bits - 1, 0))
+      bv_false.concat(fpmul_res.extract(value_bitwidth - 1, 0)),
+      bv_true.concat(fpmul_res.extract(value_bitwidth - 1, 0))
   ));
 }
 
@@ -510,22 +509,22 @@ Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
 Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   usedOps.fpCastRound = true;
 
-  if (value_bv_bits == tgt.value_bv_bits) {
+  if (value_bitwidth == tgt.value_bitwidth) {
     // Fully abstract encoding 
     return getExtendFn().apply(f);
   }
 
-  assert(value_bv_bits < tgt.value_bv_bits &&
-         "tgt cannot have smaller value_bv_bits than src");
+  assert(value_bitwidth < tgt.value_bitwidth &&
+         "tgt cannot have smaller value_bitwidth than src");
 
-  if (limit_bv_bits != 0 || prec_bv_bits != 0)
+  if (value_bit_info.limit_bitwidth != 0 || value_bit_info.prec_bitwidth != 0)
     throw UnsupportedException("Casting from middle-size type to large-size "
         "type is not supported");
 
-  auto sign_bit = f.extract(fp_bv_bits - 1, value_bv_bits);
-  auto limit_zero = Expr::mkBV(0, tgt.limit_bv_bits);
-  auto value_bits = f.extract(value_bv_bits - 1, 0);
-  auto prec_zero = Expr::mkBV(0, tgt.prec_bv_bits);
+  auto sign_bit = f.extract(fp_bitwidth - 1, value_bitwidth);
+  auto limit_zero = Expr::mkBV(0, tgt.value_bit_info.limit_bitwidth);
+  auto value_bits = f.extract(value_bitwidth - 1, 0);
+  auto prec_zero = Expr::mkBV(0, tgt.value_bit_info.prec_bitwidth);
 
   auto extended_float = sign_bit.concat(limit_zero).concat(value_bits)
       .concat(prec_zero);
