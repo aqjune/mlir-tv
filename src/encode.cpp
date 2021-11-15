@@ -448,6 +448,15 @@ void encodeOp(State &st, mlir::arith::NegFOp op, bool) {
       [](auto &&a) { return a.neg(); }, {});
 }
 
+template<>
+void encodeOp(State &st, mlir::arith::SubFOp op, bool) {
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1,
+      [](auto &&a, auto &&b) { return a.add(b.neg()); }, {});
+}
+
 static void addIntOrIndex(
     State &st, mlir::Value res, const Expr &e, bool isIndex) {
   if (isIndex)
@@ -1404,6 +1413,21 @@ void encodeOp(State &st, mlir::tosa::AddOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::tosa::SubOp op, bool) {
+  auto optys = op.getOperandTypes();
+  if (!optys[0].isa<mlir::RankedTensorType>() ||
+      !optys[1].isa<mlir::RankedTensorType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported operand types");
+
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1,
+      [](auto &&a, auto &&b) { return a.add(b.neg()); },
+      [](auto &&a, auto &&b) { return (Expr)a - (Expr)b; });
+}
+
+template<>
 void encodeOp(State &st, mlir::tosa::MulOp op, bool) {
   auto optys = op.getOperandTypes();
   if (!optys[0].isa<mlir::RankedTensorType>() ||
@@ -2232,6 +2256,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::MulFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::NegFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::SubFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
@@ -2284,6 +2309,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReshapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::SubOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
 
     throw UnsupportedException(&op);

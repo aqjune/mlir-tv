@@ -151,9 +151,14 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
   Expr e = f;
   auto vec = aop::getFpEncoding(f.type).possibleConsts(e);
   if (!vec.empty()) {
-    os << vec[0].convertToDouble();
-    for (unsigned i = 1; i < vec.size(); ++i)
-      os << " or " << vec[i].convertToDouble();
+    llvm::SmallVector<char, 16> str;
+    vec[0].toString(str);
+    os << str;
+    for (unsigned i = 1; i < vec.size(); ++i) {
+      str.clear();
+      vec[i].toString(str);
+      os << " or " << str;
+    }
   } else {
     os << "unknown (" << or_omit((Expr)f) << ")";
   }
