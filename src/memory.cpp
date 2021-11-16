@@ -1,5 +1,6 @@
 #include "memory.h"
 #include "smt.h"
+#include "utils.h"
 #include "value.h"
 #include <string>
 
@@ -76,7 +77,8 @@ MemBlock SingleArrayMemory::getMemBlock(const Expr &bid) const {
 
 Expr SingleArrayMemory::addLocalBlock(
     const Expr &numelem, const Expr &writable) {
-  assert(numLocalBlocks < maxLocalBlocks);
+  if (numLocalBlocks >= maxLocalBlocks)
+    throw UnsupportedException("Too many local blocks");
 
   auto bid = Expr::mkBV(numGlobalBlocks + numLocalBlocks, bidBits);
   numelemMaps = numelemMaps.store(bid, numelem);
@@ -195,7 +197,8 @@ void MultipleArrayMemory::update(
 
 Expr MultipleArrayMemory::addLocalBlock(
     const Expr &numelem, const Expr &writable) {
-  assert(numLocalBlocks < maxLocalBlocks);
+  if (numLocalBlocks >= maxLocalBlocks)
+    throw UnsupportedException("Too many local blocks");
 
   auto bid = numGlobalBlocks + numLocalBlocks;
   auto suffix = [&](const string &s) {

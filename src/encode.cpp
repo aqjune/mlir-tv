@@ -1488,10 +1488,10 @@ void encodeOp(State &st, mlir::tosa::ReshapeOp op, bool) {
   st.regs.add(op.getResult(), t.reshape(newDims));
 }
 
-static variant<string, MemRef> createNewLocalBlk(
+static MemRef createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
   if (!MemRef::isTypeSupported(memrefTy))
-    return "unsupported element type";
+    throw UnsupportedException("unsupported element type");
 
   auto layout = MemRef::getLayout(memrefTy, dims);
   // Add a new local block
@@ -1518,11 +1518,7 @@ void encodeOp(State &st, mlir::memref::AllocOp op, bool) {
   }
   auto dims = ShapedValue::getDims(memrefTy, false, move(dszExprs));
 
-  auto memrefOrErr = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true);
-  if (holds_alternative<string>(memrefOrErr))
-        throw UnsupportedException(op.getOperation(), get<0>(move(memrefOrErr)));
-  auto memref = get<1>(move(memrefOrErr));
-
+  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true);
   st.regs.add(op, move(memref));
 }
 
@@ -1659,13 +1655,28 @@ void encodeOp(State &st, mlir::memref::BufferCastOp op, bool encodeMemWrite) {
   auto dims = tensor.getDims();
 
   // Create a read-only block.
-  auto memrefOrErr = createNewLocalBlk(st.m.get(), move(dims), memrefTy, false);
-  if (holds_alternative<string>(memrefOrErr))
-    throw UnsupportedException(op.getOperation(), get<0>(move(memrefOrErr)));
-
-  auto memref = get<1>(move(memrefOrErr));
+  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, false);
   storeTensorTo(st, op.getOperation(), move(tensor), memref, memrefTy);
   st.regs.add(op.memref(), move(memref));
+}
+
+template<>
+void encodeOp(State &st, mlir::memref::CloneOp op, bool encodeMemWrite) {
+  if (!encodeMemWrite)
+    throw UnsupportedException(op.getOperation(),
+        "We do not support memory writes in this scope");
+
+  auto src = st.regs.get<MemRef>(op.getOperand());
+  auto srcTy = op.getOperand().getType().cast<mlir::MemRefType>();
+  auto dims = src.getDims();
+
+  // Create a read-only block.
+  auto memref = createNewLocalBlk(st.m.get(), move(dims), srcTy, false);
+  auto tensor = loadTensorFrom(src);
+  storeTensorTo(st, op.getOperation(), move(tensor), memref, srcTy);
+  // Src is not writable as well.
+  st.m->setWritable(src.getBID(), false);
+  st.regs.add(op, move(memref));
 }
 
 template<>
@@ -2272,6 +2283,7 @@ static void encodeBlock(
 
     ENCODE(st, op, mlir::memref::AllocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::BufferCastOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::CloneOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DimOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::LoadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::StoreOp, encodeMemWriteOps);

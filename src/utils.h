@@ -3,6 +3,8 @@
 #include <optional>
 #include <string>
 #include <variant>
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/BuiltinTypes.h"
 
 // optional::map from
 // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0798r0.html
