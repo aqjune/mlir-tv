@@ -930,15 +930,17 @@ static void encodeParallelLoopBodyAndOutput(
         outputValMap = nullopt) {
   // Encode the loop body
   // TODO: deal with merging memories
-  mlir::Value yieldedValue;
+  vector<mlir::Value> yieldedValues;
 
   encodeBlock(newst, block, /*print ops*/false, /*encode mem writes*/false,
-      [&yieldedValue](mlir::Operation *op, int opindex) {
+      [&yieldedValues](mlir::Operation *op, int opindex) {
         if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
-          yieldedValue = op2.getOperand(0);
+          for (unsigned i = 0; i < op2.getNumOperands(); i++) {
+            yieldedValues.push_back(op2.getOperand(i));
+          }
           return true;
         } else if (auto op2 = mlir::dyn_cast<mlir::tensor::YieldOp>(op)) {
-          yieldedValue = op2.getOperand();
+          yieldedValues.push_back(op2.getOperand());
           return true;
         }
         return false;
@@ -950,12 +952,17 @@ static void encodeParallelLoopBodyAndOutput(
   auto &scope = newst.linalgGenericScopes.top();
   auto outputIndVars = doMap(scope.indVars, outputMap);
   auto tensorSz = addOne(doMap(scope.indVarUpperBounds, outputMap));
-  auto yieldedExpr = newst.regs.getExpr(yieldedValue);
-  if (outputValMap)
-    yieldedExpr = (*outputValMap)(yieldedExpr, outputIndVars);
+  vector<Expr> yieldedExprs;
+  for (unsigned i = 0; i < yieldedValues.size(); i++) {
+    yieldedExprs.push_back(newst.regs.getExpr(yieldedValues[i]));
+    if (outputValMap)
+      yieldedExprs[i] = (*outputValMap)(yieldedExprs[i], outputIndVars);
+  }
 
-  t_resvec = {Tensor::mkLambda(yieldedValue.getType(),
-      move(tensorSz), move(outputIndVars), yieldedExpr)};
+  for(unsigned i = 0; i < yieldedValues.size(); i++) {
+    t_resvec->push_back(Tensor::mkLambda(yieldedValues[i].getType(),
+        move(tensorSz), move(outputIndVars), yieldedExprs[i]));
+  }
 }
 
 template<class T>
@@ -2203,7 +2210,9 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
             indexingMaps, outputType, t_resvec, welldef);
     }
 
-    assert(t_resvec->front().getDims().size() != 0);
+    for(unsigned i = 0; i < t_resvec->size(); i++) {
+      assert(t_resvec->at(i).getDims().size() != 0);
+    }
 
     // Encode UB of linalg.generic.
     // For all induction vars' values, there must be no UB.
@@ -2218,17 +2227,19 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
   st.wellDefined(op.getOperation(), move(*t_welldef));
 
   if (op.hasTensorSemantics()) {
-    if (op.getNumResults() != 0) {
+    for(unsigned i = 0; i < t_resvec->size(); i++) {
       // NOTE: op's output tensor (op.getOutputOperand()[0]->get())
       // isn't updated;
       // aqjune talked with mlir people and confirmed
-      assert(op.getNumResults() == 1);
-      st.regs.add(op.getResult(0), move(t_resvec->front()));
+      st.regs.add(op.getResult(i), move(t_resvec->at(i)));
     }
   } else if (op.hasBufferSemantics()) {
-    auto m_res = st.regs.get<MemRef>(op.getOutputOperand(0)->get());
-    auto success = m_res.storeArray(t_resvec->front().asArray(), Index::zero(),
-        t_resvec->front().get1DSize());
+    auto success = Expr::mkBool(true);
+    for(unsigned i = 0; i < t_resvec->size(); i++) {
+      auto m_res = st.regs.get<MemRef>(op.getOutputOperand(i)->get());
+      success &= m_res.storeArray(t_resvec->at(i).asArray(), Index::zero(),
+          t_resvec->at(i).get1DSize());
+    }
     st.wellDefined(op, move(success));
   } else {
     llvm_unreachable("Unknown linalg::genric semantics");
