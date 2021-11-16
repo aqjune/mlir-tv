@@ -70,11 +70,20 @@ private:
   const static unsigned SIGN_BITS = 1;
   // The BV width of abstract fp encoding.
   // fp_bv_bits = SIGN_BITS + value_bv_bits
-  unsigned fp_bv_bits;
-  unsigned value_bv_bits;
+  unsigned fp_bitwidth;
+  unsigned value_bitwidth;
+
   // Bits for casting.
-  unsigned limit_bv_bits;
-  unsigned prec_bv_bits;
+  struct ValueBitInfo {
+    unsigned limit_bitwidth;
+    unsigned smaller_value_bitwidth;
+    unsigned prec_bitwidth;
+
+    unsigned get_value_bitwidth() {
+      return limit_bitwidth + smaller_value_bitwidth + prec_bitwidth;
+    }
+  };
+  ValueBitInfo value_bit_info;
 
   AbsFpEncoding* smaller_fpty_enc;
 
@@ -92,23 +101,22 @@ private:
 
 private:
   AbsFpEncoding(const llvm::fltSemantics &semantics,
-      unsigned limitbits, unsigned precbits, unsigned valuebits,
+      unsigned limit_bw, unsigned smaller_value_bw, unsigned prec_bw,
       AbsFpEncoding* smaller_fpty_enc, std::string &&fn_suffix);
 
 public:
-  AbsFpEncoding(const llvm::fltSemantics &semantics, unsigned valuebits,
+  AbsFpEncoding(const llvm::fltSemantics &semantics, unsigned value_bw,
       std::string &&fn_suffix)
-      : AbsFpEncoding(semantics, 0u, 0u, valuebits, nullptr, std::move(fn_suffix)) {}
+      : AbsFpEncoding(semantics, 0u, value_bw, 0u, nullptr, std::move(fn_suffix)) {}
   // Use smaller_fpty_enc's value_bv_bits to calculate this type's value_bv_bits
   AbsFpEncoding(const llvm::fltSemantics &semantics,
-      unsigned limitbits, unsigned precbits, AbsFpEncoding* smaller_fpty_enc,
+      unsigned limit_bw, unsigned prec_bw, AbsFpEncoding* smaller_fpty_enc,
       std::string &&fn_suffix)
-      : AbsFpEncoding(semantics, limitbits, precbits,
-        smaller_fpty_enc->value_bv_bits,
+      : AbsFpEncoding(semantics, limit_bw, smaller_fpty_enc->value_bitwidth, prec_bw,
         smaller_fpty_enc, std::move(fn_suffix)) {}
 
   smt::Sort sort() const {
-    return smt::Sort::bvSort(fp_bv_bits);
+    return smt::Sort::bvSort(fp_bitwidth);
   }
 
 private:

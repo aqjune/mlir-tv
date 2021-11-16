@@ -151,9 +151,14 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
   Expr e = f;
   auto vec = aop::getFpEncoding(f.type).possibleConsts(e);
   if (!vec.empty()) {
-    os << vec[0].convertToDouble();
-    for (unsigned i = 1; i < vec.size(); ++i)
-      os << " or " << vec[i].convertToDouble();
+    llvm::SmallVector<char, 16> str;
+    vec[0].toString(str);
+    os << str;
+    for (unsigned i = 1; i < vec.size(); ++i) {
+      str.clear();
+      vec[i].toString(str);
+      os << " or " << str;
+    }
   } else {
     os << "unknown (" << or_omit((Expr)f) << ")";
   }
@@ -602,10 +607,38 @@ bool Tensor::isTypeSupported(mlir::TensorType tensorTy) {
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   assert(t.dims.size() > 0);
+
   os << "(dim: " << or_omit(t.dims[0]);
   for (size_t i = 1; i < t.dims.size(); ++i)
     os << ", " << or_omit(t.dims[i]);
   os << ") ";
+
+  const int64_t maxSizeToPrint = 16;
+  int64_t dimSize;
+  if (smt::get1DSize(t.dims).simplify().isInt(dimSize) &&
+      dimSize <= maxSizeToPrint) {
+    // Print individual elements.
+    for (int64_t i = 0; i < dimSize; ++i) {
+      auto idx1d = smt::simplifyList(smt::from1DIdx(Index(i), t.dims));
+      vector<int64_t> idxconsts;
+      for (auto &e: idx1d) {
+        int64_t ii;
+        bool isint = e.isInt(ii);
+        assert(isint);
+        (void)isint;
+        idxconsts.push_back(ii);
+      }
+      auto elem = t.get(idx1d).first;
+
+      if (i != 0)
+        os << ", ";
+      os << "(" << idxconsts[0];
+      for (size_t i = 1; i < idxconsts.size(); ++i)
+        os << ", " << idxconsts[i];
+      os << ") -> " << or_omit(elem);
+    }
+    return os;
+  }
 
   using namespace smt::matchers;
   Expr arr = t.arr;
