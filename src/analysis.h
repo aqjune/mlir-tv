@@ -1,10 +1,18 @@
 #pragma once
 
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include <optional>
 #include <set>
 
+struct FPConstAnalysisResult {
+  llvm::APFloat value;
+  std::optional<bool> zero_limit_bits;
+  std::optional<bool> zero_prec_bits;
+};
+bool operator<(const FPConstAnalysisResult&, const FPConstAnalysisResult&);
+
 struct SolePrecisionAnalysisResult {
-  std::set<llvm::APFloat> fpConstSet;
+  std::set<FPConstAnalysisResult> fpConstSet;
   size_t fpVarCount = 0;
   size_t fpArgCount = 0;
 };

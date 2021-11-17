@@ -38,6 +38,7 @@ public:
   MemEncoding encoding;
   unsigned int numBlocks;
   unsigned int floatBits, doubleBits;
+  set<FPConstAnalysisResult> f32Analysis, f64Analysis;
   bool isFpAddAssociative;
   bool useMultisetForFpSum;
 };
@@ -405,8 +406,8 @@ static void checkIsSrcAlwaysUB(
       aop::AbsLevelFpCast::PRECISE,
       aop::AbsLevelIntDot::SUM_MUL,
       vinput.isFpAddAssociative,
-      vinput.floatBits,
-      vinput.doubleBits);
+      vinput.floatBits, vinput.f32Analysis,
+      vinput.doubleBits, vinput.f64Analysis);
   aop::setEncodingOptions(vinput.useMultisetForFpSum);
 
   ArgInfo args_dummy;
@@ -453,8 +454,8 @@ static Results validate(ValidationInput vinput) {
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
       /*isFpAddAssociative*/false,
-      /*fp bits*/vinput.floatBits,
-      /*doublebits*/vinput.doubleBits);
+      /*fp bits*/vinput.floatBits, vinput.f32Analysis,
+      /*doublebits*/vinput.doubleBits, vinput.f64Analysis);
   setEncodingOptions(/*useMultiset*/false);
 
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
@@ -487,8 +488,8 @@ static Results validate(ValidationInput vinput) {
       fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
       fpAssocAdd,
-      vinput.floatBits,
-      vinput.doubleBits);
+      vinput.floatBits, vinput.f32Analysis,
+      vinput.doubleBits, vinput.f64Analysis);
   setEncodingOptions(vinput.useMultisetForFpSum);
 
   if (!vinput.dumpSMTPath.empty())
@@ -554,6 +555,17 @@ Results validate(
     auto tgt_f32_res = tgt_res.F32;
     auto tgt_f64_res = tgt_res.F64;
 
+    auto f32_analysis = src_f32_res.fpConstSet;
+    f32_analysis.merge(tgt_f32_res.fpConstSet);
+    // without suffix f, it will become llvm::APFloat with double semantics
+    f32_analysis.insert({llvm::APFloat(0.0f), nullopt, nullopt});
+    f32_analysis.insert({llvm::APFloat(1.0f), nullopt, nullopt});
+
+    auto f64_analysis = src_f64_res.fpConstSet;
+    f64_analysis.merge(tgt_f64_res.fpConstSet);
+    f64_analysis.insert({llvm::APFloat(0.0), true, true});
+    f64_analysis.insert({llvm::APFloat(1.0), true, true});
+
     // Calculate # of floating points whose absolute values are distinct.
     auto calculateTotalFpCounts = [](const auto& src_res, const auto& tgt_res) {
       size_t total = 4 + // reserved for +0.0, +1.0, +Inf, +NaN
@@ -583,6 +595,8 @@ Results validate(
       vinput.floatBits = bitsF32;
       vinput.doubleBits = bitsF64;
     }
+    vinput.f32Analysis = f32_analysis;
+    vinput.f64Analysis = f64_analysis;
     vinput.encoding = encoding;
     vinput.isFpAddAssociative = isFpAddAssociative;
     vinput.useMultisetForFpSum = useMultiset;
