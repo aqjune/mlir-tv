@@ -997,11 +997,11 @@ static void encodeParallelLoopBodyAndOutput(
   auto outputIndVars = doMap(scope.indVars, outputMap);
   auto tensorSz = addOne(doMap(scope.indVarUpperBounds, outputMap));
   auto yieldedExpr = newst.regs.getExpr(yieldedValue);
-    if (outputValMap)
-      yieldedExpr = (*outputValMap)(yieldedExpr, outputIndVars);
+  if (outputValMap)
+    yieldedExpr = (*outputValMap)(yieldedExpr, outputIndVars);
 
-    t_res = Tensor::mkLambda(yieldedValue.getType(),
-        move(tensorSz), move(outputIndVars), yieldedExpr);
+  t_res = Tensor::mkLambda(yieldedValue.getType(),
+      move(tensorSz), move(outputIndVars), yieldedExpr);
 }
 
 template<class T>
@@ -2134,8 +2134,10 @@ static void encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
-    t_resvec = {Tensor(t_v.getElemType(), t_v.sum(),
-        makeCube(Index(1), outputType.front().getRank()))};
+    for(unsigned i = 0; i < outputType.size(); i++) {
+      t_resvec->push_back(Tensor(t_v.getElemType(), t_v.sum(),
+          makeCube(Index(1), outputType[i].getRank())));
+    }
   } else {
     // in:  (i, j) -> (i, j)
     // out: (i, j) -> (i)
@@ -2228,8 +2230,6 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
     initInputStateForLoopBody(newst, op, welldef, isParallelLoop);
 
     auto &indVars = newst.linalgGenericScopes.top().indVars;
-    // auto outputType = op.getOutputOperand(0)->get().getType()
-    //    .cast<mlir::ShapedType>();
     vector<mlir::ShapedType> outputType;
     for (unsigned i = 0; i < op.getNumOutputs(); i++) {
       outputType.push_back(op.getOutputOperand(i)->get().getType()
