@@ -202,6 +202,12 @@ Float Float::extend(const mlir::Type &tgt_type) const {
   return Float(src_encoding.extend(e, tgt_encoding), tgt_type);
 }
 
+Float Float::truncate(const mlir::Type &tgt_type) const {
+  auto src_encoding = aop::getFpEncoding(type);
+  auto tgt_encoding = aop::getFpEncoding(tgt_type);
+  return Float(src_encoding.truncate(e, tgt_encoding), tgt_type);
+}
+
 
 
 Integer::Integer(int64_t i, unsigned bw):

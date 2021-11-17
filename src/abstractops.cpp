@@ -187,11 +187,20 @@ FnDecl AbsFpEncoding::getUltFn() {
 
 FnDecl AbsFpEncoding::getExtendFn() {
   if (!fp_extendfn) {
-    // In the fully abstract world, double and float have same bitwidth.
+    // In the fully abstract world, double and float have the same bitwidth.
     auto fty = Sort::bvSort(fp_bitwidth);
-    fp_extendfn.emplace({fty}, fty, "fp_extract_" + fn_suffix);
+    fp_extendfn.emplace({fty}, fty, "fp_extend_" + fn_suffix);
   }
   return *fp_extendfn;
+}
+
+FnDecl AbsFpEncoding::getTruncateFn() {
+  if (!fp_truncatefn) {
+    // In the fully abstract world, double and float have the same bitwidth.
+    auto fty = Sort::bvSort(fp_bitwidth);
+    fp_truncatefn.emplace({fty}, fty, "fp_truncate_" + fn_suffix);
+  }
+  return *fp_truncatefn;
 }
 
 uint64_t AbsFpEncoding::getSignBit() const {
@@ -533,6 +542,39 @@ Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
       Expr::mkIte(f == infinity(), tgt.infinity(),
       Expr::mkIte(f == infinity(true), tgt.infinity(true),
       extended_float)));
+}
+
+Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
+  usedOps.fpCastRound = true;
+
+  if (value_bitwidth == tgt.value_bitwidth) {
+    // Fully abstract encoding 
+    return getExtendFn().apply(f);
+  }
+
+  assert(value_bitwidth > tgt.value_bitwidth &&
+         "tgt cannot have bigger value_bitwidth than src");
+
+  if (tgt.value_bit_info.limit_bitwidth != 0 || tgt.value_bit_info.prec_bitwidth != 0)
+    throw UnsupportedException("Truncating from large-size type to middle-size "
+        "type is not supported");
+
+  auto sign_bit = f.extract(fp_bitwidth - 1, value_bitwidth);
+  auto sign_pos = Expr::mkBV(0, SIGN_BITS);
+  auto value_bits = f.extract(value_bitwidth - 1, 0);
+  auto limit_bits = value_bits.extract(
+    value_bitwidth - 1, value_bitwidth - value_bit_info.limit_bitwidth);
+  auto limit_zero = Expr::mkBV(0, value_bit_info.limit_bitwidth);
+
+  auto truncated_float = value_bits.extract(
+    value_bitwidth - value_bit_info.limit_bitwidth, value_bit_info.prec_bitwidth);
+  assert(truncated_float.bitwidth() == tgt.sort().bitwidth());
+  return Expr::mkIte(isnan(f), tgt.nan(),
+      Expr::mkIte(f == infinity(), tgt.infinity(),
+      Expr::mkIte(f == infinity(true), tgt.infinity(true),
+      Expr::mkIte(limit_bits != limit_zero,
+        Expr::mkIte(sign_bit == sign_pos, infinity(), infinity(true)),
+        truncated_float.simplify()))));
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() const {
