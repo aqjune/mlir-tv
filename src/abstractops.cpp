@@ -243,10 +243,13 @@ void AbsFpEncoding::addConstantsFromAnalysis(const std::set<FPConstAnalysisResul
       llvm_unreachable("should not reach here!");
     }
 
-    Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(e_value);
-    fpconst_absrepr.emplace(analysis.value, e_pos);
-    Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(e_value);
-    fpconst_absrepr.emplace(-analysis.value, e_neg);
+    if (analysis.value.isNonZero()) {
+      // 0.0 should not be added to absrepr
+      Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(e_value).simplify();
+      fpconst_absrepr.emplace(analysis.value, e_pos);
+      Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(e_value).simplify();
+      fpconst_absrepr.emplace(-analysis.value, e_neg);
+    }
   }
 }
 
@@ -290,7 +293,7 @@ vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
   vector<llvm::APFloat> vec;
 
   for (auto &[k, v]: fpconst_absrepr) {
-    if (v.isIdentical(e))
+    if (v.simplify().isIdentical(e.simplify()))
       vec.push_back(k);
   }
 
@@ -566,7 +569,7 @@ Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   return Expr::mkIte(isnan(f), tgt.nan(),
       Expr::mkIte(f == infinity(), tgt.infinity(),
       Expr::mkIte(f == infinity(true), tgt.infinity(true),
-      extended_float)));
+      extended_float.simplify())));
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() const {
