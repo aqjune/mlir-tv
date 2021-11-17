@@ -567,19 +567,17 @@ Results validate(
     f64_analysis.insert({llvm::APFloat(1.0), true, true});
 
     // Calculate # of floating points whose absolute values are distinct.
-    auto calculateTotalFpCounts = [](const auto& src_res, const auto& tgt_res) {
-      size_t total = 4 + // reserved for +0.0, +1.0, +Inf, +NaN
+    auto calculateTotalFpCounts = [](const auto& src_res, const auto& tgt_res, const auto& const_analysis) {
+      size_t total = 2 + // reserved for +Inf, +NaN: 0.0 and 1.0 are included in analysis
         src_res.fpArgCount + // # of variables in argument lists
-        // # of constants needed
-        src_res.fpConstSet.size() + tgt_res.fpConstSet.size() +
-        // # of variables in virtual register
-        src_res.fpVarCount + tgt_res.fpVarCount;
+        const_analysis.size() + // # of constants needed
+        src_res.fpVarCount + tgt_res.fpVarCount; // # of variables in virtual register
 
       return total;
     };
 
-    auto totalF32Counts = calculateTotalFpCounts(src_f32_res, tgt_f32_res);
-    auto totalF64Counts = calculateTotalFpCounts(src_f64_res, tgt_f64_res);
+    auto totalF32Counts = calculateTotalFpCounts(src_f32_res, tgt_f32_res, f32_analysis);
+    auto totalF64Counts = calculateTotalFpCounts(src_f64_res, tgt_f64_res, f64_analysis);
     auto bitsF32 = calculateRequiredBITS(totalF32Counts);
     auto bitsF64 = calculateRequiredBITS(totalF64Counts);
 
