@@ -921,7 +921,7 @@ void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
 }
 
 
-static void encodeParallelLoopBodyAndOutput(
+static void encodeParallelLoopBodyAndOutputs(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
     const vector<mlir::ShapedType> &outputType,
     optional<vector<Tensor>> &t_resvec, Expr &welldef,
@@ -965,6 +965,43 @@ static void encodeParallelLoopBodyAndOutput(
     t_resvec->push_back(Tensor::mkLambda(yieldedValues[i].getType(),
         move(tmpSz), move(tmpIndVars), yieldedExprs[i]));
   }
+}
+
+static void encodeParallelLoopBodyAndOutput(
+    State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
+    const mlir::ShapedType &outputType,
+    optional<Tensor> &t_res, Expr &welldef,
+    // (yielded value, ind var) -> newly mapped value
+    optional<function<Expr(const Expr&, const vector<Expr>&)>>
+        outputValMap = nullopt) {
+  // Encode the loop body
+  // TODO: deal with merging memories
+  mlir::Value yieldedValue;
+
+  encodeBlock(newst, block, /*print ops*/false, /*encode mem writes*/false,
+      [&yieldedValue](mlir::Operation *op, int opindex) {
+        if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
+          yieldedValue = op2.getOperand(0);
+          return true;
+        } else if (auto op2 = mlir::dyn_cast<mlir::tensor::YieldOp>(op)) {
+          yieldedValue = op2.getOperand();
+          return true;
+        }
+        return false;
+      },
+      [&welldef, &newst](mlir::Operation *op) {
+        welldef &= newst.isOpWellDefined(op);
+      });
+
+  auto &scope = newst.linalgGenericScopes.top();
+  auto outputIndVars = doMap(scope.indVars, outputMap);
+  auto tensorSz = addOne(doMap(scope.indVarUpperBounds, outputMap));
+  auto yieldedExpr = newst.regs.getExpr(yieldedValue);
+    if (outputValMap)
+      yieldedExpr = (*outputValMap)(yieldedExpr, outputIndVars);
+
+    t_res = Tensor::mkLambda(yieldedValue.getType(),
+        move(tensorSz), move(outputIndVars), yieldedExpr);
 }
 
 template<class T>
@@ -1175,18 +1212,16 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
     return Expr::mkIte(isSource, sourceTensor.get(sourceIndices).first, pad);
   };
 
-  optional<vector<Tensor>> t_resvec;
+  optional<Tensor> t_res;
   vector<mlir::ShapedType> retvec;
   retvec.push_back(retty);
   
   Expr welldef = Expr::mkBool(true);
-  encodeParallelLoopBodyAndOutput(newst, blk, identityMap, retvec,
-      t_resvec, welldef, paddingOrSource);
-
-  auto t_res = t_resvec->front();
+  encodeParallelLoopBodyAndOutput(newst, blk, identityMap, retty,
+      t_res, welldef, paddingOrSource);
 
   welldef = Expr::mkForall(indVars,
-      t_res.isInBounds(indVars).implies(welldef));
+      t_res->isInBounds(indVars).implies(welldef));
 
   newst.linalgGenericScopes.pop();
 
@@ -1195,11 +1230,11 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
   if (retty.hasStaticShape()) {
     for (unsigned i = 0; i < retty.getRank(); ++i) {
       st.wellDefined(op.getOperation(),
-          t_res.getDim(i) == retty.getDimSize(i));
+          t_res->getDim(i) == retty.getDimSize(i));
     }
   }
 
-  st.regs.add(op.getResult(), move(t_res));
+  st.regs.add(op.getResult(), move(*t_res));
   st.wellDefined(op.getOperation(), move(welldef));
 }
 
@@ -1285,7 +1320,7 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
     }
   }
 
-  optional<vector<Tensor>> t_resvec;
+  optional<Tensor> t_res;
   Expr welldef = Expr::mkBool(true);
   {
     State newst = st;
@@ -1298,19 +1333,17 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
     auto identityMap = mlir::AffineMap::getMultiDimIdentityMap(
         retty.getRank(), op.getContext());
 
-    vector<mlir::ShapedType> retvec;
-    retvec.push_back(retty);
-    encodeParallelLoopBodyAndOutput(newst, *blk, identityMap, retvec,
-        t_resvec, welldef);
+    encodeParallelLoopBodyAndOutput(newst, *blk, identityMap, retty,
+        t_res, welldef);
 
     auto &indVars = newst.linalgGenericScopes.top().indVars;
     welldef = Expr::mkForall(indVars,
-        t_resvec->front().isInBounds(indVars).implies(welldef));
+        t_res->isInBounds(indVars).implies(welldef));
 
     newst.linalgGenericScopes.pop();
   }
 
-  st.regs.add(op.getResult(), move(t_resvec->front()));
+  st.regs.add(op.getResult(), move(*t_res));
   st.wellDefined(op.getOperation(), move(welldef));
 }
 
@@ -2204,7 +2237,7 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
     }
 
     if (isParallelLoop) {
-      encodeParallelLoopBodyAndOutput(newst, block, outputMap,
+      encodeParallelLoopBodyAndOutputs(newst, block, outputMap,
           outputType, t_resvec, welldef);
 
     } else {
