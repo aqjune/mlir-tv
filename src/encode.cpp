@@ -960,8 +960,10 @@ static void encodeParallelLoopBodyAndOutput(
   }
 
   for(unsigned i = 0; i < yieldedValues.size(); i++) {
+    auto tmpSz = tensorSz;
+    auto tmpIndVars = outputIndVars;
     t_resvec->push_back(Tensor::mkLambda(yieldedValues[i].getType(),
-        move(tensorSz), move(outputIndVars), yieldedExprs[i]));
+        move(tmpSz), move(tmpIndVars), yieldedExprs[i]));
   }
 }
 
