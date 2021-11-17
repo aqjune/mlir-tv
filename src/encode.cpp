@@ -2050,7 +2050,8 @@ static void initInputStateForLoopBody(
 static void encodeReductionLoopBodyAndOutput(
     State &newst, mlir::Block &block,
     const mlir::ArrayRef<mlir::Attribute> &indexingMaps,
-    const vector<mlir::ShapedType> &outputType, optional<vector<Tensor>> &t_resvec,
+    const vector<mlir::ShapedType> &outputType,
+    optional<vector<Tensor>> &t_resvec,
     Expr &welldef) {
   // Deal with simple reduction loops.
   // TODO: support more kinds of reduction loops!
