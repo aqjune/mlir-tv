@@ -1212,16 +1212,16 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
     return Expr::mkIte(isSource, sourceTensor.get(sourceIndices).first, pad);
   };
 
-  optional<Tensor> t_res;
+  optional<vector<Tensor>> t_resvec;
   vector<mlir::ShapedType> retvec;
   retvec.push_back(retty);
   
   Expr welldef = Expr::mkBool(true);
-  encodeParallelLoopBodyAndOutput(newst, blk, identityMap, retty,
-      t_res, welldef, paddingOrSource);
+  encodeParallelLoopBodyAndOutputs(newst, blk, identityMap, retvec,
+      t_resvec, welldef, paddingOrSource);
 
   welldef = Expr::mkForall(indVars,
-      t_res->isInBounds(indVars).implies(welldef));
+      t_resvec->front().isInBounds(indVars).implies(welldef));
 
   newst.linalgGenericScopes.pop();
 
@@ -1230,11 +1230,11 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
   if (retty.hasStaticShape()) {
     for (unsigned i = 0; i < retty.getRank(); ++i) {
       st.wellDefined(op.getOperation(),
-          t_res->getDim(i) == retty.getDimSize(i));
+          t_resvec->front().getDim(i) == retty.getDimSize(i));
     }
   }
 
-  st.regs.add(op.getResult(), move(*t_res));
+  st.regs.add(op.getResult(), move(t_resvec->front()));
   st.wellDefined(op.getOperation(), move(welldef));
 }
 
@@ -1320,7 +1320,10 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
     }
   }
 
+  optional<vector<Tensor>> t_resvec;
   optional<Tensor> t_res;
+  vector<mlir::ShapedType> retvec;
+  retvec.push_back(retty);
   Expr welldef = Expr::mkBool(true);
   {
     State newst = st;
@@ -1333,17 +1336,25 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
     auto identityMap = mlir::AffineMap::getMultiDimIdentityMap(
         retty.getRank(), op.getContext());
 
-    encodeParallelLoopBodyAndOutput(newst, *blk, identityMap, retty,
-        t_res, welldef);
+    encodeParallelLoopBodyAndOutputs(newst, *blk, identityMap, retvec,
+        t_resvec, welldef);
+    
+    // encodeParallelLoopBodyAndOutput(newst, *blk, identityMap, retty,
+    //     t_res, welldef);
 
     auto &indVars = newst.linalgGenericScopes.top().indVars;
+
     welldef = Expr::mkForall(indVars,
-        t_res->isInBounds(indVars).implies(welldef));
+        t_resvec->front().isInBounds(indVars).implies(welldef));
+    // welldef = Expr::mkForall(indVars,
+    //     t_res->isInBounds(indVars).implies(welldef));
+
 
     newst.linalgGenericScopes.pop();
   }
 
-  st.regs.add(op.getResult(), move(*t_res));
+  st.regs.add(op.getResult(), move(t_resvec->front()));
+  // st.regs.add(op.getResult(), move(*t_res));
   st.wellDefined(op.getOperation(), move(welldef));
 }
 
