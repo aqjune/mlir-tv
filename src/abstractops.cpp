@@ -232,7 +232,13 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
   for (const auto& fp_const: const_set) {
     assert(!fp_const.isNegative() &&
             "const_set must only consist of positive consts!");
-    
+    if (fp_const.isZero()) {
+      // 0.0 should not be added to absrepr
+      // but value_id should be incremented to avoid duplicate assignment
+      value_id += 1;
+      continue;
+    }
+
     unsigned limit_value_bitwidth =
       value_bit_info.limit_bitwidth + value_bit_info.smaller_value_bitwidth;
     Expr e_value = Expr::mkBV(value_id, limit_value_bitwidth);
@@ -245,7 +251,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       assert(casting_info.has_value() &&
              "this encoding requires casting info analysis for constants");
 
-      if (casting_info->zero_limit_bits) {
+      if (!casting_info->zero_limit_bits) {
         // these values should be mapped to Inf when rounded.
         unsigned value_prec_bitwidth = 
           value_bit_info.smaller_value_bitwidth + value_bit_info.prec_bitwidth;
@@ -269,13 +275,10 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       }
     }
 
-    if (fp_const.isNonZero()) {
-      // 0.0 should not be added to absrepr
-      Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(e_value);
-      fpconst_absrepr.emplace(fp_const, e_pos);
-      Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(e_value);
-      fpconst_absrepr.emplace(-fp_const, e_neg);
-    }
+    Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(e_value);
+    fpconst_absrepr.emplace(fp_const, e_pos);
+    Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(e_value);
+    fpconst_absrepr.emplace(-fp_const, e_neg);
   }
 }
 
