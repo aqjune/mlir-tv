@@ -4,6 +4,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <vector>
+#include <set>
 
 namespace aop {
 
