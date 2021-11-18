@@ -54,6 +54,29 @@ FnDecl getIntDotFn(unsigned bitwidth) {
   int_dotfn.emplace(bitwidth, hashfn);
   return hashfn;
 }
+
+struct FPCastingInfo {
+  bool zero_limit_bits;
+  bool zero_prec_bits;
+};
+static optional<FPCastingInfo> getCastingInfo(llvm::APFloat fp_const) {
+  auto semantics = llvm::APFloat::SemanticsToEnum(fp_const.getSemantics());
+  bool zero_limit_bits = true, lost_info;
+  if (semantics == llvm::APFloat::Semantics::S_IEEEsingle) {
+    return nullopt;
+  } else if (semantics == llvm::APFloat::Semantics::S_IEEEdouble) {
+    fp_const.convert(llvm::APFloat::IEEEsingle(),
+                    // floor in case of truncation (ordering issue)
+                    llvm::APFloatBase::rmTowardZero, &lost_info);
+    if (fp_const.isInfinity()) {
+      zero_limit_bits = false;
+    }
+    bool zero_prec_bits = !lost_info;
+    return FPCastingInfo{zero_limit_bits, zero_prec_bits};
+  } else {
+    throw UnsupportedException("Cannot analyze casting information for this type");
+  }
+}
 }
 
 
@@ -63,8 +86,8 @@ UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(
     AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, bool addAssoc,
-    unsigned floatBits, const set<FPConstAnalysisResult>& floatAnalysis,
-    unsigned doubleBits, const set<FPConstAnalysisResult>& doubleAnalysis) {
+    unsigned floatBits, const set<llvm::APFloat>& floatConsts,
+    unsigned doubleBits, const set<llvm::APFloat>& doubleConsts) {
   alFpDot = afd;
   alFpCast = afc;
   alIntDot = aid;
@@ -85,10 +108,10 @@ void setAbstraction(
   }
 
   floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
-  floatEnc->addConstantsFromAnalysis(floatAnalysis);
+  floatEnc->addConstants(floatConsts);
   doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
       doublePrecBits, &*floatEnc, "double");
-  doubleEnc->addConstantsFromAnalysis(doubleAnalysis);
+  doubleEnc->addConstants(doubleConsts);
 }
 
 // A set of options that must not change the precision of validation.
@@ -203,12 +226,12 @@ uint64_t AbsFpEncoding::getSignBit() const {
   return 1ull << value_bitwidth;
 }
 
-void AbsFpEncoding::addConstantsFromAnalysis(const std::set<FPConstAnalysisResult>& analysis_set) {
+void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
   uint64_t value_id = 0;
   map<uint64_t, uint64_t> prec_offset_map;
-  for (const auto& analysis: analysis_set) {
-    assert(!analysis.value.isNegative() &&
-            "analysis_set must only consist of positive consts!");
+  for (const auto& fp_const: const_set) {
+    assert(!fp_const.isNegative() &&
+            "const_set must only consist of positive consts!");
     
     unsigned limit_value_bitwidth =
       value_bit_info.limit_bitwidth + value_bit_info.smaller_value_bitwidth;
@@ -217,38 +240,41 @@ void AbsFpEncoding::addConstantsFromAnalysis(const std::set<FPConstAnalysisResul
     if (value_bit_info.limit_bitwidth == 0 && value_bit_info.prec_bitwidth == 0) {
       // this encoding is the smallest encoding or does not support casting
       value_id += 1;
-    } else if (!analysis.zero_limit_bits.value_or(true)) {
-      // these values should be mapped to Inf when rounded.
-      unsigned value_prec_bitwidth = 
-        value_bit_info.smaller_value_bitwidth + value_bit_info.prec_bitwidth;
-      value_id = max(value_id, (uint64_t)1 << value_prec_bitwidth);
-      e_value = Expr::mkBV(value_id, value_bitwidth);
-      value_id += 1;
-    } else if (analysis.zero_prec_bits.has_value()) {
-      Expr e_prec = Expr::mkBV(0, value_bit_info.prec_bitwidth);
-      if (!*analysis.zero_prec_bits) {
-        // this value will be *floored* to same value,
-        // so do not change smaller_value and increment prec bit.
-        prec_offset_map.insert({value_id, 1});
-        e_prec = Expr::mkBV(prec_offset_map[value_id], value_bit_info.prec_bitwidth);
-        prec_offset_map[value_id] += 1;
-      } else {
-        // this value will be *floored* to different value,
-        // so assign different smaller_value
-        value_id += 1;
-      }
-      e_value = e_value.concat(e_prec);
     } else {
-      // should not reach
-      llvm_unreachable("should not reach here!");
+      auto casting_info = getCastingInfo(fp_const);
+      assert(casting_info.has_value() &&
+             "this encoding requires casting info analysis for constants");
+
+      if (casting_info->zero_limit_bits) {
+        // these values should be mapped to Inf when rounded.
+        unsigned value_prec_bitwidth = 
+          value_bit_info.smaller_value_bitwidth + value_bit_info.prec_bitwidth;
+        value_id = max(value_id, (uint64_t)1 << value_prec_bitwidth);
+        e_value = Expr::mkBV(value_id, value_bitwidth);
+        value_id += 1;
+      } else {
+        Expr e_prec = Expr::mkBV(0, value_bit_info.prec_bitwidth);
+        if (casting_info->zero_prec_bits) {
+          // this value will be *floored* to different value,
+          // so assign different smaller_value
+          value_id += 1;
+        } else {
+          // this value will be *floored* to same value,
+          // so do not change smaller_value and increment prec bit.
+          prec_offset_map.insert({value_id, 1});
+          e_prec = Expr::mkBV(prec_offset_map[value_id], value_bit_info.prec_bitwidth);
+          prec_offset_map[value_id] += 1;
+        }
+        e_value = e_value.concat(e_prec);
+      }
     }
 
-    if (analysis.value.isNonZero()) {
+    if (fp_const.isNonZero()) {
       // 0.0 should not be added to absrepr
-      Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(e_value).simplify();
-      fpconst_absrepr.emplace(analysis.value, e_pos);
-      Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(e_value).simplify();
-      fpconst_absrepr.emplace(-analysis.value, e_neg);
+      Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(e_value);
+      fpconst_absrepr.emplace(fp_const, e_pos);
+      Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(e_value);
+      fpconst_absrepr.emplace(-fp_const, e_neg);
     }
   }
 }
@@ -292,21 +318,26 @@ vector<pair<llvm::APFloat, Expr>> AbsFpEncoding::getAllConstants() const {
 vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
   vector<llvm::APFloat> vec;
 
+  // expressions must be simplified in advance
+  // because smt::Expr::isIdentical() fails to evaluate the identity
+  // unless both lhs and rhs are in their canonical form!
+  auto e_simp = e.simplify();
+
   for (auto &[k, v]: fpconst_absrepr) {
-    if (v.simplify().isIdentical(e.simplify()))
+    if (v.simplify().isIdentical(e_simp))
       vec.push_back(k);
   }
 
   // for 'reserved' values that do not belong to fpconst_absrepr
-  if (fpconst_nan && fpconst_nan->isIdentical(e)) {
+  if (fpconst_nan && fpconst_nan->isIdentical(e_simp)) {
     vec.push_back(llvm::APFloat::getNaN(semantics));
-  } else if (fpconst_zero_pos && fpconst_zero_pos->isIdentical(e)) {
+  } else if (fpconst_zero_pos && fpconst_zero_pos->isIdentical(e_simp)) {
     vec.push_back(llvm::APFloat::getZero(semantics));
-  } else if (fpconst_zero_neg && fpconst_zero_neg->isIdentical(e)) {
+  } else if (fpconst_zero_neg && fpconst_zero_neg->isIdentical(e_simp)) {
     vec.push_back(llvm::APFloat::getZero(semantics, true));
-  } else if (fpconst_inf_pos && fpconst_inf_pos->isIdentical(e)) {
+  } else if (fpconst_inf_pos && fpconst_inf_pos->isIdentical(e_simp)) {
     vec.push_back(llvm::APFloat::getInf(semantics));
-  } else if (fpconst_inf_neg && fpconst_inf_neg->isIdentical(e)) {
+  } else if (fpconst_inf_neg && fpconst_inf_neg->isIdentical(e_simp)) {
     vec.push_back(llvm::APFloat::getInf(semantics, true));
   }
 
@@ -569,7 +600,7 @@ Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   return Expr::mkIte(isnan(f), tgt.nan(),
       Expr::mkIte(f == infinity(), tgt.infinity(),
       Expr::mkIte(f == infinity(true), tgt.infinity(true),
-      extended_float.simplify())));
+      extended_float)));
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() const {

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "analysis.h"
 #include "smt.h"
 #include "llvm/ADT/APFloat.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -41,8 +40,8 @@ enum class AbsLevelIntDot {
 // floatBits: # of bits required to represent distinct *absolute* f32 values
 void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
                     bool isFpAddAssociative,
-                    unsigned floatBits, const std::set<FPConstAnalysisResult>& floatAnalysis,
-                    unsigned doubleBits, const std::set<FPConstAnalysisResult>& doubleAnalysis);
+                    unsigned floatBits, const std::set<llvm::APFloat>& floatConsts,
+                    unsigned doubleBits, const std::set<llvm::APFloat>& doubleConsts);
 void setEncodingOptions(bool use_multiset);
 
 bool getFpAddAssociativity();
@@ -138,7 +137,7 @@ private:
   uint64_t getSignBit() const;
 
 public:
-  void addConstantsFromAnalysis(const std::set<FPConstAnalysisResult>& analysis_set);
+  void addConstants(const std::set<llvm::APFloat>& const_set);
   smt::Expr constant(const llvm::APFloat &f) const;
   smt::Expr zero(bool isNegative = false) const;
   smt::Expr one(bool isNegative = false) const;

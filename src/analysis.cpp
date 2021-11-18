@@ -10,12 +10,8 @@
 using namespace std;
 
 // Contains absolute values of constants.
-static set<FPConstAnalysisResult> constF32Set;
-static set<FPConstAnalysisResult> constF64Set;
-
-bool operator<(const FPConstAnalysisResult& lhs, const FPConstAnalysisResult& rhs) {
-  return lhs.value < rhs.value;
-}
+static set<llvm::APFloat> constF32Set;
+static set<llvm::APFloat> constF64Set;
 
 static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
   if (val.isNaN() || val.isInfinity() || val.isZero()
@@ -25,7 +21,7 @@ static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
 
   auto val_f32 = val;
   auto val_f64 = val;
-  bool lost_info;
+  bool lost_info; // dummy
 
   if (ty.isF32()) {
     val_f64.convert(llvm::APFloat::IEEEdouble(),
@@ -44,17 +40,11 @@ static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
   if (val_f64.isNegative())
     val_f64.clearSign();
 
-  FPConstAnalysisResult f32_analysis = { val_f32, nullopt, nullopt };
-  FPConstAnalysisResult f64_analysis = { val_f64, true, !lost_info };
-  
   // Values beyond the float range are mapped to Inf
-  // and limit bit(s) of double must NOT be 0.
-  if (val_f32.isInfinity()) {
-    f64_analysis.zero_limit_bits = false;
-  } else {
-    constF32Set.insert(f32_analysis);
+  if (!val_f32.isInfinity()) {
+    constF32Set.insert(val_f32);
   }
-  constF64Set.insert(f64_analysis);
+  constF64Set.insert(val_f64);
 }
 
 static void analyzeAttr(const mlir::Attribute &a) {
