@@ -33,8 +33,8 @@ llvm::cl::opt<string> filename_tgt(llvm::cl::Positional,
   llvm::cl::Required, llvm::cl::value_desc("filename"));
 
 llvm::cl::opt<unsigned> arg_smt_to("smt-to",
-  llvm::cl::desc("Timeout for SMT queries (default=10000)"),
-  llvm::cl::init(10000), llvm::cl::value_desc("ms"));
+  llvm::cl::desc("Timeout for SMT queries (default=30000)"),
+  llvm::cl::init(30000), llvm::cl::value_desc("ms"));
 
 llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
   llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"));
