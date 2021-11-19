@@ -23,14 +23,15 @@ static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
   auto val_f64 = val;
   bool lost_info; // dummy
 
+  llvm::APFloat::opStatus op_status;
   if (ty.isF32()) {
-    val_f64.convert(llvm::APFloat::IEEEdouble(),
+    op_status = val_f64.convert(llvm::APFloat::IEEEdouble(),
                     // doesn't really matter in extension
-                    llvm::APFloatBase::rmTowardZero, &lost_info);
+                    llvm::APFloat::rmTowardZero, &lost_info);
   } else if (ty.isF64()) {
-    val_f32.convert(llvm::APFloat::IEEEsingle(),
+    op_status = val_f32.convert(llvm::APFloat::IEEEsingle(),
                     // floor in case of truncation (ordering issue)
-                    llvm::APFloatBase::rmTowardZero, &lost_info);
+                    llvm::APFloat::rmTowardZero, &lost_info);
   } else {
       throw UnsupportedException(ty, "Unsupported type");
   }
@@ -41,7 +42,7 @@ static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
     val_f64.clearSign();
 
   // Values beyond the float range are mapped to Inf
-  if (!val_f32.isInfinity()) {
+  if (!(op_status && llvm::APFloat::opOverflow)) {
     constF32Set.insert(val_f32);
   }
   constF64Set.insert(val_f64);

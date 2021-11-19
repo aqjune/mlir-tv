@@ -65,10 +65,10 @@ static optional<FPCastingInfo> getCastingInfo(llvm::APFloat fp_const) {
   if (semantics == llvm::APFloat::Semantics::S_IEEEsingle) {
     return nullopt;
   } else if (semantics == llvm::APFloat::Semantics::S_IEEEdouble) {
-    fp_const.convert(llvm::APFloat::IEEEsingle(),
+    auto op_status = fp_const.convert(llvm::APFloat::IEEEsingle(),
                     // floor in case of truncation (ordering issue)
-                    llvm::APFloatBase::rmTowardZero, &lost_info);
-    if (fp_const.isInfinity()) {
+                    llvm::APFloat::rmTowardZero, &lost_info);
+    if (op_status && llvm::APFloat::opOverflow) {
       zero_limit_bits = false;
     }
     bool zero_prec_bits = !lost_info;
@@ -95,13 +95,62 @@ void setAbstraction(
 
   unsigned doubleLimitBits, doublePrecBits;
   if (afc == AbsLevelFpCast::PRECISE) {
-    // TODO: multiple encoding for possible combinations of limit/prec bits
-    doubleLimitBits = 1;
-    if (doubleBits > floatBits + 2) {
-      doublePrecBits = doubleBits - floatBits - 1;
-    } else {
-      doublePrecBits = 1;
+    unsigned consts_nonzero_limit = 0;
+    unsigned const_nonzero_precs = 0, const_max_nonzero_precs = 0;
+    for (const auto& dbl_const : doubleConsts) {
+      auto casting_info = getCastingInfo(dbl_const);
+      if (!casting_info->zero_limit_bits) {
+        consts_nonzero_limit += 1;
+      } else if (!casting_info->zero_prec_bits) {
+        // count the maximum number of values
+        // that converges to single value when rounded
+        const_nonzero_precs += 1;
+      } else {
+        const_max_nonzero_precs = max(const_nonzero_precs, const_max_nonzero_precs);
+        const_nonzero_precs = 0;
+      }
     }
+    const_max_nonzero_precs = max(const_nonzero_precs, const_max_nonzero_precs);
+
+    auto calculateRequiredBitwidth = [](const unsigned count) {
+      unsigned bits = 0;
+      while (count > (1 << bits)) {
+        bits += 1;
+      }
+      return bits;
+    };
+
+    // reserve at least one bit for precision bit
+    // in case the variable has to accept such value
+    const unsigned min_prec_bitwidth =
+        max(1u, calculateRequiredBitwidth(const_max_nonzero_precs));
+
+    const unsigned bitwidth_for_nonzero_limits =
+        calculateRequiredBitwidth(consts_nonzero_limit);
+    unsigned min_limit_bitwidth;
+    if (bitwidth_for_nonzero_limits > floatBits + min_prec_bitwidth) {
+      // requires additional limit bits
+      min_limit_bitwidth = 
+          bitwidth_for_nonzero_limits - floatBits - min_prec_bitwidth + 1;
+    } else {
+      // reserve at least one bit for limit bit
+      // in case the variable has to accept such value
+      min_limit_bitwidth = 1;
+    }
+
+    unsigned additional_bitwidth;
+    if (doubleBits > floatBits + 2) {
+      additional_bitwidth = doubleBits - floatBits;
+    } else {
+      additional_bitwidth = 2;
+    }
+    const unsigned variable_bitwidth = 
+        additional_bitwidth - min_limit_bitwidth - min_prec_bitwidth;
+
+    // TODO: multiple encoding for possible combinations of limit/prec bits
+    // implement it as for loop of (0..variable_bitwidth)
+    doubleLimitBits = min_limit_bitwidth;
+    doublePrecBits = variable_bitwidth + min_prec_bitwidth;
   } else {
     doubleLimitBits = 0;
     doublePrecBits = 0;
