@@ -711,8 +711,11 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   auto limit_zero = Expr::mkBV(0, value_bit_info.limit_bitwidth);
 
   auto truncated_float = value_bits.extract(
-    value_bitwidth - value_bit_info.limit_bitwidth, value_bit_info.prec_bitwidth);
+      value_bitwidth - 1 - value_bit_info.limit_bitwidth,
+      value_bit_info.prec_bitwidth);
+  truncated_float = sign_bit.concat(truncated_float);
   assert(truncated_float.bitwidth() == tgt.sort().bitwidth());
+  
   return Expr::mkIte(isnan(f), tgt.nan(),
       Expr::mkIte(f == infinity(), tgt.infinity(),
       Expr::mkIte(f == infinity(true), tgt.infinity(true),
