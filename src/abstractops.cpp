@@ -121,11 +121,17 @@ void setAbstraction(
     const unsigned min_prec_bitwidth =
         max(1u, log2_ceil(const_max_nonzero_precs));
 
+    // Decide min_limit_bitwidth.
+    // We're not going to simply use log2(consts_nonzero_limit) as limit bit
+    // because precision bits can be utilized to reduce the whole bitwidth.
+    // If limit bit is not zero, precision bits can be reused as floatBits.
+    unsigned min_limit_bitwidth;
     const unsigned bitwidth_for_nonzero_limits =
         log2_ceil(consts_nonzero_limit);
-    unsigned min_limit_bitwidth;
+
     if (bitwidth_for_nonzero_limits > floatBits + min_prec_bitwidth) {
-      // requires additional limit bits
+      // Extend limit bits because many double constants require limit bit to
+      // be set.
       min_limit_bitwidth = 
           bitwidth_for_nonzero_limits - floatBits - min_prec_bitwidth + 1;
     } else {
