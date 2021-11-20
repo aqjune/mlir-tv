@@ -100,6 +100,9 @@ static size_t analyzeVariable(const mlir::Value &value) {
 template<class T>
 static void analyzeOp(T op, bool isFullyAbstract);
 
+template<class FT>
+static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract);
+
 template<>
 void analyzeOp(mlir::arith::ConstantFloatOp op, bool isFullyAbstract) {
   auto ty = op.getType();
@@ -139,6 +142,14 @@ void analyzeOp(mlir::tosa::ConstOp op, bool isFullyAbstract) {
   analyzeElemAttr(eattr);
 }
 
+template<>
+void analyzeOp(mlir::linalg::GenericOp op, bool isFullyAbstract) {
+  auto &region = op.region();
+  auto &block = region.front();
+  analyzeBlock<mlir::Float32Type>(block, isFullyAbstract);
+  analyzeBlock<mlir::Float64Type>(block, isFullyAbstract);
+}
+
 #define ANALYZE(op, ty, isFullyAbstract) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
     analyzeOp(op2, isFullyAbstract); \
@@ -153,12 +164,16 @@ static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
   size_t fpVarCount = 0;
   for (auto &op: block) {
     // Analyze constant fp operations
+    // This operations do not increase fpVarCount
     ANALYZE(op, mlir::arith::ConstantFloatOp, isFullyAbstract);
     ANALYZE(op, mlir::arith::ConstantOp, isFullyAbstract);
     ANALYZE(op, mlir::tosa::ConstOp, isFullyAbstract);
 
     for (const auto &result: op.getResults())
       fpVarCount += isFullyAbstract ? 1 : analyzeVariable<FT>(result);
+
+    // This operations increase fpVarCount. So it should be executed after for-loop
+    ANALYZE(op, mlir::linalg::GenericOp, isFullyAbstract);
   }
 
   return fpVarCount;
