@@ -33,8 +33,8 @@ llvm::cl::opt<string> filename_tgt(llvm::cl::Positional,
   llvm::cl::Required, llvm::cl::value_desc("filename"));
 
 llvm::cl::opt<unsigned> arg_smt_to("smt-to",
-  llvm::cl::desc("Timeout for SMT queries (default=10000)"),
-  llvm::cl::init(10000), llvm::cl::value_desc("ms"));
+  llvm::cl::desc("Timeout for SMT queries (default=30000)"),
+  llvm::cl::init(30000), llvm::cl::value_desc("ms"));
 
 llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
   llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"));
@@ -52,7 +52,7 @@ llvm::cl::opt<smt::SolverType> arg_solver("solver",
 
 llvm::cl::opt<int> fp_bits("fp-bits",
   llvm::cl::desc("The number of bits for the abstract representation of "
-                 "float and double types (default=their bitwidths)"),
+                 "non-constant float and double values."),
   llvm::cl::init(-1), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
