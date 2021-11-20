@@ -31,6 +31,14 @@ auto fupdate2(std::optional<T1> &x, const std::optional<T2> &x2, Fn fn) {
   return std::optional<decltype(fn(*x, *x2))>();
 }
 
+inline unsigned log2_ceil(unsigned count) {
+  unsigned bits = 0;
+  while (count > (1 << bits)) {
+    bits += 1;
+  }
+  return bits;
+}
+
 #define TO_STRING(msg, V) { \
   llvm::raw_string_ostream rso(msg); \
   rso << V; \

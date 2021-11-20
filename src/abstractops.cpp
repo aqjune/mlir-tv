@@ -97,8 +97,10 @@ void setAbstraction(
   if (afc == AbsLevelFpCast::PRECISE) {
     unsigned consts_nonzero_limit = 0;
     unsigned const_nonzero_precs = 0, const_max_nonzero_precs = 0;
+    // Visit fp consts by increasing order
     for (const auto& dbl_const : doubleConsts) {
       auto casting_info = getCastingInfo(dbl_const);
+
       if (!casting_info->zero_limit_bits) {
         consts_nonzero_limit += 1;
       } else if (!casting_info->zero_prec_bits) {
@@ -106,27 +108,21 @@ void setAbstraction(
         // that converges to single value when rounded
         const_nonzero_precs += 1;
       } else {
-        const_max_nonzero_precs = max(const_nonzero_precs, const_max_nonzero_precs);
+        // const_nonzero_precs: # of fps requiring rounding
+        const_max_nonzero_precs =
+            max(const_nonzero_precs, const_max_nonzero_precs);
         const_nonzero_precs = 0;
       }
     }
     const_max_nonzero_precs = max(const_nonzero_precs, const_max_nonzero_precs);
 
-    auto calculateRequiredBitwidth = [](const unsigned count) {
-      unsigned bits = 0;
-      while (count > (1 << bits)) {
-        bits += 1;
-      }
-      return bits;
-    };
-
     // reserve at least one bit for precision bit
     // in case the variable has to accept such value
     const unsigned min_prec_bitwidth =
-        max(1u, calculateRequiredBitwidth(const_max_nonzero_precs));
+        max(1u, log2_ceil(const_max_nonzero_precs));
 
     const unsigned bitwidth_for_nonzero_limits =
-        calculateRequiredBitwidth(consts_nonzero_limit);
+        log2_ceil(consts_nonzero_limit);
     unsigned min_limit_bitwidth;
     if (bitwidth_for_nonzero_limits > floatBits + min_prec_bitwidth) {
       // requires additional limit bits
