@@ -59,7 +59,7 @@ struct FPCastingInfo {
   bool zero_limit_bits;
   bool zero_prec_bits;
 };
-static optional<FPCastingInfo> getCastingInfo(llvm::APFloat fp_const) {
+optional<FPCastingInfo> getCastingInfo(llvm::APFloat fp_const) {
   auto semantics = llvm::APFloat::SemanticsToEnum(fp_const.getSemantics());
   bool zero_limit_bits = true, lost_info;
   if (semantics == llvm::APFloat::Semantics::S_IEEEsingle) {
@@ -68,7 +68,7 @@ static optional<FPCastingInfo> getCastingInfo(llvm::APFloat fp_const) {
     auto op_status = fp_const.convert(llvm::APFloat::IEEEsingle(),
                     // floor in case of truncation (ordering issue)
                     llvm::APFloat::rmTowardZero, &lost_info);
-    if (op_status && llvm::APFloat::opOverflow) {
+    if (op_status & llvm::APFloat::opOverflow) {
       zero_limit_bits = false;
     }
     bool zero_prec_bits = !lost_info;
