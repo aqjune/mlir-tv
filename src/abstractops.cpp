@@ -272,23 +272,26 @@ uint64_t AbsFpEncoding::getSignBit() const {
 }
 
 void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
-  uint64_t value_id = 0;
+  // 0 is reserved for zero
+  uint64_t value_id = 1;
+  // prec_offset_map[smaller value]: next precision bit
   map<uint64_t, uint64_t> prec_offset_map;
+
+  // Visit non-negative constants in increasing order.
   for (const auto& fp_const: const_set) {
     assert(!fp_const.isNegative() &&
-            "const_set must only consist of positive consts!");
+            "const_set must only consist of non-negative consts!");
     if (fp_const.isZero()) {
       // 0.0 should not be added to absrepr
-      // but value_id should be incremented to avoid duplicate assignment
-      value_id += 1;
       continue;
     }
 
     unsigned limit_value_bitwidth =
-      value_bit_info.limit_bitwidth + value_bit_info.smaller_value_bitwidth;
+        value_bit_info.limit_bitwidth + value_bit_info.smaller_value_bitwidth;
     Expr e_value = Expr::mkBV(value_id, limit_value_bitwidth);
 
-    if (value_bit_info.limit_bitwidth == 0 && value_bit_info.prec_bitwidth == 0) {
+    if (value_bit_info.limit_bitwidth == 0 &&
+        value_bit_info.prec_bitwidth == 0) {
       // this encoding is the smallest encoding or does not support casting
       value_id += 1;
     } else {
@@ -297,7 +300,8 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
              "this encoding requires casting info analysis for constants");
 
       if (!casting_info->zero_limit_bits) {
-        // these values should be mapped to Inf when rounded.
+        // these values should be mapped to Inf when truncated.
+        // In the higher precision, freshly start value_id with limit bit set
         unsigned value_prec_bitwidth = 
           value_bit_info.smaller_value_bitwidth + value_bit_info.prec_bitwidth;
         value_id = max(value_id, (uint64_t)1 << value_prec_bitwidth);
@@ -312,9 +316,12 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         } else {
           // this value will be *floored* to same value,
           // so do not change smaller_value and increment prec bit.
-          prec_offset_map.insert({value_id, 1});
-          e_prec = Expr::mkBV(prec_offset_map[value_id], value_bit_info.prec_bitwidth);
-          prec_offset_map[value_id] += 1;
+          auto itr = prec_offset_map.insert({value_id, 1}).first;
+          uint64_t prec = itr->second;
+          assert(prec < (1ull << value_bit_info.prec_bitwidth));
+          e_prec = Expr::mkBV(prec, value_bit_info.prec_bitwidth);
+          // Increase the next precision bit.
+          itr->second++;
         }
         e_value = e_value.concat(e_prec);
       }
@@ -352,13 +359,16 @@ vector<pair<llvm::APFloat, Expr>> AbsFpEncoding::getAllConstants() const {
   if (fpconst_nan)
     constants.emplace_back(llvm::APFloat::getNaN(semantics), *fpconst_nan);
   if (fpconst_zero_pos)
-    constants.emplace_back(llvm::APFloat::getZero(semantics), *fpconst_zero_pos);
+    constants.emplace_back(llvm::APFloat::getZero(semantics),
+        *fpconst_zero_pos);
   if (fpconst_zero_neg)
-    constants.emplace_back(llvm::APFloat::getZero(semantics, true), *fpconst_zero_neg);
+    constants.emplace_back(llvm::APFloat::getZero(semantics, true),
+        *fpconst_zero_neg);
   if (fpconst_inf_pos)
     constants.emplace_back(llvm::APFloat::getInf(semantics), *fpconst_inf_pos);
   if (fpconst_inf_neg)
-    constants.emplace_back(llvm::APFloat::getInf(semantics, true), *fpconst_inf_neg);
+    constants.emplace_back(llvm::APFloat::getInf(semantics, true),
+        *fpconst_inf_neg);
 
   return constants;
 }

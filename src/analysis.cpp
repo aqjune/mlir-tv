@@ -42,7 +42,7 @@ static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
     val_f64.clearSign();
 
   // Values beyond the float range are mapped to Inf
-  if (!(op_status && llvm::APFloat::opOverflow)) {
+  if (!(op_status & llvm::APFloat::opOverflow)) {
     constF32Set.insert(val_f32);
   }
   constF64Set.insert(val_f64);
