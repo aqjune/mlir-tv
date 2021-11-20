@@ -110,6 +110,9 @@ static size_t analyzeVariable(const mlir::Value &value) {
 template<class T>
 static void analyzeOp(T op, bool isFullyAbstract);
 
+template<class FT>
+static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract);
+
 template<>
 void analyzeOp(mlir::arith::ConstantFloatOp op, bool isFullyAbstract) {
   auto ty = op.getType();
@@ -135,9 +138,24 @@ void analyzeOp(mlir::tosa::ConstOp op, bool isFullyAbstract) {
   analyzeElemAttr(eattr);
 }
 
+template<class FT>
+size_t analyzeRegion(mlir::Region &region, bool isFullyAbstract) {
+  if (!region.hasOneBlock())
+    throw UnsupportedException("Region with a single block is supported only");
+
+  auto &block = region.front();
+  return analyzeBlock<FT>(block, isFullyAbstract);
+}
+
 #define ANALYZE(op, ty, isFullyAbstract) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
     analyzeOp(op2, isFullyAbstract); \
+    continue; \
+  }
+
+#define ANALYZE_REGION(op, ty, region_fn, isFullyAbstract) \
+  if (auto op2 = mlir::dyn_cast<ty>(op)) { \
+    fpVarCount += analyzeRegion<FT>(op2.region_fn(), isFullyAbstract); \
     continue; \
   }
 
@@ -145,16 +163,28 @@ template<class FT>
 static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
   static_assert(is_base_of<mlir::FloatType, FT>::value,
       "FT must be mlir::FloatType");
-  
+
   size_t fpVarCount = 0;
   for (auto &op: block) {
     // Analyze constant fp operations
+    // These operations do not increase fpVarCount
     ANALYZE(op, mlir::arith::ConstantFloatOp, isFullyAbstract);
     ANALYZE(op, mlir::arith::ConstantOp, isFullyAbstract);
     ANALYZE(op, mlir::tosa::ConstOp, isFullyAbstract);
 
-    for (const auto &result: op.getResults())
-      fpVarCount += isFullyAbstract ? 1 : analyzeVariable<FT>(result);
+    // Non-constant operations; increase fpVarCount if returning fps
+    for (const auto &result: op.getResults()) {
+      auto numFps = analyzeVariable<FT>(result);
+      if (isFullyAbstract)
+        fpVarCount += numFps ? 1 : 0;
+      else
+        fpVarCount += numFps;
+    }
+
+    // Analyze operations having subregions.
+    ANALYZE_REGION(op, mlir::linalg::GenericOp, region, isFullyAbstract);
+    ANALYZE_REGION(op, mlir::linalg::PadTensorOp, region, isFullyAbstract);
+    ANALYZE_REGION(op, mlir::tensor::GenerateOp, body, isFullyAbstract);
   }
 
   return fpVarCount;
