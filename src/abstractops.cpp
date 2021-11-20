@@ -717,7 +717,7 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
       Expr::mkIte(f == infinity(), tgt.infinity(),
       Expr::mkIte(f == infinity(true), tgt.infinity(true),
       Expr::mkIte(limit_bits != limit_zero,
-        Expr::mkIte(sign_bit == sign_pos, infinity(), infinity(true)),
+        Expr::mkIte(sign_bit == sign_pos, tgt.infinity(), tgt.infinity(true)),
         truncated_float.simplify()))));
 }
 
