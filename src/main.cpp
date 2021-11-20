@@ -52,7 +52,7 @@ llvm::cl::opt<smt::SolverType> arg_solver("solver",
 
 llvm::cl::opt<int> fp_bits("fp-bits",
   llvm::cl::desc("The number of bits for the abstract representation of "
-                 "float and double types (default=their bitwidths)"),
+                 "non-constant float and double values."),
   llvm::cl::init(-1), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",

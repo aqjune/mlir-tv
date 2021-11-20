@@ -86,17 +86,29 @@ UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(
     AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, bool addAssoc,
-    unsigned floatBits, const set<llvm::APFloat>& floatConsts,
-    unsigned doubleBits, const set<llvm::APFloat>& doubleConsts) {
+    unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
+    unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
   alFpDot = afd;
   alFpCast = afc;
   alIntDot = aid;
   isFpAddAssociative = addAssoc;
 
+  // without suffix f, it will become llvm::APFloat with double semantics
+  floatConsts.emplace(0.0f);
+  floatConsts.emplace(1.0f);
+  doubleConsts.emplace(0.0);
+  doubleConsts.emplace(1.0);
+
+  // + 2: reserved for +NaN, +Inf; separately counted because they cannot be
+  // included in set<APFloat>
+  unsigned floatBits = log2_ceil(floatNonConstsCnt + floatConsts.size() + 2);
+  unsigned doubleBits = log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2);
+
   unsigned doubleLimitBits, doublePrecBits;
   if (afc == AbsLevelFpCast::PRECISE) {
     unsigned consts_nonzero_limit = 0;
     unsigned const_nonzero_precs = 0, const_max_nonzero_precs = 0;
+
     // Visit fp consts by increasing order
     for (const auto& dbl_const : doubleConsts) {
       auto casting_info = getCastingInfo(dbl_const);

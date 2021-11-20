@@ -38,11 +38,14 @@ enum class AbsLevelIntDot {
 };
 
 // This resets the used abstract ops record.
-// floatBits: # of bits required to represent distinct *absolute* f32 values
+// floatNonConstsCnt: # of non-constant distinct f32 values necessary to
+// validate the transformation.
 void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
                     bool isFpAddAssociative,
-                    unsigned floatBits, const std::set<llvm::APFloat>& floatConsts,
-                    unsigned doubleBits, const std::set<llvm::APFloat>& doubleConsts);
+                    unsigned floatNonConstsCnt,
+                    std::set<llvm::APFloat> floatConsts,
+                    unsigned doubleNonConstsCnt,
+                    std::set<llvm::APFloat> doubleConsts);
 void setEncodingOptions(bool use_multiset);
 
 bool getFpAddAssociativity();
@@ -109,13 +112,14 @@ private:
 public:
   AbsFpEncoding(const llvm::fltSemantics &semantics, unsigned value_bw,
       std::string &&fn_suffix)
-      : AbsFpEncoding(semantics, 0u, value_bw, 0u, nullptr, std::move(fn_suffix)) {}
+      : AbsFpEncoding(semantics, 0u, value_bw, 0u, nullptr,
+        std::move(fn_suffix)) {}
   // Use smaller_fpty_enc's value_bv_bits to calculate this type's value_bv_bits
   AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned prec_bw, AbsFpEncoding* smaller_fpty_enc,
       std::string &&fn_suffix)
-      : AbsFpEncoding(semantics, limit_bw, smaller_fpty_enc->value_bitwidth, prec_bw,
-        smaller_fpty_enc, std::move(fn_suffix)) {}
+      : AbsFpEncoding(semantics, limit_bw, smaller_fpty_enc->value_bitwidth,
+        prec_bw, smaller_fpty_enc, std::move(fn_suffix)) {}
 
   smt::Sort sort() const {
     return smt::Sort::bvSort(fp_bitwidth);

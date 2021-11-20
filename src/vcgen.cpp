@@ -37,7 +37,7 @@ public:
 
   MemEncoding encoding;
   unsigned int numBlocks;
-  unsigned int floatBits, doubleBits;
+  unsigned int f32NonConstsCount, f64NonConstsCount;
   set<llvm::APFloat> f32Consts, f64Consts;
   bool isFpAddAssociative;
   bool useMultisetForFpSum;
@@ -406,8 +406,8 @@ static void checkIsSrcAlwaysUB(
       aop::AbsLevelFpCast::PRECISE,
       aop::AbsLevelIntDot::SUM_MUL,
       vinput.isFpAddAssociative,
-      vinput.floatBits, vinput.f32Consts,
-      vinput.doubleBits, vinput.f64Consts);
+      vinput.f32NonConstsCount, vinput.f32Consts,
+      vinput.f64NonConstsCount, vinput.f64Consts);
   aop::setEncodingOptions(vinput.useMultisetForFpSum);
 
   ArgInfo args_dummy;
@@ -454,8 +454,8 @@ static Results validate(ValidationInput vinput) {
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
       /*isFpAddAssociative*/false,
-      /*fp bits*/vinput.floatBits, vinput.f32Consts,
-      /*doublebits*/vinput.doubleBits, vinput.f64Consts);
+      vinput.f32NonConstsCount, vinput.f32Consts,
+      vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(/*useMultiset*/false);
 
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
@@ -488,8 +488,8 @@ static Results validate(ValidationInput vinput) {
       fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
       fpAssocAdd,
-      vinput.floatBits, vinput.f32Consts,
-      vinput.doubleBits, vinput.f64Consts);
+      vinput.f32NonConstsCount, vinput.f32Consts,
+      vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(vinput.useMultisetForFpSum);
 
   if (!vinput.dumpSMTPath.empty())
@@ -507,12 +507,6 @@ static Results validate(ValidationInput vinput) {
     checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, useAllLogic,
                        elapsedMillisec);
   return res;
-}
-
-static unsigned calculateRequiredBITS(int fpCount) {
-  unsigned BITS = 0;
-  for (int count = 1; count < fpCount; count <<= 1, BITS ++);
-  return std::max(BITS, 1u);
 }
 
 Results validate(
@@ -557,29 +551,8 @@ Results validate(
 
     auto f32_consts = src_f32_res.fpConstSet;
     f32_consts.merge(tgt_f32_res.fpConstSet);
-    // without suffix f, it will become llvm::APFloat with double semantics
-    f32_consts.emplace(0.0f);
-    f32_consts.emplace(1.0f);
-
     auto f64_consts = src_f64_res.fpConstSet;
     f64_consts.merge(tgt_f64_res.fpConstSet);
-    f64_consts.emplace(0.0);
-    f64_consts.emplace(1.0);
-
-    // Calculate # of floating points whose absolute values are distinct.
-    auto calculateTotalFpCounts = [](const auto& src_res, const auto& tgt_res, const auto& const_analysis) {
-      size_t total = 2 + // reserved for +Inf, +NaN: 0.0 and 1.0 are included in analysis
-        src_res.fpArgCount + // # of variables in argument lists
-        const_analysis.size() + // # of constants needed
-        src_res.fpVarCount + tgt_res.fpVarCount; // # of variables in virtual register
-
-      return total;
-    };
-
-    auto totalF32Counts = calculateTotalFpCounts(src_f32_res, tgt_f32_res, f32_consts);
-    auto totalF64Counts = calculateTotalFpCounts(src_f64_res, tgt_f64_res, f64_consts);
-    auto bitsF32 = calculateRequiredBITS(totalF32Counts);
-    auto bitsF64 = calculateRequiredBITS(totalF64Counts);
 
     ValidationInput vinput;
     vinput.src = srcfn;
@@ -587,11 +560,21 @@ Results validate(
     vinput.dumpSMTPath = dumpSMTPath;
     vinput.numBlocks = numBlocks;
     if (fpBits.first) {
-      vinput.floatBits = fpBits.first;
-      vinput.doubleBits = fpBits.second;
+      assert(fpBits.first < 32 && fpBits.second < 32 &&
+             "Given fp bits are too large");
+      vinput.f32NonConstsCount = 1u << fpBits.first;
+      vinput.f64NonConstsCount = 1u << fpBits.second;
     } else {
-      vinput.floatBits = bitsF32;
-      vinput.doubleBits = bitsF64;
+      // Count non-constant floating points whose absolute values are distinct.
+      auto countNonConstFps = [](const auto& src_res, const auto& tgt_res) {
+        return
+          src_res.fpArgCount + // # of variables in argument lists
+          src_res.fpVarCount + tgt_res.fpVarCount;
+          // # of variables in registers
+      };
+
+      vinput.f32NonConstsCount = countNonConstFps(src_f32_res, tgt_f32_res);
+      vinput.f64NonConstsCount = countNonConstFps(src_f64_res, tgt_f64_res);
     }
     vinput.f32Consts = f32_consts;
     vinput.f64Consts = f64_consts;

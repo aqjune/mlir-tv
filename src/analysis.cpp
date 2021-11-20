@@ -14,9 +14,9 @@ static set<llvm::APFloat> constF32Set;
 static set<llvm::APFloat> constF64Set;
 
 static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
-  if (val.isNaN() || val.isInfinity() || val.isZero()
-      || val.isExactlyValue(1.0) || val.isExactlyValue(-1.0))
-    // Already specially treated in vcgen.cpp.
+  if (val.isNaN() || val.isInfinity())
+    // They cannot be inserted into set<APFloat>.
+    // They will be specially treated in setAbstraction() (abstractops.cpp)
     return;
 
   auto val_f32 = val;
@@ -78,7 +78,8 @@ static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
 
 template<class FT>
 static size_t analyzeVariable(const mlir::Value &value) {
-  static_assert(is_base_of<mlir::FloatType, FT>::value, "FT must be mlir::FloatType");
+  static_assert(is_base_of<mlir::FloatType, FT>::value,
+                "FT must be mlir::FloatType");
   auto ty = value.getType();
   if (ty.isa<FT>()) {
     return 1;
@@ -191,7 +192,7 @@ static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
 }
 
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
-  SolePrecisionAnalysisResult F32, F64;
+  FPAnalysisResult F32, F64;
   constF32Set.clear();
   constF64Set.clear();
 
@@ -202,8 +203,15 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
 
   // Step1. analyze arguments
   for (const auto& arg: fn.getArguments()){
-    F32.fpArgCount += isFullyAbstract ? 1 : analyzeVariable<mlir::Float32Type>(arg);
-    F64.fpArgCount += isFullyAbstract ? 1 : analyzeVariable<mlir::Float64Type>(arg);
+    auto numF32 = analyzeVariable<mlir::Float32Type>(arg);
+    auto numF64 = analyzeVariable<mlir::Float64Type>(arg);
+    if (isFullyAbstract) {
+      F32.fpArgCount += numF32 ? 1 : 0;
+      F64.fpArgCount += numF64 ? 1 : 0;
+    } else {
+      F32.fpArgCount += numF32;
+      F64.fpArgCount += numF64;
+    }
   }
     
   // Step2. analyze the block
