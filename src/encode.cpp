@@ -592,7 +592,7 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
 
   if (src_prec == tgt_prec) {
     st.regs.add(op.getResult(), st.regs.get<Float>(op.getOperand()));
-    return; // casting into identical type is a no-op
+    return; // extending into identical type is a no-op
   } else if (src_prec > tgt_prec) {
     throw UnsupportedException(op.getOperation(),
       "cannot ExtF into lower precision type!");
@@ -600,6 +600,27 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
 
   auto arg = op.getOperand();
   encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.extend(op_type); },
+      {});
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
+  auto op_type = op.getType();
+  FPPrecision tgt_prec = getPrecision(op_type);
+
+  auto operand_type = op.getOperand().getType();
+  FPPrecision src_prec = getPrecision(operand_type);
+
+  if (src_prec == tgt_prec) {
+    st.regs.add(op.getResult(), st.regs.get<Float>(op.getOperand()));
+    return; // truncating into identical type is a no-op
+  } else if (src_prec < tgt_prec) {
+    throw UnsupportedException(op.getOperation(),
+      "cannot TruncF into higher precision type!");
+  }
+
+  auto arg = op.getOperand();
+  encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.truncate(op_type); },
       {});
 }
 
@@ -2278,6 +2299,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::NegFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::TruncFOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
 

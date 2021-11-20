@@ -102,6 +102,7 @@ private:
   std::optional<smt::FnDecl> fp_mulfn;
   std::optional<smt::FnDecl> fp_ultfn;
   std::optional<smt::FnDecl> fp_extendfn;
+  std::optional<smt::FnDecl> fp_truncatefn;
   std::string fn_suffix;
 
 private:
@@ -138,6 +139,7 @@ private:
   smt::FnDecl getDotFn();
   smt::FnDecl getUltFn();
   smt::FnDecl getExtendFn();
+  smt::FnDecl getTruncateFn();
 
   uint64_t getSignBit() const;
 
@@ -160,6 +162,7 @@ public:
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
   smt::Expr fult(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
+  smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr getFpAssociativePrecondition() const;
 
 private:
