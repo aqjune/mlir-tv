@@ -5,7 +5,6 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 
-#include <set>
 #include <type_traits>
 
 using namespace std;
@@ -14,28 +13,25 @@ using namespace std;
 static set<llvm::APFloat> constF32Set;
 static set<llvm::APFloat> constF64Set;
 
-static void analyzeAttr(const mlir::Attribute &a) {
-  assert(!a.isa<mlir::ElementsAttr>());
-
-  auto ty = a.getType();
-  if (!ty.isa<mlir::FloatType>())
-    return;
-
-  const auto val = a.dyn_cast<mlir::FloatAttr>().getValue();
-  if (val.isNaN() || val.isInfinity())
+static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
+  if (val.isNaN() || val.isInfinity() || val.isZero()
+      || val.isExactlyValue(1.0) || val.isExactlyValue(-1.0))
     // Already specially treated in vcgen.cpp.
     return;
 
   auto val_f32 = val;
   auto val_f64 = val;
-  bool is_rounded; // dummy
+  bool lost_info; // dummy
 
+  llvm::APFloat::opStatus op_status;
   if (ty.isF32()) {
-    val_f64.convert(llvm::APFloat::IEEEdouble(),
-                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+    op_status = val_f64.convert(llvm::APFloat::IEEEdouble(),
+                    // doesn't really matter in extension
+                    llvm::APFloat::rmTowardZero, &lost_info);
   } else if (ty.isF64()) {
-    val_f32.convert(llvm::APFloat::IEEEsingle(),
-                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+    op_status = val_f32.convert(llvm::APFloat::IEEEsingle(),
+                    // floor in case of truncation (ordering issue)
+                    llvm::APFloat::rmTowardZero, &lost_info);
   } else {
       throw UnsupportedException(ty, "Unsupported type");
   }
@@ -45,8 +41,22 @@ static void analyzeAttr(const mlir::Attribute &a) {
   if (val_f64.isNegative())
     val_f64.clearSign();
 
-  constF32Set.insert(val_f32);
+  // Values beyond the float range are mapped to Inf
+  if (!(op_status & llvm::APFloat::opOverflow)) {
+    constF32Set.insert(val_f32);
+  }
   constF64Set.insert(val_f64);
+}
+
+static void analyzeAttr(const mlir::Attribute &a) {
+  assert(!a.isa<mlir::ElementsAttr>());
+
+  auto ty = a.getType();
+  if (!ty.isa<mlir::FloatType>())
+    return;
+
+  const auto val = a.dyn_cast<mlir::FloatAttr>().getValue();
+  analyzeAPFloat(ty, val);
 }
 
 static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
@@ -107,21 +117,7 @@ template<>
 void analyzeOp(mlir::arith::ConstantFloatOp op, bool isFullyAbstract) {
   auto ty = op.getType();
   const auto val = op.value();
-  auto val_f32 = val, val_f64 = val;
-  bool is_rounded; // dummy
-
-  if (ty.isF32()) {
-    val_f64.convert(llvm::APFloat::IEEEdouble(),
-                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
-  } else if (ty.isF64()) {
-    val_f32.convert(llvm::APFloat::IEEEsingle(),
-                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
-  } else {
-      throw UnsupportedException(ty, "Unsupported type");
-  }
-
-  constF32Set.insert(val_f32);
-  constF64Set.insert(val_f64);
+  analyzeAPFloat(ty, val);
 }
 
 template<>

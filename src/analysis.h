@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include <optional>
 #include <set>
 
 struct SolePrecisionAnalysisResult {

@@ -4,6 +4,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <vector>
+#include <set>
 
 namespace aop {
 
@@ -39,8 +40,9 @@ enum class AbsLevelIntDot {
 // This resets the used abstract ops record.
 // floatBits: # of bits required to represent distinct *absolute* f32 values
 void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
-                    bool isFpAddAssociative, unsigned floatBits,
-                    unsigned doubleBits);
+                    bool isFpAddAssociative,
+                    unsigned floatBits, const std::set<llvm::APFloat>& floatConsts,
+                    unsigned doubleBits, const std::set<llvm::APFloat>& doubleConsts);
 void setEncodingOptions(bool use_multiset);
 
 bool getFpAddAssociativity();
@@ -136,11 +138,12 @@ private:
   uint64_t getSignBit() const;
 
 public:
-  smt::Expr constant(const llvm::APFloat &f);
-  smt::Expr zero(bool isNegative = false);
-  smt::Expr one(bool isNegative = false);
-  smt::Expr infinity(bool isNegative = false);
-  smt::Expr nan();
+  void addConstants(const std::set<llvm::APFloat>& const_set);
+  smt::Expr constant(const llvm::APFloat &f) const;
+  smt::Expr zero(bool isNegative = false) const;
+  smt::Expr one(bool isNegative = false) const;
+  smt::Expr infinity(bool isNegative = false) const;
+  smt::Expr nan() const;
 
   std::vector<std::pair<llvm::APFloat, smt::Expr>> getAllConstants() const;
   std::vector<llvm::APFloat> possibleConsts(const smt::Expr &e) const;
