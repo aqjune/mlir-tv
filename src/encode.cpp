@@ -350,6 +350,16 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
     auto b = st.regs.get<Float>(arg1);
     st.regs.add(op, f_float(move(a), move(b)));
 
+  } else if (arg0.getType().isa<mlir::IntegerType>()) {
+    auto a = st.regs.get<Integer>(arg0);
+    auto b = st.regs.get<Integer>(arg1);
+    st.regs.add(op, f_int(move(a), move(b)));
+
+  } else if (arg0.getType().isa<mlir::IndexType>()) {
+    auto a = st.regs.get<Index>(arg0);
+    auto b = st.regs.get<Index>(arg1);
+    st.regs.add(op, Index::fromInteger(f_int(a.asInteger(), b.asInteger())));
+
   } else if (auto tty = arg0.getType().dyn_cast<mlir::RankedTensorType>()) {
     auto elemty = tty.getElementType();
     if (!elemty.isIntOrFloat())
@@ -365,6 +375,8 @@ encodeBinaryOp(State &st, OpTy op, mlir::Value arg0, mlir::Value arg1,
         return f_float(Float(a, elemty), Float(b, elemty));
       } else if (elemty.isa<mlir::IntegerType>()) {
         return f_int(Integer(a), Integer(b));
+      } else if (elemty.isa<mlir::IndexType>()) {
+        return Index::fromInteger(f_int(Integer(a), Integer(b)));
       }
       throw UnsupportedException(opr, "Unknown value type");
     };
@@ -457,33 +469,40 @@ void encodeOp(State &st, mlir::arith::SubFOp op, bool) {
       [](auto &&a, auto &&b) { return a.add(b.neg()); }, {});
 }
 
-static void addIntOrIndex(
-    State &st, mlir::Value res, const Expr &e, bool isIndex) {
-  if (isIndex)
-    st.regs.add(res, Index(e));
-  else
-    st.regs.add(res, Integer(e));
-}
-
 template<>
 void encodeOp(State &st, mlir::arith::AddIOp op, bool) {
-  auto a = st.regs.getExpr(op.getOperand(0));
-  auto b = st.regs.getExpr(op.getOperand(1));
-  addIntOrIndex(st, op, a + b, op.getType().isIndex());
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1, {},
+      [](auto &&a, auto &&b) { return (Expr)a + (Expr)b; });
 }
 
 template<>
 void encodeOp(State &st, mlir::arith::SubIOp op, bool) {
-  auto a = st.regs.getExpr(op.getOperand(0));
-  auto b = st.regs.getExpr(op.getOperand(1));
-  addIntOrIndex(st, op, a - b, op.getType().isIndex());
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1, {},
+      [](auto &&a, auto &&b) { return (Expr)a - (Expr)b; });
 }
 
 template<>
 void encodeOp(State &st, mlir::arith::MulIOp op, bool) {
-  auto a = st.regs.getExpr(op.getOperand(0));
-  auto b = st.regs.getExpr(op.getOperand(1));
-  addIntOrIndex(st, op, a * b, op.getType().isIndex());
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1, {},
+      [](auto &&a, auto &&b) { return (Expr)a * (Expr)b; });
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::XOrIOp op, bool) {
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1, {},
+      [](auto &&a, auto &&b) { return (Expr)a ^ (Expr)b; });
 }
 
 template<>
@@ -504,14 +523,18 @@ void encodeOp(State &st, mlir::arith::CmpFOp op, bool) {
         if (elemty.isa<mlir::FloatType>()) {
           return Float(a, elemty).fult(Float(b, elemty));
         }
-        throw UnsupportedException(op.getOperation(), "cmpf only accepts floating-like elemtype");
+        throw UnsupportedException(op.getOperation(),
+            "cmpf only accepts floating points");
       };
       st.regs.add(op, a.elementwiseBinOp(b, resultElemTy, f));
       st.wellDefined(op.getOperation(), listsEqual(a.getDims(), b.getDims()));
-    } else if (op1Type.isa<mlir::FloatType>() && op2Type.isa<mlir::FloatType>()) {
+
+    } else if (op1Type.isa<mlir::FloatType>() &&
+               op2Type.isa<mlir::FloatType>()) {
       auto a = st.regs.get<Float>(op.getOperand(0));
       auto b = st.regs.get<Float>(op.getOperand(1));
-      addIntOrIndex(st, op, a.fult(b), false);
+      st.regs.add(op, Integer(a.fult(b)));
+
     } else {
       throw UnsupportedException(op.getOperation(), "Unsupported cmpf operand");
     }
@@ -2320,6 +2343,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::SubFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::TruncFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::XOrIOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
 

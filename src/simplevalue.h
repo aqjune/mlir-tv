@@ -15,6 +15,29 @@ enum class VarType {
   UNBOUND
 };
 
+class Integer {
+  smt::Expr e;
+
+public:
+  Integer(const smt::Expr &e): e(e) {}
+  Integer(int64_t i, unsigned bw);
+  Integer(const llvm::APInt &api);
+
+  operator smt::Expr() const { return e; }
+  unsigned bitwidth() { return e.bitwidth(); }
+
+  static smt::Sort sort(unsigned bw);
+  static Integer var(std::string &&name, unsigned bw, VarType vty);
+  static Integer boolTrue();
+  static Integer boolFalse();
+
+  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
+  // (refinement, {})
+  std::pair<smt::Expr, std::vector<smt::Expr>> refines(const Integer &other)
+      const;
+  Integer eval(smt::Model m) const;
+};
+
 class Index {
   smt::Expr e;
 
@@ -43,33 +66,12 @@ public:
   static Index var(std::string &&name, enum VarType);
   // Creates N variables that must be bound to forall/lambda/exists.
   static std::vector<smt::Expr> boundIndexVars(unsigned N);
+  static Index fromInteger(const Integer &i) { return Index((smt::Expr)i); }
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Index &);
   // (refinement, unbound variables used in the refinement formula)
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const Index &other) const;
   Index eval(smt::Model m) const;
-};
-
-class Integer {
-  smt::Expr e;
-
-public:
-  Integer(const smt::Expr &e): e(e) {}
-  Integer(int64_t i, unsigned bw);
-  Integer(const llvm::APInt &api);
-
-  operator smt::Expr() const { return e; }
-  unsigned bitwidth() { return e.bitwidth(); }
-
-  static smt::Sort sort(unsigned bw);
-  static Integer var(std::string &&name, unsigned bw, VarType vty);
-  static Integer boolTrue();
-  static Integer boolFalse();
-
-  friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
-  // (refinement, {})
-  std::pair<smt::Expr, std::vector<smt::Expr>> refines(const Integer &other)
-      const;
-  Integer eval(smt::Model m) const;
+  Integer asInteger() const { return Integer(e); }
 };
