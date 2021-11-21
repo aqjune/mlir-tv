@@ -205,10 +205,9 @@ static Results checkRefinement(
     }
   };
 
-  useAllLogic |= st_src.hasConstArray || st_tgt.hasConstArray;
+  useAllLogic |= Expr::getLog().constArrayCreated;
   const char *logic = useAllLogic ? SMT_LOGIC_ALL :
-      ((st_src.hasQuantifier || st_tgt.hasQuantifier) ?
-        SMT_LOGIC : SMT_LOGIC_QF);
+      (Expr::getLog().quantifierCreated ? SMT_LOGIC : SMT_LOGIC_QF);
 
   { // 1. Check UB
     Solver s(logic);
@@ -347,6 +346,7 @@ static tuple<State, State, Expr> encodeFinalStates(
 
   ArgInfo args;
   vector<Expr> preconds;
+  Expr::resetLog();
 
   // Set max. local blocks as num global blocks
   unique_ptr<Memory> initMemSrc(
@@ -407,9 +407,9 @@ static void checkIsSrcAlwaysUB(
         Memory::create(vinput.numBlocks, vinput.numBlocks, vinput.encoding)),
       false, true, args_dummy, preconds);
 
-  useAllLogic |= st.hasConstArray;
+  useAllLogic |= Expr::getLog().constArrayCreated;
   auto logic = useAllLogic ? SMT_LOGIC_ALL :
-      (st.hasQuantifier ? SMT_LOGIC : SMT_LOGIC_QF);
+      (Expr::getLog().quantifierCreated ? SMT_LOGIC : SMT_LOGIC_QF);
   Solver s(logic);
   auto not_ub = st.isWellDefined().simplify();
   auto smtres = solve(s, exprAnd(preconds) & not_ub, vinput.dumpSMTPath,

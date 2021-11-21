@@ -192,6 +192,14 @@ public:
 
   static Expr mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed);
 
+  struct Log {
+  public:
+    bool quantifierCreated;
+    bool constArrayCreated;
+  };
+  static Log getLog();
+  static void resetLog();
+
 
   friend FnDecl;
   friend Model;

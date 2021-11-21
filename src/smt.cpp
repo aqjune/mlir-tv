@@ -246,6 +246,12 @@ Expr FnDecl::apply(const Expr &arg) const {
 
 // ------- Expr -------
 
+static Expr::Log log;
+
+Expr::Log Expr::getLog() { return log; }
+void Expr::resetLog() { log = {false, false}; }
+
+
 #ifdef SOLVER_Z3
 z3::expr Expr::getZ3Expr() const {
   return *z3;
@@ -837,6 +843,8 @@ Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
     return body;
   }
 
+  log.quantifierCreated = true;
+
   Expr e;
   SET_Z3(e, fmap(body.z3, [&](auto &z3body){
     return z3::forall(toZ3ExprVector(vars), z3body);
@@ -867,6 +875,8 @@ Expr Expr::mkLambda(const vector<Expr> &vars, const Expr &body) {
 }
 
 Expr Expr::mkSplatArray(const Sort &domain, const Expr &splatElem) {
+  log.constArrayCreated = true;
+
   Expr e;
   SET_Z3(e, fmap(splatElem.z3, [&](auto &e){
     return z3::const_array(*domain.z3, e);
