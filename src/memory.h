@@ -125,6 +125,7 @@ public:
   std::pair<smt::Expr, smt::Expr> load(
       const smt::Expr &bid, const smt::Expr &idx) const override;
 
+  // this: tgt, other: src
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(const Memory &other)
       const override;
 };

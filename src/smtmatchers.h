@@ -27,6 +27,16 @@ public:
   }
 };
 
+class ConstBool: Matcher {
+  bool val;
+
+public:
+  ConstBool(bool val): val(val) {}
+
+  bool match(const Expr &expr) const { return (*this)(expr); }
+  bool operator()(const Expr &e) const;
+};
+
 class ConstSplatArray: Matcher {
   std::function<bool(const Expr &)> subMatcher;
 

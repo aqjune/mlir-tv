@@ -41,10 +41,10 @@ SingleArrayMemory::refines(const Memory &other) const {
   auto bid = Expr::mkFreshVar(Sort::bvSort(bidBits), "bid");
   auto offset = Index::var("offset", VarType::FRESH);
 
-  auto [srcValue, srcSuccess] = load(bid, offset);
-  auto srcWritable = getWritable(bid);
-  auto [tgtValue, tgtSuccess] = other.load(bid, offset);
-  auto tgtWritable = other.getWritable(bid);
+  auto [srcValue, srcSuccess] = other.load(bid, offset);
+  auto srcWritable = other.getWritable(bid);
+  auto [tgtValue, tgtSuccess] = load(bid, offset);
+  auto tgtWritable = getWritable(bid);
   // define memory refinement using writable refinement and value refinement
   auto wRefinement = srcWritable.implies(tgtWritable);
   auto vRefinement = (tgtValue == srcValue);
@@ -283,21 +283,21 @@ MultipleArrayMemory::refines(const Memory &other0) const {
   auto bid = Expr::mkFreshVar(Sort::bvSort(bidBits), "bid");
   auto offset = Index::var("offset", VarType::FRESH);
 
-  auto refines = [this, &other, &offset](unsigned ubid) {
-    auto [srcValue, srcSuccess] = load(ubid, offset);
-    auto srcWritable = getWritable(ubid);
-    auto [tgtValue, tgtSuccess] = other.load(ubid, offset);
-    auto tgtWritable = other.getWritable(ubid);
+  auto refinesBlk = [this, &other, &offset](unsigned ubid) {
+    auto [srcValue, srcSuccess] = other.load(ubid, offset);
+    auto srcWritable = other.getWritable(ubid);
+    auto [tgtValue, tgtSuccess] = load(ubid, offset);
+    auto tgtWritable = getWritable(ubid);
 
     auto wRefinement = srcWritable.implies(tgtWritable);
     auto vRefinement = (tgtValue == srcValue);
     return tgtSuccess.implies(srcSuccess & wRefinement & vRefinement);
   };
 
-  Expr refinement = refines(0);
+  Expr refinement = refinesBlk(0);
   for (unsigned i = 1; i < numGlobalBlocks; i ++)
     refinement = Expr::mkIte(
-        bid == Expr::mkBV(i, bidBits), refines(i), refinement);
+        bid == Expr::mkBV(i, bidBits), refinesBlk(i), refinement);
 
   return {refinement, {bid, offset}};
 }

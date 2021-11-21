@@ -637,8 +637,9 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
   vector<Expr> params = {i};
   return {size_match &
       i.ult(::get1DSize(dims)).implies(
-        (initialized.select(i) == other.initialized.select(i)) &
-        (arr.select(i) == other.arr.select(i))),
+        initialized.select(i).implies(
+            other.initialized.select(i) &
+            (arr.select(i) == other.arr.select(i)))),
     params};
 }
 
@@ -657,6 +658,12 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
     os << ", " << or_omit(t.dims[i]);
   os << ") ";
 
+  using namespace smt::matchers;
+  if (ConstSplatArray(ConstBool(false)).match(t.initialized)) {
+    os << "(uninitialized)";
+    return os;
+  }
+
   const int64_t maxSizeToPrint = 16;
   int64_t dimSize;
   if (smt::get1DSize(t.dims).simplify().isInt(dimSize) &&
@@ -673,18 +680,24 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
         idxconsts.push_back(ii);
       }
       auto elem = t.get(idx1d).first;
+      auto init = t.isInitialized(idx1d);
 
       if (i != 0)
         os << ", ";
       os << "(" << idxconsts[0];
       for (size_t i = 1; i < idxconsts.size(); ++i)
         os << ", " << idxconsts[i];
-      os << ") -> " << or_omit(elem);
+      os << ") -> ";
+      if (init.isTrue())
+        os << or_omit(elem);
+      else if (init.isFalse())
+        os << "(uninit.)";
+      else
+        os << "(unknown)";
     }
     return os;
   }
 
-  using namespace smt::matchers;
   Expr arr = t.arr;
   bool hasStore = false;
 

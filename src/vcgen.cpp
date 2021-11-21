@@ -237,8 +237,8 @@ static Results checkRefinement(
       optional<Expr> refines_opt;
       vector<Expr> params;
       visit([&](auto &&src, auto &&tgt) {
-        auto typedTarget = (decltype(src)) tgt;
-        tie(refines_opt, params) = src.refines(typedTarget);
+        auto typedSrc = (decltype(tgt)) src;
+        tie(refines_opt, params) = tgt.refines(typedSrc);
       }, st_src.retValues[i], st_tgt.retValues[i]);
 
       Expr refines = move(*refines_opt);
@@ -269,7 +269,7 @@ static Results checkRefinement(
   if (st_src.m->getNumBlocks() > 0 ||
       st_tgt.m->getNumBlocks() > 0) { // 3. Check memory refinement
     Solver s(logic);
-    auto [refines, params] = st_src.m->refines(*st_tgt.m);
+    auto [refines, params] = st_tgt.m->refines(*st_src.m);
     auto not_refines =
       (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines).simplify();
     auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,

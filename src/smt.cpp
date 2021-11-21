@@ -1175,6 +1175,10 @@ void Matcher::setZ3(Expr &e, optional<z3::expr> &&opt) const {
 }
 #endif // SOLVER_Z3
 
+bool ConstBool::operator()(const Expr &expr) const {
+  return (val && expr.isTrue()) || (!val && expr.isFalse());
+}
+
 bool ConstSplatArray::operator()(const Expr &expr) const {
   // FIXME: cvc5
 #ifdef SOLVER_Z3
