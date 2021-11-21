@@ -833,7 +833,7 @@ void encodeOp(State &st, mlir::tosa::ConcatOp op, bool) {
     st.wellDefined(op, t2.isFullyInitialized());
     for (unsigned i = 0; i < t2.getRank(); ++i) {
       if (i != axis)
-        st.wellDefined(op.getOperation(), t.getDim(i) == t2.getDim(i));
+        st.wellDefined(op, t.getDim(i) == t2.getDim(i));
     }
 
     t = t.concat(t2, axis);
@@ -1111,12 +1111,12 @@ void encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op, bool) {
         size = size * t.getDim(idx);
 
       if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
-        st.wellDefined(op.getOperation(), size == resTy.getDimSize(i));
+        st.wellDefined(op, size == resTy.getDimSize(i));
       newDims.push_back(move(size));
     }
   }
 
-  st.wellDefined(op.getOperation(), t.get1DSize() == smt::get1DSize(newDims));
+  st.wellDefined(op, t.get1DSize() == smt::get1DSize(newDims));
   st.regs.add(op.getResult(), t.reshape(newDims));
   // Note: tensor_collapse_shape does not look into elements, so initialization
   // check is not necessary.
@@ -1252,7 +1252,7 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
   // match
   if (retty.hasStaticShape()) {
     for (unsigned i = 0; i < retty.getRank(); ++i) {
-      st.wellDefined(op.getOperation(),
+      st.wellDefined(op,
           tvec_res->front().getDim(i) == retty.getDimSize(i));
     }
   }
@@ -1278,7 +1278,7 @@ void encodeOp(State &st, mlir::tensor::DimOp op, bool) {
   auto [res, wf] = encodeDimOp(
       st, st.regs.get<Tensor>(op.source()).getDims(), op.index());
   st.regs.add(op, Index(res));
-  st.wellDefined(op.getOperation(), move(wf));
+  st.wellDefined(op, move(wf));
   // DimOp does not look into elements, so initialization check is not necessary
 }
 
@@ -1292,7 +1292,7 @@ void encodeOp(State &st, mlir::tensor::CastOp op, bool) {
   for (size_t i = 0; i < tty.getRank(); ++i) {
     if (tty.isDynamicDim(i))
       continue;
-    st.wellDefined(op.getOperation(), (Expr)t.getDim(i) == tty.getDimSize(i));
+    st.wellDefined(op, (Expr)t.getDim(i) == tty.getDimSize(i));
   }
   st.regs.add(op, move(t));
   // Initialization check is not necessary
@@ -1309,7 +1309,7 @@ void encodeOp(State &st, mlir::tensor::InsertOp op, bool) {
 
   auto [tensor, inbounds] = dest.insert(val, indices);
   st.regs.add(op, move(tensor));
-  st.wellDefined(op.getOperation(), move(inbounds));
+  st.wellDefined(op, move(inbounds));
 }
 
 template<>
@@ -1373,7 +1373,7 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
 
   // linalg::generate has one result
   st.regs.add(op.getResult(), move(tvec_res->front()));
-  st.wellDefined(op.getOperation(), move(welldef));
+  st.wellDefined(op, move(welldef));
 }
 
 template<>
@@ -1480,7 +1480,7 @@ void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
 
   // If tgt[indVars] is inbounds and the src[indVars] is to be chosen,
   // src[indVars] must be inbounds as well.
-  st.wellDefined(op.getOperation(),
+  st.wellDefined(op,
       Expr::mkForall(indVars, (tgtwb & cond).implies(srcwb)));
   st.regs.add(res, Tensor::mkLambda(
       src.getElemType(), move(dims), move(indVars), output, init));
@@ -1610,7 +1610,7 @@ void encodeOp(State &st, mlir::memref::DimOp op, bool) {
   auto [res, wf] = encodeDimOp(
       st, st.regs.get<MemRef>(op.source()).getDims(), op.index());
   st.regs.add(op, Index(res));
-  st.wellDefined(op.getOperation(), move(wf));
+  st.wellDefined(op, move(wf));
 }
 
 template<>
@@ -1625,7 +1625,7 @@ void encodeOp(State &st, mlir::memref::LoadOp op, bool) {
   auto [Expr, success] = m.get(indices);
   if (auto vt = fromExpr(move(Expr), op.getType())) {
     st.regs.add(op, move(*vt));
-    st.wellDefined(op.getOperation(), move(success));
+    st.wellDefined(op, move(success));
   } else
     throw UnsupportedException(op.getOperation(), "unsupported type");
 }
@@ -1646,7 +1646,7 @@ void encodeOp(State &st, mlir::memref::StoreOp op, bool encodeMemWriteOp) {
   if (op.getOperand(0).getType().isF32()) {
     auto val = st.regs.get<Float>(op.getOperand(0));
     auto success = m.store(val, indices);
-    st.wellDefined(op.getOperation(), move(success));
+    st.wellDefined(op, move(success));
   } else {
     // Currently we support only f32 memory type
     throw UnsupportedException(op.getOperation(), "unsupported type");
@@ -1774,7 +1774,7 @@ void encodeOp(State &st, mlir::memref::TensorLoadOp op, bool encodeMemWrite) {
   memory.setWritable(m.getBID(), false);
 
   st.regs.add(op.getResult(), loadTensorFrom(m));
-  st.wellDefined(op.getOperation(), m.isInBounds());
+  st.wellDefined(op, m.isInBounds());
 }
 
 template<>
@@ -1789,7 +1789,7 @@ void encodeOp(State &st, mlir::memref::TensorStoreOp op, bool encodeMemWrite) {
   // Src and tgt's shapes & element types must match
   // Memref may have its layout, though.
   for (unsigned i = 0; i < t.getRank(); ++i)
-    st.wellDefined(op.getOperation(), (Expr)t.getDim(i) == (Expr)m.getDim(i));
+    st.wellDefined(op, (Expr)t.getDim(i) == (Expr)m.getDim(i));
 
   storeTensorTo(st, op.getOperation(), move(t), m,
       op.memref().getType().cast<mlir::MemRefType>());
@@ -2012,7 +2012,7 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
 
     Expr size = (Expr)viewSizes[idx];
     Expr inbounds = size.isNonZero().implies(ae->ult(size));
-    st.wellDefined(op.getOperation(), move(inbounds));
+    st.wellDefined(op, move(inbounds));
   }
 }
 
@@ -2322,7 +2322,7 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
   }
 
 
-  st.wellDefined(op.getOperation(), move(*t_welldef));
+  st.wellDefined(op, move(*t_welldef));
 
   if (op.hasTensorSemantics()) {
     for(unsigned i = 0; i < tvec_res->size(); i++) {

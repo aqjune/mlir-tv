@@ -410,6 +410,7 @@ static void checkIsSrcAlwaysUB(
   useAllLogic |= Expr::getLog().constArrayCreated;
   auto logic = useAllLogic ? SMT_LOGIC_ALL :
       (Expr::getLog().quantifierCreated ? SMT_LOGIC : SMT_LOGIC_QF);
+
   Solver s(logic);
   auto not_ub = st.isWellDefined().simplify();
   auto smtres = solve(s, exprAnd(preconds) & not_ub, vinput.dumpSMTPath,
