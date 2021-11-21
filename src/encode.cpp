@@ -1426,6 +1426,14 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
     j++;
   }
 
+  // Add out-of-bounds check
+  for (unsigned i = 0; i < sizes.size(); ++i) {
+    auto dim = src.getDim(i);
+    Expr ofs = offsets[i];
+    st.wellDefined(op, ofs.ult(dim));
+    st.wellDefined(op, (ofs + sizes[i]).ule(dim));
+  }
+
   vector<Expr> inIdxs, outIdxs;
   // indices that is going to be read from the output tensor
   inIdxs = Index::boundIndexVars(resType.getRank());
