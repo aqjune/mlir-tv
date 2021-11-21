@@ -944,7 +944,7 @@ void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
 
 static void encodeParallelLoopBodyAndOutputs(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
-    optional<vector<Tensor>> &t_resvec, Expr &welldef,
+    optional<vector<Tensor>> &tvec_res, Expr &welldef,
     // (yielded value, ind var) -> newly mapped value
     optional<function<Expr(const Expr&, const vector<Expr>&)>>
         outputValMap = nullopt) {
@@ -974,13 +974,13 @@ static void encodeParallelLoopBodyAndOutputs(
   auto outputIndVars = doMap(scope.indVars, outputMap);
   auto tensorSz = addOne(doMap(scope.indVarUpperBounds, outputMap));
 
-  t_resvec.emplace();
+  tvec_res.emplace();
   for (unsigned i = 0; i < yieldedValues.size(); i++) {
     Expr resExpr = newst.regs.getExpr(yieldedValues[i]);
     if (outputValMap)
       resExpr = (*outputValMap)(resExpr, outputIndVars);
 
-    t_resvec->push_back(Tensor::mkLambda(yieldedValues[i].getType(),
+    tvec_res->push_back(Tensor::mkLambda(yieldedValues[i].getType(),
         vector(tensorSz), vector(outputIndVars), resExpr));
   }
 }
