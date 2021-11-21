@@ -944,7 +944,6 @@ void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
 
 static void encodeParallelLoopBodyAndOutputs(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
-    const vector<mlir::ShapedType> &outputType,
     optional<vector<Tensor>> &t_resvec, Expr &welldef,
     // (yielded value, ind var) -> newly mapped value
     optional<function<Expr(const Expr&, const vector<Expr>&)>>
@@ -1194,16 +1193,15 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
     return Expr::mkIte(isSource, sourceTensor.get(sourceIndices).first, pad);
   };
 
-  optional<vector<Tensor>> t_resvec;
-  vector<mlir::ShapedType> retvec;
-  retvec.push_back(retty);
-  
-  Expr welldef = Expr::mkBool(true);
-  encodeParallelLoopBodyAndOutputs(newst, blk, identityMap, retvec,
-      t_resvec, welldef, paddingOrSource);
+  optional<vector<Tensor>> tvec_res;
 
+  Expr welldef = Expr::mkBool(true);
+  encodeParallelLoopBodyAndOutputs(newst, blk, identityMap, tvec_res, welldef,
+      paddingOrSource);
+
+  // pad_tensor has one output.
   welldef = Expr::mkForall(indVars,
-      t_resvec->front().isInBounds(indVars).implies(welldef));
+      tvec_res->front().isInBounds(indVars).implies(welldef));
 
   newst.linalgGenericScopes.pop();
 
@@ -1212,11 +1210,11 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
   if (retty.hasStaticShape()) {
     for (unsigned i = 0; i < retty.getRank(); ++i) {
       st.wellDefined(op.getOperation(),
-          t_resvec->front().getDim(i) == retty.getDimSize(i));
+          tvec_res->front().getDim(i) == retty.getDimSize(i));
     }
   }
 
-  st.regs.add(op.getResult(), move(t_resvec->front()));
+  st.regs.add(op.getResult(), move(tvec_res->front()));
   st.wellDefined(op.getOperation(), move(welldef));
 }
 
@@ -1302,10 +1300,8 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
     }
   }
 
-  optional<vector<Tensor>> t_resvec;
+  optional<vector<Tensor>> tvec_res;
   optional<Tensor> t_res;
-  vector<mlir::ShapedType> retvec;
-  retvec.push_back(retty);
   Expr welldef = Expr::mkBool(true);
   {
     State newst = st;
@@ -1318,20 +1314,20 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
     auto identityMap = mlir::AffineMap::getMultiDimIdentityMap(
         retty.getRank(), op.getContext());
 
-    encodeParallelLoopBodyAndOutputs(newst, *blk, identityMap, retvec,
-        t_resvec, welldef);
+    encodeParallelLoopBodyAndOutputs(newst, *blk, identityMap,
+        tvec_res, welldef);
 
     auto &indVars = newst.linalgGenericScopes.top().indVars;
 
     // linalg::generate has one result
     welldef = Expr::mkForall(indVars,
-        t_resvec->front().isInBounds(indVars).implies(welldef));
+        tvec_res->front().isInBounds(indVars).implies(welldef));
 
     newst.linalgGenericScopes.pop();
   }
 
   // linalg::generate has one result
-  st.regs.add(op.getResult(), move(t_resvec->front()));
+  st.regs.add(op.getResult(), move(tvec_res->front()));
   st.wellDefined(op.getOperation(), move(welldef));
 }
 
@@ -2228,26 +2224,23 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
     initInputStateForLoopBody(newst, op, welldef, isParallelLoop);
 
     auto &indVars = newst.linalgGenericScopes.top().indVars;
-    vector<mlir::ShapedType> outputTypes;
-    for (unsigned i = 0; i < op.getNumOutputs(); i++) {
-      outputTypes.push_back(op.getOutputOperand(i)->get().getType()
-          .cast<mlir::ShapedType>());
-    }
 
     if (isParallelLoop) {
       encodeParallelLoopBodyAndOutputs(newst, block, outputMap,
-          outputTypes, tvec_res, welldef);
+          tvec_res, welldef);
 
     } else {
       // Reduction loops returning multiple values is not supported by MLIR-TV
       // yet.
-      if (outputTypes.size() > 1)
+      if (op.getNumOutputs() > 1)
         throw UnsupportedException(op.getOperation(),
             "unsupported reduction form");
 
       optional<Tensor> t_res;
+      auto outputType = op.getOutputOperand(0)->get().getType()
+          .cast<mlir::ShapedType>();
       encodeReductionLoopBodyAndOutput(newst, block,
-            indexingMaps, outputTypes[0], t_res, welldef);
+            indexingMaps, outputType, t_res, welldef);
       tvec_res = {*t_res};
     }
 
