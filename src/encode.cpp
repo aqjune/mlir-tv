@@ -1301,7 +1301,6 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
   }
 
   optional<vector<Tensor>> tvec_res;
-  optional<Tensor> t_res;
   Expr welldef = Expr::mkBool(true);
   {
     State newst = st;
