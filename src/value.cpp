@@ -356,12 +356,13 @@ Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d):
 
 // A fresh tensor
 Tensor::Tensor(
-    mlir::Type elemType, string &&name, const vector<Expr> &dimvec):
+    mlir::Type elemType, string &&name, const vector<Expr> &dimvec,
+    bool initialized):
   ShapedValue(elemType),
   dims(dimvec),
   arr(Expr::mkVar(arraySortForTensor(*convertTypeToSort(elemType)),
       move(name))),
-  initialized(splatArrayForTensor(Expr::mkBool(true))) {}
+  initialized(splatArrayForTensor(Expr::mkBool(initialized))) {}
 
 // A sparse tensor.
 Tensor::Tensor(

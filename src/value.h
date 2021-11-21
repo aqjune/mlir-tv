@@ -117,9 +117,9 @@ public:
          const std::vector<uint64_t> &dims, const smt::Expr &zero);
   // A dense tensor (1 dimensional).
   Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems);
-  // A fresh tensor whose elements are all initialized!
+  // A fresh tensor.
   Tensor(mlir::Type elemType, std::string &&name,
-         const std::vector<smt::Expr> &dims);
+         const std::vector<smt::Expr> &dims, bool initialized = true);
 
 
   smt::Expr asArray() const { return arr; }

@@ -1094,7 +1094,7 @@ void encodeOp(State &st, mlir::linalg::InitTensorOp op, bool) {
   static int new_var_idx = 0;
   st.regs.add(res,
       Tensor(ty.getElementType(), ("init_tensor_") + to_string(new_var_idx++),
-             sizes));
+             sizes, false));
 }
 
 template<>
@@ -2089,7 +2089,8 @@ static void initInputStateForLoopBody(
       // Even if an input tensor's uninitialized elem may not be read in the
       // loop bounds, conservatively treat it as UB because it could be possibly
       // touched.
-      welldef &= t_input.isFullyInitialized();
+      if (arg_i < op.getNumInputs())
+        welldef &= t_input.isFullyInitialized();
 
     } else if (auto memrefty = op_i.getType().dyn_cast<mlir::MemRefType>()) {
       // A MemRef value.
