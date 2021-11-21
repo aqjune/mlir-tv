@@ -831,6 +831,12 @@ Expr Expr::mkBool(const bool val) {
 }
 
 Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
+  uint64_t v;
+  if (body.isUInt(v)) {
+    // forall idx, constant == constant (because we don't have 'False' sort)
+    return body;
+  }
+
   Expr e;
   SET_Z3(e, fmap(body.z3, [&](auto &z3body){
     return z3::forall(toZ3ExprVector(vars), z3body);

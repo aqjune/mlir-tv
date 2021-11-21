@@ -70,7 +70,7 @@ vector<Expr> ShapedValue::getDims(
   return dims;
 }
 
-static Expr getConstOrFreshVar(int64_t val, std::string &&name) {
+static Expr getConstOrFreshVar(int64_t val, string &&name) {
   return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
       Index::var(move(name), VarType::FRESH) : Index(val);
 }
@@ -83,7 +83,7 @@ Sort Index::sort() {
 
 Index Index::one() { return Index(1); }
 Index Index::zero() { return Index(0); }
-Index Index::var(std::string &&name, VarType varty) {
+Index Index::var(string &&name, VarType varty) {
   switch(varty) {
   case VarType::BOUND:
   case VarType::UNBOUND:
@@ -108,7 +108,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Index &i) {
   return os;
 };
 
-std::pair<Expr, vector<Expr>> Index::refines(const Index &other) const {
+pair<Expr, vector<Expr>> Index::refines(const Index &other) const {
   return {(Expr) other == (Expr) *this, {}};
 }
 
@@ -135,7 +135,7 @@ Sort Float::sortFloat32() {
   return aop::getFloatEncoding().sort();
 }
 
-Float Float::var(std::string &&name, mlir::Type ty, VarType varty) {
+Float Float::var(string &&name, mlir::Type ty, VarType varty) {
   switch(varty) {
   case VarType::BOUND:
   case VarType::UNBOUND:
@@ -165,7 +165,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
   return os;
 };
 
-std::pair<Expr, vector<Expr>> Float::refines(const Float &other) const {
+pair<Expr, vector<Expr>> Float::refines(const Float &other) const {
   auto nan1 = aop::getFpEncoding(type).isnan(e);
   auto nan2 = aop::getFpEncoding(type).isnan(other.e);
   return {
@@ -220,7 +220,7 @@ Sort Integer::sort(unsigned sz) {
   return Sort::bvSort(sz);
 }
 
-Integer Integer::var(std::string &&name, unsigned bw, VarType varty) {
+Integer Integer::var(string &&name, unsigned bw, VarType varty) {
   switch(varty) {
   case VarType::BOUND:
   case VarType::UNBOUND:
@@ -239,7 +239,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
   return os;
 };
 
-std::pair<Expr, vector<Expr>> Integer::refines(const Integer &other) const {
+pair<Expr, vector<Expr>> Integer::refines(const Integer &other) const {
   return {(Expr) other == (Expr) *this, {}};
 }
 
@@ -247,7 +247,7 @@ Integer Integer::eval(Model m) const {
   return Integer(m.eval(e, true).simplify());
 }
 
-std::pair<std::vector<smt::Expr>, smt::Expr> ShapedValue::conv(
+pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
     const ShapedValue &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,
@@ -341,29 +341,37 @@ static Expr splatArrayForTensor(const Expr &elem) {
 Tensor::Tensor(mlir::Type elemType, Expr &&splat_elem, vector<Expr> &&dimvec):
     ShapedValue(elemType),
     dims(move(dimvec)),
-    arr(splatArrayForTensor(move(splat_elem))) {}
+    arr(splatArrayForTensor(move(splat_elem))),
+    initialized(splatArrayForTensor(Expr::mkBool(true))) {}
 
+// A dense tensor (1dim)
 Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d):
     ShapedValue(elemType),
     dims({ (Expr)Index(elems1d.size()) }),
-    arr(Expr::mkFreshVar(arraySortForTensor(elems1d[0].sort()), "tensor_val")) {
+    arr(Expr::mkFreshVar(arraySortForTensor(elems1d[0].sort()), "tensor_val")),
+    initialized(splatArrayForTensor(Expr::mkBool(true))) {
   for (unsigned i = 0; i < elems1d.size(); ++i)
     arr = arr.store(i, elems1d[i]);
 }
 
+// A fresh tensor
 Tensor::Tensor(
     mlir::Type elemType, string &&name, const vector<Expr> &dimvec):
   ShapedValue(elemType),
   dims(dimvec),
   arr(Expr::mkVar(arraySortForTensor(*convertTypeToSort(elemType)),
-      move(name))) {}
+      move(name))),
+  initialized(splatArrayForTensor(Expr::mkBool(true))) {}
 
+// A sparse tensor.
 Tensor::Tensor(
     mlir::Type elemType,
     const vector<vector<uint64_t>> &indices,
     const vector<Expr> &elems,
     const vector<uint64_t> &dims, const Expr &zero):
-  ShapedValue(elemType), arr(splatArrayForTensor(zero)) {
+  ShapedValue(elemType), arr(splatArrayForTensor(zero)),
+  // All elements are initialized to elems or zero.
+  initialized(splatArrayForTensor(Expr::mkBool(true))) {
 
   assert(indices.size() == elems.size());
 
@@ -408,15 +416,29 @@ pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
   return {elem, isInBounds(indices)};
 }
 
+Expr Tensor::isInitialized(const vector<Expr> &indices) const {
+  return initialized.select(to1DIdx(indices, dims));
+}
+
+Expr Tensor::isFullyInitialized() const {
+  auto vars = Index::boundIndexVars(getRank());
+  return Expr::mkForall(vars, isInitialized(vars));
+}
+
 pair<Tensor, Expr> Tensor::insert(const smt::Expr &value,
-    const std::vector<smt::Expr> &indices) const {
+    const vector<smt::Expr> &indices) const {
   auto idxvar = Index::var("idx", VarType::BOUND);
   auto cond = (Expr)idxvar == to1DIdx(indices, dims);
   auto originValue = get(from1DIdx(idxvar, dims)).first;
+  auto orgInit = isInitialized(from1DIdx(idxvar, dims));
 
   auto newdims = dims;
-  auto lambda = Expr::mkLambda(idxvar, Expr::mkIte(cond, value, originValue));
-  return {{elemType, move(newdims), move(lambda)}, isInBounds(indices)};
+  auto newarr = Expr::mkLambda(idxvar, Expr::mkIte(cond, value, originValue));
+  auto newinit = Expr::mkLambda(idxvar,
+      Expr::mkIte(cond, Expr::mkBool(true), orgInit));
+  return {
+      {elemType, move(newdims), move(newarr), move(newinit)},
+      isInBounds(indices)};
 }
 
 Tensor Tensor::affine(
@@ -434,18 +456,20 @@ Tensor Tensor::affine(
     srcidxs[i] = newv;
   }
   auto elem = get(srcidxs).first;
+  auto init = isInitialized(srcidxs);
   auto zero = *getZero(elemType);
 
   return {
     elemType,
     move(newsizes),
-    Expr::mkLambda(
+    Expr::mkLambda( // Value
       idxvar,
       Expr::mkIte(
-        ((Expr)idxvar).ult(::get1DSize(newsizes)),
+        ((Expr)idxvar).ult(::get1DSize(newsizes)), // TODO: is this chk needed?
         elem,
         zero
-      ))
+      )),
+    Expr::mkLambda(idxvar, init) // Initialized
   };
 }
 
@@ -460,9 +484,12 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
   auto dim = getDims();
   dim[axis] = dim[axis] + t2.getDim(axis);
 
-  return Tensor::mkLambda(getElemType(), move(dim), move(idx),
-      Expr::mkIte(idx[axis].ult(getDim(axis)),
-        get(idx).first, t2.get(idxForT2).first));
+  auto elem = Expr::mkIte(idx[axis].ult(getDim(axis)),
+        get(idx).first, t2.get(idxForT2).first);
+
+  // UB if uninitialized elem is used
+  return Tensor::mkInitializedLambda(getElemType(),
+      move(dim), move(idx), move(elem));
 }
 
 Tensor Tensor::conv(const Tensor &filter,
@@ -518,13 +545,16 @@ Tensor Tensor::conv(const Tensor &filter,
   }
 
   auto [indices, res] = ShapedValue::conv(filter, strides, dilations, layout);
-  return Tensor::mkLambda(elemType, move(outputDims), move(indices), move(res));
+
+  // UB if uninitialized elem is used
+  return Tensor::mkInitializedLambda(elemType,
+      move(outputDims), move(indices), move(res));
 }
 
 Tensor Tensor::reshape(const vector<Expr> &newdims) const {
   assert(newdims.size() > 0);
   // TODO: check whether size(newdims) == size(dims)
-  return { elemType, simplifyList(newdims), Expr(arr) };
+  return { elemType, simplifyList(newdims), Expr(arr), Expr(initialized) };
 }
 
 Tensor Tensor::matmul(const Tensor &b) const {
@@ -542,7 +572,10 @@ Tensor Tensor::matmul(const Tensor &b) const {
   auto res = elemType.isa<mlir::FloatType>() ?
       aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1]) :
       aop::intDot(a_row, bt_row, dims[1]);
-  return mkLambda(elemType, {dims[0], bt.dims[0]}, {i, j}, move(res));
+
+  // UB if uninitialized elem is used
+  return mkInitializedLambda(elemType,
+      {dims[0], bt.dims[0]}, {i, j}, move(res));
 }
 
 Tensor Tensor::elementwiseBinOp(
@@ -556,7 +589,8 @@ Tensor Tensor::elementwiseBinOp(
   auto idxvars = Index::boundIndexVars(getRank());
   Expr elemout = f(get(idxvars).first, b.get(idxvars).first);
 
-  return mkLambda(resultElemType, getDims(), move(idxvars), elemout);
+  // UB if uninitialized elem is used
+  return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);
 }
 
 Tensor Tensor::elementwiseUnaryOp(
@@ -564,7 +598,8 @@ Tensor Tensor::elementwiseUnaryOp(
   auto idxvars = Index::boundIndexVars(getRank());
   Expr elemout = f(get(idxvars).first);
 
-  return mkLambda(resultElemType, getDims(), move(idxvars), elemout);
+  // UB if uninitialized elem is used
+  return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);
 }
 
 Expr Tensor::dot(const Tensor &t2) const {
@@ -600,7 +635,9 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
   Expr i = Index::var("i", VarType::UNBOUND);
   vector<Expr> params = {i};
   return {size_match &
-      i.ult(::get1DSize(dims)).implies(arr.select(i) == other.arr.select(i)),
+      i.ult(::get1DSize(dims)).implies(
+        (initialized.select(i) == other.initialized.select(i)) &
+        (arr.select(i) == other.arr.select(i))),
     params};
 }
 
@@ -694,7 +731,9 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 
 Tensor Tensor::eval(Model m) const {
   vector<Expr> dims_ev = smt::simplifyList(m.eval(dims));
-  return { elemType, move(dims_ev), m.eval(arr, true).simplify() };
+  return { elemType, move(dims_ev),
+      m.eval(arr, true).simplify(),
+      m.eval(initialized, true).simplify() };
 }
 
 Tensor Tensor::reverse(unsigned axis) const {
@@ -703,7 +742,8 @@ Tensor Tensor::reverse(unsigned axis) const {
   auto accessIdx = indVars;
   accessIdx[axis] = dims[axis] - accessIdx[axis] - 1;
 
-  return Tensor::mkLambda(elemType, vector(dims), move(indVars),
+  // UB if uninitialized
+  return Tensor::mkInitializedLambda(elemType, vector(dims), move(indVars),
       get(accessIdx).first);
 }
 
@@ -718,7 +758,8 @@ Tensor Tensor::tile(const vector<unsigned> &repeat) const {
   for (int i = 0; i < repeat.size(); ++i)
     accessIdx[i] = accessIdx[i] % dims[i];
 
-  return Tensor::mkLambda(elemType, vector(newDims), move(indVars),
+  // UB if uninitialized
+  return Tensor::mkInitializedLambda(elemType, vector(newDims), move(indVars),
       get(accessIdx).first);
 }
 
@@ -726,14 +767,16 @@ Tensor Tensor::transpose() const {
   assert(dims.size() == 2);
   auto i = Index::var("i", VarType::BOUND);
   auto j = Index::var("j", VarType::BOUND);
-  return Tensor::mkLambda(
+
+  // UB if uninitialized
+  return Tensor::mkInitializedLambda(
       elemType, {dims[1], dims[0]}, {j, i}, get({i, j}).first);
 }
 
 Tensor Tensor::mkLambda(
     mlir::Type elemType,
-    std::vector<Expr> &&newdims, std::vector<Expr> &&indexvars,
-    Expr body) {
+    vector<Expr> &&newdims, vector<Expr> &&indexvars,
+    Expr body, Expr initialized) {
   if (indexvars.size() == 0) {
     // If indexvars is empty, let's assume that the tensor has only one
     // element.
@@ -752,9 +795,20 @@ Tensor Tensor::mkLambda(
   if (!indexvars.empty()) {
     // If indexvars is empty, body represents the unique element.
     body = body.substitute(indexvars, idxExprs);
+    initialized = initialized.substitute(indexvars, idxExprs);
   }
 
-  return { elemType, move(newdims), Expr::mkLambda(idx, body) };
+  return { elemType, move(newdims),
+      Expr::mkLambda(idx, body), Expr::mkLambda(idx, initialized) };
+}
+
+Tensor Tensor::mkInitializedLambda(
+    mlir::Type elemType,
+    std::vector<smt::Expr> &&newdims,
+    std::vector<smt::Expr> &&indexvars,
+    smt::Expr body) {
+  return mkLambda(elemType, move(newdims), move(indexvars),
+      move(body), Expr::mkBool(true));
 }
 
 Tensor Tensor::mkIte(
@@ -770,8 +824,12 @@ Tensor Tensor::mkIte(
 
   auto retExpr = Expr::mkIte(
       isTrue, trueValue.get(indVars).first, falseValue.get(indVars).first);
+  auto retInit = Expr::mkIte(
+      isTrue, trueValue.isInitialized(indVars),
+      falseValue.isInitialized(indVars));
   return Tensor::mkLambda(
-      trueValue.elemType, move(trueDims), move(indVars), move(retExpr));
+      trueValue.elemType, move(trueDims), move(indVars),
+      move(retExpr), move(retInit));
 }
 
 Expr Tensor::to1DArrayWithOfs(

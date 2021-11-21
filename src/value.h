@@ -94,9 +94,13 @@ public:
 class Tensor: public ShapedValue {
   std::vector<smt::Expr> dims;
   smt::Expr arr;
+  // Index -> bool; Getting an uninitialized element is UB.
+  smt::Expr initialized;
 
-  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&dims, smt::Expr &&arr):
-      ShapedValue(elemType), dims(std::move(dims)), arr(std::move(arr)) {}
+  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&dims, smt::Expr &&arr,
+         smt::Expr &&initialized):
+      ShapedValue(elemType), dims(std::move(dims)), arr(std::move(arr)),
+      initialized(std::move(initialized)) {}
 
 public:
   // This should be parameterized later..
@@ -113,7 +117,7 @@ public:
          const std::vector<uint64_t> &dims, const smt::Expr &zero);
   // A dense tensor (1 dimensional).
   Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems);
-  // A fresh tensor.
+  // A fresh tensor whose elements are all initialized!
   Tensor(mlir::Type elemType, std::string &&name,
          const std::vector<smt::Expr> &dims);
 
@@ -124,6 +128,8 @@ public:
   smt::Expr isInBounds(const std::vector<smt::Expr> &indices) const;
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
       const override;
+  smt::Expr isInitialized(const std::vector<smt::Expr> &indices) const;
+  smt::Expr isFullyInitialized() const;
 
   std::vector<smt::Expr> getDims() const override { return dims; }
 
@@ -184,10 +190,19 @@ public:
 
   static bool isTypeSupported(mlir::TensorType tensorTy);
 
+  // Elements:    lambda indexvars, body
+  // Initialized: lambda indexvars, isInitialized
   static Tensor mkLambda(
       mlir::Type elemType,
       std::vector<smt::Expr> &&newdims,
-      std::vector<smt::Expr> &&indexvars, smt::Expr body);
+      std::vector<smt::Expr> &&indexvars,
+      smt::Expr body, smt::Expr isInitialized);
+  // Elements:    lambda indexvars, body
+  static Tensor mkInitializedLambda(
+      mlir::Type elemType,
+      std::vector<smt::Expr> &&newdims,
+      std::vector<smt::Expr> &&indexvars,
+      smt::Expr body);
 
   // Returns (cond ? trueValue : falseValue).
   // The shapes of trueValue and falseValue must be equivalent.
@@ -198,6 +213,7 @@ public:
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
   // Returns (arr[idx] == src.arr[idx], unbound idx vars)
+  // this: tgt, other: src
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const Tensor &other) const;
   Tensor eval(smt::Model m) const;
