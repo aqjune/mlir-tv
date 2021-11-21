@@ -314,29 +314,19 @@ static void raiseUnsupported(const UnsupportedException &ue) {
   exit(UNSUPPORTED_EXIT_CODE);
 }
 
-static void raiseUnsupported(const string &s) {
-  llvm::errs() << s << "\n";
-  exit(UNSUPPORTED_EXIT_CODE);
-}
-
 static State encodeFinalState(
     const ValidationInput &vinput, unique_ptr<Memory> &&initMem,
     bool printOps, bool issrc, ArgInfo &args, vector<Expr> &preconds) {
   mlir::FuncOp fn = issrc ? vinput.src : vinput.tgt;
 
-  optional<State> st;
-  try {
-    st = createInputState(fn, move(initMem), args, preconds);
+  State st = createInputState(fn, move(initMem), args, preconds);
 
-    if (printOps)
-      llvm::outs() << (issrc ? "<src>" : "<tgt>") << "\n";
+  if (printOps)
+    llvm::outs() << (issrc ? "<src>" : "<tgt>") << "\n";
 
-    encode(*st, fn, printOps);
-  } catch (UnsupportedException ue) {
-    raiseUnsupported(ue);
-  }
+  encode(st, fn, printOps);
 
-  return *st;
+  return st;
 }
 
 // 'conjunction' overlaps with std::conjunction
@@ -353,7 +343,7 @@ static tuple<State, State, Expr> encodeFinalStates(
   auto src = vinput.src, tgt = vinput.tgt;
 
   if (auto errmsg = checkFunctionSignatures(src, tgt))
-    raiseUnsupported(*errmsg);
+    throw UnsupportedException(move(*errmsg));
 
   ArgInfo args;
   vector<Expr> preconds;
@@ -582,7 +572,11 @@ Results validate(
     vinput.isFpAddAssociative = isFpAddAssociative;
     vinput.useMultisetForFpSum = useMultiset;
 
-    verificationResult.merge(validate(vinput));
+    try {
+      verificationResult.merge(validate(vinput));
+    } catch (UnsupportedException ue) {
+      raiseUnsupported(ue);
+    }
   }
 
   return verificationResult;
