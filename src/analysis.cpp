@@ -5,7 +5,6 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 
-#include <set>
 #include <type_traits>
 
 using namespace std;
@@ -14,28 +13,25 @@ using namespace std;
 static set<llvm::APFloat> constF32Set;
 static set<llvm::APFloat> constF64Set;
 
-static void analyzeAttr(const mlir::Attribute &a) {
-  assert(!a.isa<mlir::ElementsAttr>());
-
-  auto ty = a.getType();
-  if (!ty.isa<mlir::FloatType>())
-    return;
-
-  const auto val = a.dyn_cast<mlir::FloatAttr>().getValue();
+static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
   if (val.isNaN() || val.isInfinity())
-    // Already specially treated in vcgen.cpp.
+    // They cannot be inserted into set<APFloat>.
+    // They will be specially treated in setAbstraction() (abstractops.cpp)
     return;
 
   auto val_f32 = val;
   auto val_f64 = val;
-  bool is_rounded; // dummy
+  bool lost_info; // dummy
 
+  llvm::APFloat::opStatus op_status;
   if (ty.isF32()) {
-    val_f64.convert(llvm::APFloat::IEEEdouble(),
-                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+    op_status = val_f64.convert(llvm::APFloat::IEEEdouble(),
+                    // doesn't really matter in extension
+                    llvm::APFloat::rmTowardZero, &lost_info);
   } else if (ty.isF64()) {
-    val_f32.convert(llvm::APFloat::IEEEsingle(),
-                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
+    op_status = val_f32.convert(llvm::APFloat::IEEEsingle(),
+                    // floor in case of truncation (ordering issue)
+                    llvm::APFloat::rmTowardZero, &lost_info);
   } else {
       throw UnsupportedException(ty, "Unsupported type");
   }
@@ -45,8 +41,22 @@ static void analyzeAttr(const mlir::Attribute &a) {
   if (val_f64.isNegative())
     val_f64.clearSign();
 
-  constF32Set.insert(val_f32);
+  // Values beyond the float range are mapped to Inf
+  if (!(op_status & llvm::APFloat::opOverflow)) {
+    constF32Set.insert(val_f32);
+  }
   constF64Set.insert(val_f64);
+}
+
+static void analyzeAttr(const mlir::Attribute &a) {
+  assert(!a.isa<mlir::ElementsAttr>());
+
+  auto ty = a.getType();
+  if (!ty.isa<mlir::FloatType>())
+    return;
+
+  const auto val = a.dyn_cast<mlir::FloatAttr>().getValue();
+  analyzeAPFloat(ty, val);
 }
 
 static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
@@ -68,7 +78,8 @@ static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
 
 template<class FT>
 static size_t analyzeVariable(const mlir::Value &value) {
-  static_assert(is_base_of<mlir::FloatType, FT>::value, "FT must be mlir::FloatType");
+  static_assert(is_base_of<mlir::FloatType, FT>::value,
+                "FT must be mlir::FloatType");
   auto ty = value.getType();
   if (ty.isa<FT>()) {
     return 1;
@@ -100,25 +111,14 @@ static size_t analyzeVariable(const mlir::Value &value) {
 template<class T>
 static void analyzeOp(T op, bool isFullyAbstract);
 
+template<class FT>
+static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract);
+
 template<>
 void analyzeOp(mlir::arith::ConstantFloatOp op, bool isFullyAbstract) {
   auto ty = op.getType();
   const auto val = op.value();
-  auto val_f32 = val, val_f64 = val;
-  bool is_rounded; // dummy
-
-  if (ty.isF32()) {
-    val_f64.convert(llvm::APFloat::IEEEdouble(),
-                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
-  } else if (ty.isF64()) {
-    val_f32.convert(llvm::APFloat::IEEEsingle(),
-                    llvm::APFloatBase::rmNearestTiesToEven, &is_rounded);
-  } else {
-      throw UnsupportedException(ty, "Unsupported type");
-  }
-
-  constF32Set.insert(val_f32);
-  constF64Set.insert(val_f64);
+  analyzeAPFloat(ty, val);
 }
 
 template<>
@@ -139,9 +139,24 @@ void analyzeOp(mlir::tosa::ConstOp op, bool isFullyAbstract) {
   analyzeElemAttr(eattr);
 }
 
+template<class FT>
+size_t analyzeRegion(mlir::Region &region, bool isFullyAbstract) {
+  if (!region.hasOneBlock())
+    throw UnsupportedException("Region with a single block is supported only");
+
+  auto &block = region.front();
+  return analyzeBlock<FT>(block, isFullyAbstract);
+}
+
 #define ANALYZE(op, ty, isFullyAbstract) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
     analyzeOp(op2, isFullyAbstract); \
+    continue; \
+  }
+
+#define ANALYZE_REGION(op, ty, region_fn, isFullyAbstract) \
+  if (auto op2 = mlir::dyn_cast<ty>(op)) { \
+    fpVarCount += analyzeRegion<FT>(op2.region_fn(), isFullyAbstract); \
     continue; \
   }
 
@@ -149,23 +164,35 @@ template<class FT>
 static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
   static_assert(is_base_of<mlir::FloatType, FT>::value,
       "FT must be mlir::FloatType");
-  
+
   size_t fpVarCount = 0;
   for (auto &op: block) {
     // Analyze constant fp operations
+    // These operations do not increase fpVarCount
     ANALYZE(op, mlir::arith::ConstantFloatOp, isFullyAbstract);
     ANALYZE(op, mlir::arith::ConstantOp, isFullyAbstract);
     ANALYZE(op, mlir::tosa::ConstOp, isFullyAbstract);
 
-    for (const auto &result: op.getResults())
-      fpVarCount += isFullyAbstract ? 1 : analyzeVariable<FT>(result);
+    // Non-constant operations; increase fpVarCount if returning fps
+    for (const auto &result: op.getResults()) {
+      auto numFps = analyzeVariable<FT>(result);
+      if (isFullyAbstract)
+        fpVarCount += numFps ? 1 : 0;
+      else
+        fpVarCount += numFps;
+    }
+
+    // Analyze operations having subregions.
+    ANALYZE_REGION(op, mlir::linalg::GenericOp, region, isFullyAbstract);
+    ANALYZE_REGION(op, mlir::linalg::PadTensorOp, region, isFullyAbstract);
+    ANALYZE_REGION(op, mlir::tensor::GenerateOp, body, isFullyAbstract);
   }
 
   return fpVarCount;
 }
 
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
-  SolePrecisionAnalysisResult F32, F64;
+  FPAnalysisResult F32, F64;
   constF32Set.clear();
   constF64Set.clear();
 
@@ -176,8 +203,15 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
 
   // Step1. analyze arguments
   for (const auto& arg: fn.getArguments()){
-    F32.fpArgCount += isFullyAbstract ? 1 : analyzeVariable<mlir::Float32Type>(arg);
-    F64.fpArgCount += isFullyAbstract ? 1 : analyzeVariable<mlir::Float64Type>(arg);
+    auto numF32 = analyzeVariable<mlir::Float32Type>(arg);
+    auto numF64 = analyzeVariable<mlir::Float64Type>(arg);
+    if (isFullyAbstract) {
+      F32.fpArgCount += numF32 ? 1 : 0;
+      F64.fpArgCount += numF64 ? 1 : 0;
+    } else {
+      F32.fpArgCount += numF32;
+      F64.fpArgCount += numF64;
+    }
   }
     
   // Step2. analyze the block

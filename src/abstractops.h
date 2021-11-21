@@ -4,6 +4,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <vector>
+#include <set>
 
 namespace aop {
 
@@ -37,10 +38,14 @@ enum class AbsLevelIntDot {
 };
 
 // This resets the used abstract ops record.
-// floatBits: # of bits required to represent distinct *absolute* f32 values
+// floatNonConstsCnt: # of non-constant distinct f32 values necessary to
+// validate the transformation.
 void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
-                    bool isFpAddAssociative, unsigned floatBits,
-                    unsigned doubleBits);
+                    bool isFpAddAssociative,
+                    unsigned floatNonConstsCnt,
+                    std::set<llvm::APFloat> floatConsts,
+                    unsigned doubleNonConstsCnt,
+                    std::set<llvm::APFloat> doubleConsts);
 void setEncodingOptions(bool use_multiset);
 
 bool getFpAddAssociativity();
@@ -97,6 +102,7 @@ private:
   std::optional<smt::FnDecl> fp_mulfn;
   std::optional<smt::FnDecl> fp_ultfn;
   std::optional<smt::FnDecl> fp_extendfn;
+  std::optional<smt::FnDecl> fp_truncatefn;
   std::string fn_suffix;
 
 private:
@@ -107,13 +113,14 @@ private:
 public:
   AbsFpEncoding(const llvm::fltSemantics &semantics, unsigned value_bw,
       std::string &&fn_suffix)
-      : AbsFpEncoding(semantics, 0u, value_bw, 0u, nullptr, std::move(fn_suffix)) {}
+      : AbsFpEncoding(semantics, 0u, value_bw, 0u, nullptr,
+        std::move(fn_suffix)) {}
   // Use smaller_fpty_enc's value_bv_bits to calculate this type's value_bv_bits
   AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned prec_bw, AbsFpEncoding* smaller_fpty_enc,
       std::string &&fn_suffix)
-      : AbsFpEncoding(semantics, limit_bw, smaller_fpty_enc->value_bitwidth, prec_bw,
-        smaller_fpty_enc, std::move(fn_suffix)) {}
+      : AbsFpEncoding(semantics, limit_bw, smaller_fpty_enc->value_bitwidth,
+        prec_bw, smaller_fpty_enc, std::move(fn_suffix)) {}
 
   smt::Sort sort() const {
     return smt::Sort::bvSort(fp_bitwidth);
@@ -132,15 +139,17 @@ private:
   smt::FnDecl getDotFn();
   smt::FnDecl getUltFn();
   smt::FnDecl getExtendFn();
+  smt::FnDecl getTruncateFn();
 
   uint64_t getSignBit() const;
 
 public:
-  smt::Expr constant(const llvm::APFloat &f);
-  smt::Expr zero(bool isNegative = false);
-  smt::Expr one(bool isNegative = false);
-  smt::Expr infinity(bool isNegative = false);
-  smt::Expr nan();
+  void addConstants(const std::set<llvm::APFloat>& const_set);
+  smt::Expr constant(const llvm::APFloat &f) const;
+  smt::Expr zero(bool isNegative = false) const;
+  smt::Expr one(bool isNegative = false) const;
+  smt::Expr infinity(bool isNegative = false) const;
+  smt::Expr nan() const;
 
   std::vector<std::pair<llvm::APFloat, smt::Expr>> getAllConstants() const;
   std::vector<llvm::APFloat> possibleConsts(const smt::Expr &e) const;
@@ -153,6 +162,7 @@ public:
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
   smt::Expr fult(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
+  smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr getFpAssociativePrecondition() const;
 
 private:

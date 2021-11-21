@@ -3,6 +3,8 @@
 #include <optional>
 #include <string>
 #include <variant>
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/BuiltinTypes.h"
 
 // optional::map from
 // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0798r0.html
@@ -27,6 +29,14 @@ auto fupdate2(std::optional<T1> &x, const std::optional<T2> &x2, Fn fn) {
   if (x && x2)
     return std::optional(fn(*x, *x2));
   return std::optional<decltype(fn(*x, *x2))>();
+}
+
+inline unsigned log2_ceil(unsigned count) {
+  unsigned bits = 0;
+  while (count > (1 << bits)) {
+    bits += 1;
+  }
+  return bits;
 }
 
 #define TO_STRING(msg, V) { \

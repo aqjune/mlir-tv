@@ -592,7 +592,7 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
 
   if (src_prec == tgt_prec) {
     st.regs.add(op.getResult(), st.regs.get<Float>(op.getOperand()));
-    return; // casting into identical type is a no-op
+    return; // extending into identical type is a no-op
   } else if (src_prec > tgt_prec) {
     throw UnsupportedException(op.getOperation(),
       "cannot ExtF into lower precision type!");
@@ -600,6 +600,27 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
 
   auto arg = op.getOperand();
   encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.extend(op_type); },
+      {});
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
+  auto op_type = op.getType();
+  FPPrecision tgt_prec = getPrecision(op_type);
+
+  auto operand_type = op.getOperand().getType();
+  FPPrecision src_prec = getPrecision(operand_type);
+
+  if (src_prec == tgt_prec) {
+    st.regs.add(op.getResult(), st.regs.get<Float>(op.getOperand()));
+    return; // truncating into identical type is a no-op
+  } else if (src_prec < tgt_prec) {
+    throw UnsupportedException(op.getOperation(),
+      "cannot TruncF into higher precision type!");
+  }
+
+  auto arg = op.getOperand();
+  encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.truncate(op_type); },
       {});
 }
 
@@ -1548,10 +1569,10 @@ void encodeOp(State &st, mlir::tosa::ReshapeOp op, bool) {
   st.regs.add(op.getResult(), t.reshape(newDims));
 }
 
-static variant<string, MemRef> createNewLocalBlk(
+static MemRef createNewLocalBlk(
     Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
   if (!MemRef::isTypeSupported(memrefTy))
-    return "unsupported element type";
+    throw UnsupportedException("unsupported element type");
 
   auto layout = MemRef::getLayout(memrefTy, dims);
   // Add a new local block
@@ -1578,11 +1599,7 @@ void encodeOp(State &st, mlir::memref::AllocOp op, bool) {
   }
   auto dims = ShapedValue::getDims(memrefTy, false, move(dszExprs));
 
-  auto memrefOrErr = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true);
-  if (holds_alternative<string>(memrefOrErr))
-        throw UnsupportedException(op.getOperation(), get<0>(move(memrefOrErr)));
-  auto memref = get<1>(move(memrefOrErr));
-
+  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true);
   st.regs.add(op, move(memref));
 }
 
@@ -1719,13 +1736,28 @@ void encodeOp(State &st, mlir::memref::BufferCastOp op, bool encodeMemWrite) {
   auto dims = tensor.getDims();
 
   // Create a read-only block.
-  auto memrefOrErr = createNewLocalBlk(st.m.get(), move(dims), memrefTy, false);
-  if (holds_alternative<string>(memrefOrErr))
-    throw UnsupportedException(op.getOperation(), get<0>(move(memrefOrErr)));
-
-  auto memref = get<1>(move(memrefOrErr));
+  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, false);
   storeTensorTo(st, op.getOperation(), move(tensor), memref, memrefTy);
   st.regs.add(op.memref(), move(memref));
+}
+
+template<>
+void encodeOp(State &st, mlir::memref::CloneOp op, bool encodeMemWrite) {
+  if (!encodeMemWrite)
+    throw UnsupportedException(op.getOperation(),
+        "We do not support memory writes in this scope");
+
+  auto src = st.regs.get<MemRef>(op.getOperand());
+  auto srcTy = op.getOperand().getType().cast<mlir::MemRefType>();
+  auto dims = src.getDims();
+
+  // Create a read-only block.
+  auto memref = createNewLocalBlk(st.m.get(), move(dims), srcTy, false);
+  auto tensor = loadTensorFrom(src);
+  storeTensorTo(st, op.getOperation(), move(tensor), memref, srcTy);
+  // Src is not writable as well.
+  st.m->setWritable(src.getBID(), false);
+  st.regs.add(op, move(memref));
 }
 
 template<>
@@ -2333,11 +2365,13 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::NegFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::TruncFOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::memref::AllocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::BufferCastOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::CloneOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DimOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::LoadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::StoreOp, encodeMemWriteOps);
