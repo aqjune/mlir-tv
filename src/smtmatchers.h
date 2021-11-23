@@ -48,6 +48,18 @@ public:
   bool operator()(const Expr &e) const;
 };
 
+class Select: Matcher {
+  std::function<bool(const Expr &)> arrMatcher, idxMatcher;
+
+public:
+  template<class T1, class T2>
+  Select(T1 &&arr, T2 &&idx): arrMatcher(std::move(arr)),
+                              idxMatcher(std::move(idx)) {}
+
+  bool match(const Expr &expr) const { return (*this)(expr); }
+  bool operator()(const Expr &e) const;
+};
+
 class Store: Matcher {
   std::function<bool(const Expr &)> arrMatcher, idxMatcher, valMatcher;
 
