@@ -5,9 +5,9 @@
 #include <set>
 
 struct FPAnalysisResult {
-  std::set<llvm::APFloat> fpConstSet;
-  size_t fpVarCount = 0;
-  size_t fpArgCount = 0;
+  std::set<llvm::APFloat> constSet;
+  size_t varCount = 0;
+  size_t argCount = 0;
 };
 
 struct MemRefAnalysisResult {

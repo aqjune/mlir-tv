@@ -108,20 +108,20 @@ static size_t analyzeVariable(const mlir::Value &var) {
 }
 
 template<class T>
-static void analyzeOp(T op, bool isFullyAbstract);
+static void analyzeOp(T op);
 
 template<class ValueType>
 static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract);
 
 template<>
-void analyzeOp(mlir::arith::ConstantFloatOp op, bool isFullyAbstract) {
+void analyzeOp(mlir::arith::ConstantFloatOp op) {
   auto ty = op.getType();
   const auto val = op.value();
   analyzeAPFloat(ty, val);
 }
 
 template<>
-void analyzeOp(mlir::arith::ConstantOp op, bool isFullyAbstract) {
+void analyzeOp(mlir::arith::ConstantOp op) {
   auto tensorty = op.getType().dyn_cast<mlir::RankedTensorType>();
   auto eattr = op.value().dyn_cast<mlir::ElementsAttr>();
   if (!tensorty || !eattr) return;
@@ -130,7 +130,7 @@ void analyzeOp(mlir::arith::ConstantOp op, bool isFullyAbstract) {
 }
 
 template<>
-void analyzeOp(mlir::tosa::ConstOp op, bool isFullyAbstract) {
+void analyzeOp(mlir::tosa::ConstOp op) {
   auto tensorty = op.getType().dyn_cast<mlir::RankedTensorType>();
   auto eattr = op.value().dyn_cast<mlir::ElementsAttr>();
   if (!tensorty || !eattr) return;
@@ -147,41 +147,41 @@ size_t analyzeRegion(mlir::Region &region, bool isFullyAbstract) {
   return analyzeBlock<ValueType>(block, isFullyAbstract);
 }
 
-#define ANALYZE(op, ty, isFullyAbstract) \
+#define ANALYZE(op, ty) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    analyzeOp(op2, isFullyAbstract); \
+    analyzeOp(op2); \
     continue; \
   }
 
-#define ANALYZE_REGION(op, ty, region_fn, isFullyAbstract) \
+#define ANALYZE_REGION(op, ty, region_fn, numElemsIgnored) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    varCount += analyzeRegion<ValueType>(op2.region_fn(), isFullyAbstract); \
+    varCount += analyzeRegion<ValueType>(op2.region_fn(), numElemsIgnored); \
     continue; \
   }
 
 template<class ValueType>
-static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
+static size_t analyzeBlock(mlir::Block &block, bool numElemsIgnored) {
   size_t varCount = 0;
   for (auto &op: block) {
     // Analyze constant operations
     // These operations do not increase varCount
-    ANALYZE(op, mlir::arith::ConstantFloatOp, isFullyAbstract);
-    ANALYZE(op, mlir::arith::ConstantOp, isFullyAbstract);
-    ANALYZE(op, mlir::tosa::ConstOp, isFullyAbstract);
+    ANALYZE(op, mlir::arith::ConstantFloatOp);
+    ANALYZE(op, mlir::arith::ConstantOp);
+    ANALYZE(op, mlir::tosa::ConstOp);
 
     // Non-constant operations; increase varCount if return type matches
     for (const auto &result: op.getResults()) {
       auto numVars = analyzeVariable<ValueType>(result);
-      if (isFullyAbstract && is_base_of<mlir::FloatType, ValueType>::value)
+      if (numElemsIgnored && is_base_of<mlir::FloatType, ValueType>::value)
         varCount += numVars ? 1 : 0;
       else
         varCount += numVars;
     }
 
     // Analyze operations having subregions.
-    ANALYZE_REGION(op, mlir::linalg::GenericOp, region, isFullyAbstract);
-    ANALYZE_REGION(op, mlir::linalg::PadTensorOp, region, isFullyAbstract);
-    ANALYZE_REGION(op, mlir::tensor::GenerateOp, body, isFullyAbstract);
+    ANALYZE_REGION(op, mlir::linalg::GenericOp, region, numElemsIgnored);
+    ANALYZE_REGION(op, mlir::linalg::PadTensorOp, region, numElemsIgnored);
+    ANALYZE_REGION(op, mlir::tensor::GenerateOp, body, numElemsIgnored);
   }
 
   return varCount;
@@ -203,23 +203,23 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
     auto numF32 = analyzeVariable<mlir::Float32Type>(arg);
     auto numF64 = analyzeVariable<mlir::Float64Type>(arg);
     if (isFullyAbstract) {
-      F32.fpArgCount += numF32 ? 1 : 0;
-      F64.fpArgCount += numF64 ? 1 : 0;
+      F32.argCount += numF32 ? 1 : 0;
+      F64.argCount += numF64 ? 1 : 0;
     } else {
-      F32.fpArgCount += numF32;
-      F64.fpArgCount += numF64;
+      F32.argCount += numF32;
+      F64.argCount += numF64;
     }
     memref.argCount += analyzeVariable<mlir::MemRefType>(arg);
   }
     
   // Step2. analyze the block
   auto &block = region.front();
-  F32.fpVarCount = analyzeBlock<mlir::Float32Type>(block, isFullyAbstract);
-  F64.fpVarCount = analyzeBlock<mlir::Float64Type>(block, isFullyAbstract);
+  F32.varCount = analyzeBlock<mlir::Float32Type>(block, isFullyAbstract);
+  F64.varCount = analyzeBlock<mlir::Float64Type>(block, isFullyAbstract);
   memref.varCount = analyzeBlock<mlir::MemRefType>(block, isFullyAbstract);
 
-  F32.fpConstSet = move(constF32Set);
-  F64.fpConstSet = move(constF64Set);
+  F32.constSet = move(constF32Set);
+  F64.constSet = move(constF64Set);
 
   return {
     .F32 = F32,

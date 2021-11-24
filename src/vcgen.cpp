@@ -539,10 +539,10 @@ Results validate(
     auto tgt_f32_res = tgt_res.F32;
     auto tgt_f64_res = tgt_res.F64;
 
-    auto f32_consts = src_f32_res.fpConstSet;
-    f32_consts.merge(tgt_f32_res.fpConstSet);
-    auto f64_consts = src_f64_res.fpConstSet;
-    f64_consts.merge(tgt_f64_res.fpConstSet);
+    auto f32_consts = src_f32_res.constSet;
+    f32_consts.merge(tgt_f32_res.constSet);
+    auto f64_consts = src_f64_res.constSet;
+    f64_consts.merge(tgt_f64_res.constSet);
 
     ValidationInput vinput;
     vinput.src = srcfn;
@@ -565,8 +565,8 @@ Results validate(
       // Count non-constant floating points whose absolute values are distinct.
       auto countNonConstFps = [](const auto& src_res, const auto& tgt_res) {
         return
-          src_res.fpArgCount + // # of variables in argument lists
-          src_res.fpVarCount + tgt_res.fpVarCount;
+          src_res.argCount + // # of variables in argument lists
+          src_res.varCount + tgt_res.varCount;
           // # of variables in registers
       };
 
