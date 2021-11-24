@@ -548,7 +548,14 @@ Results validate(
     vinput.src = srcfn;
     vinput.tgt = tgtfn;
     vinput.dumpSMTPath = dumpSMTPath;
-    vinput.numBlocks = numBlocks;
+
+    if (numBlocks) {
+      vinput.numBlocks = numBlocks;
+    } else {
+      vinput.numBlocks = src_res.memref.argCount +
+          src_res.memref.varCount + tgt_res.memref.varCount;
+    }
+
     if (fpBits.first) {
       assert(fpBits.first < 32 && fpBits.second < 32 &&
              "Given fp bits are too large");
