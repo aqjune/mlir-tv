@@ -76,9 +76,10 @@ static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
   }
 }
 
+// Return the number of elements in var having ValueType.
 template<class ValueType>
-static size_t analyzeVariable(const mlir::Value &value) {
-  auto ty = value.getType();
+static size_t analyzeVariable(const mlir::Value &var) {
+  auto ty = var.getType();
   if (ty.isa<ValueType>()) {
     return 1;
 
@@ -154,7 +155,7 @@ size_t analyzeRegion(mlir::Region &region, bool isFullyAbstract) {
 
 #define ANALYZE_REGION(op, ty, region_fn, isFullyAbstract) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    fpVarCount += analyzeRegion<ValueType>(op2.region_fn(), isFullyAbstract); \
+    varCount += analyzeRegion<ValueType>(op2.region_fn(), isFullyAbstract); \
     continue; \
   }
 
@@ -170,11 +171,11 @@ static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
 
     // Non-constant operations; increase varCount if return type matches
     for (const auto &result: op.getResults()) {
-      auto numFps = analyzeVariable<ValueType>(result);
+      auto numVars = analyzeVariable<ValueType>(result);
       if (isFullyAbstract && is_base_of<mlir::FloatType, ValueType>::value)
-        varCount += numFps ? 1 : 0;
+        varCount += numVars ? 1 : 0;
       else
-        varCount += numFps;
+        varCount += numVars;
     }
 
     // Analyze operations having subregions.
