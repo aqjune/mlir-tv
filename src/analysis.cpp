@@ -76,17 +76,15 @@ static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
   }
 }
 
-template<class FT>
+template<class ValueType>
 static size_t analyzeVariable(const mlir::Value &value) {
-  static_assert(is_base_of<mlir::FloatType, FT>::value,
-                "FT must be mlir::FloatType");
   auto ty = value.getType();
-  if (ty.isa<FT>()) {
+  if (ty.isa<ValueType>()) {
     return 1;
 
   } else if (ty.isa<mlir::TensorType>()) {
     auto tensorty = ty.cast<mlir::TensorType>();
-    if (!tensorty.getElementType().isa<FT>())
+    if (!tensorty.getElementType().isa<ValueType>())
       return 0;
 
     if (tensorty.hasStaticShape()) 
@@ -96,7 +94,7 @@ static size_t analyzeVariable(const mlir::Value &value) {
 
   } else if (ty.isa<mlir::MemRefType>()) {
     auto memrefty = ty.cast<mlir::MemRefType>();
-    if (!memrefty.getElementType().isa<FT>())
+    if (!memrefty.getElementType().isa<ValueType>())
       return 0;
 
     if (memrefty.hasStaticShape()) 
@@ -111,7 +109,7 @@ static size_t analyzeVariable(const mlir::Value &value) {
 template<class T>
 static void analyzeOp(T op, bool isFullyAbstract);
 
-template<class FT>
+template<class ValueType>
 static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract);
 
 template<>
@@ -139,13 +137,13 @@ void analyzeOp(mlir::tosa::ConstOp op, bool isFullyAbstract) {
   analyzeElemAttr(eattr);
 }
 
-template<class FT>
+template<class ValueType>
 size_t analyzeRegion(mlir::Region &region, bool isFullyAbstract) {
   if (!region.hasOneBlock())
     throw UnsupportedException("Region with a single block is supported only");
 
   auto &block = region.front();
-  return analyzeBlock<FT>(block, isFullyAbstract);
+  return analyzeBlock<ValueType>(block, isFullyAbstract);
 }
 
 #define ANALYZE(op, ty, isFullyAbstract) \
@@ -156,15 +154,12 @@ size_t analyzeRegion(mlir::Region &region, bool isFullyAbstract) {
 
 #define ANALYZE_REGION(op, ty, region_fn, isFullyAbstract) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    fpVarCount += analyzeRegion<FT>(op2.region_fn(), isFullyAbstract); \
+    fpVarCount += analyzeRegion<ValueType>(op2.region_fn(), isFullyAbstract); \
     continue; \
   }
 
-template<class FT>
+template<class ValueType>
 static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
-  static_assert(is_base_of<mlir::FloatType, FT>::value,
-      "FT must be mlir::FloatType");
-
   size_t fpVarCount = 0;
   for (auto &op: block) {
     // Analyze constant fp operations
@@ -175,8 +170,8 @@ static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
 
     // Non-constant operations; increase fpVarCount if returning fps
     for (const auto &result: op.getResults()) {
-      auto numFps = analyzeVariable<FT>(result);
-      if (isFullyAbstract)
+      auto numFps = analyzeVariable<ValueType>(result);
+      if (isFullyAbstract && is_base_of<mlir::FloatType, ValueType>::value)
         fpVarCount += numFps ? 1 : 0;
       else
         fpVarCount += numFps;
@@ -193,6 +188,7 @@ static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
 
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
   FPAnalysisResult F32, F64;
+  MemRefAnalysisResult memref;
   constF32Set.clear();
   constF64Set.clear();
 
@@ -212,18 +208,21 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
       F32.fpArgCount += numF32;
       F64.fpArgCount += numF64;
     }
+    memref.argCount += analyzeVariable<mlir::MemRefType>(arg);
   }
     
   // Step2. analyze the block
   auto &block = region.front();
   F32.fpVarCount = analyzeBlock<mlir::Float32Type>(block, isFullyAbstract);
   F64.fpVarCount = analyzeBlock<mlir::Float64Type>(block, isFullyAbstract);
+  memref.varCount = analyzeBlock<mlir::MemRefType>(block, isFullyAbstract);
 
   F32.fpConstSet = move(constF32Set);
   F64.fpConstSet = move(constF64Set);
 
   return {
     .F32 = F32,
-    .F64 = F64
+    .F64 = F64,
+    .memref = memref
   };
 }
