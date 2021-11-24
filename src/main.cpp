@@ -64,14 +64,6 @@ llvm::cl::opt<bool> arg_associative_sum("associative",
                  "(experimental)"),
   llvm::cl::init(false));
 
-llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
-  llvm::cl::desc("Type of memref memory model (default=MULTIPLE)"),
-  llvm::cl::init(MemEncoding::MULTIPLE_ARRAY), llvm::cl::Hidden,
-  llvm::cl::values(
-    clEnumValN(MemEncoding::SINGLE_ARRAY, "SINGLE", "Using single array memory encoding"),
-    clEnumValN(MemEncoding::MULTIPLE_ARRAY, "MULTIPLE", "Using multiple arrays memory encoding")
-  ));
-
 llvm::cl::opt<bool> arg_multiset("multiset",
   llvm::cl::desc("Use multiset when encoding the associativity of the floating"
                  " point addition"),  llvm::cl::Hidden,
@@ -107,7 +99,6 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
   return validate(ir_before, ir_after,
       arg_dump_smt_to.getValue(),
       num_memblocks.getValue(),
-      memory_encoding.getValue(),
       fp_bits,
       arg_associative_sum.getValue(),
       arg_multiset.getValue()

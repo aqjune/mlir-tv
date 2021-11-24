@@ -35,7 +35,6 @@ public:
   mlir::FuncOp src, tgt;
   string dumpSMTPath;
 
-  MemEncoding encoding;
   unsigned int numBlocks;
   unsigned int f32NonConstsCount, f64NonConstsCount;
   set<llvm::APFloat> f32Consts, f64Consts;
@@ -349,8 +348,7 @@ static tuple<State, State, Expr> encodeFinalStates(
   vector<Expr> preconds;
 
   // Set max. local blocks as num global blocks
-  unique_ptr<Memory> initMemSrc(
-      Memory::create(vinput.numBlocks, vinput.numBlocks, vinput.encoding));
+  auto initMemSrc = make_unique<Memory>(vinput.numBlocks, vinput.numBlocks);
   // Due to how CVC5 treats unbound vars, the initial memory must be precisely
   // copied
   unique_ptr<Memory> initMemTgt(initMemSrc->clone());
@@ -403,8 +401,7 @@ static void checkIsSrcAlwaysUB(
   ArgInfo args_dummy;
   vector<Expr> preconds;
   auto st = encodeFinalState(vinput,
-      unique_ptr<Memory>(
-        Memory::create(vinput.numBlocks, vinput.numBlocks, vinput.encoding)),
+      make_unique<Memory>(vinput.numBlocks, vinput.numBlocks),
       false, true, args_dummy, preconds);
 
   useAllLogic |= st.hasConstArray;
@@ -502,7 +499,7 @@ static Results validate(ValidationInput vinput) {
 Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
-    unsigned int numBlocks, MemEncoding encoding,
+    unsigned int numBlocks,
     pair<unsigned, unsigned> fpBits, bool isFpAddAssociative,
     bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
@@ -575,7 +572,6 @@ Results validate(
     }
     vinput.f32Consts = f32_consts;
     vinput.f64Consts = f64_consts;
-    vinput.encoding = encoding;
     vinput.isFpAddAssociative = isFpAddAssociative;
     vinput.useMultisetForFpSum = useMultiset;
 

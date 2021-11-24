@@ -32,14 +32,6 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
                  " (default=8)"),
   llvm::cl::init(8), llvm::cl::value_desc("number"));
 
-llvm::cl::opt<MemEncoding> memory_encoding("memory-encoding",
-  llvm::cl::desc("Type of memref memory model (default=MULTIPLE)"),
-  llvm::cl::init(MemEncoding::MULTIPLE_ARRAY), llvm::cl::Hidden,
-  llvm::cl::values(
-    clEnumValN(MemEncoding::SINGLE_ARRAY, "SINGLE", "Using single array memory encoding"),
-    clEnumValN(MemEncoding::MULTIPLE_ARRAY, "MULTIPLE", "Using multiple arrays memory encoding")
-  ));
-
 
 static void runFunction(mlir::FuncOp fn) {
   if (fn.getNumArguments() != 0) {
@@ -51,8 +43,7 @@ static void runFunction(mlir::FuncOp fn) {
   llvm::outs() << "Function " << fn.getName() << "\n\n";
 
   // FIXME: max. # local blocks does not need to be num_memblocks
-  State s(unique_ptr<Memory>{
-      Memory::create(num_memblocks, num_memblocks, memory_encoding)});
+  State s(make_unique<Memory>(num_memblocks, num_memblocks));
   encode(s, fn, false);
   printOperations(smt::Model::empty(), fn, s);
 }
