@@ -680,7 +680,8 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
         idxconsts.push_back(ii);
       }
       auto elem = t.get(idx1d).first;
-      auto init = t.isInitialized(idx1d);
+      // TODO: Remove simplify() once Expr::select does folding
+      auto init = t.isInitialized(idx1d).simplify();
 
       if (i != 0)
         os << ", ";
