@@ -56,10 +56,10 @@ static Tensor elemAttrToTensor(
       // A constant tensor's type cannot have unknown dimensions
       auto dims = ShapedValue::getDims(tensorty, false);
       auto v = attrToValueTy(denseAttr.getSplatValue<mlir::Attribute>());
+
       return Tensor(elemType, getExpr(v), move(dims));
 
     } else {
-      llvm::outs() << "hi\n";
       int64_t rank = tensorty.getRank();
       vector<int64_t> dims;
       vector<Expr> dimExprs;
@@ -72,7 +72,7 @@ static Tensor elemAttrToTensor(
 
       vector<uint64_t> elems(rank);
       vector<Expr> exprs;
-      llvm::outs() << elems.back() << "\n";
+
       while (true) {
         if (elems.back() == dims.back()) {
           int focus = rank - 1;
@@ -85,11 +85,10 @@ static Tensor elemAttrToTensor(
           if (elems[0] == dims[0])
             break;
         }
-        llvm::outs() << getExpr(attrToValueTy(denseAttr.getValues<mlir::Attribute>()[elems])) << "\n";
+
         exprs.push_back(getExpr(attrToValueTy(denseAttr.getValues<mlir::Attribute>()[elems])));
         elems.back()++;
       }
-      llvm::outs() << exprs << "\n";
 
       return Tensor(elemType, move(exprs)).reshape(dimExprs);
     }
@@ -854,7 +853,7 @@ void encodeOp(State &st, mlir::tosa::ConstOp op, bool) {
   auto eattr = op.value().dyn_cast<mlir::ElementsAttr>();
   if (!eattr)
     throw UnsupportedException(op.getOperation(), "Unsupported attribute");
-  llvm::outs() << elemAttrToTensor(eattr, dty) << "\n";
+
   st.regs.add(op, elemAttrToTensor(eattr, dty));
   if (eattr.isa<mlir::SparseElementsAttr>())
     st.hasConstArray = true;
@@ -978,13 +977,10 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
 
   vector<Expr> indVars = Index::boundIndexVars(input.getRank());
   vector<Expr> dims, outVars;
-
-  llvm::outs() << p << "\n";
-  llvm::outs() << perms << "\n";
   
-  // for (unsigned i = 0; i < input.getRank(); i++) {
-  //   perms;
-  // }
+  for (unsigned i = 0; i < input.getRank(); i++) {
+    perms;
+  }
 
   // st.regs.add(op, Tensor::mkLambda(
   //     input.getElemType(), move(dims), move(indVars), output, Expr::mkBool(true)));
