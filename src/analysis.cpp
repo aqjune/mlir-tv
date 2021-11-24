@@ -160,21 +160,21 @@ size_t analyzeRegion(mlir::Region &region, bool isFullyAbstract) {
 
 template<class ValueType>
 static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
-  size_t fpVarCount = 0;
+  size_t varCount = 0;
   for (auto &op: block) {
-    // Analyze constant fp operations
-    // These operations do not increase fpVarCount
+    // Analyze constant operations
+    // These operations do not increase varCount
     ANALYZE(op, mlir::arith::ConstantFloatOp, isFullyAbstract);
     ANALYZE(op, mlir::arith::ConstantOp, isFullyAbstract);
     ANALYZE(op, mlir::tosa::ConstOp, isFullyAbstract);
 
-    // Non-constant operations; increase fpVarCount if returning fps
+    // Non-constant operations; increase varCount if return type matches
     for (const auto &result: op.getResults()) {
       auto numFps = analyzeVariable<ValueType>(result);
       if (isFullyAbstract && is_base_of<mlir::FloatType, ValueType>::value)
-        fpVarCount += numFps ? 1 : 0;
+        varCount += numFps ? 1 : 0;
       else
-        fpVarCount += numFps;
+        varCount += numFps;
     }
 
     // Analyze operations having subregions.
@@ -183,7 +183,7 @@ static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract) {
     ANALYZE_REGION(op, mlir::tensor::GenerateOp, body, isFullyAbstract);
   }
 
-  return fpVarCount;
+  return varCount;
 }
 
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
