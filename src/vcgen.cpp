@@ -35,7 +35,6 @@ public:
   mlir::FuncOp src, tgt;
   string dumpSMTPath;
 
-  MemEncoding encoding;
   unsigned int numBlocks;
   unsigned int f32NonConstsCount, f64NonConstsCount;
   set<llvm::APFloat> f32Consts, f64Consts;
@@ -349,8 +348,7 @@ static tuple<State, State, Expr> encodeFinalStates(
   vector<Expr> preconds;
 
   // Set max. local blocks as num global blocks
-  unique_ptr<Memory> initMemSrc(
-      Memory::create(vinput.numBlocks, vinput.numBlocks, vinput.encoding));
+  auto initMemSrc = make_unique<Memory>(vinput.numBlocks, vinput.numBlocks);
   // Due to how CVC5 treats unbound vars, the initial memory must be precisely
   // copied
   unique_ptr<Memory> initMemTgt(initMemSrc->clone());
@@ -403,8 +401,7 @@ static void checkIsSrcAlwaysUB(
   ArgInfo args_dummy;
   vector<Expr> preconds;
   auto st = encodeFinalState(vinput,
-      unique_ptr<Memory>(
-        Memory::create(vinput.numBlocks, vinput.numBlocks, vinput.encoding)),
+      make_unique<Memory>(vinput.numBlocks, vinput.numBlocks),
       false, true, args_dummy, preconds);
 
   useAllLogic |= st.hasConstArray;
@@ -502,7 +499,7 @@ static Results validate(ValidationInput vinput) {
 Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
-    unsigned int numBlocks, MemEncoding encoding,
+    unsigned int numBlocks,
     pair<unsigned, unsigned> fpBits, bool isFpAddAssociative,
     bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
@@ -539,16 +536,23 @@ Results validate(
     auto tgt_f32_res = tgt_res.F32;
     auto tgt_f64_res = tgt_res.F64;
 
-    auto f32_consts = src_f32_res.fpConstSet;
-    f32_consts.merge(tgt_f32_res.fpConstSet);
-    auto f64_consts = src_f64_res.fpConstSet;
-    f64_consts.merge(tgt_f64_res.fpConstSet);
+    auto f32_consts = src_f32_res.constSet;
+    f32_consts.merge(tgt_f32_res.constSet);
+    auto f64_consts = src_f64_res.constSet;
+    f64_consts.merge(tgt_f64_res.constSet);
 
     ValidationInput vinput;
     vinput.src = srcfn;
     vinput.tgt = tgtfn;
     vinput.dumpSMTPath = dumpSMTPath;
-    vinput.numBlocks = numBlocks;
+
+    if (numBlocks) {
+      vinput.numBlocks = numBlocks;
+    } else {
+      vinput.numBlocks = src_res.memref.argCount +
+          src_res.memref.varCount + tgt_res.memref.varCount;
+    }
+
     if (fpBits.first) {
       assert(fpBits.first < 32 && fpBits.second < 32 &&
              "Given fp bits are too large");
@@ -558,8 +562,8 @@ Results validate(
       // Count non-constant floating points whose absolute values are distinct.
       auto countNonConstFps = [](const auto& src_res, const auto& tgt_res) {
         return
-          src_res.fpArgCount + // # of variables in argument lists
-          src_res.fpVarCount + tgt_res.fpVarCount;
+          src_res.argCount + // # of variables in argument lists
+          src_res.varCount + tgt_res.varCount;
           // # of variables in registers
       };
 
@@ -568,7 +572,6 @@ Results validate(
     }
     vinput.f32Consts = f32_consts;
     vinput.f64Consts = f64_consts;
-    vinput.encoding = encoding;
     vinput.isFpAddAssociative = isFpAddAssociative;
     vinput.useMultisetForFpSum = useMultiset;
 
