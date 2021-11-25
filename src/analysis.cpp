@@ -9,11 +9,8 @@
 
 using namespace std;
 
-// Contains absolute values of constants.
-static set<llvm::APFloat> constF32Set;
-static set<llvm::APFloat> constF64Set;
-
-static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
+static void analyzeAPFloat(
+    const mlir::Type ty, const llvm::APFloat val, AnalysisResult &res) {
   if (val.isNaN() || val.isInfinity())
     // They cannot be inserted into set<APFloat>.
     // They will be specially treated in setAbstraction() (abstractops.cpp)
@@ -43,12 +40,12 @@ static void analyzeAPFloat(const mlir::Type ty, const llvm::APFloat val) {
 
   // Values beyond the float range are mapped to Inf
   if (!(op_status & llvm::APFloat::opOverflow)) {
-    constF32Set.insert(val_f32);
+    res.F32.constSet.insert(val_f32);
   }
-  constF64Set.insert(val_f64);
+  res.F64.constSet.insert(val_f64);
 }
 
-static void analyzeAttr(const mlir::Attribute &a) {
+static void analyzeAttr(const mlir::Attribute &a, AnalysisResult &res) {
   assert(!a.isa<mlir::ElementsAttr>());
 
   auto ty = a.getType();
@@ -56,142 +53,139 @@ static void analyzeAttr(const mlir::Attribute &a) {
     return;
 
   const auto val = a.dyn_cast<mlir::FloatAttr>().getValue();
-  analyzeAPFloat(ty, val);
+  analyzeAPFloat(ty, val, res);
 }
 
-static void analyzeElemAttr(const mlir::ElementsAttr &attr) {
+static void analyzeElemAttr(
+    const mlir::ElementsAttr &attr, AnalysisResult &res) {
   if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
     if (denseAttr.isSplat()) {
-      analyzeAttr(denseAttr.getSplatValue<mlir::Attribute>());
+      analyzeAttr(denseAttr.getSplatValue<mlir::Attribute>(), res);
     } else {
       for (const auto& attr: denseAttr.getValues<mlir::Attribute>()) {
-        analyzeAttr(attr);
+        analyzeAttr(attr, res);
       }
     }
   } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
     auto denseAttr = sparseAttr.getValues();
     for (const auto& attr: denseAttr.getValues<mlir::Attribute>()) {
-      analyzeAttr(attr);
+      analyzeAttr(attr, res);
     }
   }
 }
 
-// Return the number of elements in var having ValueType.
-template<class ValueType>
-static size_t analyzeVariable(const mlir::Value &var) {
+static void analyzeVariable(
+    const mlir::Value &var, AnalysisResult &res, bool numElemsIgnored,
+    bool isArg = false) {
   auto ty = var.getType();
-  if (ty.isa<ValueType>()) {
-    return 1;
+  size_t &f32Count = isArg ? res.F32.argCount : res.F32.varCount;
+  size_t &f64Count = isArg ? res.F64.argCount : res.F64.varCount;
 
-  } else if (ty.isa<mlir::TensorType>()) {
-    auto tensorty = ty.cast<mlir::TensorType>();
-    if (!tensorty.getElementType().isa<ValueType>())
-      return 0;
+  if (ty.isF32()) {
+    f32Count++;
+
+  } else if (ty.isF64()) {
+    f64Count++;
+
+  } else if (ty.isa<mlir::TensorType>() || ty.isa<mlir::MemRefType>()) {
+    auto tensorty = ty.cast<mlir::ShapedType>();
+    auto elemty = tensorty.getElementType();
+    int64_t cnt;
 
     if (tensorty.hasStaticShape()) 
-      return tensorty.getNumElements();
+      cnt = tensorty.getNumElements();
     else 
-      return Tensor::MAX_TENSOR_SIZE;
+      cnt = Tensor::MAX_TENSOR_SIZE;
 
-  } else if (ty.isa<mlir::MemRefType>()) {
-    auto memrefty = ty.cast<mlir::MemRefType>();
-    if (!memrefty.getElementType().isa<ValueType>())
-      return 0;
+    if (numElemsIgnored)
+      cnt = cnt ? 1 : 0;
 
-    if (memrefty.hasStaticShape()) 
-      return memrefty.getNumElements();
-    else 
-      return MemRef::MAX_MEMREF_SIZE;
-  } else {
-    return 0;
+    if (elemty.isF32())
+      f32Count += cnt;
+    else if (elemty.isF64())
+      f64Count += cnt;
+
+    if (ty.isa<mlir::MemRefType>()) {
+      res.memref.varCount++;
+    }
   }
 }
 
 template<class T>
-static void analyzeOp(T op);
+static void analyzeOp(T op, AnalysisResult &res);
 
-template<class ValueType>
-static size_t analyzeBlock(mlir::Block &block, bool isFullyAbstract);
+static void analyzeBlock(
+    mlir::Block &block, AnalysisResult &res, bool isFullyAbstract);
 
 template<>
-void analyzeOp(mlir::arith::ConstantFloatOp op) {
+void analyzeOp(mlir::arith::ConstantFloatOp op, AnalysisResult &res) {
   auto ty = op.getType();
   const auto val = op.value();
-  analyzeAPFloat(ty, val);
+  analyzeAPFloat(ty, val, res);
 }
 
 template<>
-void analyzeOp(mlir::arith::ConstantOp op) {
+void analyzeOp(mlir::arith::ConstantOp op, AnalysisResult &res) {
   auto tensorty = op.getType().dyn_cast<mlir::RankedTensorType>();
   auto eattr = op.value().dyn_cast<mlir::ElementsAttr>();
   if (!tensorty || !eattr) return;
 
-  analyzeElemAttr(eattr);
+  analyzeElemAttr(eattr, res);
 }
 
 template<>
-void analyzeOp(mlir::tosa::ConstOp op) {
+void analyzeOp(mlir::tosa::ConstOp op, AnalysisResult &res) {
   auto tensorty = op.getType().dyn_cast<mlir::RankedTensorType>();
   auto eattr = op.value().dyn_cast<mlir::ElementsAttr>();
   if (!tensorty || !eattr) return;
 
-  analyzeElemAttr(eattr);
+  analyzeElemAttr(eattr, res);
 }
 
-template<class ValueType>
-size_t analyzeRegion(mlir::Region &region, bool isFullyAbstract) {
+void analyzeRegion(
+    mlir::Region &region, AnalysisResult &res, bool isFullyAbstract) {
   if (!region.hasOneBlock())
     throw UnsupportedException("Region with a single block is supported only");
 
   auto &block = region.front();
-  return analyzeBlock<ValueType>(block, isFullyAbstract);
+  return analyzeBlock(block, res, isFullyAbstract);
 }
 
-#define ANALYZE(op, ty) \
+#define ANALYZE(op, ty, res) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    analyzeOp(op2); \
+    analyzeOp(op2, res); \
     continue; \
   }
 
-#define ANALYZE_REGION(op, ty, region_fn, numElemsIgnored) \
+#define ANALYZE_REGION(op, ty, region_fn, res, numElemsIgnored) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    varCount += analyzeRegion<ValueType>(op2.region_fn(), numElemsIgnored); \
+    analyzeRegion(op2.region_fn(), res, numElemsIgnored); \
     continue; \
   }
 
-template<class ValueType>
-static size_t analyzeBlock(mlir::Block &block, bool numElemsIgnored) {
-  size_t varCount = 0;
+static void analyzeBlock(
+    mlir::Block &block, AnalysisResult &res, bool numElemsIgnored) {
   for (auto &op: block) {
     // Analyze constant operations
     // These operations do not increase varCount
-    ANALYZE(op, mlir::arith::ConstantFloatOp);
-    ANALYZE(op, mlir::arith::ConstantOp);
-    ANALYZE(op, mlir::tosa::ConstOp);
+    ANALYZE(op, mlir::arith::ConstantFloatOp, res);
+    ANALYZE(op, mlir::arith::ConstantOp, res);
+    ANALYZE(op, mlir::tosa::ConstOp, res);
 
     // Non-constant operations; increase varCount if return type matches
     for (const auto &result: op.getResults()) {
-      auto numVars = analyzeVariable<ValueType>(result);
-      if (numElemsIgnored && is_base_of<mlir::FloatType, ValueType>::value)
-        varCount += numVars ? 1 : 0;
-      else
-        varCount += numVars;
+      analyzeVariable(result, res, numElemsIgnored);
     }
 
     // Analyze operations having subregions.
-    ANALYZE_REGION(op, mlir::linalg::GenericOp, region, numElemsIgnored);
-    ANALYZE_REGION(op, mlir::linalg::PadTensorOp, region, numElemsIgnored);
-    ANALYZE_REGION(op, mlir::tensor::GenerateOp, body, numElemsIgnored);
+    ANALYZE_REGION(op, mlir::linalg::GenericOp, region, res, numElemsIgnored);
+    ANALYZE_REGION(op, mlir::linalg::PadTensorOp, region, res, numElemsIgnored);
+    ANALYZE_REGION(op, mlir::tensor::GenerateOp, body, res, numElemsIgnored);
   }
-
-  return varCount;
 }
 
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
-  FPAnalysisResult F32, F64;
-  MemRefAnalysisResult memref;
-  constF32Set.clear();
-  constF64Set.clear();
+  AnalysisResult res;
 
   auto &region = fn.getRegion();
   if (!llvm::hasSingleElement(region))
@@ -200,30 +194,12 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
 
   // Step1. analyze arguments
   for (const auto& arg: fn.getArguments()){
-    auto numF32 = analyzeVariable<mlir::Float32Type>(arg);
-    auto numF64 = analyzeVariable<mlir::Float64Type>(arg);
-    if (isFullyAbstract) {
-      F32.argCount += numF32 ? 1 : 0;
-      F64.argCount += numF64 ? 1 : 0;
-    } else {
-      F32.argCount += numF32;
-      F64.argCount += numF64;
-    }
-    memref.argCount += analyzeVariable<mlir::MemRefType>(arg);
+    analyzeVariable(arg, res, isFullyAbstract, /*isArg*/true);
   }
-    
+
   // Step2. analyze the block
   auto &block = region.front();
-  F32.varCount = analyzeBlock<mlir::Float32Type>(block, isFullyAbstract);
-  F64.varCount = analyzeBlock<mlir::Float64Type>(block, isFullyAbstract);
-  memref.varCount = analyzeBlock<mlir::MemRefType>(block, isFullyAbstract);
+  analyzeBlock(block, res, isFullyAbstract);
 
-  F32.constSet = move(constF32Set);
-  F64.constSet = move(constF64Set);
-
-  return {
-    .F32 = F32,
-    .F64 = F64,
-    .memref = memref
-  };
+  return res;
 }
