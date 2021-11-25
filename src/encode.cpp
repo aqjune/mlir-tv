@@ -982,12 +982,13 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
 
   for (unsigned i = 0; i < input.getRank(); i++) {
     uint64_t v;
+    // We expect simplify to succeed as perms Tensor is small.
     assert(perms.get({Index(i)}).first.simplify().isUInt(v));
     idxs.push_back(v);
     dims.push_back(input.getDim(v));
   }
 
-  // check validity of perms
+  // check the validity of perms
   for (unsigned i = 0; i < input.getRank(); i++) {
     int count = 0;
     for (unsigned j = 0; j < input.getRank(); j++) {
