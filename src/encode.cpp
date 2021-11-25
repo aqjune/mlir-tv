@@ -965,6 +965,7 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
 
   mlir::Value i = op.input1();
   mlir::Value p = op.perms();
+
   auto ity = i.getType().dyn_cast<mlir::RankedTensorType>();
   auto pty = p.getType().dyn_cast<mlir::RankedTensorType>();
   if(!getElemTy(p).isa<mlir::IntegerType>())
@@ -977,16 +978,40 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
 
   vector<Expr> indVars = Index::boundIndexVars(input.getRank());
   vector<Expr> dims, outVars;
-  
+  vector<uint64_t> idxs;
+
   for (unsigned i = 0; i < input.getRank(); i++) {
-    perms;
+    uint64_t v;
+    assert(perms.get({Index(i)}).first.simplify().isUInt(v));
+    idxs.push_back(v);
+    dims.push_back(input.getDim(v));
   }
 
-  // st.regs.add(op, Tensor::mkLambda(
-  //     input.getElemType(), move(dims), move(indVars), output, Expr::mkBool(true)));
+  // check validity of perms
+  for (unsigned i = 0; i < input.getRank(); i++) {
+    int count = 0;
+    for (unsigned j = 0; j < input.getRank(); j++) {
+      assert(idxs[j] >= 0 && idxs[j] < input.getRank());
+      if (idxs[j] == i)
+        count++;
+    }
+    assert(count == 1);
+  }
 
+  for (unsigned i = 0; i < input.getRank(); i++) {
+    for(unsigned idx = 0; idx < input.getRank(); idx++) {
+      if(idxs[idx] == i) {
+        outVars.push_back(indVars[idx]);
+        break;
+      }
+    }
+  }  
 
-  
+  auto output = input.get(outVars).first;
+
+  st.regs.add(op, Tensor::mkLambda(input.getElemType(),
+                    move(dims), move(indVars), output, Expr::mkBool(true)));
+
 }
 
 
