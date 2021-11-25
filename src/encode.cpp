@@ -982,7 +982,7 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
 
   for (unsigned i = 0; i < input.getRank(); i++) {
     uint64_t v;
-    // We expect simplify to succeed as perms Tensor is small.
+    // We expect simplify() to succeed since perms is a small Tensor
     assert(perms.get({Index(i)}).first.simplify().isUInt(v));
     idxs.push_back(v);
     dims.push_back(input.getDim(v));
