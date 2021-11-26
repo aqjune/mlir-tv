@@ -260,6 +260,10 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   //   input: Batch_size x Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
   //   filter: Output_channel x Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
   //   output: Batch_size x Output_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
+  // 3. NHWC_FHWC:
+  //   input: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
+  //   filter: Output_channel x Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
+  //   output: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Output_channel
   assert(getDims().size() == filter.getDims().size());
   assert(getDims().size() > 2);
   auto dim = getDims().size() - 2;
@@ -271,6 +275,7 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   // cubeSize = 
   // 1. NHWC_HWCF: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
   // 2. NCHW_FCHW: Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
+  // 3. NHWC_FHWC: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
   vector<Expr> cubeSize;
   switch (convLayout) {
   case ConvLayout::NHWC_HWCF: {
@@ -283,6 +288,12 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
     cubeSize.push_back(filter.getDim(1));
     for (unsigned i = 0; i < dim; i++)
       cubeSize.push_back(filter.getDim(i + 2));
+    break;
+  }
+  case ConvLayout::NHWC_FHWC: {
+    for (unsigned i = 0; i < dim; i++)
+      cubeSize.push_back(filter.getDim(i + 1));
+    cubeSize.push_back(filter.getDim(dim + 1));
     break;
   }
   }
@@ -317,6 +328,20 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
     for (unsigned i = 0; i < dim; i ++)
       inputIdxs.push_back(outputIdxs[i + 2] * strides[i] +
           cubeIdxs[i + 1] * dilations[i]);
+
+    break;
+  }
+  case ConvLayout::NHWC_FHWC: {
+    // filterIdxs: Output_channel, Dim_0, Dim_1, ... Dim_{n-1}, Input_channel
+    filterIdxs.push_back(outputIdxs.back());
+    for (auto idx: cubeIdxs) filterIdxs.push_back(idx);
+
+    // inputIdxs: Batch, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
+    inputIdxs.push_back(outputIdxs.front());
+    for (unsigned i = 0; i < dim; i ++)
+      inputIdxs.push_back(outputIdxs[i + 1] * strides[i] +
+          cubeIdxs[i] * dilations[i]);
+    inputIdxs.push_back(cubeIdxs.back()); // Input_channel
 
     break;
   }
@@ -541,6 +566,17 @@ Tensor Tensor::conv(const Tensor &filter,
       Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
       outputDims.push_back(expr);
     }
+    break;
+  }
+  case ConvLayout::NHWC_FHWC: {
+    outputDims.push_back(getDim(0)); // Input Batch Size
+    for (unsigned i = 0; i < getDims().size() - 2; i++) {
+      Expr originalSize = getDim(i + 1);
+      Expr filterSize = dilations[i] * filter.getDim(i + 1);
+      Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
+      outputDims.push_back(expr);
+    }
+    outputDims.push_back(filter.getDim(0)); // Output Channel
     break;
   }
   }

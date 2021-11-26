@@ -958,6 +958,17 @@ void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
+  auto input = st.regs.get<Tensor>(op.input());
+  auto weight = st.regs.get<Tensor>(op.weight());
+  auto bias = st.regs.get<Tensor>(op.bias());
+
+  st.regs.add(op,
+              input.conv(weight,{Index(1),Index(1),Index(1),Index(1)},{Index(1),Index(1),Index(1),Index(1)},ShapedValue::ConvLayout::NHWC_FHWC));
+
+}
+
+template<>
 void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
   auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
   if (!dty)
@@ -2515,6 +2526,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::SubOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TransposeOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::Conv2DOp, encodeMemWriteOps);
 
     throw UnsupportedException(&op);
   }
