@@ -478,7 +478,11 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
 
   // Encode commutativity without loss of generality
-  auto fp_add_res = getAddFn().apply({f1, f2}) + getAddFn().apply({f2, f1});
+  // To avoid that the LSB of add(x, x) is always 0, encode separately.
+  auto fp_add_res = Expr::mkIte(f1 == f2,
+    getAddFn().apply({f1, f1}),
+    getAddFn().apply({f1, f2}) + getAddFn().apply({f2, f1})
+  );
   // The result of addition cannot be NaN if inputs aren't.
   // This NaN case is specially treated below.
   // Simply redirect the result to zero.
@@ -539,11 +543,14 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   const auto f2_nosign = f2.extract(fp_bitwidth - 2, 0);
 
   // Encode commutativity of mul.
-  // getMulFn()'s range is BV[VALUE_BITS] because it encodes absolute size of
-  // mul.
+  // To avoid that the LSB of mul(x, x) is always 0, encode separately.
+  auto mul_abs = Expr::mkIte(f1_nosign == f2_nosign,
+    getMulFn().apply({f1_nosign, f1_nosign}),
+    getMulFn().apply({f1_nosign, f2_nosign}) + getMulFn().apply({f2_nosign, f1_nosign})
+  );
+  // getMulFn()'s range is BV[VALUE_BITS] because it encodes absolute size of mul.
   // We zero-extend 1 bit (SIGN-BIT) which is actually a dummy bit.
-  auto mul_abs_res = (getMulFn().apply({f1_nosign, f2_nosign}) +
-                  getMulFn().apply({f2_nosign, f1_nosign})).zext(1);
+  auto mul_abs_res = mul_abs.zext(1);
   // Absolute size of mul cannot be NaN (Inf * 0.0 and NaN * x will be special-
   // cased).
   mul_abs_res = Expr::mkIte(isnan(mul_abs_res), fp_id, mul_abs_res);
