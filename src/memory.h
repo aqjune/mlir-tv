@@ -6,25 +6,16 @@
 #include <algorithm>
 #include <vector>
 
-// A memory block containing f32 elements.
-class MemBlock {
-public:
-  smt::Expr array;    // Index::sort() -> Float::sort()
-  smt::Expr writable; // bool::sort()
-  smt::Expr numelem;  // Index::sort()
-
-  MemBlock(const smt::Expr &array, const smt::Expr &writable,
-           const smt::Expr &numelem):
-    array(array), writable(writable), numelem(numelem) {}
-};
-
 // A class that implements the memory model described in CAV'21 (An SMT
 // Encoding of LLVM's Memory Model for Bounded Translation Validation)
-// In addition, we track the number of blocks per type.
+// In addition, blocks of different types don't alias. This is for abstractly
+// encoding floating points.
 class Memory {
-  // Memory refinement is defined only using global MemBlocks.
   const unsigned int bidBits;
   bool isSrc;
+
+  TypeMap<size_t> globalBlocksCnt;
+  TypeMap<size_t> maxLocalBlocksCnt;
 
   // element type -> vector<(Index::sort() -> The element's SMT type)>
   TypeMap<std::vector<smt::Expr>> arrays;
@@ -32,9 +23,8 @@ class Memory {
   TypeMap<std::vector<smt::Expr>> writables;
   // element type -> vector<Index::sort>
   TypeMap<std::vector<smt::Expr>> numelems;
-
-  TypeMap<size_t> globalBlocksCnt;
-  TypeMap<size_t> maxLocalBlocksCnt;
+  // element type -> vector<Bool::sort()>
+  TypeMap<std::vector<smt::Expr>> liveness;
 
 public:
   Memory(TypeMap<size_t> numGlobalBlocksPerType,
@@ -76,6 +66,15 @@ public:
     return writables.find(elemTy)->second[ubid];
   }
 
+  // Mark memblock's liveness to false.
+  void setLivenessToFalse(mlir::Type elemTy, const smt::Expr &bid);
+  // get memblocks' writable flag
+  smt::Expr getLiveness(mlir::Type elemTy, const smt::Expr &bid) const;
+  smt::Expr getLiveness(mlir::Type elemTy, unsigned ubid) const {
+    assert(ubid < getNumBlocks(elemTy));
+    return liveness.find(elemTy)->second[ubid];
+  }
+
   // Returns: store successful?
   smt::Expr store(
       mlir::Type elemTy, const smt::Expr &val, const smt::Expr &bid,
@@ -94,6 +93,7 @@ public:
 
   // Encode the refinement relation between src (other) and tgt (this) memory
   // for each element type.
+  // Memory refinement is defined using global memory blocks only.
   TypeMap<std::pair<smt::Expr, std::vector<smt::Expr>>>
       refines(const Memory &other) const;
 

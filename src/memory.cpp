@@ -57,6 +57,7 @@ Expr Memory::isLocalBlock(mlir::Type elemTy, const Expr &bid) const {
 }
 
 
+// Liveness of the block must be checked by callers
 static Expr isSafeToWrite(
     const Expr &offset, const Expr &size, const Expr &block_numelem,
     const Expr &block_writable, bool ubIfReadonly) {
@@ -77,7 +78,6 @@ Memory::Memory(TypeMap<size_t> numGlobalBlocksPerType,
     isSrc(true) {
 
   for (auto &[elemTy, numBlks]: numGlobalBlocksPerType) {
-    vector<Expr> newArrs, newWrit, newNumElems;
     optional<Sort> elemSMTTy;
 
     if (elemTy.isa<mlir::FloatType>())
@@ -90,10 +90,13 @@ Memory::Memory(TypeMap<size_t> numGlobalBlocksPerType,
     if (!elemSMTTy)
       throw UnsupportedException(elemTy);
 
+    vector<Expr> newArrs, newWrit, newNumElems, newLiveness;
+
     for (unsigned i = 0; i < numBlks; ++i) {
       auto suffix = [&](const string &s) {
-        return s + to_string(i);
+        return s + "_" + to_string(i);
       };
+
       newArrs.push_back(Expr::mkVar(
           Sort::arraySort(Index::sort(), *elemSMTTy),
             suffix("array").c_str()));
@@ -101,11 +104,14 @@ Memory::Memory(TypeMap<size_t> numGlobalBlocksPerType,
           Expr::mkVar(Sort::boolSort(),suffix("writable").c_str()));
       newNumElems.push_back(
           Expr::mkVar(Index::sort(), suffix("numelems").c_str()));
+      newLiveness.push_back(
+          Expr::mkVar(Sort::boolSort(), suffix("liveness").c_str()));
     }
 
     arrays.insert({elemTy, move(newArrs)});
     writables.insert({elemTy, move(newWrit)});
     numelems.insert({elemTy, move(newNumElems)});
+    liveness.insert({elemTy, move(newLiveness)});
   }
 }
 
@@ -163,6 +169,7 @@ Expr Memory::addLocalBlock(
       suffix("array").c_str()));
   writables[elemTy].push_back(writable);
   numelems[elemTy].push_back(numelem);
+  liveness[elemTy].push_back(Expr::mkBool(true));
   return Expr::mkBV(bid, bidBits);
 }
 
@@ -184,6 +191,17 @@ Expr Memory::getWritable(mlir::Type elemTy, const Expr &bid) const {
       return writables.find(elemTy)->second[ubid]; });
 }
 
+void Memory::setLivenessToFalse(mlir::Type elemTy, const Expr &bid) {
+  update(elemTy, bid, [&](unsigned ubid) {
+        return &writables.find(elemTy)->second[ubid]; },
+      [&](auto) { return Expr::mkBool(false); });
+}
+
+Expr Memory::getLiveness(mlir::Type elemTy, const Expr &bid) const {
+  return itebid(elemTy, bid, [&](auto ubid) {
+      return liveness.find(elemTy)->second[ubid]; });
+}
+
 Expr Memory::store(mlir::Type elemTy, const Expr &val,
     const Expr &bid, const Expr &idx) {
   update(elemTy, bid, [&](auto ubid) {
@@ -192,7 +210,7 @@ Expr Memory::store(mlir::Type elemTy, const Expr &val,
         return arrays.find(elemTy)->second[ubid].store(idx, val); });
 
   return idx.ult(getNumElementsOfMemBlock(elemTy, bid)) &
-      getWritable(elemTy, bid);
+      getWritable(elemTy, bid) & getLiveness(elemTy, bid);
 }
 
 Expr Memory::storeArray(
@@ -212,14 +230,15 @@ Expr Memory::storeArray(
     });
 
   return isSafeToWrite(offset, size, getNumElementsOfMemBlock(elemTy, bid),
-      getWritable(elemTy, bid), ubIfReadonly);
+      getWritable(elemTy, bid), ubIfReadonly) & getLiveness(elemTy, bid);
 }
 
 pair<Expr, Expr> Memory::load(
     mlir::Type elemTy, unsigned ubid, const Expr &idx) const {
   assert(ubid < getNumBlocks(elemTy));
 
-  Expr success = idx.ult(getNumElementsOfMemBlock(elemTy, ubid));
+  Expr success = idx.ult(getNumElementsOfMemBlock(elemTy, ubid)) &
+      getLiveness(elemTy, ubid);
   return {arrays.find(elemTy)->second[ubid].select(idx), success};
 }
 

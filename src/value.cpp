@@ -1039,6 +1039,15 @@ Expr MemRef::storeArray(
       ubIfReadonly);
 }
 
+Tensor MemRef::loadTensorWithoutCheck() const {
+  auto dims = getDims();
+  vector<Expr> idxs = Index::boundIndexVars(dims.size());
+  auto expr = get(idxs).first;
+  // TODO: MemRef blocks must have initialized bits
+  return Tensor::mkInitializedLambda(getElemType(),
+      move(dims), move(idxs), expr);
+}
+
 Expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(elemType, bid);
   auto memrefSize = get1DSize();
@@ -1051,6 +1060,10 @@ Expr MemRef::isGlobalBlock() const {
 
 Expr MemRef::isLocalBlock() const {
   return m->isLocalBlock(elemType, bid);
+}
+
+Expr MemRef::getLiveness() const {
+  return m->getLiveness(elemType, bid);
 }
 
 smt::Expr MemRef::noalias(const MemRef &other) const {
@@ -1118,8 +1131,11 @@ Expr MemRef::conv(const MemRef &input,
   auto outputArray = Expr::mkLambda(idx, outputExpr);
 
   // store output memref
-  auto success = isInBounds() & input.isInBounds() & filter.isInBounds() &
-    noalias(input) & noalias(filter) & storeArray(outputArray, Index::zero(), get1DSize());
+  auto success = isInBounds() & getLiveness() &
+      input.getLiveness() & input.isInBounds() &
+      filter.getLiveness() & filter.isInBounds() &
+      noalias(input) & noalias(filter) &
+      storeArray(outputArray, Index::zero(), get1DSize());
 
   return success;
 }

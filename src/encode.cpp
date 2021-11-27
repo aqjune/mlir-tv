@@ -1799,15 +1799,6 @@ static void storeTensorTo(
   }
 }
 
-static Tensor loadTensorFrom(const MemRef &m) {
-  auto dims = m.getDims();
-  vector<Expr> idxs = Index::boundIndexVars(dims.size());
-  auto expr = m.get(idxs).first;
-  // TODO: MemRef blocks must have initialized bits
-  return Tensor::mkInitializedLambda(m.getElemType(),
-      move(dims), move(idxs), expr);
-}
-
 template<>
 void encodeOp(State &st, mlir::memref::BufferCastOp op, bool encodeMemWrite) {
   if (!encodeMemWrite)
@@ -1834,9 +1825,12 @@ void encodeOp(State &st, mlir::memref::CloneOp op, bool encodeMemWrite) {
   auto srcTy = op.getOperand().getType().cast<mlir::MemRefType>();
   auto dims = src.getDims();
 
+  // A dead block cannot be cloned.
+  st.wellDefined(op, src.getLiveness());
+
   // Create a read-only block.
   auto memref = createNewLocalBlk(st.m.get(), move(dims), srcTy, false);
-  auto tensor = loadTensorFrom(src);
+  auto tensor = src.loadTensorWithoutCheck();
   storeTensorTo(st, op.getOperation(), move(tensor), memref, srcTy);
   // Src is not writable as well.
   st.m->setWritable(srcTy.getElementType(), src.getBID(), false);
@@ -1852,8 +1846,8 @@ void encodeOp(State &st, mlir::memref::TensorLoadOp op, bool encodeMemWrite) {
   auto &memory = *(st.m);
   memory.setWritable(memrefTy.getElementType(), m.getBID(), false);
 
-  st.regs.add(op.getResult(), loadTensorFrom(m));
-  st.wellDefined(op, m.isInBounds());
+  st.regs.add(op.getResult(), m.loadTensorWithoutCheck());
+  st.wellDefined(op, m.isInBounds() & m.getLiveness());
 }
 
 template<>
@@ -1895,8 +1889,10 @@ void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
   // They must not overlap, according to
   // https://mlir.llvm.org/docs/Dialects/Linalg/#linalgcopy-mlirlinalgcopyop
   st.wellDefined(opr, mrIn.noalias(mrOut));
+  // The memory block must be alive.
+  st.wellDefined(opr, mrIn.getLiveness());
 
-  storeTensorTo(st, opr, loadTensorFrom(mrIn), mrOut,
+  storeTensorTo(st, opr, mrIn.loadTensorWithoutCheck(), mrOut,
       op.output().getType().cast<mlir::MemRefType>());
 }
 

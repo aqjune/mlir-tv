@@ -85,8 +85,10 @@ public:
     NCHW_FCHW  // image: nchw, filter: fchw, output: nfhw
   };
 
-  // Linalg convolution operation
+protected:
+  // Linalg convolution operation.
   // returns: (indices, expr)
+  // Caller must check validity (e.g. inbounds, initializedness of filter)
   std::pair<std::vector<smt::Expr>, smt::Expr> conv(const ShapedValue &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
@@ -157,6 +159,8 @@ public:
   Tensor concat(const Tensor &t2, size_t axis);
 
   // Return a new tensor which is convolution of this tensor and filter.
+  // Callers of conv must check whether filters/inputs/.. are initialized
+  // (otherwise UB).
   Tensor conv(const Tensor &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
@@ -312,15 +316,20 @@ public:
   Index getOffset() const { return offset; }
   std::vector<smt::Expr> getDims() const override { return dims; }
 
+  // (value, success?)
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
       const override;
   smt::Expr store(const smt::Expr &value, const std::vector<smt::Expr> &indices)
       const;
   smt::Expr storeArray(const smt::Expr &array, const smt::Expr &startOffset,
       const smt::Expr &size, bool ubIfReadonly = true) const;
+
+  Tensor loadTensorWithoutCheck() const;
+
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;
   smt::Expr isLocalBlock() const;
+  smt::Expr getLiveness() const;
   smt::Expr noalias(const MemRef &other) const;
   void setWritable(bool writable);
   void setMemory(Memory *m) { this->m = m; }
