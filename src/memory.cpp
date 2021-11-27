@@ -193,7 +193,7 @@ Expr Memory::getWritable(mlir::Type elemTy, const Expr &bid) const {
 
 void Memory::setLivenessToFalse(mlir::Type elemTy, const Expr &bid) {
   update(elemTy, bid, [&](unsigned ubid) {
-        return &writables.find(elemTy)->second[ubid]; },
+        return &liveness.find(elemTy)->second[ubid]; },
       [&](auto) { return Expr::mkBool(false); });
 }
 

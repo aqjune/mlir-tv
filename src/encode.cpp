@@ -1838,6 +1838,26 @@ void encodeOp(State &st, mlir::memref::CloneOp op, bool encodeMemWrite) {
 }
 
 template<>
+void encodeOp(State &st, mlir::memref::DeallocOp op, bool encodeMemWrite) {
+  if (!encodeMemWrite)
+    throw UnsupportedException(op.getOperation(),
+        "We do not support memory writes in this scope");
+
+  auto src = st.regs.get<MemRef>(op.getOperand());
+  auto srcTy = op.getOperand().getType().cast<mlir::MemRefType>();
+
+  // A dead block cannot be deallocated.
+  st.wellDefined(op, src.getLiveness());
+
+  // Unlike free(), we don't need to check offset == 0 because MemRef tracks
+  // the pointer to the data buffer as allocated, referred to as
+  // "allocated pointer". This is useful for deallocating the memref.
+  // See: https://mlir.llvm.org/docs/TargetLLVMIR/ , Ranked MemRef Types sec.
+
+  st.m->setLivenessToFalse(srcTy.getElementType(), src.getBID());
+}
+
+template<>
 void encodeOp(State &st, mlir::memref::TensorLoadOp op, bool encodeMemWrite) {
   auto memref = op.getOperand();
   auto memrefTy = memref.getType().cast<mlir::MemRefType>();
@@ -2477,6 +2497,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::memref::AllocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::BufferCastOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::CloneOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::DeallocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DimOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::LoadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::StoreOp, encodeMemWriteOps);
