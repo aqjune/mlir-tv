@@ -562,6 +562,11 @@ Results validate(
     for (auto &[ty, cnt]: tgt_res.memref.varCount)
       vinput.numBlocksPerType[ty] += cnt;
 
+    if (vinput.numBlocksPerType.size() > 1) {
+      llvm::outs() << "NOTE: mlir-tv assumes that memrefs of different element "
+          "types do not alias. This can cause missing bugs.\n";
+    }
+
     if (numBlocksPerType) {
       for (auto &[ty, cnt]: vinput.numBlocksPerType)
         cnt = numBlocksPerType;
