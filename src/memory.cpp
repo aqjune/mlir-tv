@@ -88,7 +88,7 @@ Memory::Memory(TypeMap<size_t> numGlobalBlocksPerType,
       elemSMTTy = Integer::sort(elemTy.getIntOrFloatBitWidth());
 
     if (!elemSMTTy)
-      throw UnsupportedException("Unsupported type");
+      throw UnsupportedException(elemTy);
 
     for (unsigned i = 0; i < numBlks; ++i) {
       auto suffix = [&](const string &s) {

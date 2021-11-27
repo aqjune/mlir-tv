@@ -1822,7 +1822,8 @@ void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
         "We do not support memory writes in this scope");
   else if (op.inputPermutation() || op.outputPermutation())
     // Well, this might be straightforward...
-    throw UnsupportedException("linalg.copy with permutations is not supported");
+    throw UnsupportedException(op.getOperation(),
+        "linalg.copy with permutations is not supported");
 
   auto *opr = op.getOperation();
   auto mrIn = st.regs.get<MemRef>(op.input());
@@ -2367,7 +2368,16 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
 
 #define ENCODE(st, op, ty, encodeMemWriteOps) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    encodeOp(st, op2, encodeMemWriteOps); \
+    try { \
+      encodeOp(st, op2, encodeMemWriteOps); \
+    } catch (UnsupportedException ue) { \
+      if (std::holds_alternative<mlir::Operation *>(ue.getObject())) { \
+        auto *op_ue = std::get<mlir::Operation *>(ue.getObject()); \
+        if (!op_ue) \
+          throw UnsupportedException(&op, ue.getReason()); \
+      } \
+      throw ue; \
+    } \
     if (callbackAfterEnc) callbackAfterEnc(&op); \
     continue; \
   }
