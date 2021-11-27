@@ -13,7 +13,7 @@ static string freshName(string prefix) {
   return prefix + to_string(count ++);
 }
 
-optional<smt::Sort> convertTypeToSort(mlir::Type elemty) {
+optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type elemty) {
   if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
     return Integer::sort(ielemty.getWidth());
   } else if (auto felemty = elemty.dyn_cast<mlir::FloatType>()) {
@@ -26,7 +26,7 @@ optional<smt::Sort> convertTypeToSort(mlir::Type elemty) {
 }
 
 optional<Expr> getZero(mlir::Type eltType) {
-  if (convertTypeToSort(eltType) == nullopt)
+  if (convertPrimitiveTypeToSort(eltType) == nullopt)
     return nullopt;
 
   if (eltType.isa<mlir::FloatType>())
@@ -360,7 +360,7 @@ Tensor::Tensor(
     bool initialized):
   ShapedValue(elemType),
   dims(dimvec),
-  arr(Expr::mkVar(arraySortForTensor(*convertTypeToSort(elemType)),
+  arr(Expr::mkVar(arraySortForTensor(*convertPrimitiveTypeToSort(elemType)),
       move(name))),
   initialized(splatArrayForTensor(Expr::mkBool(initialized))) {}
 
@@ -646,7 +646,7 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
 bool Tensor::isTypeSupported(mlir::TensorType tensorTy) {
   if (!tensorTy.hasRank())
     return false;
-  return convertTypeToSort(tensorTy.getElementType()) != nullopt;
+  return convertPrimitiveTypeToSort(tensorTy.getElementType()) != nullopt;
 }
 
 
@@ -990,10 +990,7 @@ bool MemRef::isTypeSupported(mlir::MemRefType memRefTy) {
     // Currently we only support strided Memref.
     return {};
   }
-
-  auto elemty = memRefTy.getElementType();
-  // Currently we only support f32 element type.
-  return elemty.isF32();
+  return convertPrimitiveTypeToSort(memRefTy.getElementType()) != nullopt;
 }
 
 MemRef::Layout MemRef::getLayout(
@@ -1023,14 +1020,14 @@ MemRef::Layout MemRef::getLayout(
 
 pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto [loaded, success] = m->load(bid, (Expr)offset + idx);
+  auto [loaded, success] = m->load(elemType, bid, (Expr)offset + idx);
 
   return {loaded, (success & inbounds).simplify()};
 }
 
 Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto success = m->store(value, bid, (Expr)offset + idx);
+  auto success = m->store(elemType, value, bid, (Expr)offset + idx);
 
   return (success & inbounds).simplify();
 }
@@ -1038,22 +1035,22 @@ Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) const {
 Expr MemRef::storeArray(
     const Expr &array, const Expr &startOffset, const Expr &size,
     bool ubIfReadonly) const {
-  return m->storeArray(array, bid, (Expr)offset + startOffset, size,
+  return m->storeArray(elemType, array, bid, (Expr)offset + startOffset, size,
       ubIfReadonly);
 }
 
 Expr MemRef::isInBounds() const {
-  auto numelem = m->getNumElementsOfMemBlock(bid);
+  auto numelem = m->getNumElementsOfMemBlock(elemType, bid);
   auto memrefSize = get1DSize();
   return numelem.uge(memrefSize) & ((Expr)offset).ule(numelem - memrefSize);
 }
 
 Expr MemRef::isGlobalBlock() const {
-  return m->isGlobalBlock(bid);
+  return m->isGlobalBlock(elemType, bid);
 }
 
 Expr MemRef::isLocalBlock() const {
-  return m->isLocalBlock(bid);
+  return m->isLocalBlock(elemType, bid);
 }
 
 smt::Expr MemRef::noalias(const MemRef &other) const {
@@ -1072,7 +1069,7 @@ smt::Expr MemRef::noalias(const MemRef &other) const {
 }
 
 void MemRef::setWritable(bool writable) {
-  m->setWritable(bid, writable);
+  m->setWritable(elemType, bid, writable);
 }
 
 bool MemRef::isIdentityMap() const {

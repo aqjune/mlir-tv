@@ -1,4 +1,5 @@
 #include "analysis.h"
+#include "debug.h"
 #include "value.h"
 #include "utils.h"
 
@@ -80,6 +81,8 @@ static void analyzeVariable(
   auto ty = var.getType();
   size_t &f32Count = isArg ? res.F32.argCount : res.F32.varCount;
   size_t &f64Count = isArg ? res.F64.argCount : res.F64.varCount;
+  decltype(res.memref.argCount) &memrefCnt =
+      isArg ? res.memref.argCount : res.memref.varCount;
 
   if (ty.isF32()) {
     f32Count++;
@@ -106,7 +109,7 @@ static void analyzeVariable(
       f64Count += cnt;
 
     if (ty.isa<mlir::MemRefType>()) {
-      res.memref.varCount++;
+      memrefCnt[elemty]++;
     }
   }
 }
@@ -200,6 +203,16 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
   // Step2. analyze the block
   auto &block = region.front();
   analyzeBlock(block, res, isFullyAbstract);
+
+  verbose("analysis") << "<" << fn.getName().str() << ">\n";
+  verbose("analysis") << "  f32 arg count: " << res.F32.argCount << "\n";
+  verbose("analysis") << "  f32 var count: " << res.F32.varCount << "\n";
+  verbose("analysis") << "  f64 arg count: " << res.F64.argCount << "\n";
+  verbose("analysis") << "  f64 var count: " << res.F64.varCount << "\n";
+  for (auto &[ty, cnt]: res.memref.argCount)
+    verbose("analysis") << "  memref arg count (" << ty << "): " << cnt << "\n";
+  for (auto &[ty, cnt]: res.memref.varCount)
+    verbose("analysis") << "  memref var count (" << ty << "): " << cnt << "\n";
 
   return res;
 }

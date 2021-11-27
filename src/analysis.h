@@ -1,6 +1,8 @@
 #pragma once
 
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "utils.h"
+#include <map>
 #include <optional>
 #include <set>
 
@@ -11,8 +13,8 @@ struct FPAnalysisResult {
 };
 
 struct MemRefAnalysisResult {
-  size_t argCount = 0;
-  size_t varCount = 0;
+  TypeMap<size_t> argCount;
+  TypeMap<size_t> varCount;
 };
 
 struct AnalysisResult {
