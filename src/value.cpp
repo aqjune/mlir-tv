@@ -990,10 +990,7 @@ bool MemRef::isTypeSupported(mlir::MemRefType memRefTy) {
     // Currently we only support strided Memref.
     return {};
   }
-
-  auto elemty = memRefTy.getElementType();
-  // Currently we only support f32 element type.
-  return elemty.isF32();
+  return convertTypeToSort(memRefTy.getElementType()) != nullopt;
 }
 
 MemRef::Layout MemRef::getLayout(
