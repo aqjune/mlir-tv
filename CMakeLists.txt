@@ -135,12 +135,6 @@ add_dependencies(${PROJECT_NAME} ${PROJECT_LIB})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_LIB})
 target_compile_options(${PROJECT_NAME} PRIVATE -fno-rtti)
 
-# Build interpreter
-add_executable(mlir-interp src/interp.cpp)
-add_dependencies(mlir-interp ${PROJECT_LIB})
-target_link_libraries(mlir-interp PRIVATE ${PROJECT_LIB})
-target_compile_options(mlir-interp PRIVATE -fno-rtti)
-
 enable_testing()
 add_subdirectory(${PROJECT_SOURCE_DIR}/tests)
 # Reactivate this after unit tests are updated to use the new SMT wrapper classes
