@@ -961,6 +961,65 @@ void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
       [](auto &&a, auto &&b) { return (Expr)a ^ (Expr)b; });
 }
 
+template<>
+void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+
+  mlir::Value i = op.input1();
+  mlir::Value p = op.perms();
+
+  auto ity = i.getType().dyn_cast<mlir::RankedTensorType>();
+  auto pty = p.getType().dyn_cast<mlir::RankedTensorType>();
+  if(!getElemTy(p).isa<mlir::IntegerType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported element type");
+
+  assert(pty.getRank() == 1 && pty.getDimSize(0) == ity.getRank());
+
+  auto input = st.regs.get<Tensor>(i);
+  auto perms = st.regs.get<Tensor>(p);
+
+  vector<Expr> indVars = Index::boundIndexVars(input.getRank());
+  vector<Expr> dims, outVars;
+  vector<uint64_t> idxs;
+
+  for (unsigned i = 0; i < input.getRank(); i++) {
+    uint64_t v;
+    // We expect simplify() to succeed since perms is a small Tensor
+    if(!perms.get({Index(i)}).first.simplify().isUInt(v))
+      throw UnsupportedException(op.getOperation(), "Unsupported perms element type");
+    idxs.push_back(v);
+    dims.push_back(input.getDim(v));
+  }
+
+  // check the validity of perms
+  for (unsigned i = 0; i < input.getRank(); i++) {
+    int count = 0;
+    for (unsigned j = 0; j < input.getRank(); j++) {
+      assert(idxs[j] >= 0 && idxs[j] < input.getRank());
+      if (idxs[j] == i)
+        count++;
+    }
+    assert(count == 1);
+  }
+
+  for (unsigned i = 0; i < input.getRank(); i++) {
+    for(unsigned idx = 0; idx < input.getRank(); idx++) {
+      if(idxs[idx] == i) {
+        outVars.push_back(indVars[idx]);
+        break;
+      }
+    }
+  }  
+
+  auto output = input.get(outVars).first;
+
+  st.regs.add(op, Tensor::mkLambda(input.getElemType(),
+                    move(dims), move(indVars), output, Expr::mkBool(true)));
+
+}
+
 
 template<>
 void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
@@ -2470,6 +2529,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::SubOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::TransposeOp, encodeMemWriteOps);
 
     throw UnsupportedException(&op);
   }
