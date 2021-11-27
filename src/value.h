@@ -288,13 +288,15 @@ public:
     const smt::Expr &bid,
     const smt::Expr &offset,
     const std::vector<smt::Expr> &dims,
-    const Layout &layout);
-  // Makes an unbound variable.
+    const Layout &layout,
+    const smt::Expr &isViewRef);
+  // Makes unbound SMT variables.
   MemRef(Memory *m,
     const mlir::Type &elemty,
     const std::string &name,
     const std::vector<smt::Expr> &dims,
     const Layout &layout);
+  // Makes unbound SMT variables with fresh names.
   MemRef(Memory *m,
     const mlir::Type &elemty,
     const std::vector<smt::Expr> &dims,
@@ -315,6 +317,7 @@ public:
   smt::Expr getBID() const { return bid; }
   Index getOffset() const { return offset; }
   std::vector<smt::Expr> getDims() const override { return dims; }
+  smt::Expr isViewReference() const { return isViewRef; }
 
   // (value, success?)
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
@@ -369,6 +372,7 @@ private:
   std::vector<smt::Expr> dims;
   Layout layout; // memory layout defined by affine_map
                  // (ex. s0 * idx0 + s1 * idx1 + ... + offset)
+  smt::Expr isViewRef; // Is this MemRef created from view operations?
 
   smt::Expr to1DArrayWithOfs(
       const std::vector<smt::Expr> &offbegins,

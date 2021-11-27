@@ -947,8 +947,9 @@ MemRef::MemRef(Memory *m,
   const smt::Expr &bid,
   const smt::Expr &offset,
   const std::vector<smt::Expr> &dims,
-  const Layout &layout) : ShapedValue(elemTy), m(m), bid(bid),
-    offset(offset), dims(dims), layout(layout) {}
+  const Layout &layout,
+  const smt::Expr &isViewRef) : ShapedValue(elemTy), m(m), bid(bid),
+    offset(offset), dims(dims), layout(layout), isViewRef(isViewRef) {}
 
 MemRef::MemRef(Memory *m,
   const mlir::Type &elemty,
@@ -960,7 +961,8 @@ MemRef::MemRef(Memory *m,
     bid(Expr::mkVar(Sort::bvSort(m->getBIDBits()), (name + "_bid").c_str())),
     offset(Index::var(name + "_offset", VarType::UNBOUND)),
     dims(dims),
-    layout(layout) {}
+    layout(layout),
+    isViewRef(Expr::mkVar(Sort::boolSort(), (name + "_isviewref").c_str())) {}
 
 MemRef::MemRef(Memory *m,
     const mlir::Type &elemty,
@@ -1108,11 +1110,13 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
     }
 
     auto subviewLayout = createSubViewLayout(indVars, offsets, strides, sizes);
-    return MemRef(m, elemType, bid, offset, reducedSizes, subviewLayout);
+    return MemRef(m, elemType, bid, offset, reducedSizes, subviewLayout,
+        Expr::mkBool(true));
   } else {
     auto subviewLayout = createSubViewLayout(
         layout.indVars, offsets, strides, sizes);
-    return MemRef(m, elemType, bid, offset, sizes, subviewLayout);
+    return MemRef(m, elemType, bid, offset, sizes, subviewLayout,
+        Expr::mkBool(true));
   }
 }
 
@@ -1151,9 +1155,11 @@ MemRef MemRef::mkIte(smt::Expr cond,
   auto isTrue = (Expr) cond == Integer::boolTrue();
   auto bid = Expr::mkIte(isTrue, trueValue.bid, falseValue.bid);
   auto offset = Expr::mkIte(isTrue, trueValue.offset, falseValue.offset);
+  auto isViewRef = Expr::mkIte(isTrue, trueValue.isViewRef,
+      falseValue.isViewRef);
   // Assumes that trueValue.layout is equivalent to falseValue.layout.
   return MemRef(trueValue.m, trueValue.elemType,
-      bid, offset, trueValue.dims, trueValue.layout);
+      bid, offset, trueValue.dims, trueValue.layout, isViewRef);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {

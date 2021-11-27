@@ -1659,7 +1659,7 @@ static MemRef createNewLocalBlk(
   // Create MemRef which points to the newly created block
   auto memref =
       MemRef(m, memrefTy.getElementType(), bid, Index::zero(), dims,
-          move(layout));
+          move(layout), /*is not a view reference*/Expr::mkBool(false));
 
   return {move(memref)};
 }
@@ -1848,6 +1848,11 @@ void encodeOp(State &st, mlir::memref::DeallocOp op, bool encodeMemWrite) {
 
   // A dead block cannot be deallocated.
   st.wellDefined(op, src.getLiveness());
+
+  // According to the MLIR specification doc:
+  // The dealloc operation should not be called on memrefs which alias an
+  // alloc’d memref (e.g. memrefs returned by view operations).
+  st.wellDefined(op, !src.isViewReference());
 
   // Unlike free(), we don't need to check offset == 0 because MemRef tracks
   // the pointer to the data buffer as allocated, referred to as
