@@ -24,6 +24,7 @@ set(PROJECT_OBJ "mlirtvobj")
 add_library(${PROJECT_OBJ} OBJECT
     src/abstractops.cpp
     src/analysis.cpp
+    src/debug.cpp
     src/encode.cpp
     src/memory.cpp
     src/print.cpp

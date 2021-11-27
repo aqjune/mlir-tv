@@ -1,4 +1,5 @@
 #include "abstractops.h"
+#include "debug.h"
 #include "memory.h"
 #include "smt.h"
 #include "vcgen.h"
@@ -65,6 +66,10 @@ llvm::cl::opt<bool> arg_associative_sum("associative",
                  "(experimental)"),
   llvm::cl::init(false));
 
+llvm::cl::opt<bool> arg_verbose("verbose",
+  llvm::cl::desc("Be verbose about what's going on"), llvm::cl::Hidden,
+  llvm::cl::init(false));
+
 llvm::cl::opt<bool> arg_multiset("multiset",
   llvm::cl::desc("Use multiset when encoding the associativity of the floating"
                  " point addition"),  llvm::cl::Hidden,
@@ -112,6 +117,7 @@ int main(int argc, char* argv[]) {
   llvm::EnableDebugBuffering = true;
 
   llvm::cl::ParseCommandLineOptions(argc, argv);
+  setVerbose(arg_verbose.getValue());
 
   smt::setTimeout(arg_smt_to.getValue());
   if (arg_solver.getValue() == smt::ALL || arg_solver.getValue() == smt::Z3)
