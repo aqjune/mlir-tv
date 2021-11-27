@@ -672,6 +672,10 @@ void encodeOp(State &st, mlir::arith::IndexCastOp op, bool) {
   auto srcty = op.getOperand().getType();
   auto dstty = op.getType();
 
+  if (srcty.isa<mlir::MemRefType>() || dstty.isa<mlir::MemRefType>())
+    throw UnsupportedException(op.getOperation(),
+        "index_cast of memref is not supported");
+
   if (auto src_tensorty = srcty.dyn_cast<mlir::TensorType>()) {
     auto dst_tensorty = dstty.dyn_cast<mlir::TensorType>();
     if (!dst_tensorty)
@@ -1657,14 +1661,13 @@ void encodeOp(State &st, mlir::memref::StoreOp op, bool encodeMemWriteOp) {
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
-  if (op.getOperand(0).getType().isF32()) {
-    auto val = st.regs.get<Float>(op.getOperand(0));
-    auto success = m.store(val, indices);
-    st.wellDefined(op, move(success));
-  } else {
-    // Currently we support only f32 memory type
+  auto value = op.getOperand(0);
+  if (convertPrimitiveTypeToSort(value.getType()) == nullopt)
     throw UnsupportedException(op.getOperation(), "unsupported type");
-  }
+
+  auto valExpr = st.regs.getExpr(value);
+  auto success = m.store(valExpr, indices);
+  st.wellDefined(op, move(success));
 }
 
 template<>
@@ -2097,7 +2100,6 @@ static void initInputStateForLoopBody(
 
     } else if (auto memrefty = op_i.getType().dyn_cast<mlir::MemRefType>()) {
       // A MemRef value.
-      // TODO: currently we support float32 element type
       MemRef m_input = st.regs.get<MemRef>(op_i);
 
       vector<Expr> affine_Exprs;
@@ -2115,8 +2117,8 @@ static void initInputStateForLoopBody(
 
       auto [m_elem, m_welldef] = m_input.get(affine_Exprs);
       welldef &= m_welldef;
-      st.regs.add(block.getArgument(arg_i), 
-          Float(m_elem, memrefty.getElementType()));
+      mlir::Type elemTy = memrefty.getElementType();
+      st.regs.add(block.getArgument(arg_i), m_elem, elemTy);
     } else {
       throw UnsupportedException(op.getOperation(),
           "unsupported block argument type");

@@ -13,7 +13,7 @@ static string freshName(string prefix) {
   return prefix + to_string(count ++);
 }
 
-optional<smt::Sort> convertTypeToSort(mlir::Type elemty) {
+optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type elemty) {
   if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
     return Integer::sort(ielemty.getWidth());
   } else if (auto felemty = elemty.dyn_cast<mlir::FloatType>()) {
@@ -26,7 +26,7 @@ optional<smt::Sort> convertTypeToSort(mlir::Type elemty) {
 }
 
 optional<Expr> getZero(mlir::Type eltType) {
-  if (convertTypeToSort(eltType) == nullopt)
+  if (convertPrimitiveTypeToSort(eltType) == nullopt)
     return nullopt;
 
   if (eltType.isa<mlir::FloatType>())
@@ -360,7 +360,7 @@ Tensor::Tensor(
     bool initialized):
   ShapedValue(elemType),
   dims(dimvec),
-  arr(Expr::mkVar(arraySortForTensor(*convertTypeToSort(elemType)),
+  arr(Expr::mkVar(arraySortForTensor(*convertPrimitiveTypeToSort(elemType)),
       move(name))),
   initialized(splatArrayForTensor(Expr::mkBool(initialized))) {}
 
@@ -646,7 +646,7 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
 bool Tensor::isTypeSupported(mlir::TensorType tensorTy) {
   if (!tensorTy.hasRank())
     return false;
-  return convertTypeToSort(tensorTy.getElementType()) != nullopt;
+  return convertPrimitiveTypeToSort(tensorTy.getElementType()) != nullopt;
 }
 
 
@@ -990,7 +990,7 @@ bool MemRef::isTypeSupported(mlir::MemRefType memRefTy) {
     // Currently we only support strided Memref.
     return {};
   }
-  return convertTypeToSort(memRefTy.getElementType()) != nullopt;
+  return convertPrimitiveTypeToSort(memRefTy.getElementType()) != nullopt;
 }
 
 MemRef::Layout MemRef::getLayout(

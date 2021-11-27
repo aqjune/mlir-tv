@@ -159,7 +159,7 @@ Expr Memory::addLocalBlock(
   };
 
   arrays[elemTy].push_back(Expr::mkVar(
-      Sort::arraySort(Index::sort(), *convertTypeToSort(elemTy)),
+      Sort::arraySort(Index::sort(), *convertPrimitiveTypeToSort(elemTy)),
       suffix("array").c_str()));
   writables[elemTy].push_back(writable);
   numelems[elemTy].push_back(numelem);

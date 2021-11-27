@@ -6,7 +6,7 @@
 
 class Memory;
 
-std::optional<smt::Sort> convertTypeToSort(mlir::Type ty);
+std::optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type ty);
 std::optional<smt::Expr> getZero(mlir::Type eltType);
 
 
@@ -15,7 +15,9 @@ class Float {
   mlir::Type type;
 
 public:
-  Float(const smt::Expr &e, mlir::Type type): e(e), type(type) {}
+  Float(const smt::Expr &e, mlir::Type type): e(e), type(type) {
+    assert(type.isa<mlir::FloatType>());
+  }
 
   operator smt::Expr() const { return e; }
 

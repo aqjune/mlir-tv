@@ -119,7 +119,7 @@ static State createInputState(
       s.regs.add(arg, move(memref));
 
     } else {
-      if (convertTypeToSort(argty) == nullopt) {
+      if (convertPrimitiveTypeToSort(argty) == nullopt) {
         throw UnsupportedException(arg.getType());
       }
 
@@ -136,8 +136,8 @@ static State createInputState(
         s.regs.add(arg, Integer::var(move(name), bw, varty));
 
       } else {
-        llvm::errs() << "convertTypeToSort must have returned nullopt for this"
-                        " type!";
+        llvm::errs() << "convertPrimitiveTypeToSort must have returned nullopt"
+                        " for this type!";
         abort();
       }
     }
