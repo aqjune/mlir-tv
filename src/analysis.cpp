@@ -80,6 +80,8 @@ static void analyzeVariable(
   auto ty = var.getType();
   size_t &f32Count = isArg ? res.F32.argCount : res.F32.varCount;
   size_t &f64Count = isArg ? res.F64.argCount : res.F64.varCount;
+  decltype(res.memref.argCount) &memrefCnt =
+      isArg ? res.memref.argCount : res.memref.varCount;
 
   if (ty.isF32()) {
     f32Count++;
@@ -106,7 +108,7 @@ static void analyzeVariable(
       f64Count += cnt;
 
     if (ty.isa<mlir::MemRefType>()) {
-      res.memref.varCount++;
+      memrefCnt[elemty]++;
     }
   }
 }

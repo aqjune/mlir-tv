@@ -1591,7 +1591,8 @@ static MemRef createNewLocalBlk(
 
   auto layout = MemRef::getLayout(memrefTy, dims);
   // Add a new local block
-  auto bid = m->addLocalBlock(smt::get1DSize(dims), Expr::mkBool(writable));
+  auto bid = m->addLocalBlock(smt::get1DSize(dims),
+      memrefTy.getElementType(), Expr::mkBool(writable));
   // Create MemRef which points to the newly created block
   auto memref =
       MemRef(m, memrefTy.getElementType(), bid, Index::zero(), dims,
@@ -1776,16 +1777,18 @@ void encodeOp(State &st, mlir::memref::CloneOp op, bool encodeMemWrite) {
   auto tensor = loadTensorFrom(src);
   storeTensorTo(st, op.getOperation(), move(tensor), memref, srcTy);
   // Src is not writable as well.
-  st.m->setWritable(src.getBID(), false);
+  st.m->setWritable(srcTy.getElementType(), src.getBID(), false);
   st.regs.add(op, move(memref));
 }
 
 template<>
 void encodeOp(State &st, mlir::memref::TensorLoadOp op, bool encodeMemWrite) {
-  auto m = st.regs.get<MemRef>(op.getOperand());
+  auto memref = op.getOperand();
+  auto memrefTy = memref.getType().cast<mlir::MemRefType>();
+  auto m = st.regs.get<MemRef>(memref);
   // Mark the MemBlock pointed by the memref as read-only.
   auto &memory = *(st.m);
-  memory.setWritable(m.getBID(), false);
+  memory.setWritable(memrefTy.getElementType(), m.getBID(), false);
 
   st.regs.add(op.getResult(), loadTensorFrom(m));
   st.wellDefined(op, m.isInBounds());

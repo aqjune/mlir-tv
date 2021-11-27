@@ -1023,14 +1023,14 @@ MemRef::Layout MemRef::getLayout(
 
 pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto [loaded, success] = m->load(bid, (Expr)offset + idx);
+  auto [loaded, success] = m->load(elemType, bid, (Expr)offset + idx);
 
   return {loaded, (success & inbounds).simplify()};
 }
 
 Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto success = m->store(value, bid, (Expr)offset + idx);
+  auto success = m->store(elemType, value, bid, (Expr)offset + idx);
 
   return (success & inbounds).simplify();
 }
@@ -1038,22 +1038,22 @@ Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) const {
 Expr MemRef::storeArray(
     const Expr &array, const Expr &startOffset, const Expr &size,
     bool ubIfReadonly) const {
-  return m->storeArray(array, bid, (Expr)offset + startOffset, size,
+  return m->storeArray(elemType, array, bid, (Expr)offset + startOffset, size,
       ubIfReadonly);
 }
 
 Expr MemRef::isInBounds() const {
-  auto numelem = m->getNumElementsOfMemBlock(bid);
+  auto numelem = m->getNumElementsOfMemBlock(elemType, bid);
   auto memrefSize = get1DSize();
   return numelem.uge(memrefSize) & ((Expr)offset).ule(numelem - memrefSize);
 }
 
 Expr MemRef::isGlobalBlock() const {
-  return m->isGlobalBlock(bid);
+  return m->isGlobalBlock(elemType, bid);
 }
 
 Expr MemRef::isLocalBlock() const {
-  return m->isLocalBlock(bid);
+  return m->isLocalBlock(elemType, bid);
 }
 
 smt::Expr MemRef::noalias(const MemRef &other) const {
@@ -1072,7 +1072,7 @@ smt::Expr MemRef::noalias(const MemRef &other) const {
 }
 
 void MemRef::setWritable(bool writable) {
-  m->setWritable(bid, writable);
+  m->setWritable(elemType, bid, writable);
 }
 
 bool MemRef::isIdentityMap() const {

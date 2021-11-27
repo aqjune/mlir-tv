@@ -29,6 +29,7 @@ add_library(${PROJECT_OBJ} OBJECT
     src/print.cpp
     src/smt.cpp
     src/state.cpp
+    src/utils.cpp
     src/value.cpp
     src/vcgen.cpp)
 

@@ -34,7 +34,7 @@ void printOperations(Model m, mlir::FuncOp fn, const State &st) {
 void printCounterEx(
     Model m, const vector<Expr> &params, mlir::FuncOp src,
     mlir::FuncOp tgt, const State &st_src, const State &st_tgt,
-    VerificationStep step, unsigned retvalidx) {
+    VerificationStep step, unsigned retvalidx, optional<mlir::Type> memElemTy) {
   llvm::outs() << "<Inputs>\n";
   printInputs(m, src, st_src);
 
@@ -84,11 +84,12 @@ void printCounterEx(
     // Print Memory counter example
     auto bid = params[0];
     auto offset = params[1];
+    auto elemTy = *memElemTy;
 
-    auto [srcValue, srcSuccess] = st_src.m->load(bid, offset);
-    auto [tgtValue, tgtSuccess] = st_tgt.m->load(bid, offset);
-    auto srcWritable = st_src.m->getWritable(bid);
-    auto tgtWritable = st_tgt.m->getWritable(bid);
+    auto [srcValue, srcSuccess] = st_src.m->load(elemTy, bid, offset);
+    auto [tgtValue, tgtSuccess] = st_tgt.m->load(elemTy, bid, offset);
+    auto srcWritable = st_src.m->getWritable(elemTy, bid);
+    auto tgtWritable = st_tgt.m->getWritable(elemTy, bid);
 
     srcValue = m.eval(srcValue, true);
     srcSuccess = m.eval(srcSuccess);
@@ -99,11 +100,13 @@ void printCounterEx(
 
     llvm::outs() << "\n<Source memory state>\n";
     llvm::outs() << "\tMemory[bid: " << m.eval(bid)
-      << ", offset: " << m.eval(offset) << "] : "
+      << ", offset: " << m.eval(offset)
+      << ", elem type: " << to_string(elemTy) << "] : "
       << srcValue << ", " << srcWritable <<  "\n";
     llvm::outs() << "\n<Target memory state>\n";
     llvm::outs() << "\tMemory[bid: " << m.eval(bid)
-      << ", offset: " << m.eval(offset) << "] : "
+      << ", offset: " << m.eval(offset)
+      << ", elem type: " << to_string(elemTy) << "] : "
       << tgtValue << ", " << tgtWritable <<  "\n\n";
   }
 }

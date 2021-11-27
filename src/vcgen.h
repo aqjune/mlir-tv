@@ -45,7 +45,7 @@ enum class VerificationStep {
 
 Results validate(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const std::string &dump_smt_to,
-    unsigned int numBlocks,
+    unsigned int numBlocksPerType,
     std::pair<unsigned, unsigned> fpBits, // (float, double)
     bool associativeAdd,
     bool useMultiset);

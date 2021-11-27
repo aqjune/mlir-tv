@@ -56,7 +56,8 @@ llvm::cl::opt<int> fp_bits("fp-bits",
   llvm::cl::init(-1), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
-  llvm::cl::desc("Number of memory blocks required to validate translation"),
+  llvm::cl::desc("Number of memory blocks per type required to validate"
+                 " translation"),
   llvm::cl::init(0), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<bool> arg_associative_sum("associative",

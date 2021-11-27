@@ -35,7 +35,7 @@ public:
   mlir::FuncOp src, tgt;
   string dumpSMTPath;
 
-  unsigned int numBlocks;
+  TypeMap<size_t> numBlocksPerType;
   unsigned int f32NonConstsCount, f64NonConstsCount;
   set<llvm::APFloat> f32Consts, f64Consts;
   bool isFpAddAssociative;
@@ -192,13 +192,15 @@ static Results checkRefinement(
 
   auto printErrorMsg = [&](Solver &s, CheckResult res, const char *msg,
                            vector<Expr> &&params, VerificationStep step,
-                           unsigned retidx = -1){
+                           unsigned retidx = -1,
+                           optional<mlir::Type> memElemType = nullopt){
     if (res.isUnknown()) {
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res.hasSat()) {
       llvm::outs() << "== Result: " << msg << "\n";
       printCounterEx(
-          s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx);
+          s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx,
+          memElemType);
     } else {
       llvm_unreachable("unexpected result");
     }
@@ -265,23 +267,30 @@ static Results checkRefinement(
     }
   }
 
-  if (st_src.m->getNumBlocks() > 0 ||
-      st_tgt.m->getNumBlocks() > 0) { // 3. Check memory refinement
+  if (st_src.m->getTotalNumBlocks() > 0 ||
+      st_tgt.m->getTotalNumBlocks() > 0) { // 3. Check memory refinement
     Solver s(logic);
-    auto [refines, params] = st_tgt.m->refines(*st_src.m);
-    auto not_refines =
-      (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines).simplify();
-    auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
-                     fnname + ".3.memory");
-    elapsedMillisec += res.second;
-    if (res.first.isInconsistent()) {
-      llvm::outs() << "== Result: inconsistent output!!"
-                      " either MLIR-TV or SMT solver has a bug ==\n";
-      return Results::INCONSISTENT;
-    } else if (!res.first.hasUnsat()) {
-      printErrorMsg(s, res.first, "Memory mismatch", move(params),
-                    VerificationStep::Memory);
-      return res.first.hasSat() ? Results::RETVALUE : Results::TIMEOUT;
+    auto refinementPerType = st_tgt.m->refines(*st_src.m);
+    // [refines, params]
+    for (auto &[elementType, refinement]: refinementPerType) {
+      Expr refines = refinement.first;
+      auto &params = refinement.second;
+
+      auto not_refines =
+        (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines).simplify();
+      auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
+                      fnname + ".3.memory." + to_string(elementType));
+      elapsedMillisec += res.second;
+      if (res.first.isInconsistent()) {
+        llvm::outs() << "== Result: inconsistent output!!"
+                        " either MLIR-TV or SMT solver has a bug ==\n";
+        return Results::INCONSISTENT;
+
+      } else if (!res.first.hasUnsat()) {
+        printErrorMsg(s, res.first, "Memory mismatch", move(params),
+                      VerificationStep::Memory, -1, elementType);
+        return res.first.hasSat() ? Results::RETVALUE : Results::TIMEOUT;
+      }
     }
   }
 
@@ -348,7 +357,8 @@ static tuple<State, State, Expr> encodeFinalStates(
   vector<Expr> preconds;
 
   // Set max. local blocks as num global blocks
-  auto initMemSrc = make_unique<Memory>(vinput.numBlocks, vinput.numBlocks);
+  auto initMemSrc = make_unique<Memory>(
+      vinput.numBlocksPerType, vinput.numBlocksPerType);
   // Due to how CVC5 treats unbound vars, the initial memory must be precisely
   // copied
   unique_ptr<Memory> initMemTgt(initMemSrc->clone());
@@ -401,7 +411,7 @@ static void checkIsSrcAlwaysUB(
   ArgInfo args_dummy;
   vector<Expr> preconds;
   auto st = encodeFinalState(vinput,
-      make_unique<Memory>(vinput.numBlocks, vinput.numBlocks),
+      make_unique<Memory>(vinput.numBlocksPerType, vinput.numBlocksPerType),
       false, true, args_dummy, preconds);
 
   useAllLogic |= st.hasConstArray;
@@ -499,7 +509,7 @@ static Results validate(ValidationInput vinput) {
 Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
-    unsigned int numBlocks,
+    unsigned int numBlocksPerType,
     pair<unsigned, unsigned> fpBits, bool isFpAddAssociative,
     bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
@@ -546,11 +556,15 @@ Results validate(
     vinput.tgt = tgtfn;
     vinput.dumpSMTPath = dumpSMTPath;
 
-    if (numBlocks) {
-      vinput.numBlocks = numBlocks;
-    } else {
-      vinput.numBlocks = src_res.memref.argCount +
-          src_res.memref.varCount + tgt_res.memref.varCount;
+    vinput.numBlocksPerType = src_res.memref.argCount;
+    for (auto &[ty, cnt]: src_res.memref.varCount)
+      vinput.numBlocksPerType[ty] += cnt;
+    for (auto &[ty, cnt]: tgt_res.memref.varCount)
+      vinput.numBlocksPerType[ty] += cnt;
+
+    if (numBlocksPerType) {
+      for (auto &[ty, cnt]: vinput.numBlocksPerType)
+        cnt = numBlocksPerType;
     }
 
     if (fpBits.first) {
