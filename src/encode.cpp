@@ -4,6 +4,7 @@
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -1629,6 +1630,18 @@ void encodeOp(State &st, mlir::tosa::NegateOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::tosa::ExpOp op, bool) {
+  auto opty = op.getOperand().getType();
+  if (!opty.isa<mlir::RankedTensorType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported operand type");
+
+  mlir::Value arg0 = op.getOperand();
+
+  encodeUnaryOp(st, op, arg0,
+      [](auto &&a) { return Float::exp(a); }, {});
+}
+
+template<>
 void encodeOp(State &st, mlir::tosa::ReshapeOp op, bool) {
   auto t = st.regs.get<Tensor>(op.getOperand());
   auto attrs = op.new_shape();
@@ -1705,6 +1718,21 @@ void encodeOp(State &st, mlir::memref::LoadOp op, bool) {
     st.wellDefined(op, move(success));
   } else
     throw UnsupportedException(op.getOperation(), "unsupported type");
+}
+
+template<>
+void encodeOp(State &st, mlir::memref::GetGlobalOp op, bool encodeMemWriteOp) {
+  auto name = op.name().str();
+  auto bid = Expr::mkBV(st.m->getBidForGlobalVar(name), st.m->getBIDBits());
+  auto type = op.getType();
+  assert(type.getLayout().isIdentity() &&
+      "don't know how to deal with get_global with non-identity layout");
+  auto dims = ShapedValue::getDims(type, /*unknown sz is crash*/false);
+  MemRef::Layout identityLayout(dims);
+
+  MemRef newref(st.m.get(), type.getElementType(), bid, Index(0), dims,
+      identityLayout, Expr::mkBool(false));
+  st.regs.add(op, move(newref));
 }
 
 template<>
@@ -1800,7 +1828,8 @@ static void storeTensorTo(
 }
 
 template<>
-void encodeOp(State &st, mlir::memref::BufferCastOp op, bool encodeMemWrite) {
+void encodeOp(State &st, mlir::bufferization::ToMemrefOp op,
+    bool encodeMemWrite) {
   if (!encodeMemWrite)
     throw UnsupportedException(op.getOperation(),
         "We do not support memory writes in this scope");
@@ -1816,7 +1845,7 @@ void encodeOp(State &st, mlir::memref::BufferCastOp op, bool encodeMemWrite) {
 }
 
 template<>
-void encodeOp(State &st, mlir::memref::CloneOp op, bool encodeMemWrite) {
+void encodeOp(State &st, mlir::bufferization::CloneOp op, bool encodeMemWrite) {
   if (!encodeMemWrite)
     throw UnsupportedException(op.getOperation(),
         "We do not support memory writes in this scope");
@@ -1835,6 +1864,20 @@ void encodeOp(State &st, mlir::memref::CloneOp op, bool encodeMemWrite) {
   // Src is not writable as well.
   st.m->setWritable(srcTy.getElementType(), src.getBID(), false);
   st.regs.add(op, move(memref));
+}
+
+template<>
+void encodeOp(State &st, mlir::bufferization::ToTensorOp op,
+    bool encodeMemWrite) {
+  auto memref = op.getOperand();
+  auto memrefTy = memref.getType().cast<mlir::MemRefType>();
+  auto m = st.regs.get<MemRef>(memref);
+  // Mark the MemBlock pointed by the memref as read-only.
+  auto &memory = *(st.m);
+  memory.setWritable(memrefTy.getElementType(), m.getBID(), false);
+
+  st.regs.add(op.getResult(), m.loadTensorWithoutCheck());
+  st.wellDefined(op, m.isInBounds() & m.getLiveness());
 }
 
 template<>
@@ -1860,19 +1903,6 @@ void encodeOp(State &st, mlir::memref::DeallocOp op, bool encodeMemWrite) {
   // See: https://mlir.llvm.org/docs/TargetLLVMIR/ , Ranked MemRef Types sec.
 
   st.m->setLivenessToFalse(srcTy.getElementType(), src.getBID());
-}
-
-template<>
-void encodeOp(State &st, mlir::memref::TensorLoadOp op, bool encodeMemWrite) {
-  auto memref = op.getOperand();
-  auto memrefTy = memref.getType().cast<mlir::MemRefType>();
-  auto m = st.regs.get<MemRef>(memref);
-  // Mark the MemBlock pointed by the memref as read-only.
-  auto &memory = *(st.m);
-  memory.setWritable(memrefTy.getElementType(), m.getBID(), false);
-
-  st.regs.add(op.getResult(), m.loadTensorWithoutCheck());
-  st.wellDefined(op, m.isInBounds() & m.getLiveness());
 }
 
 template<>
@@ -2497,17 +2527,19 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::TruncFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::XOrIOp, encodeMemWriteOps);
 
+    ENCODE(st, op, mlir::bufferization::CloneOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::bufferization::ToMemrefOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::bufferization::ToTensorOp, encodeMemWriteOps);
+
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::memref::AllocOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::BufferCastOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::CloneOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DeallocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DimOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::LoadOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::GetGlobalOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::StoreOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::SubViewOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::TensorLoadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::TensorStoreOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::linalg::Conv2DNchwFchwOp, encodeMemWriteOps);
@@ -2545,6 +2577,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::BitwiseXorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConcatOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ExpOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReshapeOp, encodeMemWriteOps);

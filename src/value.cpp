@@ -131,6 +131,10 @@ Float Float::constant(const llvm::APFloat &apf, mlir::Type ty) {
   return {aop::getFpEncoding(ty).constant(apf), ty};
 }
 
+Float Float::exp(const Float &x) {
+  return {aop::getFpEncoding(x.type).exp(x.e), x.type};
+}
+
 Sort Float::sortFloat32() {
   return aop::getFloatEncoding().sort();
 }

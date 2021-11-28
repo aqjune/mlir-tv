@@ -103,6 +103,7 @@ private:
   std::optional<smt::FnDecl> fp_ultfn;
   std::optional<smt::FnDecl> fp_extendfn;
   std::optional<smt::FnDecl> fp_truncatefn;
+  std::optional<smt::FnDecl> fp_expfn;
   std::string fn_suffix;
 
 private:
@@ -140,6 +141,7 @@ private:
   smt::FnDecl getUltFn();
   smt::FnDecl getExtendFn();
   smt::FnDecl getTruncateFn();
+  smt::FnDecl getExpFn();
 
   uint64_t getSignBit() const;
 
@@ -159,6 +161,7 @@ public:
   smt::Expr add(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr mul(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
+  smt::Expr exp(const smt::Expr &x);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
   smt::Expr fult(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);

@@ -133,6 +133,14 @@ void analyzeRegion(mlir::Region &region, AnalysisResult &res) {
 }
 
 template<>
+void analyzeOp(mlir::memref::GetGlobalOp op, AnalysisResult &res) {
+  llvm::StringRef glbName = op.name();
+  auto mop = op.getOperation()->getParentOfType<mlir::ModuleOp>();
+  auto glb = mlir::cast<mlir::memref::GlobalOp>(mop.lookupSymbol(glbName));
+  res.memref.usedGlobals[glbName.str()] = glb;
+}
+
+template<>
 void analyzeOp(mlir::arith::ConstantFloatOp op, AnalysisResult &res) {
   auto ty = op.getType();
   const auto val = op.value();
@@ -217,6 +225,11 @@ static void analyzeBlock(
     ANALYZE(op, mlir::linalg::MatmulOp, res);
     ANALYZE(op, mlir::linalg::Conv2DNchwFchwOp, res);
     ANALYZE(op, mlir::linalg::Conv2DNhwcHwcfOp, res);
+
+    // Detect global vars.
+    // # fps & blocks are already increased by the loop above.
+    ANALYZE(op, mlir::memref::GetGlobalOp, res);
+
     // Analyze operations having subregions.
     ANALYZE(op, mlir::linalg::GenericOp, res);
     ANALYZE(op, mlir::linalg::PadTensorOp, res);

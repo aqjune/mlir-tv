@@ -1,10 +1,12 @@
 #pragma once
 
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "utils.h"
 #include <map>
 #include <optional>
 #include <set>
+#include <string>
 
 struct FPAnalysisResult {
   std::set<llvm::APFloat> constSet;
@@ -16,6 +18,7 @@ struct FPAnalysisResult {
 struct MemRefAnalysisResult {
   TypeMap<size_t> argCount;
   TypeMap<size_t> varCount;
+  std::map<std::string, mlir::memref::GlobalOp> usedGlobals;
 };
 
 struct AnalysisResult {

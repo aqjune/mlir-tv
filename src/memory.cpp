@@ -1,3 +1,4 @@
+#include "debug.h"
 #include "memory.h"
 #include "smt.h"
 #include "utils.h"
@@ -70,14 +71,17 @@ static Expr isSafeToWrite(
       (block_writable | !ubIfReadonly));
 }
 
-Memory::Memory(TypeMap<size_t> numGlobalBlocksPerType,
-               TypeMap<size_t> maxNumLocalBlocksPerType):
+Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
+               const TypeMap<size_t> &maxNumLocalBlocksPerType,
+               const vector<mlir::memref::GlobalOp> &globals):
     bidBits(calcBidBW(numGlobalBlocksPerType, maxNumLocalBlocksPerType)),
     globalBlocksCnt(numGlobalBlocksPerType),
     maxLocalBlocksCnt(maxNumLocalBlocksPerType),
     isSrc(true) {
 
-  for (auto &[elemTy, numBlks]: numGlobalBlocksPerType) {
+  unsigned addedGlobalVars = 0;
+
+  for (auto &[elemTy, numBlks]: globalBlocksCnt) {
     optional<Sort> elemSMTTy;
 
     if (elemTy.isa<mlir::FloatType>())
@@ -91,21 +95,44 @@ Memory::Memory(TypeMap<size_t> numGlobalBlocksPerType,
       throw UnsupportedException(elemTy);
 
     vector<Expr> newArrs, newWrit, newNumElems, newLiveness;
+    vector<mlir::memref::GlobalOp> globalsForTy;
 
-    for (unsigned i = 0; i < numBlks; ++i) {
-      auto suffix = [&](const string &s) {
-        return s + "_" + to_string(i);
+    for (auto glb: globals) {
+      if (glb.type().getElementType() == elemTy)
+        globalsForTy.push_back(glb);
+    }
+
+    assert(globalsForTy.size() <= numBlks && "Too many global vars!");
+    addedGlobalVars += globalsForTy.size();
+
+    auto arrSort = Sort::arraySort(Index::sort(), *elemSMTTy);
+
+    for (unsigned i = 0; i < globalsForTy.size(); ++i) {
+      auto glb = globalsForTy[i];
+      auto res = globalVarBids.try_emplace(glb.getName().str(), elemTy, i);
+      assert(res.second && "Duplicated global var name");
+
+      verbose("memory init") << "Assigning bid = " << i << " to global var "
+          << glb.getName() << "...\n";
+
+      string name = "#" + glb.getName().str() + "_array";
+      newArrs.push_back(Expr::mkFreshVar(arrSort, name));
+      newWrit.push_back(Expr::mkBool(!glb.constant()));
+      newNumElems.push_back(Index(glb.type().getNumElements()));
+      newLiveness.push_back(Expr::mkBool(true));
+    }
+
+    for (unsigned i = globalsForTy.size(); i < numBlks; ++i) {
+      auto suffix2 = [&](const string &s) {
+        return "#nonlocal-" + to_string(i) + "_" + s;
       };
 
-      newArrs.push_back(Expr::mkVar(
-          Sort::arraySort(Index::sort(), *elemSMTTy),
-            suffix("array").c_str()));
-      newWrit.push_back(
-          Expr::mkVar(Sort::boolSort(),suffix("writable").c_str()));
-      newNumElems.push_back(
-          Expr::mkVar(Index::sort(), suffix("numelems").c_str()));
-      newLiveness.push_back(
-          Expr::mkVar(Sort::boolSort(), suffix("liveness").c_str()));
+      auto boolSort = Sort::boolSort();
+      auto idxSort = Index::sort();
+      newArrs.push_back(Expr::mkFreshVar(arrSort, suffix2("array")));
+      newWrit.push_back(Expr::mkFreshVar(boolSort, suffix2("writable")));
+      newNumElems.push_back(Expr::mkFreshVar(idxSort, suffix2("numelems")));
+      newLiveness.push_back(Expr::mkFreshVar(boolSort, suffix2("liveness")));
     }
 
     arrays.insert({elemTy, move(newArrs)});
@@ -113,6 +140,8 @@ Memory::Memory(TypeMap<size_t> numGlobalBlocksPerType,
     numelems.insert({elemTy, move(newNumElems)});
     liveness.insert({elemTy, move(newLiveness)});
   }
+
+  assert(addedGlobalVars == globals.size());
 }
 
 Expr Memory::itebid(
@@ -178,6 +207,23 @@ Expr Memory::getNumElementsOfMemBlock(
   return itebid(elemTy, bid, [&](auto ubid) {
     return numelems.find(elemTy)->second[ubid];
   });
+}
+
+// Return the block id for the global variable having name.
+unsigned Memory::getBidForGlobalVar(const string &name) const {
+  auto itr = globalVarBids.find(name);
+  assert(itr != globalVarBids.end());
+  return itr->second.second;
+}
+
+// Return the name of the global var name having the element type and bid.
+optional<string>
+Memory::getGlobalVarName(mlir::Type elemTy, unsigned bid) const {
+  for (auto &[k, itm]: globalVarBids) {
+    if (itm.first == elemTy && itm.second == bid)
+      return k;
+  }
+  return nullopt;
 }
 
 void Memory::setWritable(mlir::Type elemTy, const Expr &bid, bool writable) {
@@ -265,7 +311,7 @@ Memory::refines(const Memory &other) const {
 
     auto wRefinement = srcWritable.implies(tgtWritable);
     auto vRefinement = (tgtValue == srcValue);
-    return tgtSuccess.implies(srcSuccess & wRefinement & vRefinement);
+    return srcSuccess.implies(tgtSuccess & wRefinement & vRefinement);
   };
 
   using ElemTy = pair<Expr, vector<Expr>>;

@@ -26,6 +26,9 @@ public:
   static Float var(std::string &&name, mlir::Type ty, VarType vty);
   static Float constant(const llvm::APFloat &apf, mlir::Type ty);
 
+  // Returns e^x
+  static Float exp(const Float &x);
+
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
   Integer fult(const Float &b) const;

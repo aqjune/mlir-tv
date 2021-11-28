@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "smt.h"
 #include "utils.h"
 
@@ -26,9 +27,13 @@ class Memory {
   // element type -> vector<Bool::sort()>
   TypeMap<std::vector<smt::Expr>> liveness;
 
+  // (Element type, bid) of global variables.
+  std::map<std::string, std::pair<mlir::Type, unsigned>> globalVarBids;
+
 public:
-  Memory(TypeMap<size_t> numGlobalBlocksPerType,
-         TypeMap<size_t> maxNumLocalBlocksPerType);
+  Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
+         const TypeMap<size_t> &maxNumLocalBlocksPerType,
+         const std::vector<mlir::memref::GlobalOp> &globals);
 
   void setIsSrc(bool flag) { isSrc = flag; }
 
@@ -56,6 +61,12 @@ public:
     assert(ubid < getNumBlocks(elemTy));
     return numelems.find(elemTy)->second[ubid];
   }
+
+  // Return the block id for the global variable having name.
+  unsigned getBidForGlobalVar(const std::string &name) const;
+  // Return the name of the global var name having the element type and bid.
+  std::optional<std::string> getGlobalVarName(mlir::Type elemTy, unsigned bid)
+    const;
 
   // Mark memblock's writable flag to `writable`
   void setWritable(mlir::Type elemTy, const smt::Expr &bid, bool writable);
