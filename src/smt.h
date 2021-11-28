@@ -97,6 +97,7 @@ public:
   // a fault.
   bool isUInt(uint64_t &v) const;
   bool isInt(int64_t &v) const;
+  std::optional<uint64_t> asUInt() const;
   // Returns true if at least one expr in z3, cvc5, ... is numeric.
   bool isNumeral() const;
   // Returns true if at least one expr in z3, cvc5, ... is constant false.

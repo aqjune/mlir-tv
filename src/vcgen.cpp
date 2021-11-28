@@ -38,6 +38,7 @@ public:
   TypeMap<size_t> numBlocksPerType;
   unsigned int f32NonConstsCount, f64NonConstsCount;
   set<llvm::APFloat> f32Consts, f64Consts;
+  vector<mlir::memref::GlobalOp> globals;
   bool isFpAddAssociative;
   bool useMultisetForFpSum;
 };
@@ -358,7 +359,7 @@ static tuple<State, State, Expr> encodeFinalStates(
 
   // Set max. local blocks as num global blocks
   auto initMemSrc = make_unique<Memory>(
-      vinput.numBlocksPerType, vinput.numBlocksPerType);
+      vinput.numBlocksPerType, vinput.numBlocksPerType, vinput.globals);
   // Due to how CVC5 treats unbound vars, the initial memory must be precisely
   // copied
   unique_ptr<Memory> initMemTgt(initMemSrc->clone());
@@ -410,9 +411,10 @@ static void checkIsSrcAlwaysUB(
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
-  auto st = encodeFinalState(vinput,
-      make_unique<Memory>(vinput.numBlocksPerType, vinput.numBlocksPerType),
-      false, true, args_dummy, preconds);
+  auto initMemory = make_unique<Memory>(
+      vinput.numBlocksPerType, vinput.numBlocksPerType, vinput.globals);
+  auto st = encodeFinalState(vinput, move(initMemory), false, true,
+      args_dummy, preconds);
 
   useAllLogic |= st.hasConstArray;
   auto logic = useAllLogic ? SMT_LOGIC_ALL :
@@ -506,6 +508,49 @@ static Results validate(ValidationInput vinput) {
   return res;
 }
 
+static vector<mlir::memref::GlobalOp> mergeGlobals(
+    const map<string, mlir::memref::GlobalOp> &srcGlobals,
+    const map<string, mlir::memref::GlobalOp> &tgtGlobals) {
+
+  vector<mlir::memref::GlobalOp> mergedGlbs;
+
+  for (auto &[name, glbSrc0]: srcGlobals) {
+    auto glbSrc = glbSrc0; // Remove constness
+    auto tgtItr = tgtGlobals.find(name);
+    if (tgtItr == tgtGlobals.end()) {
+      mergedGlbs.push_back(glbSrc);
+      continue;
+    }
+
+    if (glbSrc.constant())
+      throw UnsupportedException(
+          "Constant globals are not supported (" + name + ")");
+
+    auto glbTgt = tgtItr->second;
+    if (glbSrc.type() != glbTgt.type() ||
+        glbSrc.isPrivate() != glbTgt.isPrivate() ||
+        glbSrc.constant() != glbTgt.constant() ||
+        glbSrc.initial_value() != glbTgt.initial_value()) {
+      throw UnsupportedException(
+          name + " has different signatures in src and tgt");
+    }
+
+    assert(glbSrc.type().hasStaticShape() &&
+           "Global var must be statically shaped");
+
+    mergedGlbs.push_back(glbSrc);
+  }
+
+  for (auto &[name, glbTgt]: tgtGlobals) {
+    auto tgtItr = tgtGlobals.find(name);
+    if (tgtItr == tgtGlobals.end()) {
+      throw UnsupportedException("Introducing new globals is not supported");
+    }
+  }
+
+  return mergedGlbs;
+}
+
 Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
@@ -534,27 +579,27 @@ Results validate(
     auto tgtfn = itr->second;
 
     AnalysisResult src_res, tgt_res;
+    vector<mlir::memref::GlobalOp> globals;
+
     try {
       src_res = analyze(srcfn, false);
       tgt_res = analyze(tgtfn, false);
+      globals = mergeGlobals(
+          src_res.memref.usedGlobals, tgt_res.memref.usedGlobals);
     } catch (UnsupportedException ue) {
       raiseUnsupported(ue);
     }
-    auto src_f32_res = src_res.F32;
-    auto src_f64_res = src_res.F64;
 
-    auto tgt_f32_res = tgt_res.F32;
-    auto tgt_f64_res = tgt_res.F64;
-
-    auto f32_consts = src_f32_res.constSet;
-    f32_consts.merge(tgt_f32_res.constSet);
-    auto f64_consts = src_f64_res.constSet;
-    f64_consts.merge(tgt_f64_res.constSet);
+    auto f32_consts = src_res.F32.constSet;
+    f32_consts.merge(tgt_res.F32.constSet);
+    auto f64_consts = src_res.F64.constSet;
+    f64_consts.merge(tgt_res.F64.constSet);
 
     ValidationInput vinput;
     vinput.src = srcfn;
     vinput.tgt = tgtfn;
     vinput.dumpSMTPath = dumpSMTPath;
+    vinput.globals = globals;
 
     vinput.numBlocksPerType = src_res.memref.argCount;
     for (auto &[ty, cnt]: src_res.memref.varCount)
@@ -586,8 +631,8 @@ Results validate(
           // # of variables in registers
       };
 
-      vinput.f32NonConstsCount = countNonConstFps(src_f32_res, tgt_f32_res);
-      vinput.f64NonConstsCount = countNonConstFps(src_f64_res, tgt_f64_res);
+      vinput.f32NonConstsCount = countNonConstFps(src_res.F32, tgt_res.F32);
+      vinput.f64NonConstsCount = countNonConstFps(src_res.F64, tgt_res.F64);
     }
     vinput.f32Consts = f32_consts;
     vinput.f64Consts = f64_consts;

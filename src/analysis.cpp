@@ -121,6 +121,14 @@ static void analyzeBlock(
     mlir::Block &block, AnalysisResult &res, bool isFullyAbstract);
 
 template<>
+void analyzeOp(mlir::memref::GetGlobalOp op, AnalysisResult &res) {
+  llvm::StringRef glbName = op.name();
+  auto mop = op.getOperation()->getParentOfType<mlir::ModuleOp>();
+  auto glb = mlir::cast<mlir::memref::GlobalOp>(mop.lookupSymbol(glbName));
+  res.memref.usedGlobals[glbName.str()] = glb;
+}
+
+template<>
 void analyzeOp(mlir::arith::ConstantFloatOp op, AnalysisResult &res) {
   auto ty = op.getType();
   const auto val = op.value();
