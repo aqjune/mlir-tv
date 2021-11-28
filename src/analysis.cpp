@@ -8,7 +8,17 @@
 
 #include <type_traits>
 
+#define ANALYZE(op, ty, res) \
+  if (auto op2 = mlir::dyn_cast<ty>(op)) { \
+    analyzeOp(op2, res); \
+    continue; \
+  }
+
 using namespace std;
+
+static void analyzeBlock(mlir::Block &block, AnalysisResult &res);
+
+template<class T> static void analyzeOp(T op, AnalysisResult &res);
 
 static void analyzeAPFloat(
     const mlir::Type ty, const llvm::APFloat val, AnalysisResult &res) {
@@ -76,11 +86,12 @@ static void analyzeElemAttr(
 }
 
 static void analyzeVariable(
-    const mlir::Value &var, AnalysisResult &res, bool numElemsIgnored,
-    bool isArg = false) {
+    const mlir::Value &var, AnalysisResult &res, bool isArg = false) {
   auto ty = var.getType();
   size_t &f32Count = isArg ? res.F32.argCount : res.F32.varCount;
   size_t &f64Count = isArg ? res.F64.argCount : res.F64.varCount;
+  size_t &f32ElemCounts = res.F32.elemCounts;
+  size_t &f64ElemCounts = res.F64.elemCounts;
   decltype(res.memref.argCount) &memrefCnt =
       isArg ? res.memref.argCount : res.memref.varCount;
 
@@ -100,25 +111,26 @@ static void analyzeVariable(
     else 
       cnt = Tensor::MAX_TENSOR_SIZE;
 
-    if (numElemsIgnored)
-      cnt = cnt ? 1 : 0;
-
-    if (elemty.isF32())
-      f32Count += cnt;
-    else if (elemty.isF64())
-      f64Count += cnt;
-
-    if (ty.isa<mlir::MemRefType>()) {
-      memrefCnt[elemty]++;
+    if (cnt > 0 && elemty.isF32()) {
+      f32Count ++;
+      f32ElemCounts += cnt - 1;
+    } else if (cnt > 0 && elemty.isF64()) {
+      f64Count ++;
+      f64ElemCounts += cnt - 1;
     }
+
+    if (ty.isa<mlir::MemRefType>())
+      memrefCnt[elemty]++;
   }
 }
 
-template<class T>
-static void analyzeOp(T op, AnalysisResult &res);
+void analyzeRegion(mlir::Region &region, AnalysisResult &res) {
+  if (!region.hasOneBlock())
+    throw UnsupportedException("Region with a single block is supported only");
 
-static void analyzeBlock(
-    mlir::Block &block, AnalysisResult &res, bool isFullyAbstract);
+  auto &block = region.front();
+  return analyzeBlock(block, res);
+}
 
 template<>
 void analyzeOp(mlir::memref::GetGlobalOp op, AnalysisResult &res) {
@@ -153,29 +165,50 @@ void analyzeOp(mlir::tosa::ConstOp op, AnalysisResult &res) {
   analyzeElemAttr(eattr, res);
 }
 
-void analyzeRegion(
-    mlir::Region &region, AnalysisResult &res, bool isFullyAbstract) {
-  if (!region.hasOneBlock())
-    throw UnsupportedException("Region with a single block is supported only");
-
-  auto &block = region.front();
-  return analyzeBlock(block, res, isFullyAbstract);
+template<>
+void analyzeOp(mlir::linalg::DotOp op, AnalysisResult &res) {
+  res.isElementwiseFPOps = false;
 }
 
-#define ANALYZE(op, ty, res) \
-  if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    analyzeOp(op2, res); \
-    continue; \
-  }
+template<>
+void analyzeOp(mlir::linalg::MatmulOp op, AnalysisResult &res) {
+  res.isElementwiseFPOps = false;
+}
 
-#define ANALYZE_REGION(op, ty, region_fn, res, numElemsIgnored) \
-  if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    analyzeRegion(op2.region_fn(), res, numElemsIgnored); \
-    continue; \
-  }
+template<>
+void analyzeOp(mlir::linalg::Conv2DNchwFchwOp op, AnalysisResult &res) {
+  res.isElementwiseFPOps = false;
+}
+
+template<>
+void analyzeOp(mlir::linalg::Conv2DNhwcHwcfOp op, AnalysisResult &res) {
+  res.isElementwiseFPOps = false;
+}
+
+template<>
+void analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
+  // If generic loop has reduction loops, then result is not elementwise
+  auto indexingMaps = op.indexing_maps().getValue();
+  auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
+  bool isReudctionLoop = !outputMap.isPermutation();
+  if (isReudctionLoop)
+    res.isElementwiseFPOps = false;
+
+  analyzeRegion(op.region(), res);
+}
+
+template<>
+void analyzeOp(mlir::linalg::PadTensorOp op, AnalysisResult &res) {
+  analyzeRegion(op.region(), res);
+}
+
+template<>
+void analyzeOp(mlir::tensor::GenerateOp op, AnalysisResult &res) {
+  analyzeRegion(op.body(), res);
+}
 
 static void analyzeBlock(
-    mlir::Block &block, AnalysisResult &res, bool numElemsIgnored) {
+    mlir::Block &block, AnalysisResult &res) {
   for (auto &op: block) {
     // Analyze constant operations
     // These operations do not increase varCount
@@ -185,21 +218,26 @@ static void analyzeBlock(
 
     // Non-constant operations; increase varCount if return type matches
     for (const auto &result: op.getResults()) {
-      analyzeVariable(result, res, numElemsIgnored);
+      analyzeVariable(result, res);
     }
+
+    ANALYZE(op, mlir::linalg::DotOp, res);
+    ANALYZE(op, mlir::linalg::MatmulOp, res);
+    ANALYZE(op, mlir::linalg::Conv2DNchwFchwOp, res);
+    ANALYZE(op, mlir::linalg::Conv2DNhwcHwcfOp, res);
 
     // Detect global vars.
     // # fps & blocks are already increased by the loop above.
     ANALYZE(op, mlir::memref::GetGlobalOp, res);
 
     // Analyze operations having subregions.
-    ANALYZE_REGION(op, mlir::linalg::GenericOp, region, res, numElemsIgnored);
-    ANALYZE_REGION(op, mlir::linalg::PadTensorOp, region, res, numElemsIgnored);
-    ANALYZE_REGION(op, mlir::tensor::GenerateOp, body, res, numElemsIgnored);
+    ANALYZE(op, mlir::linalg::GenericOp, res);
+    ANALYZE(op, mlir::linalg::PadTensorOp, res);
+    ANALYZE(op, mlir::tensor::GenerateOp, res);
   }
 }
 
-AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
+AnalysisResult analyze(mlir::FuncOp &fn) {
   AnalysisResult res;
 
   auto &region = fn.getRegion();
@@ -209,22 +247,25 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
 
   // Step1. analyze arguments
   for (const auto& arg: fn.getArguments()){
-    analyzeVariable(arg, res, isFullyAbstract, /*isArg*/true);
+    analyzeVariable(arg, res, /*isArg*/true);
   }
 
   // Step2. analyze the block
   auto &block = region.front();
-  analyzeBlock(block, res, isFullyAbstract);
+  analyzeBlock(block, res);
 
   verbose("analysis") << "<" << fn.getName().str() << ">\n";
+  verbose("analysis") << "  fn has only elementwise op?: "
+      << (res.isElementwiseFPOps ? "YES\n" : "NO\n");
   verbose("analysis") << "  f32 arg count: " << res.F32.argCount << "\n";
   verbose("analysis") << "  f32 var count: " << res.F32.varCount << "\n";
+  verbose("analysis") << "  f32 element counts: " << res.F32.elemCounts << "\n";
   verbose("analysis") << "  f64 arg count: " << res.F64.argCount << "\n";
   verbose("analysis") << "  f64 var count: " << res.F64.varCount << "\n";
+  verbose("analysis") << "  f64 element counts: " << res.F64.elemCounts << "\n";
   for (auto &[ty, cnt]: res.memref.argCount)
     verbose("analysis") << "  memref arg count (" << ty << "): " << cnt << "\n";
   for (auto &[ty, cnt]: res.memref.varCount)
     verbose("analysis") << "  memref var count (" << ty << "): " << cnt << "\n";
-
   return res;
 }

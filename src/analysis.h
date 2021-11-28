@@ -12,6 +12,7 @@ struct FPAnalysisResult {
   std::set<llvm::APFloat> constSet;
   size_t argCount = 0;
   size_t varCount = 0;
+  size_t elemCounts = 0;
 };
 
 struct MemRefAnalysisResult {
@@ -24,6 +25,7 @@ struct AnalysisResult {
   FPAnalysisResult F32;
   FPAnalysisResult F64;
   MemRefAnalysisResult memref;
+  bool isElementwiseFPOps = true;
 };
 
-AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract);
+AnalysisResult analyze(mlir::FuncOp &fn);

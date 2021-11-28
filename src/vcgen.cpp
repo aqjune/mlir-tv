@@ -582,8 +582,8 @@ Results validate(
     vector<mlir::memref::GlobalOp> globals;
 
     try {
-      src_res = analyze(srcfn, false);
-      tgt_res = analyze(tgtfn, false);
+      src_res = analyze(srcfn);
+      tgt_res = analyze(tgtfn);
       globals = mergeGlobals(
           src_res.memref.usedGlobals, tgt_res.memref.usedGlobals);
     } catch (UnsupportedException ue) {
@@ -624,15 +624,20 @@ Results validate(
       vinput.f64NonConstsCount = 1u << fpBits.second;
     } else {
       // Count non-constant floating points whose absolute values are distinct.
-      auto countNonConstFps = [](const auto& src_res, const auto& tgt_res) {
-        return
-          src_res.argCount + // # of variables in argument lists
-          src_res.varCount + tgt_res.varCount;
-          // # of variables in registers
+      auto countNonConstFps = [](const auto& src_res, const auto& tgt_res, const auto& ew) {
+        if (ew) {
+          return src_res.argCount + // # of variables in argument lists
+            src_res.varCount + tgt_res.varCount; // # of variables in registers
+        } else {
+          return src_res.argCount + // # of variables in argument lists
+            src_res.varCount + tgt_res.varCount + // # of variables in registers
+            src_res.elemCounts + tgt_res.elemCounts; // # of ShapedType elements count
+        }
       };
 
-      vinput.f32NonConstsCount = countNonConstFps(src_res.F32, tgt_res.F32);
-      vinput.f64NonConstsCount = countNonConstFps(src_res.F64, tgt_res.F64);
+      auto isElementwise = src_res.isElementwiseFPOps || tgt_res.isElementwiseFPOps;
+      vinput.f32NonConstsCount = countNonConstFps(src_res.F32, tgt_res.F32, isElementwise);
+      vinput.f64NonConstsCount = countNonConstFps(src_res.F64, tgt_res.F64, isElementwise);
     }
     vinput.f32Consts = f32_consts;
     vinput.f64Consts = f64_consts;
