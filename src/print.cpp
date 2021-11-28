@@ -100,6 +100,7 @@ void printCounterEx(
     auto [srcValue, srcSuccess] = st_src.m->load(elemTy, bid, offset);
     auto [tgtValue, tgtSuccess] = st_tgt.m->load(elemTy, bid, offset);
     auto srcWritable = st_src.m->getWritable(elemTy, bid);
+    auto srcNumElems = st_src.m->getNumElementsOfMemBlock(elemTy, bid);
     auto srcLiveness = st_src.m->getLiveness(elemTy, bid);
     auto tgtWritable = st_tgt.m->getWritable(elemTy, bid);
     auto tgtLiveness = st_tgt.m->getLiveness(elemTy, bid);
@@ -113,6 +114,7 @@ void printCounterEx(
     tgtSuccess = m.eval(tgtSuccess);
     srcWritable = m.eval(srcWritable);
     tgtWritable = m.eval(tgtWritable);
+    srcNumElems = m.eval(srcNumElems);
     srcLiveness = m.eval(srcLiveness);
     tgtLiveness = m.eval(tgtLiveness);
 
@@ -124,6 +126,7 @@ void printCounterEx(
     }
     llvm::outs() << "\n";
     llvm::outs() << "\t\telement type: " << to_string(elemTy) << "\n";
+    llvm::outs() << "\t\t# elements: " << intToStr(srcNumElems) << "\n";
     llvm::outs() << "\t\tis writable (src): " << srcWritable << "\n";
     llvm::outs() << "\t\tis writable (tgt): " << tgtWritable << "\n";
     llvm::outs() << "\t\tliveness (src): " << srcLiveness << "\n";
