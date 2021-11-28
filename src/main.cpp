@@ -10,6 +10,7 @@
 #include "llvm/Support/SourceMgr.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -140,6 +141,7 @@ int main(int argc, char* argv[]) {
   registry.insert<StandardOpsDialect>();
   registry.insert<AffineDialect>();
   registry.insert<arith::ArithmeticDialect>();
+  registry.insert<bufferization::BufferizationDialect>();
   registry.insert<linalg::LinalgDialect>();
   registry.insert<math::MathDialect>();
   registry.insert<memref::MemRefDialect>();

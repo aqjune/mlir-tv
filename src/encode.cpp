@@ -4,6 +4,7 @@
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -1800,7 +1801,8 @@ static void storeTensorTo(
 }
 
 template<>
-void encodeOp(State &st, mlir::memref::BufferCastOp op, bool encodeMemWrite) {
+void encodeOp(State &st, mlir::bufferization::ToMemrefOp op,
+    bool encodeMemWrite) {
   if (!encodeMemWrite)
     throw UnsupportedException(op.getOperation(),
         "We do not support memory writes in this scope");
@@ -1816,7 +1818,7 @@ void encodeOp(State &st, mlir::memref::BufferCastOp op, bool encodeMemWrite) {
 }
 
 template<>
-void encodeOp(State &st, mlir::memref::CloneOp op, bool encodeMemWrite) {
+void encodeOp(State &st, mlir::bufferization::CloneOp op, bool encodeMemWrite) {
   if (!encodeMemWrite)
     throw UnsupportedException(op.getOperation(),
         "We do not support memory writes in this scope");
@@ -1835,6 +1837,20 @@ void encodeOp(State &st, mlir::memref::CloneOp op, bool encodeMemWrite) {
   // Src is not writable as well.
   st.m->setWritable(srcTy.getElementType(), src.getBID(), false);
   st.regs.add(op, move(memref));
+}
+
+template<>
+void encodeOp(State &st, mlir::bufferization::ToTensorOp op,
+    bool encodeMemWrite) {
+  auto memref = op.getOperand();
+  auto memrefTy = memref.getType().cast<mlir::MemRefType>();
+  auto m = st.regs.get<MemRef>(memref);
+  // Mark the MemBlock pointed by the memref as read-only.
+  auto &memory = *(st.m);
+  memory.setWritable(memrefTy.getElementType(), m.getBID(), false);
+
+  st.regs.add(op.getResult(), m.loadTensorWithoutCheck());
+  st.wellDefined(op, m.isInBounds() & m.getLiveness());
 }
 
 template<>
@@ -1860,19 +1876,6 @@ void encodeOp(State &st, mlir::memref::DeallocOp op, bool encodeMemWrite) {
   // See: https://mlir.llvm.org/docs/TargetLLVMIR/ , Ranked MemRef Types sec.
 
   st.m->setLivenessToFalse(srcTy.getElementType(), src.getBID());
-}
-
-template<>
-void encodeOp(State &st, mlir::memref::TensorLoadOp op, bool encodeMemWrite) {
-  auto memref = op.getOperand();
-  auto memrefTy = memref.getType().cast<mlir::MemRefType>();
-  auto m = st.regs.get<MemRef>(memref);
-  // Mark the MemBlock pointed by the memref as read-only.
-  auto &memory = *(st.m);
-  memory.setWritable(memrefTy.getElementType(), m.getBID(), false);
-
-  st.regs.add(op.getResult(), m.loadTensorWithoutCheck());
-  st.wellDefined(op, m.isInBounds() & m.getLiveness());
 }
 
 template<>
@@ -2497,17 +2500,18 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::TruncFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::XOrIOp, encodeMemWriteOps);
 
+    ENCODE(st, op, mlir::bufferization::CloneOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::bufferization::ToMemrefOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::bufferization::ToTensorOp, encodeMemWriteOps);
+
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::memref::AllocOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::BufferCastOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::CloneOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DeallocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DimOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::LoadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::StoreOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::SubViewOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::TensorLoadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::TensorStoreOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::linalg::Conv2DNchwFchwOp, encodeMemWriteOps);
