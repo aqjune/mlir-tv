@@ -1709,6 +1709,21 @@ void encodeOp(State &st, mlir::memref::LoadOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::memref::GetGlobalOp op, bool encodeMemWriteOp) {
+  auto name = op.name().str();
+  auto bid = Expr::mkBV(st.m->getBidForGlobalVar(name), st.m->getBIDBits());
+  auto type = op.getType();
+  assert(type.getLayout().isIdentity() &&
+      "don't know how to deal with get_global with non-identity layout");
+  auto dims = ShapedValue::getDims(type, /*unknown sz is crash*/false);
+  MemRef::Layout identityLayout(dims);
+
+  MemRef newref(st.m.get(), type.getElementType(), bid, Index(0), dims,
+      identityLayout, Expr::mkBool(false));
+  st.regs.add(op, move(newref));
+}
+
+template<>
 void encodeOp(State &st, mlir::memref::StoreOp op, bool encodeMemWriteOp) {
   if (!encodeMemWriteOp)
     throw UnsupportedException(op.getOperation(),
@@ -2510,6 +2525,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::memref::DeallocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DimOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::LoadOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::GetGlobalOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::StoreOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::SubViewOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::TensorStoreOp, encodeMemWriteOps);

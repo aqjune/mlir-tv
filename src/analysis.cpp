@@ -188,6 +188,10 @@ static void analyzeBlock(
       analyzeVariable(result, res, numElemsIgnored);
     }
 
+    // Detect global vars.
+    // # fps & blocks are already increased by the loop above.
+    ANALYZE(op, mlir::memref::GetGlobalOp, res);
+
     // Analyze operations having subregions.
     ANALYZE_REGION(op, mlir::linalg::GenericOp, region, res, numElemsIgnored);
     ANALYZE_REGION(op, mlir::linalg::PadTensorOp, region, res, numElemsIgnored);
