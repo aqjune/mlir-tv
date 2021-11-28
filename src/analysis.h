@@ -10,19 +10,19 @@ struct FPAnalysisResult {
   std::set<llvm::APFloat> constSet;
   size_t argCount = 0;
   size_t varCount = 0;
+  size_t elemCounts = 0;
 };
 
-struct ShapedTypeAnalysisResult {
-  TypeMap<size_t> memrefArgCount;
-  TypeMap<size_t> memrefVarCount;
-  TypeMap<size_t> tensorArgCount;
-  TypeMap<size_t> tensorVarCount;
+struct MemRefAnalysisResult {
+  TypeMap<size_t> argCount;
+  TypeMap<size_t> varCount;
 };
 
 struct AnalysisResult {
   FPAnalysisResult F32;
   FPAnalysisResult F64;
-  ShapedTypeAnalysisResult shapedValue;
+  MemRefAnalysisResult memref;
+  bool isElementwiseFPOps = true;
 };
 
 AnalysisResult analyze(mlir::FuncOp &fn);

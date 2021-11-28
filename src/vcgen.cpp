@@ -556,10 +556,10 @@ Results validate(
     vinput.tgt = tgtfn;
     vinput.dumpSMTPath = dumpSMTPath;
 
-    vinput.numBlocksPerType = src_res.shapedValue.memrefArgCount;
-    for (auto &[ty, cnt]: src_res.shapedValue.memrefVarCount)
+    vinput.numBlocksPerType = src_res.memref.argCount;
+    for (auto &[ty, cnt]: src_res.memref.varCount)
       vinput.numBlocksPerType[ty] += cnt;
-    for (auto &[ty, cnt]: tgt_res.shapedValue.memrefVarCount)
+    for (auto &[ty, cnt]: tgt_res.memref.varCount)
       vinput.numBlocksPerType[ty] += cnt;
 
     if (vinput.numBlocksPerType.size() > 1) {
@@ -579,15 +579,19 @@ Results validate(
       vinput.f64NonConstsCount = 1u << fpBits.second;
     } else {
       // Count non-constant floating points whose absolute values are distinct.
-      auto countNonConstFps = [](const auto& src_res, const auto& tgt_res) {
-        return
-          src_res.argCount + // # of variables in argument lists
-          src_res.varCount + tgt_res.varCount;
-          // # of variables in registers
+      auto countNonConstFps = [](const auto& src_res, const auto& tgt_res, const auto& ew) {
+        if (ew) {
+          return src_res.argCount + // # of variables in argument lists
+            src_res.varCount + tgt_res.varCount; // # of variables in registers
+        } else {
+          return src_res.argCount + // # of variables in argument lists
+            src_res.varCount + tgt_res.varCount + // # of variables in registers
+            src_res.elemCounts + tgt_res.elemCounts; // # of ShapedType elements count
+        }
       };
-
-      vinput.f32NonConstsCount = countNonConstFps(src_f32_res, tgt_f32_res);
-      vinput.f64NonConstsCount = countNonConstFps(src_f64_res, tgt_f64_res);
+      auto isElementwise = src_res.isElementwiseFPOps || tgt_res.isElementwiseFPOps;
+      vinput.f32NonConstsCount = countNonConstFps(src_f32_res, tgt_f32_res, isElementwise);
+      vinput.f64NonConstsCount = countNonConstFps(src_f64_res, tgt_f64_res, isElementwise);
     }
     vinput.f32Consts = f32_consts;
     vinput.f64Consts = f64_consts;
