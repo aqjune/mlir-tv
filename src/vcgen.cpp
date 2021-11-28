@@ -542,8 +542,8 @@ static vector<mlir::memref::GlobalOp> mergeGlobals(
   }
 
   for (auto &[name, glbTgt]: tgtGlobals) {
-    auto tgtItr = tgtGlobals.find(name);
-    if (tgtItr == tgtGlobals.end()) {
+    auto tgtItr = srcGlobals.find(name);
+    if (tgtItr == srcGlobals.end()) {
       throw UnsupportedException("Introducing new globals is not supported");
     }
   }
