@@ -1630,6 +1630,18 @@ void encodeOp(State &st, mlir::tosa::NegateOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::tosa::ExpOp op, bool) {
+  auto opty = op.getOperand().getType();
+  if (!opty.isa<mlir::RankedTensorType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported operand type");
+
+  mlir::Value arg0 = op.getOperand();
+
+  encodeUnaryOp(st, op, arg0,
+      [](auto &&a) { return Float::exp(a); }, {});
+}
+
+template<>
 void encodeOp(State &st, mlir::tosa::ReshapeOp op, bool) {
   auto t = st.regs.get<Tensor>(op.getOperand());
   auto attrs = op.new_shape();
@@ -2565,6 +2577,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::BitwiseXorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConcatOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ExpOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReshapeOp, encodeMemWriteOps);

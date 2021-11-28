@@ -293,6 +293,15 @@ FnDecl AbsFpEncoding::getTruncateFn() {
   return *fp_truncatefn;
 }
 
+FnDecl AbsFpEncoding::getExpFn() {
+  if (!fp_expfn) {
+    // In the fully abstract world, double and float have the same bitwidth.
+    auto fty = Sort::bvSort(fp_bitwidth);
+    fp_expfn.emplace({fty}, fty, "fp_exp_" + fn_suffix);
+  }
+  return *fp_expfn;
+}
+
 uint64_t AbsFpEncoding::getSignBit() const {
   assert(value_bitwidth + SIGN_BITS == fp_bitwidth);
   return 1ull << value_bitwidth;
@@ -632,6 +641,16 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
     fp_sum_relations.push_back({a, n, result});
 
   return result;
+}
+
+
+Expr AbsFpEncoding::exp(const Expr &x) {
+  // A very simple model. :)
+  return Expr::mkIte(
+      isnan(x) | (x == infinity()), x,
+      Expr::mkIte(x == infinity(true), zero(),
+      Expr::mkIte((x == zero()) | x == zero(true), one(),
+      getExpFn().apply(x))));
 }
 
 Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
