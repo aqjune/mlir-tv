@@ -307,7 +307,7 @@ Memory::refines(const Memory &other) const {
 
     auto wRefinement = srcWritable.implies(tgtWritable);
     auto vRefinement = (tgtValue == srcValue);
-    return tgtSuccess.implies(srcSuccess & wRefinement & vRefinement);
+    return srcSuccess.implies(tgtSuccess & wRefinement & vRefinement);
   };
 
   using ElemTy = pair<Expr, vector<Expr>>;

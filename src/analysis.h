@@ -1,12 +1,12 @@
 #pragma once
 
-#include "llvm/ADT/DenseSet.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "utils.h"
 #include <map>
 #include <optional>
 #include <set>
+#include <string>
 
 struct FPAnalysisResult {
   std::set<llvm::APFloat> constSet;
