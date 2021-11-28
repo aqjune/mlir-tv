@@ -664,8 +664,16 @@ void encodeOp(State &st, mlir::linalg::IndexOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::math::AbsOp op, bool) {
-  auto f = st.regs.get<Float>(op.getOperand());
-  st.regs.add(op.getResult(), f.abs());
+  mlir::Value arg0 = op.getOperand();
+
+  encodeUnaryOp(st, op, arg0, [](auto &&a) { return a.abs(); }, {});
+}
+
+template<>
+void encodeOp(State &st, mlir::math::ExpOp op, bool) {
+  mlir::Value arg0 = op.getOperand();
+
+  encodeUnaryOp(st, op, arg0, [](auto &&a) { return Float::exp(a); }, {});
 }
 
 template<>
@@ -2532,6 +2540,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::bufferization::ToTensorOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::math::ExpOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::memref::AllocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DeallocOp, encodeMemWriteOps);
