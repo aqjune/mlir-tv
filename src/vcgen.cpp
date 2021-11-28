@@ -535,8 +535,8 @@ Results validate(
 
     AnalysisResult src_res, tgt_res;
     try {
-      src_res = analyze(srcfn, false);
-      tgt_res = analyze(tgtfn, false);
+      src_res = analyze(srcfn);
+      tgt_res = analyze(tgtfn);
     } catch (UnsupportedException ue) {
       raiseUnsupported(ue);
     }

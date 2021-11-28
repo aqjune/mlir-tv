@@ -76,8 +76,7 @@ static void analyzeElemAttr(
 }
 
 static void analyzeVariable(
-    const mlir::Value &var, AnalysisResult &res, bool numElemsIgnored,
-    bool isArg = false) {
+    const mlir::Value &var, AnalysisResult &res, bool isArg = false) {
   auto ty = var.getType();
   size_t &f32Count = isArg ? res.F32.argCount : res.F32.varCount;
   size_t &f64Count = isArg ? res.F64.argCount : res.F64.varCount;
@@ -102,9 +101,6 @@ static void analyzeVariable(
     else 
       cnt = Tensor::MAX_TENSOR_SIZE;
 
-    if (numElemsIgnored)
-      cnt = cnt ? 1 : 0;
-
     if (elemty.isF32())
       f32Count += cnt;
     else if (elemty.isF64())
@@ -121,7 +117,7 @@ template<class T>
 static void analyzeOp(T op, AnalysisResult &res);
 
 static void analyzeBlock(
-    mlir::Block &block, AnalysisResult &res, bool isFullyAbstract);
+    mlir::Block &block, AnalysisResult &res);
 
 template<>
 void analyzeOp(mlir::arith::ConstantFloatOp op, AnalysisResult &res) {
@@ -149,12 +145,12 @@ void analyzeOp(mlir::tosa::ConstOp op, AnalysisResult &res) {
 }
 
 void analyzeRegion(
-    mlir::Region &region, AnalysisResult &res, bool isFullyAbstract) {
+    mlir::Region &region, AnalysisResult &res) {
   if (!region.hasOneBlock())
     throw UnsupportedException("Region with a single block is supported only");
 
   auto &block = region.front();
-  return analyzeBlock(block, res, isFullyAbstract);
+  return analyzeBlock(block, res);
 }
 
 #define ANALYZE(op, ty, res) \
@@ -163,14 +159,14 @@ void analyzeRegion(
     continue; \
   }
 
-#define ANALYZE_REGION(op, ty, region_fn, res, numElemsIgnored) \
+#define ANALYZE_REGION(op, ty, region_fn, res) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    analyzeRegion(op2.region_fn(), res, numElemsIgnored); \
+    analyzeRegion(op2.region_fn(), res); \
     continue; \
   }
 
 static void analyzeBlock(
-    mlir::Block &block, AnalysisResult &res, bool numElemsIgnored) {
+    mlir::Block &block, AnalysisResult &res) {
   for (auto &op: block) {
     // Analyze constant operations
     // These operations do not increase varCount
@@ -180,17 +176,17 @@ static void analyzeBlock(
 
     // Non-constant operations; increase varCount if return type matches
     for (const auto &result: op.getResults()) {
-      analyzeVariable(result, res, numElemsIgnored);
+      analyzeVariable(result, res);
     }
 
     // Analyze operations having subregions.
-    ANALYZE_REGION(op, mlir::linalg::GenericOp, region, res, numElemsIgnored);
-    ANALYZE_REGION(op, mlir::linalg::PadTensorOp, region, res, numElemsIgnored);
-    ANALYZE_REGION(op, mlir::tensor::GenerateOp, body, res, numElemsIgnored);
+    ANALYZE_REGION(op, mlir::linalg::GenericOp, region, res);
+    ANALYZE_REGION(op, mlir::linalg::PadTensorOp, region, res);
+    ANALYZE_REGION(op, mlir::tensor::GenerateOp, body, res);
   }
 }
 
-AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
+AnalysisResult analyze(mlir::FuncOp &fn) {
   AnalysisResult res;
 
   auto &region = fn.getRegion();
@@ -200,12 +196,12 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
 
   // Step1. analyze arguments
   for (const auto& arg: fn.getArguments()){
-    analyzeVariable(arg, res, isFullyAbstract, /*isArg*/true);
+    analyzeVariable(arg, res, /*isArg*/true);
   }
 
   // Step2. analyze the block
   auto &block = region.front();
-  analyzeBlock(block, res, isFullyAbstract);
+  analyzeBlock(block, res);
 
   verbose("analysis") << "<" << fn.getName().str() << ">\n";
   verbose("analysis") << "  f32 arg count: " << res.F32.argCount << "\n";

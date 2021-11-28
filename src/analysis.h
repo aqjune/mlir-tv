@@ -25,4 +25,4 @@ struct AnalysisResult {
   ShapedTypeAnalysisResult shapedValue;
 };
 
-AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract);
+AnalysisResult analyze(mlir::FuncOp &fn);
