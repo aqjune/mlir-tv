@@ -12,15 +12,17 @@ struct FPAnalysisResult {
   size_t varCount = 0;
 };
 
-struct MemRefAnalysisResult {
-  TypeMap<size_t> argCount;
-  TypeMap<size_t> varCount;
+struct ShapedTypeAnalysisResult {
+  TypeMap<size_t> memrefArgCount;
+  TypeMap<size_t> memrefVarCount;
+  TypeMap<size_t> tensorArgCount;
+  TypeMap<size_t> tensorVarCount;
 };
 
 struct AnalysisResult {
   FPAnalysisResult F32;
   FPAnalysisResult F64;
-  MemRefAnalysisResult memref;
+  ShapedTypeAnalysisResult shapedValue;
 };
 
 AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract);

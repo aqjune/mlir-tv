@@ -81,8 +81,10 @@ static void analyzeVariable(
   auto ty = var.getType();
   size_t &f32Count = isArg ? res.F32.argCount : res.F32.varCount;
   size_t &f64Count = isArg ? res.F64.argCount : res.F64.varCount;
-  decltype(res.memref.argCount) &memrefCnt =
-      isArg ? res.memref.argCount : res.memref.varCount;
+  decltype(res.shapedValue.memrefArgCount) &memrefCnt =
+      isArg ? res.shapedValue.memrefArgCount : res.shapedValue.memrefVarCount;
+  decltype(res.shapedValue.tensorArgCount) &tensorCnt =
+      isArg ? res.shapedValue.tensorArgCount : res.shapedValue.tensorVarCount;
 
   if (ty.isF32()) {
     f32Count++;
@@ -108,9 +110,10 @@ static void analyzeVariable(
     else if (elemty.isF64())
       f64Count += cnt;
 
-    if (ty.isa<mlir::MemRefType>()) {
+    if (ty.isa<mlir::MemRefType>())
       memrefCnt[elemty]++;
-    }
+    else if (ty.isa<mlir::TensorType>())
+      tensorCnt[elemty]++;
   }
 }
 
@@ -209,10 +212,13 @@ AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract) {
   verbose("analysis") << "  f32 var count: " << res.F32.varCount << "\n";
   verbose("analysis") << "  f64 arg count: " << res.F64.argCount << "\n";
   verbose("analysis") << "  f64 var count: " << res.F64.varCount << "\n";
-  for (auto &[ty, cnt]: res.memref.argCount)
+  for (auto &[ty, cnt]: res.shapedValue.memrefArgCount)
     verbose("analysis") << "  memref arg count (" << ty << "): " << cnt << "\n";
-  for (auto &[ty, cnt]: res.memref.varCount)
+  for (auto &[ty, cnt]: res.shapedValue.memrefVarCount)
     verbose("analysis") << "  memref var count (" << ty << "): " << cnt << "\n";
-
+  for (auto &[ty, cnt]: res.shapedValue.tensorArgCount)
+    verbose("analysis") << "  tensor arg count (" << ty << "): " << cnt << "\n";
+  for (auto &[ty, cnt]: res.shapedValue.tensorVarCount)
+    verbose("analysis") << "  tensor var count (" << ty << "): " << cnt << "\n";
   return res;
 }

@@ -556,10 +556,10 @@ Results validate(
     vinput.tgt = tgtfn;
     vinput.dumpSMTPath = dumpSMTPath;
 
-    vinput.numBlocksPerType = src_res.memref.argCount;
-    for (auto &[ty, cnt]: src_res.memref.varCount)
+    vinput.numBlocksPerType = src_res.shapedValue.memrefArgCount;
+    for (auto &[ty, cnt]: src_res.shapedValue.memrefVarCount)
       vinput.numBlocksPerType[ty] += cnt;
-    for (auto &[ty, cnt]: tgt_res.memref.varCount)
+    for (auto &[ty, cnt]: tgt_res.shapedValue.memrefVarCount)
       vinput.numBlocksPerType[ty] += cnt;
 
     if (vinput.numBlocksPerType.size() > 1) {
