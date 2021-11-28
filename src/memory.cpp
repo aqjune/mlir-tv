@@ -1,3 +1,4 @@
+#include "debug.h"
 #include "memory.h"
 #include "smt.h"
 #include "utils.h"
@@ -110,6 +111,9 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
       auto glb = globalsForTy[i];
       auto res = globalVarBids.try_emplace(glb.getName().str(), elemTy, i);
       assert(res.second && "Duplicated global var name");
+
+      verbose("memory init") << "Assigning bid = " << i << " to global var "
+          << glb.getName() << "...\n";
 
       string name = "#" + glb.getName().str() + "_array";
       newArrs.push_back(Expr::mkFreshVar(arrSort, name));
