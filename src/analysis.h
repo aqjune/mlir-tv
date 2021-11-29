@@ -1,18 +1,31 @@
 #pragma once
 
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "utils.h"
+#include <map>
 #include <optional>
 #include <set>
+#include <string>
 
 struct FPAnalysisResult {
-  std::set<llvm::APFloat> fpConstSet;
-  size_t fpVarCount = 0;
-  size_t fpArgCount = 0;
+  std::set<llvm::APFloat> constSet;
+  size_t argCount = 0;
+  size_t varCount = 0;
+  size_t elemCounts = 0;
+};
+
+struct MemRefAnalysisResult {
+  TypeMap<size_t> argCount;
+  TypeMap<size_t> varCount;
+  std::map<std::string, mlir::memref::GlobalOp> usedGlobals;
 };
 
 struct AnalysisResult {
-    FPAnalysisResult F32;
-    FPAnalysisResult F64;
+  FPAnalysisResult F32;
+  FPAnalysisResult F64;
+  MemRefAnalysisResult memref;
+  bool isElementwiseFPOps = true;
 };
 
-AnalysisResult analyze(mlir::FuncOp &fn, bool isFullyAbstract);
+AnalysisResult analyze(mlir::FuncOp &fn);

@@ -1,176 +1,132 @@
 #pragma once
 
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "smt.h"
+#include "utils.h"
 
 #include <algorithm>
 #include <vector>
 
-enum MemEncoding {
-  SINGLE_ARRAY, MULTIPLE_ARRAY
-};
-
-// A memory block containing f32 elements.
-class MemBlock {
-public:
-  smt::Expr array;    // Index::sort() -> Float::sort()
-  smt::Expr writable; // bool::sort()
-  smt::Expr numelem;  // Index::sort()
-
-  MemBlock(const smt::Expr &array, const smt::Expr &writable,
-           const smt::Expr &numelem):
-    array(array), writable(writable), numelem(numelem) {}
-};
-
+// A class that implements the memory model described in CAV'21 (An SMT
+// Encoding of LLVM's Memory Model for Bounded Translation Validation)
+// In addition, blocks of different types don't alias. This is for abstractly
+// encoding floating points.
 class Memory {
-protected:
-  const unsigned int numGlobalBlocks;
-  const unsigned int maxLocalBlocks;
   const unsigned int bidBits;
-  unsigned int numLocalBlocks;
   bool isSrc;
 
+  TypeMap<size_t> globalBlocksCnt;
+  TypeMap<size_t> maxLocalBlocksCnt;
+
+  // element type -> vector<(Index::sort() -> The element's SMT type)>
+  TypeMap<std::vector<smt::Expr>> arrays;
+  // element type -> vector<Bool::sort()>
+  TypeMap<std::vector<smt::Expr>> writables;
+  // element type -> vector<Index::sort>
+  TypeMap<std::vector<smt::Expr>> numelems;
+  // element type -> vector<Bool::sort()>
+  TypeMap<std::vector<smt::Expr>> liveness;
+
+  // (Element type, bid) of global variables.
+  std::map<std::string, std::pair<mlir::Type, unsigned>> globalVarBids;
+
 public:
-  static Memory * create(
-      unsigned int numGlobalBlocks, unsigned int maxLocalBlocks,
-      MemEncoding encoding);
-  // Here we would like to use lower half of the memory blocks as global MemBlock
-  // and upper half of the memory blocks as local MemBlock.
-  // Memory refinement is defined only using global MemBlocks.
-  Memory(unsigned int numGlobalBlocks,
-      unsigned int maxLocalBlocks,
-      unsigned int bidBits):
-    numGlobalBlocks(numGlobalBlocks),
-    maxLocalBlocks(maxLocalBlocks),
-    bidBits(bidBits),
-    numLocalBlocks(0),
-    isSrc(true) {}
-  virtual ~Memory() {}
+  Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
+         const TypeMap<size_t> &maxNumLocalBlocksPerType,
+         const std::vector<mlir::memref::GlobalOp> &globals);
 
   void setIsSrc(bool flag) { isSrc = flag; }
 
   unsigned int getBIDBits() const { return bidBits; }
-  unsigned int getNumBlocks() const { return numGlobalBlocks + numLocalBlocks; }
+  unsigned int getTotalNumBlocks() const;
+  unsigned int getNumBlocks(mlir::Type elemTy) const {
+    auto itr = arrays.find(elemTy);
+    assert(itr != arrays.end());
+    return itr->second.size();
+  }
 
   // Bids smaller than numGlobalBlocks are global (0 ~ numGlobalBlocks - 1)
-  smt::Expr isGlobalBlock(const smt::Expr &bid) const;
-  // Bids bigger than and equal to numGlobalBlocks are local blocks (numGlobalBlocks ~ numGlobalBlocks + numGlobalBlocks)
-  smt::Expr isLocalBlock(const smt::Expr &bid) const;
+  smt::Expr isGlobalBlock(mlir::Type elemType, const smt::Expr &bid) const;
+  // Bids bigger than and equal to numGlobalBlocks are local blocks
+  // (numGlobalBlocks ~ numGlobalBlocks + numGlobalBlocks)
+  smt::Expr isLocalBlock(mlir::Type elemType, const smt::Expr &bid) const;
 
   // Returns: (newly created block id)
-  virtual smt::Expr addLocalBlock(const smt::Expr &numelem, const smt::Expr &writable) = 0;
+  smt::Expr addLocalBlock(const smt::Expr &numelem, mlir::Type elemTy,
+      const smt::Expr &writable);
 
-  virtual smt::Expr getNumElementsOfMemBlock(const smt::Expr &bid) const = 0;
+  smt::Expr getNumElementsOfMemBlock(mlir::Type elemTy, const smt::Expr &bid)
+      const;
+  smt::Expr getNumElementsOfMemBlock(mlir::Type elemTy, unsigned ubid) const {
+    assert(ubid < getNumBlocks(elemTy));
+    return numelems.find(elemTy)->second[ubid];
+  }
+
+  // Return the block id for the global variable having name.
+  unsigned getBidForGlobalVar(const std::string &name) const;
+  // Return the name of the global var name having the element type and bid.
+  std::optional<std::string> getGlobalVarName(mlir::Type elemTy, unsigned bid)
+    const;
+
   // Mark memblock's writable flag to `writable`
-  virtual void setWritable(const smt::Expr &bid, bool writable) = 0;
+  void setWritable(mlir::Type elemTy, const smt::Expr &bid, bool writable);
   // get memblocks' writable flag
-  virtual smt::Expr getWritable(const smt::Expr &bid) const = 0;
+  smt::Expr getWritable(mlir::Type elemTy, const smt::Expr &bid) const;
+  smt::Expr getWritable(mlir::Type elemTy, unsigned ubid) const {
+    assert(ubid < getNumBlocks(elemTy));
+    return writables.find(elemTy)->second[ubid];
+  }
+
+  // Mark memblock's liveness to false.
+  void setLivenessToFalse(mlir::Type elemTy, const smt::Expr &bid);
+  // get memblocks' writable flag
+  smt::Expr getLiveness(mlir::Type elemTy, const smt::Expr &bid) const;
+  smt::Expr getLiveness(mlir::Type elemTy, unsigned ubid) const {
+    assert(ubid < getNumBlocks(elemTy));
+    return liveness.find(elemTy)->second[ubid];
+  }
+
   // Returns: store successful?
-  virtual smt::Expr store(
-      const smt::Expr &f32val, const smt::Expr &bid,
-      const smt::Expr &idx) = 0;
+  smt::Expr store(
+      mlir::Type elemTy, const smt::Expr &val, const smt::Expr &bid,
+      const smt::Expr &idx);
   // Returns: store successful?
-  virtual smt::Expr storeArray(
-      const smt::Expr &arr, const smt::Expr &bid,
+  smt::Expr storeArray(
+      mlir::Type elemTy, const smt::Expr &arr, const smt::Expr &bid,
       const smt::Expr &offset, const smt::Expr &size,
-      bool ubIfReadonly = true) = 0;
+      bool ubIfReadonly = true);
+
   // Returns: (loaded value, load successful?)
-  virtual std::pair<smt::Expr, smt::Expr> load(
-      const smt::Expr &bid, const smt::Expr &idx) const = 0;
+  std::pair<smt::Expr, smt::Expr> load(
+      mlir::Type elemTy, const smt::Expr &bid, const smt::Expr &idx) const;
+  std::pair<smt::Expr, smt::Expr> load(mlir::Type elemTy, unsigned bid,
+      const smt::Expr &idx) const;
 
   // Encode the refinement relation between src (other) and tgt (this) memory
-  virtual std::pair<smt::Expr, std::vector<smt::Expr>>
-    refines(const Memory &other) const = 0;
+  // for each element type.
+  // Memory refinement is defined using global memory blocks only.
+  TypeMap<std::pair<smt::Expr, std::vector<smt::Expr>>>
+      refines(const Memory &other) const;
 
-  virtual Memory *clone() const = 0;
-};
-
-// A CRTP class for Memory.
-template<class Derived>
-class MemoryCRTP : public Memory {
-public:
-  // Inherit Memory's constructors.
-  using Memory::Memory;
-
-  virtual Memory *clone() const override {
-    /// Call Derived's copy constructor.
-    return new Derived(static_cast<Derived const&>(*this));
-  }
-};
-
-class SingleArrayMemory: public MemoryCRTP<SingleArrayMemory> {
-  smt::Expr arrayMaps; // bv(bits)::sort() -> (Index::sort() -> Float::sort())
-  smt::Expr writableMaps; // bv(bits)::sort() -> bool::sort()
-  smt::Expr numelemMaps; // bv(bits)::sort() -> Index::sort()
-
-private:
-  MemBlock getMemBlock(const smt::Expr &bid) const;
-
-public:
-  SingleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
-
-  smt::Expr addLocalBlock(const smt::Expr &numelem, const smt::Expr &writable) override;
-
-  smt::Expr getNumElementsOfMemBlock(const smt::Expr &bid) const override {
-    return getMemBlock(bid).numelem;
-  }
-
-  void setWritable(const smt::Expr &bid, bool writable) override;
-  smt::Expr getWritable(const smt::Expr &bid) const override;
-  smt::Expr store(
-      const smt::Expr &f32val, const smt::Expr &bid, const smt::Expr &idx)
-      override;
-  smt::Expr storeArray(
-      const smt::Expr &arr, const smt::Expr &bid, const smt::Expr &offset, const smt::Expr &size, bool ubIfReadonly)
-      override;
-  std::pair<smt::Expr, smt::Expr> load(
-      const smt::Expr &bid, const smt::Expr &idx) const override;
-
-  // this: tgt, other: src
-  std::pair<smt::Expr, std::vector<smt::Expr>> refines(const Memory &other)
-      const override;
-};
-
-
-// A class that implements the memory model described in CAV'21 (An SMT
-// Encoding of LLVM's Memory Model for Bounded Translation Validation)
-class MultipleArrayMemory: public MemoryCRTP<MultipleArrayMemory> {
-  std::vector<smt::Expr> arrays;  // vector<(Index::sort() -> Float::sort())>
-  std::vector<smt::Expr> writables; // vector<Bool::sort()>
-  std::vector<smt::Expr> numelems;  // vector<Index::sort>
-
-public:
-  MultipleArrayMemory(unsigned int globalBlocks, unsigned int localBlocks);
-
-  smt::Expr addLocalBlock(const smt::Expr &numelem, const smt::Expr &writable) override;
-
-  smt::Expr getNumElementsOfMemBlock(unsigned ubid) const
-  { assert(ubid < getNumBlocks()); return numelems[ubid]; }
-  smt::Expr getNumElementsOfMemBlock(const smt::Expr &bid) const override;
-
-  void setWritable(const smt::Expr &bid, bool writable) override;
-  smt::Expr getWritable(const smt::Expr &bid) const override;
-  smt::Expr getWritable(unsigned ubid) const
-  { assert(ubid < getNumBlocks()); return writables[ubid]; }
-
-  smt::Expr store(
-      const smt::Expr &f32val, const smt::Expr &bid, const smt::Expr &idx)
-      override;
-  smt::Expr storeArray(
-      const smt::Expr &arr, const smt::Expr &bid, const smt::Expr &offset, const smt::Expr &size, bool ubIfReadonly)
-      override;
-  std::pair<smt::Expr, smt::Expr> load(
-      const smt::Expr &bid, const smt::Expr &idx) const override;
-  std::pair<smt::Expr, smt::Expr> load(unsigned ubid, const smt::Expr &idx)
-      const;
-
-  std::pair<smt::Expr, std::vector<smt::Expr>> refines(
-      const Memory &other) const override;
+  Memory *clone() const { return new Memory(*this); }
 
 private:
   smt::Expr itebid(
-      const smt::Expr &bid, std::function<smt::Expr(unsigned)> fn) const;
+      mlir::Type elemTy, const smt::Expr &bid,
+      std::function<smt::Expr(unsigned)> fn) const;
   void update(
-      const smt::Expr &bid,
+      mlir::Type elemTy, const smt::Expr &bid,
       std::function<smt::Expr*(unsigned)> exprToUpdate, // bid -> ptr to expr
       std::function<smt::Expr(unsigned)> updatedValue) const; // bid -> updated
+
+  size_t getMaxNumLocalBlocks(mlir::Type ty) const {
+    auto itr = maxLocalBlocksCnt.find(ty);
+    assert(itr != maxLocalBlocksCnt.end());
+    return itr->second;
+  }
+  size_t getNumGlobalBlocks(mlir::Type ty) const {
+    auto itr = globalBlocksCnt.find(ty);
+    assert(itr != globalBlocksCnt.end());
+    return itr->second;
+  }
 };

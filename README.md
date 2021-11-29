@@ -38,14 +38,6 @@ mlir-tv <.mlir before opt> <.mlir after opt>`
 #        tests/opts/conv2d_to_img2col/nhwc_filter.tgt.mlir -smt-to=5000
 ```
 
-To explore the semantics encoded in `mlir-tv`, you can use `mlir-interp`.
-It takes a module containing functions without arguments, and prints their outputs and UBs according to the semantics encoded in it.
-```bash
-mlir-interp <.mlir>
-# ex: ./build/mlir-interp \
-#       tests/litmus/tensor-ops/extract_ub.src.mlir
-```
-
 ## How to test MLIR-TV
 ```bash
 cd build

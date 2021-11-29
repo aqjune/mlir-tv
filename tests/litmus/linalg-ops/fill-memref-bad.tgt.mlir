@@ -5,7 +5,7 @@ func @bufferize_fill(%arg0: memref<?xf32>) -> tensor<?xf32> {
     linalg.fill(%cst, %arg0) : f32, memref<?xf32> 
 
     %cst2 = arith.constant 1.000000e+00 : f32
-    %zerotensor = memref.tensor_load %arg0 : memref<?xf32>
+    %zerotensor = bufferization.to_tensor %arg0 : memref<?xf32>
     %zerotensor2 = linalg.fill(%cst2, %zerotensor): f32, tensor<?xf32> -> tensor<?xf32>
     return %zerotensor2 : tensor<?xf32>
 }
