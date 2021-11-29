@@ -485,9 +485,16 @@ Expr Expr::select(const vector<Expr> &idxs) const {
     }
   }));
 
-  optional<Expr> elem = nullopt, idx = nullopt;
+  Expr arr;
+  // TODO: cvc5
+#ifdef SOLVER_Z3
+  Z3_app a = e.getZ3Expr();
+  arr.setZ3(z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+#endif // SOLVER_Z3
+
+  optional<Expr> elem = nullopt;
   using namespace matchers;
-  if (Select(ConstSplatArray(Any(elem)), Any(idx)).match(e)) {
+  if (ConstSplatArray(Any(elem)).match(arr)) {
     e = *elem;
   }
   
@@ -1209,27 +1216,6 @@ bool ConstSplatArray::operator()(const Expr &expr) const {
   Expr newe = newExpr();
   IF_Z3_ENABLED(setZ3(newe, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0))));
   return subMatcher(newe);
-}
-
-bool Select::operator()(const Expr &expr) const {
-  // FIXME: cvc5
-#ifdef SOLVER_Z3
-  auto e = expr.getZ3Expr();
-  if (!e.is_app())
-    return false;
-
-  Z3_app a = e;
-  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
-  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_SELECT)
-    return false;
-#endif // SOLVER_Z3
-
-  Expr arr = newExpr(), idx = newExpr();
-#ifdef SOLVER_Z3
-  setZ3(arr, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
-  setZ3(idx, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
-#endif // SOLVER_Z3
-  return arrMatcher(arr) && idxMatcher(idx);
 }
 
 bool Store::operator()(const Expr &expr) const {
