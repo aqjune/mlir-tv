@@ -484,6 +484,20 @@ Expr Expr::select(const vector<Expr> &idxs) const {
       return solver.mkTerm(cvc5::api::APPLY_UF, v);
     }
   }));
+
+  Expr arr;
+  // TODO: cvc5
+#ifdef SOLVER_Z3
+  Z3_app a = e.getZ3Expr();
+  arr.setZ3(z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+#endif // SOLVER_Z3
+
+  optional<Expr> elem = nullopt;
+  using namespace matchers;
+  if (ConstSplatArray(Any(elem)).match(arr)) {
+    e = *elem;
+  }
+  
   return e;
 }
 
