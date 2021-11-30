@@ -347,6 +347,13 @@ bool Expr::isInt(int64_t &v) const {
   return res.has_value();
 }
 
+optional<uint64_t> Expr::asUInt() const {
+  uint64_t i;
+  if (isUInt(i))
+    return i;
+  return {};
+}
+
 bool Expr::isNumeral() const {
   bool res = false;
   IF_Z3_ENABLED(res |= z3 && z3->is_numeral());
@@ -477,6 +484,20 @@ Expr Expr::select(const vector<Expr> &idxs) const {
       return solver.mkTerm(cvc5::api::APPLY_UF, v);
     }
   }));
+
+  Expr arr;
+  // TODO: cvc5
+#ifdef SOLVER_Z3
+  Z3_app a = e.getZ3Expr();
+  arr.setZ3(z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+#endif // SOLVER_Z3
+
+  optional<Expr> elem = nullopt;
+  using namespace matchers;
+  if (ConstSplatArray(Any(elem)).match(arr)) {
+    e = *elem;
+  }
+  
   return e;
 }
 
@@ -1260,7 +1281,6 @@ vector<cvc5::api::Sort> toCVC5SortVector(const vector<smt::Sort> &vec) {
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
-  // FIXME
   stringstream ss;
   ss << e;
   os << ss.str();
@@ -1268,8 +1288,8 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
 }
 
 std::ostream& operator<<(std::ostream& os, const smt::Expr &e) {
-  // FIXME
   IF_Z3_ENABLED(os << e.getZ3Expr());
+  // FIXME: consider CVC5
   // IF_CVC5_ENABLED(os << e.getCVC5Term());
   return os;
 }

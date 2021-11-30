@@ -35,9 +35,10 @@ public:
   mlir::FuncOp src, tgt;
   string dumpSMTPath;
 
-  unsigned int numBlocks;
+  TypeMap<size_t> numBlocksPerType;
   unsigned int f32NonConstsCount, f64NonConstsCount;
   set<llvm::APFloat> f32Consts, f64Consts;
+  vector<mlir::memref::GlobalOp> globals;
   bool isFpAddAssociative;
   bool useMultisetForFpSum;
 };
@@ -119,7 +120,7 @@ static State createInputState(
       s.regs.add(arg, move(memref));
 
     } else {
-      if (convertTypeToSort(argty) == nullopt) {
+      if (convertPrimitiveTypeToSort(argty) == nullopt) {
         throw UnsupportedException(arg.getType());
       }
 
@@ -136,8 +137,8 @@ static State createInputState(
         s.regs.add(arg, Integer::var(move(name), bw, varty));
 
       } else {
-        llvm::errs() << "convertTypeToSort must have returned nullopt for this"
-                        " type!";
+        llvm::errs() << "convertPrimitiveTypeToSort must have returned nullopt"
+                        " for this type!";
         abort();
       }
     }
@@ -192,13 +193,15 @@ static Results checkRefinement(
 
   auto printErrorMsg = [&](Solver &s, CheckResult res, const char *msg,
                            vector<Expr> &&params, VerificationStep step,
-                           unsigned retidx = -1){
+                           unsigned retidx = -1,
+                           optional<mlir::Type> memElemType = nullopt){
     if (res.isUnknown()) {
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res.hasSat()) {
       llvm::outs() << "== Result: " << msg << "\n";
       printCounterEx(
-          s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx);
+          s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx,
+          memElemType);
     } else {
       llvm_unreachable("unexpected result");
     }
@@ -265,23 +268,30 @@ static Results checkRefinement(
     }
   }
 
-  if (st_src.m->getNumBlocks() > 0 ||
-      st_tgt.m->getNumBlocks() > 0) { // 3. Check memory refinement
+  if (st_src.m->getTotalNumBlocks() > 0 ||
+      st_tgt.m->getTotalNumBlocks() > 0) { // 3. Check memory refinement
     Solver s(logic);
-    auto [refines, params] = st_tgt.m->refines(*st_src.m);
-    auto not_refines =
-      (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines).simplify();
-    auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
-                     fnname + ".3.memory");
-    elapsedMillisec += res.second;
-    if (res.first.isInconsistent()) {
-      llvm::outs() << "== Result: inconsistent output!!"
-                      " either MLIR-TV or SMT solver has a bug ==\n";
-      return Results::INCONSISTENT;
-    } else if (!res.first.hasUnsat()) {
-      printErrorMsg(s, res.first, "Memory mismatch", move(params),
-                    VerificationStep::Memory);
-      return res.first.hasSat() ? Results::RETVALUE : Results::TIMEOUT;
+    auto refinementPerType = st_tgt.m->refines(*st_src.m);
+    // [refines, params]
+    for (auto &[elementType, refinement]: refinementPerType) {
+      Expr refines = refinement.first;
+      auto &params = refinement.second;
+
+      auto not_refines =
+        (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines).simplify();
+      auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
+                      fnname + ".3.memory." + to_string(elementType));
+      elapsedMillisec += res.second;
+      if (res.first.isInconsistent()) {
+        llvm::outs() << "== Result: inconsistent output!!"
+                        " either MLIR-TV or SMT solver has a bug ==\n";
+        return Results::INCONSISTENT;
+
+      } else if (!res.first.hasUnsat()) {
+        printErrorMsg(s, res.first, "Memory mismatch", move(params),
+                      VerificationStep::Memory, -1, elementType);
+        return res.first.hasSat() ? Results::RETVALUE : Results::TIMEOUT;
+      }
     }
   }
 
@@ -348,7 +358,8 @@ static tuple<State, State, Expr> encodeFinalStates(
   vector<Expr> preconds;
 
   // Set max. local blocks as num global blocks
-  auto initMemSrc = make_unique<Memory>(vinput.numBlocks, vinput.numBlocks);
+  auto initMemSrc = make_unique<Memory>(
+      vinput.numBlocksPerType, vinput.numBlocksPerType, vinput.globals);
   // Due to how CVC5 treats unbound vars, the initial memory must be precisely
   // copied
   unique_ptr<Memory> initMemTgt(initMemSrc->clone());
@@ -400,9 +411,10 @@ static void checkIsSrcAlwaysUB(
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
-  auto st = encodeFinalState(vinput,
-      make_unique<Memory>(vinput.numBlocks, vinput.numBlocks),
-      false, true, args_dummy, preconds);
+  auto initMemory = make_unique<Memory>(
+      vinput.numBlocksPerType, vinput.numBlocksPerType, vinput.globals);
+  auto st = encodeFinalState(vinput, move(initMemory), false, true,
+      args_dummy, preconds);
 
   useAllLogic |= st.hasConstArray;
   auto logic = useAllLogic ? SMT_LOGIC_ALL :
@@ -496,10 +508,53 @@ static Results validate(ValidationInput vinput) {
   return res;
 }
 
+static vector<mlir::memref::GlobalOp> mergeGlobals(
+    const map<string, mlir::memref::GlobalOp> &srcGlobals,
+    const map<string, mlir::memref::GlobalOp> &tgtGlobals) {
+
+  vector<mlir::memref::GlobalOp> mergedGlbs;
+
+  for (auto &[name, glbSrc0]: srcGlobals) {
+    auto glbSrc = glbSrc0; // Remove constness
+    auto tgtItr = tgtGlobals.find(name);
+    if (tgtItr == tgtGlobals.end()) {
+      mergedGlbs.push_back(glbSrc);
+      continue;
+    }
+
+    if (glbSrc.constant())
+      throw UnsupportedException(
+          "Constant globals are not supported (" + name + ")");
+
+    auto glbTgt = tgtItr->second;
+    if (glbSrc.type() != glbTgt.type() ||
+        glbSrc.isPrivate() != glbTgt.isPrivate() ||
+        glbSrc.constant() != glbTgt.constant() ||
+        glbSrc.initial_value() != glbTgt.initial_value()) {
+      throw UnsupportedException(
+          name + " has different signatures in src and tgt");
+    }
+
+    assert(glbSrc.type().hasStaticShape() &&
+           "Global var must be statically shaped");
+
+    mergedGlbs.push_back(glbSrc);
+  }
+
+  for (auto &[name, glbTgt]: tgtGlobals) {
+    auto tgtItr = srcGlobals.find(name);
+    if (tgtItr == srcGlobals.end()) {
+      throw UnsupportedException("Introducing new globals is not supported");
+    }
+  }
+
+  return mergedGlbs;
+}
+
 Results validate(
     mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     const string &dumpSMTPath,
-    unsigned int numBlocks,
+    unsigned int numBlocksPerType,
     pair<unsigned, unsigned> fpBits, bool isFpAddAssociative,
     bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
@@ -524,33 +579,42 @@ Results validate(
     auto tgtfn = itr->second;
 
     AnalysisResult src_res, tgt_res;
+    vector<mlir::memref::GlobalOp> globals;
+
     try {
-      src_res = analyze(srcfn, false);
-      tgt_res = analyze(tgtfn, false);
+      src_res = analyze(srcfn);
+      tgt_res = analyze(tgtfn);
+      globals = mergeGlobals(
+          src_res.memref.usedGlobals, tgt_res.memref.usedGlobals);
     } catch (UnsupportedException ue) {
       raiseUnsupported(ue);
     }
-    auto src_f32_res = src_res.F32;
-    auto src_f64_res = src_res.F64;
 
-    auto tgt_f32_res = tgt_res.F32;
-    auto tgt_f64_res = tgt_res.F64;
-
-    auto f32_consts = src_f32_res.constSet;
-    f32_consts.merge(tgt_f32_res.constSet);
-    auto f64_consts = src_f64_res.constSet;
-    f64_consts.merge(tgt_f64_res.constSet);
+    auto f32_consts = src_res.F32.constSet;
+    f32_consts.merge(tgt_res.F32.constSet);
+    auto f64_consts = src_res.F64.constSet;
+    f64_consts.merge(tgt_res.F64.constSet);
 
     ValidationInput vinput;
     vinput.src = srcfn;
     vinput.tgt = tgtfn;
     vinput.dumpSMTPath = dumpSMTPath;
+    vinput.globals = globals;
 
-    if (numBlocks) {
-      vinput.numBlocks = numBlocks;
-    } else {
-      vinput.numBlocks = src_res.memref.argCount +
-          src_res.memref.varCount + tgt_res.memref.varCount;
+    vinput.numBlocksPerType = src_res.memref.argCount;
+    for (auto &[ty, cnt]: src_res.memref.varCount)
+      vinput.numBlocksPerType[ty] += cnt;
+    for (auto &[ty, cnt]: tgt_res.memref.varCount)
+      vinput.numBlocksPerType[ty] += cnt;
+
+    if (vinput.numBlocksPerType.size() > 1) {
+      llvm::outs() << "NOTE: mlir-tv assumes that memrefs of different element "
+          "types do not alias. This can cause missing bugs.\n";
+    }
+
+    if (numBlocksPerType) {
+      for (auto &[ty, cnt]: vinput.numBlocksPerType)
+        cnt = numBlocksPerType;
     }
 
     if (fpBits.first) {
@@ -560,15 +624,20 @@ Results validate(
       vinput.f64NonConstsCount = 1u << fpBits.second;
     } else {
       // Count non-constant floating points whose absolute values are distinct.
-      auto countNonConstFps = [](const auto& src_res, const auto& tgt_res) {
-        return
-          src_res.argCount + // # of variables in argument lists
-          src_res.varCount + tgt_res.varCount;
-          // # of variables in registers
+      auto countNonConstFps = [](const auto& src_res, const auto& tgt_res, const auto& ew) {
+        if (ew) {
+          return src_res.argCount + // # of variables in argument lists
+            src_res.varCount + tgt_res.varCount; // # of variables in registers
+        } else {
+          return src_res.argCount + // # of variables in argument lists
+            src_res.varCount + tgt_res.varCount + // # of variables in registers
+            src_res.elemCounts + tgt_res.elemCounts; // # of ShapedType elements count
+        }
       };
 
-      vinput.f32NonConstsCount = countNonConstFps(src_f32_res, tgt_f32_res);
-      vinput.f64NonConstsCount = countNonConstFps(src_f64_res, tgt_f64_res);
+      auto isElementwise = src_res.isElementwiseFPOps || tgt_res.isElementwiseFPOps;
+      vinput.f32NonConstsCount = countNonConstFps(src_res.F32, tgt_res.F32, isElementwise);
+      vinput.f64NonConstsCount = countNonConstFps(src_res.F64, tgt_res.F64, isElementwise);
     }
     vinput.f32Consts = f32_consts;
     vinput.f64Consts = f64_consts;

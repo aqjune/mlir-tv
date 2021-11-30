@@ -13,7 +13,7 @@ static string freshName(string prefix) {
   return prefix + to_string(count ++);
 }
 
-optional<smt::Sort> convertTypeToSort(mlir::Type elemty) {
+optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type elemty) {
   if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
     return Integer::sort(ielemty.getWidth());
   } else if (auto felemty = elemty.dyn_cast<mlir::FloatType>()) {
@@ -26,7 +26,7 @@ optional<smt::Sort> convertTypeToSort(mlir::Type elemty) {
 }
 
 optional<Expr> getZero(mlir::Type eltType) {
-  if (convertTypeToSort(eltType) == nullopt)
+  if (convertPrimitiveTypeToSort(eltType) == nullopt)
     return nullopt;
 
   if (eltType.isa<mlir::FloatType>())
@@ -129,6 +129,10 @@ Float Float::constant(const llvm::APFloat &apf, mlir::Type ty) {
   assert(sort(ty) != nullopt);
 
   return {aop::getFpEncoding(ty).constant(apf), ty};
+}
+
+Float Float::exp(const Float &x) {
+  return {aop::getFpEncoding(x.type).exp(x.e), x.type};
 }
 
 Sort Float::sortFloat32() {
@@ -385,7 +389,7 @@ Tensor::Tensor(
     bool initialized):
   ShapedValue(elemType),
   dims(dimvec),
-  arr(Expr::mkVar(arraySortForTensor(*convertTypeToSort(elemType)),
+  arr(Expr::mkVar(arraySortForTensor(*convertPrimitiveTypeToSort(elemType)),
       move(name))),
   initialized(splatArrayForTensor(Expr::mkBool(initialized))) {}
 
@@ -682,7 +686,7 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
 bool Tensor::isTypeSupported(mlir::TensorType tensorTy) {
   if (!tensorTy.hasRank())
     return false;
-  return convertTypeToSort(tensorTy.getElementType()) != nullopt;
+  return convertPrimitiveTypeToSort(tensorTy.getElementType()) != nullopt;
 }
 
 
@@ -716,8 +720,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
         idxconsts.push_back(ii);
       }
       auto elem = t.get(idx1d).first;
-      // TODO: Remove simplify() once Expr::select does folding
-      auto init = t.isInitialized(idx1d).simplify();
+      auto init = t.isInitialized(idx1d);
 
       if (i != 0)
         os << ", ";
@@ -983,8 +986,9 @@ MemRef::MemRef(Memory *m,
   const smt::Expr &bid,
   const smt::Expr &offset,
   const std::vector<smt::Expr> &dims,
-  const Layout &layout) : ShapedValue(elemTy), m(m), bid(bid),
-    offset(offset), dims(dims), layout(layout) {}
+  const Layout &layout,
+  const smt::Expr &isViewRef) : ShapedValue(elemTy), m(m), bid(bid),
+    offset(offset), dims(dims), layout(layout), isViewRef(isViewRef) {}
 
 MemRef::MemRef(Memory *m,
   const mlir::Type &elemty,
@@ -996,7 +1000,8 @@ MemRef::MemRef(Memory *m,
     bid(Expr::mkVar(Sort::bvSort(m->getBIDBits()), (name + "_bid").c_str())),
     offset(Index::var(name + "_offset", VarType::UNBOUND)),
     dims(dims),
-    layout(layout) {}
+    layout(layout),
+    isViewRef(Expr::mkVar(Sort::boolSort(), (name + "_isviewref").c_str())) {}
 
 MemRef::MemRef(Memory *m,
     const mlir::Type &elemty,
@@ -1026,10 +1031,7 @@ bool MemRef::isTypeSupported(mlir::MemRefType memRefTy) {
     // Currently we only support strided Memref.
     return {};
   }
-
-  auto elemty = memRefTy.getElementType();
-  // Currently we only support f32 element type.
-  return elemty.isF32();
+  return convertPrimitiveTypeToSort(memRefTy.getElementType()) != nullopt;
 }
 
 MemRef::Layout MemRef::getLayout(
@@ -1059,14 +1061,14 @@ MemRef::Layout MemRef::getLayout(
 
 pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto [loaded, success] = m->load(bid, (Expr)offset + idx);
+  auto [loaded, success] = m->load(elemType, bid, (Expr)offset + idx);
 
   return {loaded, (success & inbounds).simplify()};
 }
 
 Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto success = m->store(value, bid, (Expr)offset + idx);
+  auto success = m->store(elemType, value, bid, (Expr)offset + idx);
 
   return (success & inbounds).simplify();
 }
@@ -1074,22 +1076,35 @@ Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) const {
 Expr MemRef::storeArray(
     const Expr &array, const Expr &startOffset, const Expr &size,
     bool ubIfReadonly) const {
-  return m->storeArray(array, bid, (Expr)offset + startOffset, size,
+  return m->storeArray(elemType, array, bid, (Expr)offset + startOffset, size,
       ubIfReadonly);
 }
 
+Tensor MemRef::loadTensorWithoutCheck() const {
+  auto dims = getDims();
+  vector<Expr> idxs = Index::boundIndexVars(dims.size());
+  auto expr = get(idxs).first;
+  // TODO: MemRef blocks must have initialized bits
+  return Tensor::mkInitializedLambda(getElemType(),
+      move(dims), move(idxs), expr);
+}
+
 Expr MemRef::isInBounds() const {
-  auto numelem = m->getNumElementsOfMemBlock(bid);
+  auto numelem = m->getNumElementsOfMemBlock(elemType, bid);
   auto memrefSize = get1DSize();
   return numelem.uge(memrefSize) & ((Expr)offset).ule(numelem - memrefSize);
 }
 
 Expr MemRef::isGlobalBlock() const {
-  return m->isGlobalBlock(bid);
+  return m->isGlobalBlock(elemType, bid);
 }
 
 Expr MemRef::isLocalBlock() const {
-  return m->isLocalBlock(bid);
+  return m->isLocalBlock(elemType, bid);
+}
+
+Expr MemRef::getLiveness() const {
+  return m->getLiveness(elemType, bid);
 }
 
 smt::Expr MemRef::noalias(const MemRef &other) const {
@@ -1108,7 +1123,7 @@ smt::Expr MemRef::noalias(const MemRef &other) const {
 }
 
 void MemRef::setWritable(bool writable) {
-  m->setWritable(bid, writable);
+  m->setWritable(elemType, bid, writable);
 }
 
 bool MemRef::isIdentityMap() const {
@@ -1134,11 +1149,13 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
     }
 
     auto subviewLayout = createSubViewLayout(indVars, offsets, strides, sizes);
-    return MemRef(m, elemType, bid, offset, reducedSizes, subviewLayout);
+    return MemRef(m, elemType, bid, offset, reducedSizes, subviewLayout,
+        Expr::mkBool(true));
   } else {
     auto subviewLayout = createSubViewLayout(
         layout.indVars, offsets, strides, sizes);
-    return MemRef(m, elemType, bid, offset, sizes, subviewLayout);
+    return MemRef(m, elemType, bid, offset, sizes, subviewLayout,
+        Expr::mkBool(true));
   }
 }
 
@@ -1157,8 +1174,11 @@ Expr MemRef::conv(const MemRef &input,
   auto outputArray = Expr::mkLambda(idx, outputExpr);
 
   // store output memref
-  auto success = isInBounds() & input.isInBounds() & filter.isInBounds() &
-    noalias(input) & noalias(filter) & storeArray(outputArray, Index::zero(), get1DSize());
+  auto success = isInBounds() & getLiveness() &
+      input.getLiveness() & input.isInBounds() &
+      filter.getLiveness() & filter.isInBounds() &
+      noalias(input) & noalias(filter) &
+      storeArray(outputArray, Index::zero(), get1DSize());
 
   return success;
 }
@@ -1174,9 +1194,11 @@ MemRef MemRef::mkIte(smt::Expr cond,
   auto isTrue = (Expr) cond == Integer::boolTrue();
   auto bid = Expr::mkIte(isTrue, trueValue.bid, falseValue.bid);
   auto offset = Expr::mkIte(isTrue, trueValue.offset, falseValue.offset);
+  auto isViewRef = Expr::mkIte(isTrue, trueValue.isViewRef,
+      falseValue.isViewRef);
   // Assumes that trueValue.layout is equivalent to falseValue.layout.
   return MemRef(trueValue.m, trueValue.elemType,
-      bid, offset, trueValue.dims, trueValue.layout);
+      bid, offset, trueValue.dims, trueValue.layout, isViewRef);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {

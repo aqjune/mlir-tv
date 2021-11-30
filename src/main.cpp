@@ -1,4 +1,5 @@
 #include "abstractops.h"
+#include "debug.h"
 #include "memory.h"
 #include "smt.h"
 #include "vcgen.h"
@@ -9,6 +10,7 @@
 #include "llvm/Support/SourceMgr.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -56,12 +58,17 @@ llvm::cl::opt<int> fp_bits("fp-bits",
   llvm::cl::init(-1), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
-  llvm::cl::desc("Number of memory blocks required to validate translation"),
+  llvm::cl::desc("Number of memory blocks per type required to validate"
+                 " translation"),
   llvm::cl::init(0), llvm::cl::value_desc("number"));
 
 llvm::cl::opt<bool> arg_associative_sum("associative",
   llvm::cl::desc("Assume that floating point add is associative "
                  "(experimental)"),
+  llvm::cl::init(false));
+
+llvm::cl::opt<bool> arg_verbose("verbose",
+  llvm::cl::desc("Be verbose about what's going on"), llvm::cl::Hidden,
   llvm::cl::init(false));
 
 llvm::cl::opt<bool> arg_multiset("multiset",
@@ -111,6 +118,7 @@ int main(int argc, char* argv[]) {
   llvm::EnableDebugBuffering = true;
 
   llvm::cl::ParseCommandLineOptions(argc, argv);
+  setVerbose(arg_verbose.getValue());
 
   smt::setTimeout(arg_smt_to.getValue());
   if (arg_solver.getValue() == smt::ALL || arg_solver.getValue() == smt::Z3)
@@ -133,6 +141,7 @@ int main(int argc, char* argv[]) {
   registry.insert<StandardOpsDialect>();
   registry.insert<AffineDialect>();
   registry.insert<arith::ArithmeticDialect>();
+  registry.insert<bufferization::BufferizationDialect>();
   registry.insert<linalg::LinalgDialect>();
   registry.insert<math::MathDialect>();
   registry.insert<memref::MemRefDialect>();

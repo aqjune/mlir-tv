@@ -22,7 +22,7 @@ public:
 
   bool match(const Expr &expr) const { return (*this)(expr); }
   bool operator()(const Expr &expr) const {
-    e->emplace(std::move(expr));
+    e->emplace(expr);
     return true;
   }
 };

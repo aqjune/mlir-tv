@@ -5,6 +5,7 @@
 #include <variant>
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Support/LLVM.h"
 
 // optional::map from
 // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0798r0.html
@@ -67,3 +68,8 @@ public:
   std::string getReason() const { return reason; }
   auto getObject() const { return obj; }
 };
+
+template<class ValueTy>
+using TypeMap = mlir::DenseMap<mlir::Type, ValueTy>;
+
+std::string to_string(mlir::Type t);
