@@ -975,9 +975,24 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   auto input = st.regs.get<Tensor>(op.input());
   auto weight = st.regs.get<Tensor>(op.weight());
   auto bias = st.regs.get<Tensor>(op.bias());
+  vector<Expr> strides, pad, dilations;
+  for (auto s: op.stride()) {
+    strides.push_back(Index(s.dyn_cast<mlir::IntegerAttr>().getInt()));
+  };
 
-  st.regs.add(op,
-              input.conv(weight,{Index(1),Index(1),Index(1),Index(1)},{Index(1),Index(1),Index(1),Index(1)},ShapedValue::ConvLayout::NHWC_FHWC));
+  for (auto s: op.dilation()) {
+    dilations.push_back(Index(s.dyn_cast<mlir::IntegerAttr>().getInt()));
+  };
+
+  for (auto s: op.pad()) {
+    pad.push_back(Index(s.dyn_cast<mlir::IntegerAttr>().getInt()));
+  };
+
+  assert(strides.size() == 2 && dilations.size() == 2 && pad.size() == 4);
+
+  auto t = input.conv(weight,
+                      strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
+  st.regs.add(op, t);
 
 }
 
