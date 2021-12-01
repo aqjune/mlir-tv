@@ -976,6 +976,7 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   auto weight = st.regs.get<Tensor>(op.weight());
   auto bias = st.regs.get<Tensor>(op.bias());
   vector<Expr> strides, pad, dilations;
+
   for (auto s: op.stride()) {
     strides.push_back(Index(s.dyn_cast<mlir::IntegerAttr>().getInt()));
   };
@@ -989,9 +990,29 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   };
 
   assert(strides.size() == 2 && dilations.size() == 2 && pad.size() == 4);
+  auto elemTy = getElemTy(op.getResult());
 
-  auto t = input.conv(weight,
+  // this input rank should be 4
+  vector<Expr> indVars = Index::boundIndexVars(input.getRank());
+  vector<Expr> inDims = input.getDims();
+
+  vector<Expr> outVars = {indVars[0], indVars[1] - pad[0],
+                            indVars[2] - pad[2], indVars[3]};
+
+  vector<Expr> dims = {inDims[0], inDims[1] + pad[0] + pad[1],
+                            inDims[2] + pad[2] + pad[3], inDims[3]};
+
+  auto cond = indVars[1].uge(pad[0]) & indVars[1].ult(pad[0] + inDims[1]) &
+                indVars[2].uge(pad[2]) & indVars[2].ult(pad[2] + inDims[2]);
+
+  Expr output = Expr::mkIte(cond, input.get(outVars).first,  *getZero(elemTy));
+
+  auto padInput = Tensor::mkLambda(
+                    elemTy, move(dims), move(indVars), output, Expr::mkBool(true));
+
+  auto t = padInput.conv(weight,
                       strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
+
   st.regs.add(op, t);
 
 }
