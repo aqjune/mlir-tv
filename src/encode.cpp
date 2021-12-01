@@ -992,7 +992,7 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   assert(strides.size() == 2 && dilations.size() == 2 && pad.size() == 4);
   auto elemTy = getElemTy(op.getResult());
 
-  // this input rank should be 4
+  // input rank should be 4
   vector<Expr> padInd = Index::boundIndexVars(input.getRank());
   vector<Expr> srcDims = input.getDims();
 
@@ -1005,7 +1005,8 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
                 padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
 
-  Expr output = Expr::mkIte(cond, input.get(srcInd).first, *getZero(elemTy));
+  Expr output = Expr::mkIte(cond, input.get(srcInd).first, *getZero(elemTy))
+                + bias.get({padInd[3]}).first;
   Expr init = Expr::mkIte(cond, Expr::mkBool(true), input.isInitialized(padInd));
 
   auto padInput = Tensor::mkLambda(
