@@ -993,23 +993,23 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   auto elemTy = getElemTy(op.getResult());
 
   // this input rank should be 4
-  vector<Expr> indVars = Index::boundIndexVars(input.getRank());
-  vector<Expr> inDims = input.getDims();
+  vector<Expr> padInd = Index::boundIndexVars(input.getRank());
+  vector<Expr> srcDims = input.getDims();
 
-  vector<Expr> outVars = {indVars[0], indVars[1] - pad[0],
-                            indVars[2] - pad[2], indVars[3]};
+  vector<Expr> srcInd = {padInd[0], padInd[1] - pad[0],
+                            padInd[2] - pad[2], padInd[3]};
 
-  vector<Expr> dims = {inDims[0], inDims[1] + pad[0] + pad[1],
-                            inDims[2] + pad[2] + pad[3], inDims[3]};
+  vector<Expr> padDims = {srcDims[0], srcDims[1] + pad[0] + pad[1],
+                            srcDims[2] + pad[2] + pad[3], srcDims[3]};
 
-  auto cond = indVars[1].uge(pad[0]) & indVars[1].ult(pad[0] + inDims[1]) &
-                indVars[2].uge(pad[2]) & indVars[2].ult(pad[2] + inDims[2]);
+  auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
+                padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
 
-  Expr output = Expr::mkIte(cond, input.get(outVars).first, *getZero(elemTy));
-  Expr init = Expr::mkIte(cond, Expr::mkBool(true), input.isInitialized(indVars));
+  Expr output = Expr::mkIte(cond, input.get(srcInd).first, *getZero(elemTy));
+  Expr init = Expr::mkIte(cond, Expr::mkBool(true), input.isInitialized(padInd));
 
   auto padInput = Tensor::mkLambda(
-                    elemTy, move(dims), move(indVars), output, init);
+                    elemTy, move(padDims), move(padInd), output, init);
 
   auto t = padInput.conv(weight,
                       strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
