@@ -1005,10 +1005,11 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   auto cond = indVars[1].uge(pad[0]) & indVars[1].ult(pad[0] + inDims[1]) &
                 indVars[2].uge(pad[2]) & indVars[2].ult(pad[2] + inDims[2]);
 
-  Expr output = Expr::mkIte(cond, input.get(outVars).first,  *getZero(elemTy));
+  Expr output = Expr::mkIte(cond, input.get(outVars).first, *getZero(elemTy));
+  Expr init = Expr::mkIte(cond, Expr::mkBool(true), input.isInitialized(indVars));
 
   auto padInput = Tensor::mkLambda(
-                    elemTy, move(dims), move(indVars), output, Expr::mkBool(true));
+                    elemTy, move(dims), move(indVars), output, init);
 
   auto t = padInput.conv(weight,
                       strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
