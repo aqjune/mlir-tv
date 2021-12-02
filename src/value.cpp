@@ -276,10 +276,7 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   for (unsigned i = 0; i < getDims().size(); i ++)
     outputIdxs.push_back(Index::var("i" + to_string(i), VarType::BOUND));
 
-  // cubeSize = 
-  // 1. NHWC_HWCF: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
-  // 2. NCHW_FCHW: Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
-  // 3. NHWC_FHWC: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
+  // cubeSize = Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
   vector<Expr> cubeSize;
   switch (convLayout) {
   case ConvLayout::NHWC_HWCF: {
@@ -289,9 +286,9 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
     break;
   }
   case ConvLayout::NCHW_FCHW: {
-    cubeSize.push_back(filter.getDim(1));
     for (unsigned i = 0; i < dim; i++)
       cubeSize.push_back(filter.getDim(i + 2));
+    cubeSize.push_back(filter.getDim(1));
     break;
   }
   case ConvLayout::NHWC_FHWC: {
@@ -303,7 +300,6 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   }
   auto cubeIdx = Index::var("cubeIdx", VarType::BOUND);
   auto cubeIdxs = from1DIdx(cubeIdx, cubeSize);
-
   vector<Expr> filterIdxs;
   vector<Expr> inputIdxs;
   switch (convLayout) {
@@ -324,14 +320,16 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   case ConvLayout::NCHW_FCHW: {
     // filterIdxs: Output_channel, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
     filterIdxs.push_back(outputIdxs[1]);
-    for (auto idx: cubeIdxs) filterIdxs.push_back(idx);
-
+    filterIdxs.push_back(cubeIdxs.back());
+    for (unsigned i = 0; i < cubeIdxs.size() - 1; i++)
+      filterIdxs.push_back(cubeIdxs[i]);
+    
     // inputIdxs: Batch, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
     inputIdxs.push_back(outputIdxs.front());
-    inputIdxs.push_back(cubeIdxs.front()); // Input_channel
+    inputIdxs.push_back(cubeIdxs.back()); // Input_channel
     for (unsigned i = 0; i < dim; i ++)
       inputIdxs.push_back(outputIdxs[i + 2] * strides[i] +
-          cubeIdxs[i + 1] * dilations[i]);
+          cubeIdxs[i] * dilations[i]);
 
     break;
   }
