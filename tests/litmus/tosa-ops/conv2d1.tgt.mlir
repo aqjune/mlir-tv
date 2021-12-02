@@ -1,4 +1,8 @@
-func @conv2d1(%arg0: tensor<1x4x4x4xf32>, %arg1: tensor<8x1x1x4xf32>, %arg2: tensor<8xf32>) -> tensor<1x4x4x8xf32> {
-    %0 = "tosa.conv2d"(%arg0, %arg1, %arg2) {dilation = [1, 1], pad = [0, 0, 0, 0], stride = [1, 1]} : (tensor<1x4x4x4xf32>, tensor<8x1x1x4xf32>, tensor<8xf32>) -> tensor<1x4x4x8xf32>
-    return %0 : tensor<1x4x4x8xf32>
+func @conv(%arg0: tensor<1x225x225x3xf32>, %arg1: tensor<3x3x3x32xf32>) -> tensor<1x112x112x32xf32> {
+    %out = linalg.init_tensor [1,112,112,32] : tensor<1x112x112x32xf32>
+    %0 = linalg.conv_2d_nhwc_hwcf
+      {dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64> }
+       ins(%arg0, %arg1: tensor<1x225x225x3xf32>, tensor<3x3x3x32xf32>)
+      outs(%out: tensor<1x112x112x32xf32>) -> tensor<1x112x112x32xf32>
+    return %0 : tensor<1x112x112x32xf32>
 }
