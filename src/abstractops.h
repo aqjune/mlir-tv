@@ -139,8 +139,8 @@ private:
   smt::FnDecl getSumFn();
   smt::FnDecl getDotFn();
   smt::FnDecl getUltFn();
-  smt::FnDecl getExtendFn();
-  smt::FnDecl getTruncateFn();
+  smt::FnDecl getExtendFn(const AbsFpEncoding &tgt);
+  smt::FnDecl getTruncateFn(const AbsFpEncoding &tgt);
   smt::FnDecl getExpFn();
 
   uint64_t getSignBit() const;

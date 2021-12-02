@@ -102,9 +102,9 @@ void setAbstraction(
   // + 2: reserved for +NaN, +Inf; separately counted because they cannot be
   // included in set<APFloat>
   unsigned floatBits = log2_ceil(floatNonConstsCnt + floatConsts.size() + 2);
-  unsigned doubleBits = log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2);
+  floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
+  floatEnc->addConstants(floatConsts);
 
-  unsigned doubleLimitBits, doublePrecBits;
   if (afc == AbsLevelFpCast::PRECISE) {
     unsigned consts_nonzero_limit = 0;
     unsigned const_nonzero_precs = 0, const_max_nonzero_precs = 0;
@@ -128,10 +128,9 @@ void setAbstraction(
     }
     const_max_nonzero_precs = max(const_nonzero_precs, const_max_nonzero_precs);
 
-    // reserve at least one bit for precision bit
-    // in case the variable has to accept such value
+    // all double variables may have same SVB but have different PBs
     const unsigned min_prec_bitwidth =
-        max(1u, log2_ceil(const_max_nonzero_precs));
+        max(log2_ceil(doubleNonConstsCnt), log2_ceil(const_max_nonzero_precs));
 
     // Decide min_limit_bitwidth.
     // We're not going to simply use log2(consts_nonzero_limit) as limit bit
@@ -139,41 +138,31 @@ void setAbstraction(
     // If limit bit is not zero, precision bits can be reused as floatBits.
     unsigned min_limit_bitwidth;
     const unsigned bitwidth_for_nonzero_limits =
-        log2_ceil(consts_nonzero_limit);
+        max(log2_ceil(consts_nonzero_limit), log2_ceil(doubleNonConstsCnt));
 
     if (bitwidth_for_nonzero_limits > floatBits + min_prec_bitwidth) {
-      // Extend limit bits because many double constants require limit bit to
-      // be set.
+      // Extend limit bits 
+      // because many double constants require limit bit to be set.
       min_limit_bitwidth = 
           bitwidth_for_nonzero_limits - floatBits - min_prec_bitwidth + 1;
     } else {
       // reserve at least one bit for limit bit
-      // in case the variable has to accept such value
+      // for proper Inf/NaN handling
       min_limit_bitwidth = 1;
     }
 
-    unsigned additional_bitwidth;
-    if (doubleBits > floatBits + 2) {
-      additional_bitwidth = doubleBits - floatBits;
-    } else {
-      additional_bitwidth = 2;
-    }
-    const unsigned variable_bitwidth = 
-        additional_bitwidth - min_limit_bitwidth - min_prec_bitwidth;
-
-    // TODO: multiple encoding for possible combinations of limit/prec bits
-    // implement it as for loop of (0..variable_bitwidth)
-    doubleLimitBits = min_limit_bitwidth;
-    doublePrecBits = variable_bitwidth + min_prec_bitwidth;
+    const unsigned doubleLimitBits = min_limit_bitwidth;
+    // 29: mantissa(double) - mantissa(float)
+    // using more than 29 precision bits is unnecessary
+    // because such values do not exist in the real-world double
+    const unsigned doublePrecBits = min(min_prec_bitwidth, 29u);
+    doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
+    doublePrecBits, &*floatEnc, "double");
   } else {
-    doubleLimitBits = 0;
-    doublePrecBits = 0;
+    const unsigned doubleBits = 
+      log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2);
+    doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
   }
-
-  floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
-  floatEnc->addConstants(floatConsts);
-  doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
-      doublePrecBits, &*floatEnc, "double");
   doubleEnc->addConstants(doubleConsts);
 }
 
@@ -275,20 +264,20 @@ FnDecl AbsFpEncoding::getUltFn() {
   return *fp_ultfn;
 }
 
-FnDecl AbsFpEncoding::getExtendFn() {
+FnDecl AbsFpEncoding::getExtendFn(const AbsFpEncoding &tgt) {
   if (!fp_extendfn) {
-    // In the fully abstract world, double and float have the same bitwidth.
-    auto fty = Sort::bvSort(fp_bitwidth);
-    fp_extendfn.emplace({fty}, fty, "fp_extend_" + fn_suffix);
+    auto src_fty = Sort::bvSort(fp_bitwidth);
+    auto tgt_fty = Sort::bvSort(tgt.fp_bitwidth);
+    fp_extendfn.emplace({src_fty}, tgt_fty, "fp_extend_" + fn_suffix);
   }
   return *fp_extendfn;
 }
 
-FnDecl AbsFpEncoding::getTruncateFn() {
+FnDecl AbsFpEncoding::getTruncateFn(const AbsFpEncoding &tgt) {
   if (!fp_truncatefn) {
-    // In the fully abstract world, double and float have the same bitwidth.
-    auto fty = Sort::bvSort(fp_bitwidth);
-    fp_truncatefn.emplace({fty}, fty, "fp_truncate_" + fn_suffix);
+    auto src_fty = Sort::bvSort(fp_bitwidth);
+    auto tgt_fty = Sort::bvSort(tgt.fp_bitwidth);
+    fp_truncatefn.emplace({src_fty}, tgt_fty, "fp_truncate_" + fn_suffix);
   }
   return *fp_truncatefn;
 }
@@ -343,23 +332,26 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         value_id = max(value_id, (uint64_t)1 << value_prec_bitwidth);
         e_value = Expr::mkBV(value_id, value_bitwidth);
         value_id += 1;
-      } else {
-        Expr e_prec = Expr::mkBV(0, value_bit_info.prec_bitwidth);
-        if (casting_info->zero_prec_bits) {
-          // this value will be *floored* to different value,
-          // so assign different smaller_value
-          value_id += 1;
-        } else {
-          // this value will be *floored* to same value,
-          // so do not change smaller_value and increment prec bit.
-          auto itr = prec_offset_map.insert({value_id, 1}).first;
-          uint64_t prec = itr->second;
-          assert(prec < (1ull << value_bit_info.prec_bitwidth));
-          e_prec = Expr::mkBV(prec, value_bit_info.prec_bitwidth);
-          // Increase the next precision bit.
-          itr->second++;
-        }
+      } else if (!casting_info->zero_prec_bits) {
+        // this value will be *floored* to same value,
+        // so do not change smaller_value and increment prec bit.
+        auto itr = prec_offset_map.insert({value_id, 1}).first;
+        uint64_t prec = itr->second;
+        assert(prec < (1ull << value_bit_info.prec_bitwidth));
+        Expr e_prec = Expr::mkBV(prec, value_bit_info.prec_bitwidth);
         e_value = e_value.concat(e_prec);
+        // Increase the next precision bit.
+        itr->second++;
+      } else {
+        // this encoding may not have prec bits
+        if (value_bit_info.prec_bitwidth > 0) {
+          Expr e_prec = Expr::mkBV(0, value_bit_info.prec_bitwidth);
+          e_value = e_value.concat(e_prec);
+        }
+
+        // this value will be *floored* to different value,
+        // so assign different smaller_value
+        value_id += 1;
       }
     }
 
@@ -688,9 +680,10 @@ Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
 Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   usedOps.fpCastRound = true;
 
-  if (value_bitwidth == tgt.value_bitwidth) {
+  if (tgt.value_bit_info.limit_bitwidth == 0 
+      && tgt.value_bit_info.prec_bitwidth == 0) {
     // Fully abstract encoding 
-    return getExtendFn().apply(f);
+    return getExtendFn(tgt).apply(f);
   }
 
   assert(value_bitwidth < tgt.value_bitwidth &&
@@ -703,10 +696,13 @@ Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   auto sign_bit = f.extract(fp_bitwidth - 1, value_bitwidth);
   auto limit_zero = Expr::mkBV(0, tgt.value_bit_info.limit_bitwidth);
   auto value_bits = f.extract(value_bitwidth - 1, 0);
-  auto prec_zero = Expr::mkBV(0, tgt.value_bit_info.prec_bitwidth);
-
-  auto extended_float = sign_bit.concat(limit_zero).concat(value_bits)
-      .concat(prec_zero);
+  
+  auto extended_float = sign_bit.concat(limit_zero).concat(value_bits);
+  if (tgt.value_bit_info.prec_bitwidth > 0) {
+    auto prec_zero = Expr::mkBV(0, tgt.value_bit_info.prec_bitwidth);
+    extended_float = extended_float.concat(prec_zero);
+  }
+      
   assert(extended_float.bitwidth() == tgt.sort().bitwidth());
   return Expr::mkIte(isnan(f), tgt.nan(),
       Expr::mkIte(f == infinity(), tgt.infinity(),
@@ -717,9 +713,9 @@ Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
 Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   usedOps.fpCastRound = true;
 
-  if (value_bitwidth == tgt.value_bitwidth) {
+  if (value_bit_info.limit_bitwidth == 0 && value_bit_info.prec_bitwidth == 0) {
     // Fully abstract encoding 
-    return getExtendFn().apply(f);
+    return getExtendFn(tgt).apply(f);
   }
 
   assert(value_bitwidth > tgt.value_bitwidth &&
