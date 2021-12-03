@@ -1528,6 +1528,7 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
+  
   vector<Index> offsets, sizes, strides;
   auto src = st.regs.get<Tensor>(op.getOperand(0));
   auto tgt = st.regs.get<Tensor>(op.getOperand(1));
