@@ -151,11 +151,16 @@ void setAbstraction(
       min_limit_bitwidth = 1;
     }
 
-    const unsigned doubleLimitBits = min_limit_bitwidth;
     // 29: mantissa(double) - mantissa(float)
-    // using more than 29 precision bits is unnecessary
+    // Using more than 29 precision bits is unnecessary
     // because such values do not exist in the real-world double
     const unsigned doublePrecBits = min(min_prec_bitwidth, 29u);
+    // 32: bitwidth(double) - bitwidth(float)
+    // Using more than 32 (limit + precision) bits is unnecessary
+    // because such values do not exist in the real-world double
+    // And this value will never overflow, because doublePrecBits is always <=29
+    const unsigned doubleLimitBits = min(min_limit_bitwidth,
+                                          32u - doublePrecBits);
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
     doublePrecBits, &*floatEnc, "double");
   } else {
