@@ -207,7 +207,6 @@ static Results checkRefinement(
     }
   };
 
-  useAllLogic |= st_src.hasConstArray || st_tgt.hasConstArray;
   const char *logic = useAllLogic ? SMT_LOGIC_ALL :
       ((st_src.hasQuantifier || st_tgt.hasQuantifier) ?
         SMT_LOGIC : SMT_LOGIC_QF);
@@ -416,7 +415,6 @@ static void checkIsSrcAlwaysUB(
   auto st = encodeFinalState(vinput, move(initMemory), false, true,
       args_dummy, preconds);
 
-  useAllLogic |= st.hasConstArray;
   auto logic = useAllLogic ? SMT_LOGIC_ALL :
       (st.hasQuantifier ? SMT_LOGIC : SMT_LOGIC_QF);
   Solver s(logic);

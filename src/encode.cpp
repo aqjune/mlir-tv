@@ -579,9 +579,6 @@ void encodeOp(State &st, mlir::arith::ConstantOp op, bool) {
     auto te = elemAttrToTensor(
         attr.cast<mlir::ElementsAttr>(), ty.cast<mlir::RankedTensorType>());
 
-    if (attr.isa<mlir::SparseElementsAttr>())
-      st.hasConstArray = true;
-
     st.regs.add(op, move(te));
 
   } else if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>()) {
@@ -868,8 +865,6 @@ void encodeOp(State &st, mlir::tosa::ConstOp op, bool) {
     throw UnsupportedException(op.getOperation(), "Unsupported attribute");
 
   st.regs.add(op, elemAttrToTensor(eattr, dty));
-  if (eattr.isa<mlir::SparseElementsAttr>())
-    st.hasConstArray = true;
 }
 
 template<>
