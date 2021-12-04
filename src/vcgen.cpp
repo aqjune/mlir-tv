@@ -1,4 +1,5 @@
 #include "abstractops.h"
+#include "debug.h"
 #include "encode.h"
 #include "memory.h"
 #include "print.h"
@@ -210,6 +211,7 @@ static Results checkRefinement(
   const char *logic = useAllLogic ? SMT_LOGIC_ALL :
       ((st_src.hasQuantifier || st_tgt.hasQuantifier) ?
         SMT_LOGIC : SMT_LOGIC_QF);
+  verbose("checkRefinement") << "use logic: " << logic << "\n";
 
   { // 1. Check UB
     Solver s(logic);
@@ -417,6 +419,8 @@ static void checkIsSrcAlwaysUB(
 
   auto logic = useAllLogic ? SMT_LOGIC_ALL :
       (st.hasQuantifier ? SMT_LOGIC : SMT_LOGIC_QF);
+  verbose("checkIsSrcAlwaysUB") << "use logic: " << logic << "\n";
+
   Solver s(logic);
   auto not_ub = st.isWellDefined().simplify();
   auto smtres = solve(s, exprAnd(preconds) & not_ub, vinput.dumpSMTPath,
