@@ -1528,6 +1528,7 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
+  
   vector<Index> offsets, sizes, strides;
   auto src = st.regs.get<Tensor>(op.getOperand(0));
   auto tgt = st.regs.get<Tensor>(op.getOperand(1));
@@ -1647,6 +1648,20 @@ void encodeOp(State &st, mlir::tosa::ExpOp op, bool) {
 
   encodeUnaryOp(st, op, arg0,
       [](auto &&a) { return Float::exp(a); }, {});
+}
+
+template<>
+void encodeOp(State &st, mlir::tosa::ReduceSumOp op, bool) {
+  auto input = op.input();
+  auto inputTy = input.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!inputTy)
+    throw UnsupportedException(op.getOperation(), "Unsupported operand type");
+
+  auto t = st.regs.get<Tensor>(input);
+  uint64_t axis = op.axis();
+
+  st.wellDefined(op.getOperation(), t.isFullyInitialized());
+  st.regs.add(op, t.sum(axis));
 }
 
 template<>
@@ -2589,6 +2604,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::ExpOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ReduceSumOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReshapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::SubOp, encodeMemWriteOps);

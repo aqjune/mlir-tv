@@ -620,6 +620,30 @@ Expr Tensor::sum() const {
       aop::intSum(arr, get1DSize());
 }
 
+Tensor Tensor::sum(unsigned axis) const {
+  auto indVars = Index::boundIndexVars(getRank());
+
+  vector<Expr> ofs; // Offsets for the 1-dim array to do summation
+  ofs.insert(ofs.end(), indVars.begin(), indVars.begin() + axis);
+  ofs.insert(ofs.end(), Index(0));
+  ofs.insert(ofs.end(), indVars.begin() + axis + 1, indVars.end());
+
+  vector<Expr> subtensorSz;
+  vector<Expr> newSizes; // Dimension sizes of the final tensor
+  for (int i = 0; i < getRank(); ++i) {
+    subtensorSz.push_back(i == axis ? getDim(i) : Index(1));
+    newSizes.push_back(i == axis ? Index(1) : getDim(i));
+  }
+
+  Expr row = to1DArrayWithOfs(ofs, subtensorSz);
+  Expr summation = elemType.isa<mlir::FloatType>() ?
+      aop::getFpEncoding(elemType).sum(row, getDim(axis)) :
+      aop::intSum(row, getDim(axis));
+
+  return Tensor::mkInitializedLambda(elemType,
+      move(newSizes), move(indVars), summation);
+}
+
 pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
   assert(elemType == other.elemType);
 
