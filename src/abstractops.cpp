@@ -2,6 +2,7 @@
 #include "simplevalue.h"
 #include "smt.h"
 #include "utils.h"
+#include "value.h"
 #include <map>
 
 using namespace smt;
@@ -225,6 +226,7 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_addfn.reset();
   fp_mulfn.reset();
   fp_ultfn.reset();
+  fp_hashfn.reset();
   fp_sum_relations.clear();
 }
 
@@ -300,6 +302,33 @@ FnDecl AbsFpEncoding::getExpFn() {
     fp_expfn.emplace({fty}, fty, "fp_exp_" + fn_suffix);
   }
   return *fp_expfn;
+}
+
+FnDecl AbsFpEncoding::getHashFn() {
+  if (!fp_hashfn) {
+    // In the fully abstract world, double and float have the same bitwidth.
+    auto fty = Sort::bvSort(fp_bitwidth);
+    fp_hashfn.emplace(fty, Sort::bvSort(getHashRangeBits()), "fp_hash");
+  }
+  return *fp_hashfn;
+}
+
+size_t AbsFpEncoding::getHashRangeBits() {
+  uint64_t numRelations = fp_sum_relations.size();
+  uint64_t maxLength = 0;
+  for (auto &rel: fp_sum_relations) {
+    auto expr = get<1>(rel);
+    uint64_t length;
+    if (!expr.isUInt(length))
+      length = Tensor::MAX_TENSOR_SIZE;
+    if (maxLength < length)
+      maxLength = length;
+  }
+
+  size_t BITS = 0;
+  uint64_t bounds = numRelations * numRelations * maxLength;
+  for (uint64_t count = 1; count < bounds; count <<= 1, BITS ++);
+  return BITS;
 }
 
 uint64_t AbsFpEncoding::getSignBit() const {
@@ -750,7 +779,7 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
         truncated_float.simplify()))));
 }
 
-Expr AbsFpEncoding::getFpAssociativePrecondition() const {
+Expr AbsFpEncoding::getFpAssociativePrecondition() {
   if (useMultiset) {
     // precondition between `bag equality <-> assoc_sumfn`
     Expr precond = Expr::mkBool(true);
@@ -776,9 +805,7 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() const {
       uint64_t alen, blen;
       if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
 
-      auto domainSort = a.select(Index(0)).sort();
-      FnDecl hashfn(domainSort, Index::sort(), "fp_hash");
-
+      auto hashfn = getHashFn();
       auto aVal = hashfn.apply(a.select(Index(0)));
       for (unsigned k = 1; k < alen; k ++)
         aVal = aVal + hashfn.apply(a.select(Index(k)));
