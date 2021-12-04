@@ -191,13 +191,12 @@ AbsFpEncoding &getFpEncoding(mlir::Type ty) {
 
 AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned smaller_value_bw, unsigned prec_bw,
-      AbsFpEncoding* smaller_fpty_enc, std::string &&fn_suffix)
+       std::string &&fn_suffix)
      :semantics(semantics), fn_suffix(move(fn_suffix)) {
   assert(smaller_value_bw > 0);
   // BWs for casting
   value_bit_info = { limit_bw, smaller_value_bw, prec_bw };
   value_bitwidth = value_bit_info.get_value_bitwidth();
-  this->smaller_fpty_enc = smaller_fpty_enc;
 
   fp_bitwidth = SIGN_BITS + value_bitwidth;
 
