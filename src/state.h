@@ -77,6 +77,7 @@ public:
   std::vector<ValueTy> retValues;
 
   bool hasQuantifier;
+  bool hasConstArray;
   std::shared_ptr<Memory> m;
 
   State(std::unique_ptr<Memory> &&initMem);

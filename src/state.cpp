@@ -87,7 +87,8 @@ State::LinalgGenericScope::LinalgGenericScope(
 }
 
 State::State(unique_ptr<Memory> &&initMem):
-  precond(Expr::mkBool(true)), hasQuantifier(false), m(move(initMem)) {}
+  precond(Expr::mkBool(true)), hasQuantifier(false), hasConstArray(false),
+  m(move(initMem)) {}
 
 void State::addPrecondition(smt::Expr &&e) {
   precond = precond & e;

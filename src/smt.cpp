@@ -889,8 +889,8 @@ Expr Expr::mkLambda(const vector<Expr> &vars, const Expr &body) {
 
 Expr Expr::mkSplatArray(const Sort &domain, const Expr &splatElem) {
   Expr e;
-  SET_Z3(e, fupdate2(sctx.z3, domain.z3, [&splatElem](auto &ctx, auto &sortz3){
-    return z3::lambda(ctx.constant("i", sortz3), *splatElem.z3);
+  SET_Z3(e, fmap(splatElem.z3, [&](auto &e){
+    return z3::const_array(*domain.z3, e);
   }));
 
 #ifdef SOLVER_CVC5
