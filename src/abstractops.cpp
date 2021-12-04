@@ -777,7 +777,7 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() const {
       if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
 
       auto domainSort = a.select(Index(0)).sort();
-      FnDecl hashfn(domainSort, Index::sort(), freshName("fp_hash"));
+      FnDecl hashfn(domainSort, Index::sort(), "fp_hash");
 
       auto aVal = hashfn.apply(a.select(Index(0)));
       for (unsigned k = 1; k < alen; k ++)
