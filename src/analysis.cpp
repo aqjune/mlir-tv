@@ -166,26 +166,6 @@ void analyzeOp(mlir::tosa::ConstOp op, AnalysisResult &res) {
 }
 
 template<>
-void analyzeOp(mlir::linalg::DotOp op, AnalysisResult &res) {
-  res.isElementwiseFPOps = false;
-}
-
-template<>
-void analyzeOp(mlir::linalg::MatmulOp op, AnalysisResult &res) {
-  res.isElementwiseFPOps = false;
-}
-
-template<>
-void analyzeOp(mlir::linalg::Conv2DNchwFchwOp op, AnalysisResult &res) {
-  res.isElementwiseFPOps = false;
-}
-
-template<>
-void analyzeOp(mlir::linalg::Conv2DNhwcHwcfOp op, AnalysisResult &res) {
-  res.isElementwiseFPOps = false;
-}
-
-template<>
 void analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
   // If generic loop has reduction loops, then result is not elementwise
   auto indexingMaps = op.indexing_maps().getValue();
@@ -221,10 +201,14 @@ static void analyzeBlock(
       analyzeVariable(result, res);
     }
 
-    ANALYZE(op, mlir::linalg::DotOp, res);
-    ANALYZE(op, mlir::linalg::MatmulOp, res);
-    ANALYZE(op, mlir::linalg::Conv2DNchwFchwOp, res);
-    ANALYZE(op, mlir::linalg::Conv2DNhwcHwcfOp, res);
+    if (mlir::isa<mlir::linalg::DotOp>(op) ||
+        mlir::isa<mlir::linalg::MatmulOp>(op) ||
+        mlir::isa<mlir::linalg::Conv2DNchwFchwOp>(op) ||
+        mlir::isa<mlir::linalg::Conv2DNhwcHwcfOp>(op) ||
+        mlir::isa<mlir::tosa::Conv2DOp>(op)) {
+      res.isElementwiseFPOps = false;
+      continue;
+    }
 
     // Detect global vars.
     // # fps & blocks are already increased by the loop above.
