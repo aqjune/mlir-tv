@@ -2,6 +2,7 @@
 #include "simplevalue.h"
 #include "smt.h"
 #include "utils.h"
+#include "value.h"
 #include <map>
 
 using namespace smt;
@@ -218,6 +219,7 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_addfn.reset();
   fp_mulfn.reset();
   fp_ultfn.reset();
+  fp_hashfn.reset();
   fp_sum_relations.clear();
 }
 
@@ -288,11 +290,38 @@ FnDecl AbsFpEncoding::getTruncateFn(const AbsFpEncoding &tgt) {
 
 FnDecl AbsFpEncoding::getExpFn() {
   if (!fp_expfn) {
-    // In the fully abstract world, double and float have the same bitwidth.
     auto fty = Sort::bvSort(fp_bitwidth);
     fp_expfn.emplace({fty}, fty, "fp_exp_" + fn_suffix);
   }
   return *fp_expfn;
+}
+
+FnDecl AbsFpEncoding::getHashFnForAddAssoc() {
+  if (!fp_hashfn) {
+    auto fty = Sort::bvSort(fp_bitwidth);
+    fp_hashfn.emplace(fty, Sort::bvSort(getHashRangeBits()),
+        "fp_hash_" + fn_suffix);
+  } else {
+    // Hash range bits must not be changed.
+    assert(fp_hashfn->getRange().bitwidth() == getHashRangeBits());
+  }
+  return *fp_hashfn;
+}
+
+size_t AbsFpEncoding::getHashRangeBits() const {
+  uint64_t numRelations = fp_sum_relations.size();
+  uint64_t maxLength = 0;
+  for (auto &rel: fp_sum_relations) {
+    auto expr = get<1>(rel);
+    uint64_t length;
+    if (!expr.isUInt(length))
+      length = Tensor::MAX_TENSOR_SIZE;
+    if (maxLength < length)
+      maxLength = length;
+  }
+
+  uint64_t bounds = numRelations * numRelations * maxLength;
+  return max((uint64_t)1, log2_ceil(bounds));
 }
 
 uint64_t AbsFpEncoding::getSignBit() const {
@@ -750,7 +779,7 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
         truncated_float.simplify()))));
 }
 
-Expr AbsFpEncoding::getFpAssociativePrecondition() const {
+Expr AbsFpEncoding::getFpAssociativePrecondition() {
   if (useMultiset) {
     // precondition between `bag equality <-> assoc_sumfn`
     Expr precond = Expr::mkBool(true);
@@ -776,9 +805,7 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() const {
       uint64_t alen, blen;
       if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
 
-      auto domainSort = a.select(Index(0)).sort();
-      FnDecl hashfn(domainSort, Index::sort(), freshName("fp_hash"));
-
+      auto hashfn = getHashFnForAddAssoc();
       auto aVal = hashfn.apply(a.select(Index(0)));
       for (unsigned k = 1; k < alen; k ++)
         aVal = aVal + hashfn.apply(a.select(Index(k)));

@@ -102,6 +102,7 @@ private:
   std::optional<smt::FnDecl> fp_extendfn;
   std::optional<smt::FnDecl> fp_truncatefn;
   std::optional<smt::FnDecl> fp_expfn;
+  std::optional<smt::FnDecl> fp_hashfn;
   std::string fn_suffix;
 
 private:
@@ -139,7 +140,9 @@ private:
   smt::FnDecl getExtendFn(const AbsFpEncoding &tgt);
   smt::FnDecl getTruncateFn(const AbsFpEncoding &tgt);
   smt::FnDecl getExpFn();
+  smt::FnDecl getHashFnForAddAssoc();
 
+  size_t getHashRangeBits() const;
   uint64_t getSignBit() const;
 
 public:
@@ -163,7 +166,7 @@ public:
   smt::Expr fult(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
-  smt::Expr getFpAssociativePrecondition() const;
+  smt::Expr getFpAssociativePrecondition();
 
 private:
   smt::Expr multisetSum(const smt::Expr &a, const smt::Expr &n);
