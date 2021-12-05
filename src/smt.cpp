@@ -219,7 +219,7 @@ FnDecl::FnDecl(const Sort &domain, const Sort &range, string &&name):
 FnDecl::FnDecl(
     const vector<Sort> &domain,
     const Sort &range,
-    string &&name) {
+    string &&name): range(range) {
   IF_Z3_ENABLED(if (range.z3) {
     z3 = sctx.z3->function(name.c_str(), toZ3SortVector(domain), *range.z3);
   });
@@ -241,6 +241,10 @@ Expr FnDecl::apply(const std::vector<Expr> &args) const {
 
 Expr FnDecl::apply(const Expr &arg) const {
   return apply(vector{arg});
+}
+
+Sort FnDecl::getRange() const {
+  return range;
 }
 
 

@@ -297,17 +297,20 @@ FnDecl AbsFpEncoding::getExpFn() {
   return *fp_expfn;
 }
 
-FnDecl AbsFpEncoding::getHashFn() {
+FnDecl AbsFpEncoding::getHashFnForAddAssoc() {
   if (!fp_hashfn) {
     // In the fully abstract world, double and float have the same bitwidth.
     auto fty = Sort::bvSort(fp_bitwidth);
     fp_hashfn.emplace(fty, Sort::bvSort(getHashRangeBits()),
         "fp_hash_" + fn_suffix);
+  } else {
+    // Hash range bits must not be changed.
+    assert(fp_hashfn->getRange().bitwidth() == getHashRangeBits());
   }
   return *fp_hashfn;
 }
 
-size_t AbsFpEncoding::getHashRangeBits() {
+size_t AbsFpEncoding::getHashRangeBits() const {
   uint64_t numRelations = fp_sum_relations.size();
   uint64_t maxLength = 0;
   for (auto &rel: fp_sum_relations) {
@@ -320,7 +323,7 @@ size_t AbsFpEncoding::getHashRangeBits() {
   }
 
   uint64_t bounds = numRelations * numRelations * maxLength;
-  return log2_ceil(bounds);
+  return max((uint64_t)1, log2_ceil(bounds));
 }
 
 uint64_t AbsFpEncoding::getSignBit() const {
@@ -804,7 +807,7 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
       uint64_t alen, blen;
       if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
 
-      auto hashfn = getHashFn();
+      auto hashfn = getHashFnForAddAssoc();
       auto aVal = hashfn.apply(a.select(Index(0)));
       for (unsigned k = 1; k < alen; k ++)
         aVal = aVal + hashfn.apply(a.select(Index(k)));

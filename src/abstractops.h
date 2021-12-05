@@ -140,9 +140,9 @@ private:
   smt::FnDecl getExtendFn(const AbsFpEncoding &tgt);
   smt::FnDecl getTruncateFn(const AbsFpEncoding &tgt);
   smt::FnDecl getExpFn();
-  smt::FnDecl getHashFn();
+  smt::FnDecl getHashFnForAddAssoc();
 
-  size_t getHashRangeBits();
+  size_t getHashRangeBits() const;
   uint64_t getSignBit() const;
 
 public:

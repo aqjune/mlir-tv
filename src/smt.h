@@ -200,22 +200,6 @@ public:
   friend matchers::Matcher;
 };
 
-class FnDecl : private Object<T_Z3(z3::func_decl), T_CVC5(cvc5::api::Term)> {
-private:
-  FnDecl() {}
-
-public:
-  FnDecl(const Sort &domain, const Sort &range, std::string &&name);
-  FnDecl(const std::vector<Sort> &domain, const Sort &range,
-         std::string &&name);
-
-  Expr apply(const std::vector<Expr> &args) const;
-  Expr apply(const Expr &arg) const;
-  Expr operator()(const Expr &arg) const { return apply(arg); }
-
-  friend Expr;
-};
-
 class Sort : private Object<T_Z3(z3::sort), T_CVC5(cvc5::api::Sort)> {
 private:
   Sort() {}
@@ -239,6 +223,24 @@ public:
 
   friend Expr;
   friend FnDecl;
+};
+
+class FnDecl : private Object<T_Z3(z3::func_decl), T_CVC5(cvc5::api::Term)> {
+private:
+  FnDecl() {}
+  Sort range;
+
+public:
+  FnDecl(const Sort &domain, const Sort &range, std::string &&name);
+  FnDecl(const std::vector<Sort> &domain, const Sort &range,
+         std::string &&name);
+
+  Expr apply(const std::vector<Expr> &args) const;
+  Expr apply(const Expr &arg) const;
+  Expr operator()(const Expr &arg) const { return apply(arg); }
+  Sort getRange() const;
+
+  friend Expr;
 };
 
 class CheckResult : private Object<T_Z3(z3::check_result),
