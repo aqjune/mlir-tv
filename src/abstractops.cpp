@@ -290,7 +290,6 @@ FnDecl AbsFpEncoding::getTruncateFn(const AbsFpEncoding &tgt) {
 
 FnDecl AbsFpEncoding::getExpFn() {
   if (!fp_expfn) {
-    // In the fully abstract world, double and float have the same bitwidth.
     auto fty = Sort::bvSort(fp_bitwidth);
     fp_expfn.emplace({fty}, fty, "fp_exp_" + fn_suffix);
   }
@@ -299,7 +298,6 @@ FnDecl AbsFpEncoding::getExpFn() {
 
 FnDecl AbsFpEncoding::getHashFnForAddAssoc() {
   if (!fp_hashfn) {
-    // In the fully abstract world, double and float have the same bitwidth.
     auto fty = Sort::bvSort(fp_bitwidth);
     fp_hashfn.emplace(fty, Sort::bvSort(getHashRangeBits()),
         "fp_hash_" + fn_suffix);
