@@ -90,8 +90,6 @@ private:
   };
   ValueBitInfo value_bit_info;
 
-  AbsFpEncoding* smaller_fpty_enc;
-
   std::vector<std::tuple<smt::Expr, smt::Expr, smt::Expr>> fp_sum_relations;
 
   // These are lazily created.
@@ -110,19 +108,18 @@ private:
 private:
   AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned smaller_value_bw, unsigned prec_bw,
-      AbsFpEncoding* smaller_fpty_enc, std::string &&fn_suffix);
+      std::string &&fn_suffix);
 
 public:
   AbsFpEncoding(const llvm::fltSemantics &semantics, unsigned value_bw,
       std::string &&fn_suffix)
-      : AbsFpEncoding(semantics, 0u, value_bw, 0u, nullptr,
-        std::move(fn_suffix)) {}
+      : AbsFpEncoding(semantics, 0u, value_bw, 0u, std::move(fn_suffix)) {}
   // Use smaller_fpty_enc's value_bv_bits to calculate this type's value_bv_bits
   AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned prec_bw, AbsFpEncoding* smaller_fpty_enc,
       std::string &&fn_suffix)
       : AbsFpEncoding(semantics, limit_bw, smaller_fpty_enc->value_bitwidth,
-        prec_bw, smaller_fpty_enc, std::move(fn_suffix)) {}
+        prec_bw, std::move(fn_suffix)) {}
 
   smt::Sort sort() const {
     return smt::Sort::bvSort(fp_bitwidth);
@@ -140,8 +137,8 @@ private:
   smt::FnDecl getSumFn();
   smt::FnDecl getDotFn();
   smt::FnDecl getUltFn();
-  smt::FnDecl getExtendFn();
-  smt::FnDecl getTruncateFn();
+  smt::FnDecl getExtendFn(const AbsFpEncoding &tgt);
+  smt::FnDecl getTruncateFn(const AbsFpEncoding &tgt);
   smt::FnDecl getExpFn();
   smt::FnDecl getHashFn();
 

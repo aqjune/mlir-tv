@@ -85,7 +85,8 @@ public:
 
   enum class ConvLayout {
     NHWC_HWCF, // image: nhwc, filter: hwcf, output: nhwf
-    NCHW_FCHW  // image: nchw, filter: fchw, output: nfhw
+    NCHW_FCHW, // image: nchw, filter: fchw, output: nfhw
+    NHWC_FHWC  // image: nhwc, filter: fhwc, output: nhwf
   };
 
 protected:
@@ -194,6 +195,12 @@ public:
 
   smt::Expr dot(const Tensor &b) const;
   smt::Expr sum() const;
+  // Equivalent to tosa.reduce_sum
+  // If this is a <N1 x N2 x ...> tensor, return a new tensor whose size at
+  // the axis dimension is 1 and the corresponding elements contain summations
+  // of elements.
+  // Note that sum does not decrement the rank.
+  Tensor sum(unsigned axis) const;
 
   operator smt::Expr() const { return arr; }
 
