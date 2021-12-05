@@ -272,9 +272,10 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   assert(getDims().size() > 2);
   auto dim = getDims().size() - 2;
 
-  vector<Expr> outputIdxs;
-  for (unsigned i = 0; i < getDims().size(); i ++)
-    outputIdxs.push_back(Index::var("i" + to_string(i), VarType::BOUND));
+  vector<Expr> outputIdxs = Index::boundIndexVars(getDims().size());
+  // output's dim sizes will be encoded by Tensor::conv.
+  // For MemRef::conv, dim sizes are implicitly encoded in the inbounds
+  // checking.
 
   // cubeSize = Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
   vector<Expr> cubeSize;
@@ -299,9 +300,11 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   }
   }
   auto cubeIdx = Index::var("cubeIdx", VarType::BOUND);
+  // (Dim_0, Dim_1, Dim_{n-1}, Input_channel)
   auto cubeIdxs = from1DIdx(cubeIdx, cubeSize);
   vector<Expr> filterIdxs;
   vector<Expr> inputIdxs;
+
   switch (convLayout) {
   case ConvLayout::NHWC_HWCF: {
     // filterIdxs: Dim_0, Dim_1, ... Dim_{n-1}, Input_channel, Output_channel
@@ -529,10 +532,10 @@ Tensor Tensor::conv(const Tensor &filter,
   //     sum_{z[0], ..., z[N-1], q}
   //         filter[z[0], ..., z[N-1], q, k] *
   //         input[b,
-  //                      x[0]*strides[0] + dilation_rate[0]*z[0],
-  //                      ...,
-  //                      x[N-1]*strides[N-1] + dilation_rate[N-1]*z[N-1],
-  //                      q]
+  //               x[0]*strides[0] + dilation_rate[0]*z[0],
+  //               ...,
+  //               x[N-1]*strides[N-1] + dilation_rate[N-1]*z[N-1],
+  //               q]
   // So we can calculate output dims bounds as follow. (Assuming zero based
   // index)
   // x[0]*strides[0] + dilation_rate[0]*z[0] < Original_Dim
