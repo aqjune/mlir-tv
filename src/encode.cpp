@@ -215,6 +215,15 @@ vector<ValTy> getFromMixedOps(
 }
 
 
+template<class ValTy>
+vector<Expr> getFromArrayAttr(const mlir::ArrayAttr &attr) {
+  vector<Expr> vec;
+  for (auto s: attr) {
+    vec.push_back(ValTy(s.dyn_cast<mlir::IntegerAttr>().getInt()));
+  }
+  return vec;
+}
+
 
 template<class T>
 optional<Expr> encodeAffineExpr(
@@ -972,22 +981,19 @@ void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
+  // input's dim sizes = [N, H, W, C]
   auto input = st.regs.get<Tensor>(op.input());
+  // weight's dim sizes = [F, H, W, C]
   auto weight = st.regs.get<Tensor>(op.weight());
+  // bias: a 1-dim array whose size is F
   auto bias = st.regs.get<Tensor>(op.bias());
-  vector<Expr> strides, pad, dilations;
 
-  for (auto s: op.stride()) {
-    strides.push_back(Index(s.dyn_cast<mlir::IntegerAttr>().getInt()));
-  };
-
-  for (auto s: op.dilation()) {
-    dilations.push_back(Index(s.dyn_cast<mlir::IntegerAttr>().getInt()));
-  };
-
-  for (auto s: op.pad()) {
-    pad.push_back(Index(s.dyn_cast<mlir::IntegerAttr>().getInt()));
-  };
+  // strides = [strides_y, strides_x]
+  vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
+  // pad = [top, bottom, left, right], filled with zero
+  vector<Expr> pad = getFromArrayAttr<Index>(op.pad());
+  // dilations = [dilations_y, dilations_x]
+  vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
 
   assert(strides.size() == 2 && dilations.size() == 2 && pad.size() == 4);
   auto elemTy = getElemTy(op.getResult());
@@ -1010,7 +1016,6 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
 
   auto padInput = Tensor::mkInitializedLambda(
                     elemTy, move(padDims), move(padInd), output);
-
 
   auto t = padInput.conv(weight,
                       strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
@@ -2654,6 +2659,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::BitwiseXorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConcatOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::Conv2DOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ExpOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
@@ -2663,7 +2669,6 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::SubOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TransposeOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tosa::Conv2DOp, encodeMemWriteOps);
 
     throw UnsupportedException(&op);
   }
