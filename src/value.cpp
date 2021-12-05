@@ -264,17 +264,20 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   //   input: Batch_size x Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
   //   filter: Output_channel x Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
   //   output: Batch_size x Output_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
+  // 3. NHWC_FHWC:
+  //   input: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
+  //   filter: Output_channel x Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
+  //   output: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Output_channel
   assert(getDims().size() == filter.getDims().size());
   assert(getDims().size() > 2);
   auto dim = getDims().size() - 2;
 
-  vector<Expr> outputIdxs;
-  for (unsigned i = 0; i < getDims().size(); i ++)
-    outputIdxs.push_back(Index::var("i" + to_string(i), VarType::BOUND));
+  vector<Expr> outputIdxs = Index::boundIndexVars(getDims().size());
+  // output's dim sizes will be encoded by Tensor::conv.
+  // For MemRef::conv, dim sizes are implicitly encoded in the inbounds
+  // checking.
 
-  // cubeSize = 
-  // 1. NHWC_HWCF: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
-  // 2. NCHW_FCHW: Input_channel x Dim_0 x Dim_1 .. x Dim_{n-1}
+  // cubeSize = Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
   vector<Expr> cubeSize;
   switch (convLayout) {
   case ConvLayout::NHWC_HWCF: {
@@ -284,17 +287,24 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
     break;
   }
   case ConvLayout::NCHW_FCHW: {
-    cubeSize.push_back(filter.getDim(1));
     for (unsigned i = 0; i < dim; i++)
       cubeSize.push_back(filter.getDim(i + 2));
+    cubeSize.push_back(filter.getDim(1));
+    break;
+  }
+  case ConvLayout::NHWC_FHWC: {
+    for (unsigned i = 0; i < dim; i++)
+      cubeSize.push_back(filter.getDim(i + 1));
+    cubeSize.push_back(filter.getDim(dim + 1));
     break;
   }
   }
   auto cubeIdx = Index::var("cubeIdx", VarType::BOUND);
+  // (Dim_0, Dim_1, Dim_{n-1}, Input_channel)
   auto cubeIdxs = from1DIdx(cubeIdx, cubeSize);
-
   vector<Expr> filterIdxs;
   vector<Expr> inputIdxs;
+
   switch (convLayout) {
   case ConvLayout::NHWC_HWCF: {
     // filterIdxs: Dim_0, Dim_1, ... Dim_{n-1}, Input_channel, Output_channel
@@ -313,14 +323,30 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   case ConvLayout::NCHW_FCHW: {
     // filterIdxs: Output_channel, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
     filterIdxs.push_back(outputIdxs[1]);
+    filterIdxs.push_back(cubeIdxs.back());
+    for (unsigned i = 0; i < cubeIdxs.size() - 1; i++)
+      filterIdxs.push_back(cubeIdxs[i]);
+    
+    // inputIdxs: Batch, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
+    inputIdxs.push_back(outputIdxs.front());
+    inputIdxs.push_back(cubeIdxs.back()); // Input_channel
+    for (unsigned i = 0; i < dim; i ++)
+      inputIdxs.push_back(outputIdxs[i + 2] * strides[i] +
+          cubeIdxs[i] * dilations[i]);
+
+    break;
+  }
+  case ConvLayout::NHWC_FHWC: {
+    // filterIdxs: Output_channel, Dim_0, Dim_1, ... Dim_{n-1}, Input_channel
+    filterIdxs.push_back(outputIdxs.back());
     for (auto idx: cubeIdxs) filterIdxs.push_back(idx);
 
     // inputIdxs: Batch, Input_channel, Dim_0, Dim_1, ... Dim_{n-1}
     inputIdxs.push_back(outputIdxs.front());
-    inputIdxs.push_back(cubeIdxs.front()); // Input_channel
     for (unsigned i = 0; i < dim; i ++)
-      inputIdxs.push_back(outputIdxs[i + 2] * strides[i] +
-          cubeIdxs[i + 1] * dilations[i]);
+      inputIdxs.push_back(outputIdxs[i + 1] * strides[i] +
+          cubeIdxs[i] * dilations[i]);
+    inputIdxs.push_back(cubeIdxs.back()); // Input_channel
 
     break;
   }
@@ -506,10 +532,10 @@ Tensor Tensor::conv(const Tensor &filter,
   //     sum_{z[0], ..., z[N-1], q}
   //         filter[z[0], ..., z[N-1], q, k] *
   //         input[b,
-  //                      x[0]*strides[0] + dilation_rate[0]*z[0],
-  //                      ...,
-  //                      x[N-1]*strides[N-1] + dilation_rate[N-1]*z[N-1],
-  //                      q]
+  //               x[0]*strides[0] + dilation_rate[0]*z[0],
+  //               ...,
+  //               x[N-1]*strides[N-1] + dilation_rate[N-1]*z[N-1],
+  //               q]
   // So we can calculate output dims bounds as follow. (Assuming zero based
   // index)
   // x[0]*strides[0] + dilation_rate[0]*z[0] < Original_Dim
@@ -545,6 +571,17 @@ Tensor Tensor::conv(const Tensor &filter,
       Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
       outputDims.push_back(expr);
     }
+    break;
+  }
+  case ConvLayout::NHWC_FHWC: {
+    outputDims.push_back(getDim(0)); // Input Batch Size
+    for (unsigned i = 0; i < getDims().size() - 2; i++) {
+      Expr originalSize = getDim(i + 1);
+      Expr filterSize = dilations[i] * filter.getDim(i + 1);
+      Expr expr = (originalSize - filterSize + strides[i]).udiv(strides[i]);
+      outputDims.push_back(expr);
+    }
+    outputDims.push_back(filter.getDim(0)); // Output Channel
     break;
   }
   }

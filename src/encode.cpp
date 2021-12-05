@@ -215,6 +215,15 @@ vector<ValTy> getFromMixedOps(
 }
 
 
+template<class ValTy>
+vector<Expr> getFromArrayAttr(const mlir::ArrayAttr &attr) {
+  vector<Expr> vec;
+  for (auto s: attr) {
+    vec.push_back(ValTy(s.dyn_cast<mlir::IntegerAttr>().getInt()));
+  }
+  return vec;
+}
+
 
 template<class T>
 optional<Expr> encodeAffineExpr(
@@ -968,6 +977,55 @@ void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
   encodeBinaryOp(st, op, i1, i2,
       nullptr,
       [](auto &&a, auto &&b) { return (Expr)a ^ (Expr)b; });
+}
+
+template<>
+void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
+  // input's dim sizes = [N, H, W, C]
+  auto input = st.regs.get<Tensor>(op.input());
+  // weight's dim sizes = [F, H, W, C]
+  auto weight = st.regs.get<Tensor>(op.weight());
+  // bias: a 1-dim array whose size is F
+  auto bias = st.regs.get<Tensor>(op.bias());
+
+  // strides = [strides_y, strides_x]
+  vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
+  // pad = [top, bottom, left, right], filled with zero
+  vector<Expr> pad = getFromArrayAttr<Index>(op.pad());
+  // dilations = [dilations_y, dilations_x]
+  vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
+
+  assert(strides.size() == 2 && dilations.size() == 2 && pad.size() == 4);
+  auto elemTy = getElemTy(op.getResult());
+
+  // input rank should be 4
+  vector<Expr> padInd = Index::boundIndexVars(input.getRank());
+  vector<Expr> srcDims = input.getDims();
+
+  vector<Expr> srcInd = {padInd[0], padInd[1] - pad[0],
+                            padInd[2] - pad[2], padInd[3]};
+
+  vector<Expr> padDims = {srcDims[0], srcDims[1] + pad[0] + pad[1],
+                            srcDims[2] + pad[2] + pad[3], srcDims[3]};
+
+  auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
+                padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
+
+  Expr output = Expr::mkIte(cond, input.get(srcInd).first, *getZero(elemTy))
+                + bias.get({padInd[3]}).first;
+
+  auto padInput = Tensor::mkInitializedLambda(
+                    elemTy, move(padDims), move(padInd), output);
+
+  auto t = padInput.conv(weight,
+                      strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
+
+  st.wellDefined(op, input.isFullyInitialized());
+  st.wellDefined(op, weight.isFullyInitialized());
+  st.wellDefined(op, bias.isFullyInitialized());
+
+  st.regs.add(op, t);
+
 }
 
 template<>
@@ -2601,6 +2659,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::BitwiseXorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConcatOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::Conv2DOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ExpOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);

@@ -85,7 +85,8 @@ public:
 
   enum class ConvLayout {
     NHWC_HWCF, // image: nhwc, filter: hwcf, output: nhwf
-    NCHW_FCHW  // image: nchw, filter: fchw, output: nfhw
+    NCHW_FCHW, // image: nchw, filter: fchw, output: nfhw
+    NHWC_FHWC  // image: nhwc, filter: fhwc, output: nhwf
   };
 
 protected:
