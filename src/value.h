@@ -31,6 +31,7 @@ public:
 
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
+  Float div(const Float &b) const;
   Integer fult(const Float &b) const;
   Float abs() const;
   Float neg() const;

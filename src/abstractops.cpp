@@ -222,6 +222,7 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_dotfn.reset();
   fp_addfn.reset();
   fp_mulfn.reset();
+  fp_divfn.reset();
   fp_ultfn.reset();
   fp_hashfn.reset();
   fp_sum_relations.clear();
@@ -240,6 +241,15 @@ FnDecl AbsFpEncoding::getMulFn() {
     auto fty = Sort::bvSort(value_bitwidth);
     auto fty2 = Sort::bvSort(value_bitwidth);
     fp_mulfn.emplace({fty, fty}, fty2, "fp_mul_" + fn_suffix);
+  }
+  return *fp_mulfn;
+}
+
+FnDecl AbsFpEncoding::getDivFn() {
+  if (!fp_mulfn) {
+    auto fty = Sort::bvSort(value_bitwidth);
+    auto fty2 = Sort::bvSort(value_bitwidth);
+    fp_mulfn.emplace({fty, fty}, fty2, "fp_div_" + fn_suffix);
   }
   return *fp_mulfn;
 }
@@ -629,6 +639,73 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
     Expr::mkIte(f1.getMSB() == f2.getMSB(),
       bv_false.concat(fpmul_res.extract(value_bitwidth - 1, 0)),
       bv_true.concat(fpmul_res.extract(value_bitwidth - 1, 0))
+  ));
+}
+
+Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
+  usedOps.fpDiv = true;
+
+  auto fp_zero_pos = zero();
+  auto fp_zero_neg = zero(true);
+  auto fp_id = one();
+  auto fp_minusone = one(true);
+  auto fp_inf_pos = infinity();
+  auto fp_inf_neg = infinity(true);
+  auto fp_nan = nan();
+  auto bv_true = Expr::mkBV(1, 1);
+  auto bv_false = Expr::mkBV(0, 1);
+
+  // Handle non-canonical NaNs
+  const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
+  const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
+  const auto f1_nosign = f1.extract(fp_bitwidth - 2, 0);
+  const auto f2_nosign = f2.extract(fp_bitwidth - 2, 0);
+
+  auto div_abs = getDivFn().apply({f1_nosign, f2_nosign});
+  // getDivFn()'s range is BV[VALUE_BITS] because it encodes absolute size of mul.
+  // We zero-extend 1 bit (SIGN-BIT) which is actually a dummy bit.
+  auto div_abs_res = div_abs.zext(1);
+  // Absolute size of mul cannot be NaN
+  // (0.0 / 0.0, Inf / Inf, and div between one or more NaN
+  // will be special-cased).
+  div_abs_res = Expr::mkIte(isnan(div_abs_res), fp_id, div_abs_res);
+
+  // Calculate the absolute value of f1 / f2.
+  // The sign bit(s) will be replaced in the next step,
+  // so it is better to completely ignore the signs in this step.
+  // (This is why there's so many | in the conditions...)
+  // 
+  // x / 1.0 -> x, x / -1.0 -> -x
+  auto fpdiv_res = Expr::mkIte((f2 == fp_id) | (f2 == fp_minusone), f1,
+  // NaN / x -> NaN
+  Expr::mkIte(f1 == fp_nan, f1,
+  // x / NaN -> NaN
+  Expr::mkIte(f2 == fp_nan, f2,
+  // +-Inf / +-Inf -> NaN, x / +-Inf -> ?0.0 (if x != Inf)
+  // IEEE 754-2019 section 7.2 'Invalid operation'
+  // IEEE 754-2019 section 6.1 'Infinity arithmetic'
+  Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg),
+    Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg), fp_nan, fp_zero_pos),
+  // +-Inf / x -> ?Inf (if x != Inf)
+  // IEEE 754-2019 section 6.1 'Infinity arithmetic'
+  Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg), fp_inf_pos,
+  // +-0.0 / +-0.0 -> NaN, x / +-0.0 -> ?Inf (if x != 0.0 | Inf)
+  // IEEE 754-2019 section 7.2 'Invalid operation'
+  // IEEE 754-2019 section 7.3 'Division by zero'
+  // division by zero should explicitly raise exception!
+  Expr::mkIte((f2 == fp_zero_pos) | (f2 == fp_zero_neg),
+    Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg), fp_nan, fp_inf_pos),
+    // If both operands do not fall into any of the cases above,
+    // use fp_div for abstract representation.
+    div_abs_res
+  ))))));
+
+  // And at last we replace the sign with signbit(f1) ^ signbit(f2)
+  // pos / pos | neg / neg -> pos, pos / neg | neg / pos -> neg
+  return Expr::mkIte(fpdiv_res == fp_nan, fp_nan,
+    Expr::mkIte(f1.getMSB() == f2.getMSB(),
+      bv_false.concat(fpdiv_res.extract(value_bitwidth - 1, 0)),
+      bv_true.concat(fpdiv_res.extract(value_bitwidth - 1, 0))
   ));
 }
 
