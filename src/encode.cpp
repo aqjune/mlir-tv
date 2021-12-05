@@ -1704,6 +1704,20 @@ void encodeOp(State &st, mlir::tosa::ExpOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::tosa::ReduceSumOp op, bool) {
+  auto input = op.input();
+  auto inputTy = input.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!inputTy)
+    throw UnsupportedException(op.getOperation(), "Unsupported operand type");
+
+  auto t = st.regs.get<Tensor>(input);
+  uint64_t axis = op.axis();
+
+  st.wellDefined(op.getOperation(), t.isFullyInitialized());
+  st.regs.add(op, t.sum(axis));
+}
+
+template<>
 void encodeOp(State &st, mlir::tosa::ReshapeOp op, bool) {
   auto t = st.regs.get<Tensor>(op.getOperand());
   auto attrs = op.new_shape();
@@ -2643,6 +2657,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::ExpOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ReduceSumOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReshapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::SubOp, encodeMemWriteOps);
