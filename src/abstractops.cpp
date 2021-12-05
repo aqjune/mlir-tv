@@ -301,7 +301,8 @@ FnDecl AbsFpEncoding::getHashFn() {
   if (!fp_hashfn) {
     // In the fully abstract world, double and float have the same bitwidth.
     auto fty = Sort::bvSort(fp_bitwidth);
-    fp_hashfn.emplace(fty, Sort::bvSort(getHashRangeBits()), "fp_hash");
+    fp_hashfn.emplace(fty, Sort::bvSort(getHashRangeBits()),
+        "fp_hash_" + fn_suffix);
   }
   return *fp_hashfn;
 }
@@ -318,10 +319,8 @@ size_t AbsFpEncoding::getHashRangeBits() {
       maxLength = length;
   }
 
-  size_t BITS = 0;
   uint64_t bounds = numRelations * numRelations * maxLength;
-  for (uint64_t count = 1; count < bounds; count <<= 1, BITS ++);
-  return BITS;
+  return log2_ceil(bounds);
 }
 
 uint64_t AbsFpEncoding::getSignBit() const {
