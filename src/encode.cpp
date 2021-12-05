@@ -1435,12 +1435,14 @@ void encodeOp(State &st, mlir::tensor::CastOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::tensor::InsertOp op, bool) {
-  auto val = st.regs.get<Float>(op.scalar());
+  auto val = st.regs.getExpr(op.scalar());
   auto dest = st.regs.get<Tensor>(op.dest());
 
   vector<Expr> indices;
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
+  if (indices.empty())
+    indices.push_back(Index(0));
 
   auto [tensor, inbounds] = dest.insert(val, indices);
   st.regs.add(op, move(tensor));

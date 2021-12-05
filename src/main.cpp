@@ -67,6 +67,11 @@ llvm::cl::opt<bool> arg_associative_sum("associative",
                  "(experimental)"),
   llvm::cl::init(false));
 
+llvm::cl::opt<bool> arg_unroll_int_sum("unroll-int-sum",
+  llvm::cl::desc("Fully unroll summation of integer arrays whose sizes are"
+                 " known to be constant"),
+  llvm::cl::init(false));
+
 llvm::cl::opt<bool> arg_verbose("verbose",
   llvm::cl::desc("Be verbose about what's going on"), llvm::cl::Hidden,
   llvm::cl::init(false));
@@ -108,6 +113,7 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
       num_memblocks.getValue(),
       fp_bits,
       arg_associative_sum.getValue(),
+      arg_unroll_int_sum.getValue(),
       arg_multiset.getValue()
     ).code;
 }

@@ -48,4 +48,5 @@ Results validate(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
     unsigned int numBlocksPerType,
     std::pair<unsigned, unsigned> fpBits, // (float, double)
     bool associativeAdd,
+    bool unrollIntSum, // sum(arr) := arr[0] + ... + arr[arr.len-1]
     bool useMultiset);

@@ -1,4 +1,5 @@
 #include "abstractops.h"
+#include "debug.h"
 #include "simplevalue.h"
 #include "smt.h"
 #include "utils.h"
@@ -22,6 +23,7 @@ aop::UsedAbstractOps usedOps;
 aop::AbsLevelFpDot alFpDot;
 aop::AbsLevelFpCast alFpCast;
 bool isFpAddAssociative;
+bool doUnrollIntSum;
 optional<aop::AbsFpEncoding> floatEnc;
 optional<aop::AbsFpEncoding> doubleEnc;
 
@@ -87,11 +89,13 @@ UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(
     AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, bool addAssoc,
+    bool unrollIntSum,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
     unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
   alFpDot = afd;
   alFpCast = afc;
   alIntDot = aid;
+  doUnrollIntSum = unrollIntSum;
   isFpAddAssociative = addAssoc;
 
   // without suffix f, it will become llvm::APFloat with double semantics
@@ -861,10 +865,20 @@ Expr getFpUltPrecondition() {
 
 
 Expr intSum(const Expr &a, const Expr &n) {
-  usedOps.intSum = true;
-
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
+
+  uint64_t n_const;
+  if (doUnrollIntSum && n.isUInt(n_const)) {
+    verbose("intSum") << "Unrolling sum whose size is " << n_const << "\n";
+    Expr s = Expr::mkBV(0, ai.bitwidth());
+    for (uint64_t j = 0; j < n_const; ++j) {
+      s = s + a.select(Index(j));
+    }
+    return s;
+  }
+
+  usedOps.intSum = true;
   Expr zero = Integer(0, ai.bitwidth());
 
   FnDecl sumfn = getIntSumFn(ai.sort().bitwidth());

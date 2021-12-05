@@ -37,16 +37,21 @@ enum class AbsLevelIntDot {
   SUM_MUL   = 1, // Int Dot is a summation of pairwisely multiplied values
 };
 
-// This resets the used abstract ops record.
+// unrollIntSum: Fully unroll sum(arr) where arr is an int array of const size
+//               as arr[0] + arr[1] + .. + arr[len-1]?
 // floatNonConstsCnt: # of non-constant distinct f32 values necessary to
 // validate the transformation.
+// NOTE: This resets the used abstract ops record.
 void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
                     bool isFpAddAssociative,
+                    bool unrollIntSum,
                     unsigned floatNonConstsCnt,
                     std::set<llvm::APFloat> floatConsts,
                     unsigned doubleNonConstsCnt,
                     std::set<llvm::APFloat> doubleConsts);
-void setEncodingOptions(bool use_multiset);
+// A set of options that must not change the precision of validation.
+// useMultiset: To encode commutativity of fp summation, use multiset?
+void setEncodingOptions(bool useMultiset);
 
 bool getFpAddAssociativity();
 

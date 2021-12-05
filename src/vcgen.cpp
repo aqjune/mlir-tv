@@ -41,6 +41,7 @@ public:
   set<llvm::APFloat> f32Consts, f64Consts;
   vector<mlir::memref::GlobalOp> globals;
   bool isFpAddAssociative;
+  bool unrollIntSum;
   bool useMultisetForFpSum;
 };
 
@@ -407,6 +408,7 @@ static void checkIsSrcAlwaysUB(
       aop::AbsLevelFpCast::PRECISE,
       aop::AbsLevelIntDot::SUM_MUL,
       vinput.isFpAddAssociative,
+      vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
   aop::setEncodingOptions(vinput.useMultisetForFpSum);
@@ -457,6 +459,7 @@ static Results validate(ValidationInput vinput) {
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
       /*isFpAddAssociative*/false,
+      vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(/*useMultiset*/false);
@@ -491,6 +494,7 @@ static Results validate(ValidationInput vinput) {
       fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
       fpAssocAdd,
+      vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(vinput.useMultisetForFpSum);
@@ -560,6 +564,7 @@ Results validate(
     const string &dumpSMTPath,
     unsigned int numBlocksPerType,
     pair<unsigned, unsigned> fpBits, bool isFpAddAssociative,
+    bool unrollIntSum,
     bool useMultiset) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
@@ -646,6 +651,7 @@ Results validate(
     vinput.f32Consts = f32_consts;
     vinput.f64Consts = f64_consts;
     vinput.isFpAddAssociative = isFpAddAssociative;
+    vinput.unrollIntSum = unrollIntSum;
     vinput.useMultisetForFpSum = useMultiset;
 
     try {
