@@ -174,6 +174,7 @@ public:
   smt::Expr getFpAssociativePrecondition();
 
 private:
+  smt::Expr lambdaSum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr multisetSum(const smt::Expr &a, const smt::Expr &n);
 };
 

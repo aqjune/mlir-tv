@@ -632,6 +632,19 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   ));
 }
 
+Expr AbsFpEncoding::lambdaSum(const smt::Expr &a, const smt::Expr &n) {
+  auto i = Index::var("idx", VarType::BOUND);
+  Expr ai = a.select(i);
+  Expr result = getSumFn()(
+      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
+        Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
+
+  if (getFpAddAssociativity())
+    fp_sum_relations.push_back({a, n, result});
+
+  return result;
+}
+
 Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
   uint64_t length;
   if (!n.isUInt(length))
@@ -654,22 +667,13 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
 Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   if (getFpAddAssociativity() && !n.isNumeral())
     throw UnsupportedException("Only an array of constant length is supported.");
-
+  
   usedOps.fpSum = true;
-
-  if (getFpAddAssociativity() && useMultiset)
-    return multisetSum(a, n);
-
-  auto i = Index::var("idx", VarType::BOUND);
-  Expr ai = a.select(i);
-  Expr result = getSumFn()(
-      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
-        Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
-
-  if (getFpAddAssociativity())
-    fp_sum_relations.push_back({a, n, result});
-
-  return result;
+  auto sumExpr = (getFpAddAssociativity() && useMultiset) ? multisetSum(a, n) :  lambdaSum(a, n);
+  auto ret = Expr::mkIte(n == Index::zero(), zero(true),
+      Expr::mkIte(n == Index::one(), a.select(Index(0)), sumExpr));
+  ret = ret.simplify();
+  return ret;
 }
 
 
