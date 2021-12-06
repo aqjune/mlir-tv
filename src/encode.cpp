@@ -1295,7 +1295,7 @@ void encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op, bool) {
           "tensor size is too large");
 
     // If the original size isn't divisible, raise UB
-    st.wellDefined(op, orgdim.mod(const_size) == 0);
+    st.wellDefined(op, orgdim.urem(const_size) == 0);
     newdims[unknown_dim] = orgdim.udiv(const_size); 
   }
 
@@ -1614,7 +1614,7 @@ void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
 
   for (unsigned i = 0; i < rank; i++) {
     srcIdxs.push_back((indVars[i] - offsets[i]).udiv(strides[i]));
-    cond &= ((indVars[i] - offsets[i]) % strides[i]).isZero() &
+    cond &= ((indVars[i] - offsets[i]).urem(strides[i])).isZero() &
             (indVars[i] - offsets[i]).ult(sizes[i] * strides[i]);
   }
 

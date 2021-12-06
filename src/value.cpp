@@ -835,7 +835,7 @@ Tensor Tensor::tile(const vector<unsigned> &repeat) const {
   auto indVars = Index::boundIndexVars(dims.size());
   auto accessIdx = indVars;
   for (int i = 0; i < repeat.size(); ++i)
-    accessIdx[i] = accessIdx[i] % dims[i];
+    accessIdx[i] = accessIdx[i].urem(dims[i]);
 
   // UB if uninitialized
   return Tensor::mkInitializedLambda(elemType, vector(newDims), move(indVars),
