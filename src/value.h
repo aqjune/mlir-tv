@@ -3,6 +3,7 @@
 #include "simplevalue.h"
 #include "llvm/ADT/APFloat.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include <variant>
 
 class Memory;
 
