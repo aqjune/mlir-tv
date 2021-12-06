@@ -654,6 +654,14 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
 Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   if (getFpAddAssociativity() && !n.isNumeral())
     throw UnsupportedException("Only an array of constant length is supported.");
+  
+  // preprocess some elementary cases
+  if (auto length = n.asUInt()) {
+    if (*length == 0)
+      return zero(true);
+    else if (*length == 1)
+      return a.select(Index(0));
+  } 
 
   usedOps.fpSum = true;
 
