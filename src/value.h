@@ -227,6 +227,10 @@ public:
       std::function<smt::Expr(const std::vector<smt::Expr> &)> condFn,
       const Tensor &trueValue, const Tensor &falseValue);
 
+  // A constant tensor from mlir::ElementsAttr and a static shape.
+  static Tensor fromElemsAttr(mlir::RankedTensorType tensorTy,
+      mlir::ElementsAttr attr);
+
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
   // Returns (arr[idx] == src.arr[idx], unbound idx vars)
   // this: tgt, other: src
@@ -395,3 +399,12 @@ private:
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &sizes);
 };
+
+
+using ValueTy = std::variant<Tensor, MemRef, Index, Float, Integer>;
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream&, const ValueTy &);
+smt::Expr getExpr(const ValueTy &vty);
+ValueTy eval(const ValueTy &vty, smt::Model m);
+ValueTy attrToValueTy(mlir::Attribute a);
+std::optional<ValueTy> fromExpr(smt::Expr &&e, mlir::Type ty);
