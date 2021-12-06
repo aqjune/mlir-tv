@@ -56,6 +56,7 @@ void setEncodingOptions(bool useMultiset);
 bool getFpAddAssociativity();
 
 smt::Expr getFpAssociativePrecondition();
+smt::Expr getFpSumPrecondition();
 smt::Expr getFpUltPrecondition();
 
 smt::Expr intSum(const smt::Expr &arr, const smt::Expr &n);
@@ -172,6 +173,7 @@ public:
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr getFpAssociativePrecondition();
+  smt::Expr getFpSumPrecondition();
 
 private:
   smt::Expr multisetSum(const smt::Expr &a, const smt::Expr &n);

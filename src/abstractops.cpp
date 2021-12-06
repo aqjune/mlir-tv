@@ -666,8 +666,7 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
       Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
         Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
 
-  if (getFpAddAssociativity())
-    fp_sum_relations.push_back({a, n, result});
+  fp_sum_relations.push_back({a, n, result});
 
   return result;
 }
@@ -827,6 +826,19 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
   return precond;
 }
 
+Expr AbsFpEncoding::getFpSumPrecondition() {
+  Expr precond = Expr::mkBool(true);
+  // Step1. Add sum of unit tensor equals to element value
+  for (auto &relation: fp_sum_relations) {
+    auto [a, an, asum] = relation;
+    uint64_t alen;
+    if (!an.isUInt(alen) && alen > 1) continue;
+
+    precond = precond & (asum == a.select(Index(0)));
+  }
+  precond = precond.simplify();
+  return precond;
+}
 
 
 Expr getFpAssociativePrecondition() {
@@ -840,6 +852,7 @@ Expr getFpAssociativePrecondition() {
 
   return cond;
 }
+
 
 Expr getFpUltPrecondition() {
   Expr cond = Expr::mkBool(true);
@@ -855,6 +868,15 @@ Expr getFpUltPrecondition() {
       }
     }
   }
+  // TODO: double
+
+  return cond;
+}
+
+Expr getFpSumPrecondition() {
+  Expr cond = Expr::mkBool(true);
+  if (floatEnc)
+    cond &= floatEnc->getFpSumPrecondition();
   // TODO: double
 
   return cond;
