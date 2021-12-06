@@ -33,6 +33,9 @@ aop::AbsLevelIntDot alIntDot;
 map<unsigned, FnDecl> int_sumfn;
 map<unsigned, FnDecl> int_dotfn;
 
+// ----- Constants and global vars for abstract sumf operations ------
+aop::AbsLevelFpSum alFpSum;
+
 FnDecl getIntSumFn(unsigned bitwidth) {
   auto itr = int_sumfn.find(bitwidth);
   if (itr != int_sumfn.end())
@@ -88,13 +91,15 @@ namespace aop {
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(
-    AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, bool addAssoc,
+    AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, AbsLevelFpSum afs,
+    bool addAssoc,
     bool unrollIntSum,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
     unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
   alFpDot = afd;
   alFpCast = afc;
   alIntDot = aid;
+  alFpSum = afs;
   doUnrollIntSum = unrollIntSum;
   isFpAddAssociative = addAssoc;
 
@@ -654,30 +659,41 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
 Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   if (getFpAddAssociativity() && !n.isNumeral())
     throw UnsupportedException("Only an array of constant length is supported.");
-  
+
+  auto length = n.asUInt();
   // preprocess some elementary cases
-  if (auto length = n.asUInt()) {
-    if (*length == 0)
-      return zero(true);
-    else if (*length == 1)
-      return a.select(Index(0));
-  } 
+  if (*length == 0)
+    return zero(true);
+  else if (*length == 1)
+    return a.select(Index(0));
 
-  usedOps.fpSum = true;
+  if (alFpSum == AbsLevelFpSum::FULLY_ABS) {
+    usedOps.fpSum = true;
 
-  if (getFpAddAssociativity() && useMultiset)
-    return multisetSum(a, n);
+    if (getFpAddAssociativity() && useMultiset)
+      return multisetSum(a, n);
 
-  auto i = Index::var("idx", VarType::BOUND);
-  Expr ai = a.select(i);
-  Expr result = getSumFn()(
-      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
-        Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
+    auto i = Index::var("idx", VarType::BOUND);
+    Expr ai = a.select(i);
+    Expr result = getSumFn()(
+        Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
+          Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
 
   if (getFpAddAssociativity())
     fp_sum_relations.push_back({a, n, result});
 
-  return result;
+    return result; 
+  } else {
+    if (!length)
+      throw UnsupportedException("Only an array of constant length is supported.");
+
+    auto sum = a.select(Index(0));
+    for (auto i = 1; i < *length; i++) {
+      sum = add(sum, a.select(Index(i)));
+      sum = sum.simplify();
+    }
+    return sum;
+  }
 }
 
 

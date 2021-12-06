@@ -407,6 +407,7 @@ static void checkIsSrcAlwaysUB(
       aop::AbsLevelFpDot::SUM_MUL,
       aop::AbsLevelFpCast::PRECISE,
       aop::AbsLevelIntDot::SUM_MUL,
+      aop::AbsLevelFpSum::ADD_ONLY,
       vinput.isFpAddAssociative,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
@@ -458,6 +459,7 @@ static Results validate(ValidationInput vinput) {
       AbsLevelFpDot::FULLY_ABS,
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
+      AbsLevelFpSum::FULLY_ABS,
       /*isFpAddAssociative*/false,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
@@ -480,9 +482,10 @@ static Results validate(ValidationInput vinput) {
   // dot = mul + sum?
   bool useSumMulForFpDot = usedOps.fpDot && usedOps.fpSum && usedOps.fpMul;
   bool useSumMulForIntDot = usedOps.intDot && usedOps.intSum; // Eh.. int mul?
+  bool useAddFOnly = usedOps.fpSum;
   bool fpCastRound = usedOps.fpCastRound;
   bool tryRefinedAbstraction =
-      fpAssocAdd || useSumMulForFpDot || useSumMulForIntDot || fpCastRound;
+      fpAssocAdd || useSumMulForFpDot || useSumMulForIntDot || fpCastRound || useAddFOnly;
 
   if (!tryRefinedAbstraction)
     return res;
@@ -493,6 +496,7 @@ static Results validate(ValidationInput vinput) {
           AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
       fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
+      useAddFOnly ? AbsLevelFpSum::ADD_ONLY : AbsLevelFpSum::FULLY_ABS,
       fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
