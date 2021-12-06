@@ -832,7 +832,8 @@ Expr AbsFpEncoding::getFpSumPrecondition() {
   for (auto &relation: fp_sum_relations) {
     auto [a, an, asum] = relation;
     uint64_t alen;
-    if (!an.isUInt(alen) && alen > 1) continue;
+    if (!an.isUInt(alen)) continue;
+    if (alen > 1) continue;
 
     precond = precond & (asum == a.select(Index(0)));
   }
