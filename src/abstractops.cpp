@@ -670,14 +670,14 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   if (alFpSum == AbsLevelFpSum::FULLY_ABS) {
     usedOps.fpSum = true;
 
-    if (getFpAddAssociativity() && useMultiset)
-      return multisetSum(a, n);
+  if (getFpAddAssociativity() && useMultiset)
+    return multisetSum(a, n);
 
-    auto i = Index::var("idx", VarType::BOUND);
-    Expr ai = a.select(i);
-    Expr result = getSumFn()(
-        Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
-          Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
+  auto i = Index::var("idx", VarType::BOUND);
+  Expr ai = a.select(i);
+  Expr result = getSumFn()(
+      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
+        Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
 
   if (getFpAddAssociativity())
     fp_sum_relations.push_back({a, n, result});
