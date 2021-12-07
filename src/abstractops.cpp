@@ -708,6 +708,7 @@ Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
       bv_false.concat(fpdiv_res.extract(value_bitwidth - 1, 0)),
       bv_true.concat(fpdiv_res.extract(value_bitwidth - 1, 0))
   ));
+}
 
 Expr AbsFpEncoding::lambdaSum(const smt::Expr &a, const smt::Expr &n) {
   auto i = Index::var("idx", VarType::BOUND);
