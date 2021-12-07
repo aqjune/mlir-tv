@@ -483,7 +483,7 @@ static Results validate(ValidationInput vinput) {
   bool useAddFOnly = !fpAssocAdd && usedOps.fpSum;
   bool fpCastRound = usedOps.fpCastRound;
   bool tryRefinedAbstraction =
-    useSumMulForFpDot || useSumMulForIntDot || fpCastRound || useAddFOnly;
+    useSumMulForFpDot || fpAssocAdd || useSumMulForIntDot || fpCastRound || useAddFOnly;
 
   if (!tryRefinedAbstraction)
     return res;
