@@ -37,12 +37,18 @@ enum class AbsLevelIntDot {
   SUM_MUL   = 1, // Int Dot is a summation of pairwisely multiplied values
 };
 
+enum class AbsFpAddSumEncoding {
+  USE_SUM_ONLY = 0, // When --associativity given, encode addition using only sum_fn
+  DEFAULT = 1, // Encode addition using fp_add, fp_sum respectivly (no relation between them)
+  USE_ADD_ONLY = 2, // Use only addf function
+};
+
 // unrollIntSum: Fully unroll sum(arr) where arr is an int array of const size
 //               as arr[0] + arr[1] + .. + arr[len-1]?
 // floatNonConstsCnt: # of non-constant distinct f32 values necessary to
 // validate the transformation.
 // NOTE: This resets the used abstract ops record.
-void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
+void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot, AbsFpAddSumEncoding,
                     bool isFpAddAssociative,
                     bool unrollIntSum,
                     unsigned floatNonConstsCnt,
@@ -53,6 +59,10 @@ void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
 // useMultiset: To encode commutativity of fp summation, use multiset?
 void setEncodingOptions(bool useMultiset);
 
+AbsLevelFpDot getAbsLevelFpDot();
+AbsLevelFpCast getAbsLevelFpCast();
+AbsLevelIntDot getAbsLevelIntDot();
+AbsFpAddSumEncoding getAbsFpAddSumEncoding();
 bool getFpAddAssociativity();
 bool getFpCastIsPrecise();
 

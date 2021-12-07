@@ -410,6 +410,7 @@ static void checkIsSrcAlwaysUB(
       aop::AbsLevelFpDot::SUM_MUL,
       aop::AbsLevelFpCast::PRECISE,
       aop::AbsLevelIntDot::SUM_MUL,
+      aop::AbsFpAddSumEncoding::USE_ADD_ONLY,
       vinput.isFpAddAssociative,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
@@ -452,20 +453,35 @@ static Results validate(ValidationInput vinput) {
   Defer timePrinter([&]() {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
-
   using namespace aop;
-  // Don't enable fp add associativity even if vinput.associativeAdd is true
-  // because simply encoding it as UF is more efficient.
-  // We can turn it on in the next iteration.
+  auto printSematics = [](AbsLevelFpDot afd, AbsLevelFpCast afc,
+      AbsLevelIntDot aid, AbsFpAddSumEncoding fas) {
+    llvm::outs()
+      << "\n===============================================================\n"
+      << "  Giving more precise semantics to abstractly defined ops...\n"
+      << "  AbsLevelFpDot : " <<
+              (afd == AbsLevelFpDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
+      << "  AbsLevelFpCast : " <<
+              (afc == AbsLevelFpCast::FULLY_ABS ? "FULLY_ABS" : "PRECISE") << "\n"
+      << "  AbsLevelIntDot : " <<
+              (aid == AbsLevelIntDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
+      << "  AbsFpAddSumEncoding : " << 
+              (fas == AbsFpAddSumEncoding::USE_SUM_ONLY ? "USE_SUM_ONLY" :
+              (fas == AbsFpAddSumEncoding::DEFAULT ? "DEFAULT" : "USE_ADD_ONLY")) << "\n"
+      << "===============================================================\n\n";
+  };
+
+  bool fpAssocAdd = vinput.isFpAddAssociative;
   setAbstraction(
       AbsLevelFpDot::FULLY_ABS,
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
-      /*isFpAddAssociative*/false,
+      fpAssocAdd ? AbsFpAddSumEncoding::USE_SUM_ONLY : AbsFpAddSumEncoding::DEFAULT,
+      fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
-  setEncodingOptions(/*useMultiset*/false);
+  setEncodingOptions(vinput.useMultisetForFpSum);
 
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
 
@@ -479,15 +495,50 @@ static Results validate(ValidationInput vinput) {
   }
 
   auto usedOps = aop::getUsedAbstractOps();
-  bool fpAssocAdd = vinput.isFpAddAssociative;
   // dot = mul + sum?
-  bool useSumMulForFpDot = usedOps.fpDot && usedOps.fpSum && usedOps.fpMul;
+  bool useSumForFp = (usedOps.fpAdd || usedOps.fpSum);
+  bool useSumMulForFpDot = usedOps.fpDot && useSumForFp && usedOps.fpMul;
   bool useSumMulForIntDot = usedOps.intDot && usedOps.intSum; // Eh.. int mul?
+  bool useAddFOnly = !fpAssocAdd && usedOps.fpSum;
   bool fpCastRound = usedOps.fpCastRound;
   bool tryRefinedAbstraction =
-      fpAssocAdd || useSumMulForFpDot || useSumMulForIntDot || fpCastRound;
+    useSumMulForFpDot || fpAssocAdd || useSumMulForIntDot || fpCastRound || useAddFOnly;
 
   if (!tryRefinedAbstraction)
+    return res;
+
+  // Refine the current abstraction.
+  setAbstraction(
+    (useSumMulForFpDot || fpAssocAdd) ?
+        AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
+    fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
+    useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
+    fpAssocAdd ?  AbsFpAddSumEncoding::USE_SUM_ONLY :
+      (useAddFOnly ? AbsFpAddSumEncoding::USE_ADD_ONLY : AbsFpAddSumEncoding::DEFAULT),
+    fpAssocAdd,
+    vinput.unrollIntSum,
+    vinput.f32NonConstsCount, vinput.f32Consts,
+    vinput.f64NonConstsCount, vinput.f64Consts);
+  setEncodingOptions(vinput.useMultisetForFpSum);
+
+  if (!vinput.dumpSMTPath.empty())
+    vinput.dumpSMTPath += "_noabs";
+
+  printSematics(getAbsLevelFpDot(), getAbsLevelFpCast(), getAbsLevelIntDot(),
+                           getAbsFpAddSumEncoding());
+
+  bool useAllLogic = fpAssocAdd;
+  res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
+  if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
+    // Check whether it is always UB
+    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, useAllLogic,
+                       elapsedMillisec);
+    return res;
+  }
+
+  usedOps = aop::getUsedAbstractOps();
+  bool tryThirdRefinedAbstraction = !fpAssocAdd && usedOps.fpSum;
+  if (!tryThirdRefinedAbstraction)
     return res;
 
   // Refine the current abstraction.
@@ -496,21 +547,16 @@ static Results validate(ValidationInput vinput) {
           AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
       fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
+      AbsFpAddSumEncoding::USE_ADD_ONLY,
       fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(vinput.useMultisetForFpSum);
 
-  if (!vinput.dumpSMTPath.empty())
-    vinput.dumpSMTPath += "_noabs";
+  printSematics(getAbsLevelFpDot(), getAbsLevelFpCast(), getAbsLevelIntDot(),
+                           getAbsFpAddSumEncoding());
 
-  llvm::outs()
-      << "\n===============================================================\n"
-      << "  Giving more precise semantics to abstractly defined ops...\n"
-      << "===============================================================\n\n";
-
-  bool useAllLogic = fpAssocAdd;
   res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
   if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
     // Check whether it is always UB
