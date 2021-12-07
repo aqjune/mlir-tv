@@ -37,12 +37,17 @@ enum class AbsLevelIntDot {
   SUM_MUL   = 1, // Int Dot is a summation of pairwisely multiplied values
 };
 
+enum class AbsLevelFpSum {
+  FULLY_ABS = 0, // fp_add, fp_sum is a fully abstract function (no relation between them)
+  ADD_ONLY = 1, // use only addf function
+};
+
 // unrollIntSum: Fully unroll sum(arr) where arr is an int array of const size
 //               as arr[0] + arr[1] + .. + arr[len-1]?
 // floatNonConstsCnt: # of non-constant distinct f32 values necessary to
 // validate the transformation.
 // NOTE: This resets the used abstract ops record.
-void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
+void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot, AbsLevelFpSum,
                     bool isFpAddAssociative,
                     bool unrollIntSum,
                     unsigned floatNonConstsCnt,

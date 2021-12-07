@@ -33,6 +33,9 @@ aop::AbsLevelIntDot alIntDot;
 map<unsigned, FnDecl> int_sumfn;
 map<unsigned, FnDecl> int_dotfn;
 
+// ----- Constants and global vars for abstract sumf operations ------
+aop::AbsLevelFpSum alFpSum;
+
 FnDecl getIntSumFn(unsigned bitwidth) {
   auto itr = int_sumfn.find(bitwidth);
   if (itr != int_sumfn.end())
@@ -88,13 +91,15 @@ namespace aop {
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(
-    AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, bool addAssoc,
+    AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, AbsLevelFpSum afs,
+    bool addAssoc,
     bool unrollIntSum,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
     unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
   alFpDot = afd;
   alFpCast = afc;
   alIntDot = aid;
+  alFpSum = afs;
   doUnrollIntSum = unrollIntSum;
   isFpAddAssociative = addAssoc;
 
@@ -667,11 +672,31 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
 Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   if (getFpAddAssociativity() && !n.isNumeral())
     throw UnsupportedException("Only an array of constant length is supported.");
+  auto length = n.asUInt();
+
+  optional<Expr> sumExpr;
+  if (alFpSum == AbsLevelFpSum::FULLY_ABS) {
+    usedOps.fpSum = true;
+    sumExpr = (getFpAddAssociativity() && useMultiset) ? multisetSum(a, n) :  lambdaSum(a, n);
+  } else {
+    if (!length || length > 10) {
+      usedOps.fpSum = true;
+      verbose("fpSum") << "ADD_ONLY applies only array length less than equals to 10.\n";
+      verbose("fpSum") << "Fallback to lambdaSum...\n";
+      sumExpr = lambdaSum(a, n);
+    } else {
+      verbose("fpSum") << "Sum of array unrolled to fp_add.\n";
+      auto sum = a.select(Index(0));
+      for (auto i = 1; i < length; i++) {
+        sum = add(sum, a.select(Index(i)));
+        sum = sum.simplify();
+      }
+      sumExpr = sum;
+    }
+  }
   
-  usedOps.fpSum = true;
-  auto sumExpr = (getFpAddAssociativity() && useMultiset) ? multisetSum(a, n) :  lambdaSum(a, n);
   auto ret = Expr::mkIte(n == Index::zero(), zero(true),
-      Expr::mkIte(n == Index::one(), a.select(Index(0)), sumExpr));
+      Expr::mkIte(n == Index::one(), a.select(Index(0)), *sumExpr));
   ret = ret.simplify();
   return ret;
 }
