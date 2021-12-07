@@ -692,7 +692,8 @@ Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
   // +-0.0 / +-0.0 -> NaN, x / +-0.0 -> ?Inf (if x != 0.0 | Inf)
   // IEEE 754-2019 section 7.2 'Invalid operation'
   // IEEE 754-2019 section 7.3 'Division by zero'
-  // division by zero should explicitly raise exception!
+  // Division by zero should explicitly signal exception.
+  // However, LLVM chooses to simply continue the execution without notifying
   Expr::mkIte((f2 == fp_zero_pos) | (f2 == fp_zero_neg),
     Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg), fp_nan, fp_inf_pos),
     // If both operands do not fall into any of the cases above,
