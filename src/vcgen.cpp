@@ -456,10 +456,15 @@ static Results validate(ValidationInput vinput) {
     llvm::outs()
       << "\n===============================================================\n"
       << "  Giving more precise semantics to abstractly defined ops...\n"
-      << "  AbsLevelFpDot : " << (afd == AbsLevelFpDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
-      << "  AbsLevelFpCast : " << (afc == AbsLevelFpCast::FULLY_ABS ? "FULLY_ABS" : "PRECISE") << "\n"
-      << "  AbsLevelIntDot : " << (aid == AbsLevelIntDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
-      << "  AbsFpAddSumEncoding : " << (fas == AbsFpAddSumEncoding::USE_SUM_ONLY ? "USE_SUM_ONLY" : fas == AbsFpAddSumEncoding::DEFAULT ? "DEFAULT" : "USE_ADD_ONLY") << "\n"
+      << "  AbsLevelFpDot : " <<
+              (afd == AbsLevelFpDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
+      << "  AbsLevelFpCast : " <<
+              (afc == AbsLevelFpCast::FULLY_ABS ? "FULLY_ABS" : "PRECISE") << "\n"
+      << "  AbsLevelIntDot : " <<
+              (aid == AbsLevelIntDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
+      << "  AbsFpAddSumEncoding : " << 
+              (fas == AbsFpAddSumEncoding::USE_SUM_ONLY ? "USE_SUM_ONLY" :
+              (fas == AbsFpAddSumEncoding::DEFAULT ? "DEFAULT" : "USE_ADD_ONLY")) << "\n"
       << "===============================================================\n\n";
   };
 
