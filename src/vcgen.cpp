@@ -477,7 +477,8 @@ static Results validate(ValidationInput vinput) {
 
   auto usedOps = aop::getUsedAbstractOps();
   // dot = mul + sum?
-  bool useSumMulForFpDot = usedOps.fpDot && usedOps.fpSum && usedOps.fpMul;
+  bool useSumForFp = (usedOps.fpAdd || usedOps.fpSum);
+  bool useSumMulForFpDot = usedOps.fpDot && useSumForFp && usedOps.fpMul;
   bool useSumMulForIntDot = usedOps.intDot && usedOps.intSum; // Eh.. int mul?
   bool useAddFOnly = !fpAssocAdd && usedOps.fpSum;
   bool fpCastRound = usedOps.fpCastRound;
@@ -493,7 +494,8 @@ static Results validate(ValidationInput vinput) {
           AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
       fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
-      useAddFOnly ? AbsLevelFpSum::ADD_ONLY : AbsLevelFpSum::RESPECTIVE,
+      fpAssocAdd ?  AbsLevelFpSum::SUM_ONLY :
+          useAddFOnly ? AbsLevelFpSum::ADD_ONLY : AbsLevelFpSum::RESPECTIVE,
       fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
@@ -509,6 +511,37 @@ static Results validate(ValidationInput vinput) {
       << "===============================================================\n\n";
 
   bool useAllLogic = fpAssocAdd;
+  res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
+  if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
+    // Check whether it is always UB
+    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, useAllLogic,
+                       elapsedMillisec);
+    return res;
+  }
+
+  usedOps = aop::getUsedAbstractOps();
+  bool tryThirdRefinedAbstraction = !fpAssocAdd && usedOps.fpSum;
+  if (!tryThirdRefinedAbstraction)
+    return res;
+
+  // Refine the current abstraction.
+  setAbstraction(
+      (useSumMulForFpDot || fpAssocAdd) ?
+          AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
+      fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
+      useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
+      AbsLevelFpSum::ADD_ONLY,
+      fpAssocAdd,
+      vinput.unrollIntSum,
+      vinput.f32NonConstsCount, vinput.f32Consts,
+      vinput.f64NonConstsCount, vinput.f64Consts);
+  setEncodingOptions(vinput.useMultisetForFpSum);
+
+  llvm::outs()
+      << "\n===============================================================\n"
+      << "  Giving more precise semantics to abstractly defined ops...\n"
+      << "===============================================================\n\n";
+
   res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
   if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
     // Check whether it is always UB
