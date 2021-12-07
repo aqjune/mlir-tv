@@ -6,14 +6,8 @@
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include <stack>
 #include <optional>
-#include <variant>
 #include "mlir/Support/LLVM.h"
 
-using ValueTy = std::variant<Tensor, MemRef, Index, Float, Integer>;
-
-llvm::raw_ostream& operator<<(llvm::raw_ostream&, const ValueTy &);
-smt::Expr getExpr(const ValueTy &vty);
-ValueTy eval(const ValueTy &vty, smt::Model m);
 
 class ArgInfo {
 private:

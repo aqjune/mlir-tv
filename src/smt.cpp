@@ -402,6 +402,10 @@ Expr Expr:: NAME (uint64_t arg) const {\
 
 EXPR_BVOP_UINT64(urem)
 Expr Expr::urem(const Expr &rhs) const {
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBV(a % b, rhs.bitwidth());
+
   Expr e;
   SET_Z3_USEOP(e, rhs, urem);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_UREM);
@@ -414,30 +418,22 @@ Expr Expr::udiv(const Expr& rhs) const {
   if (rhs.isUInt(rhsval) && rhsval == 1)
     return *this;
 
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBV(a / b, rhs.bitwidth());
+
   Expr e;
   SET_Z3_USEOP(e, rhs, udiv);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_UDIV);
   return e;
 }
 
-EXPR_BVOP_UINT64(mod)
-Expr Expr::mod(const Expr& rhs) const {
-  uint64_t v;
-  if (rhs.isUInt(v) && v != 0) {
-    if (v == 1)
-      return mkBV(0, sort().bitwidth());
-    else if ((v & (v - 1)) == 0 && ((v & (1ull << 63ull)) == 0))
-      return *this & mkBV((v - 1), sort().bitwidth());
-  }
-
-  Expr e;
-  SET_Z3_USEOP(e, rhs, mod);
-  SET_CVC5_USEOP(e, rhs, BITVECTOR_SMOD);
-  return e;
-}
-
 EXPR_BVOP_UINT64(ult)
 Expr Expr::ult(const Expr& rhs) const {
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBool(a < b);
+
   Expr e;
   SET_Z3_USEOP(e, rhs, ult);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_ULT);
@@ -446,6 +442,10 @@ Expr Expr::ult(const Expr& rhs) const {
 
 EXPR_BVOP_UINT64(ule)
 Expr Expr::ule(const Expr& rhs) const {
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBool(a <= b);
+
   Expr e;
   SET_Z3_USEOP(e, rhs, ule);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_ULE);
@@ -454,18 +454,12 @@ Expr Expr::ule(const Expr& rhs) const {
 
 EXPR_BVOP_UINT64(ugt)
 Expr Expr::ugt(const Expr& rhs) const {
-  Expr e;
-  SET_Z3_USEOP(e, rhs, ugt);
-  SET_CVC5_USEOP(e, rhs, BITVECTOR_UGT);
-  return e;
+  return rhs.ult(*this);
 }
 
 EXPR_BVOP_UINT64(uge)
 Expr Expr::uge(const Expr& rhs) const {
-  Expr e;
-  SET_Z3_USEOP(e, rhs, uge);
-  SET_CVC5_USEOP(e, rhs, BITVECTOR_UGE);
-  return e;
+  return rhs.ule(*this);
 }
 
 Expr Expr::select(const Expr &idx) const {
@@ -632,6 +626,10 @@ Expr Expr::isNonZero() const {
 
 EXPR_BVOP_UINT64(operator+)
 Expr Expr::operator+(const Expr &rhs) const {
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBV(a + b, rhs.bitwidth());
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator+);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_ADD);
@@ -640,6 +638,10 @@ Expr Expr::operator+(const Expr &rhs) const {
 
 EXPR_BVOP_UINT64(operator-)
 Expr Expr::operator-(const Expr &rhs) const {
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBV(a - b, rhs.bitwidth());
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator-);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_SUB);
@@ -648,15 +650,14 @@ Expr Expr::operator-(const Expr &rhs) const {
 
 EXPR_BVOP_UINT64(operator*)
 Expr Expr::operator*(const Expr &rhs) const {
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBV(a * b, rhs.bitwidth());
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator*);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_MULT);
   return e;
-}
-
-EXPR_BVOP_UINT64(operator%)
-Expr Expr::operator%(const Expr &rhs) const {
-  return mod(rhs);
 }
 
 EXPR_BVOP_UINT64(operator^)

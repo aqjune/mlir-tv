@@ -4,28 +4,6 @@
 using namespace smt;
 using namespace std;
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream &os, const ValueTy &v) {
-  visit([&](auto &&itm) {
-    os << itm;
-  }, v);
-  return os;
-}
-
-Expr getExpr(const ValueTy &v) {
-  optional<Expr> e;
-  visit([&](auto &&itm) {
-    e = (Expr)itm;
-  }, v);
-  return move(*e);
-}
-
-ValueTy eval(const ValueTy &v, smt::Model m) {
-  optional<ValueTy> e;
-  visit([&](auto &&itm) {
-    e = itm.eval(m);
-  }, v);
-  return move(*e);
-}
 
 
 ValueTy RegFile::findOrCrash(mlir::Value v) const {

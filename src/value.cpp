@@ -839,7 +839,7 @@ Tensor Tensor::tile(const vector<unsigned> &repeat) const {
   auto indVars = Index::boundIndexVars(dims.size());
   auto accessIdx = indVars;
   for (int i = 0; i < repeat.size(); ++i)
-    accessIdx[i] = accessIdx[i] % dims[i];
+    accessIdx[i] = accessIdx[i].urem(dims[i]);
 
   // UB if uninitialized
   return Tensor::mkInitializedLambda(elemType, vector(newDims), move(indVars),
@@ -913,6 +913,90 @@ Tensor Tensor::mkIte(
   return Tensor::mkLambda(
       trueValue.elemType, move(trueDims), move(indVars),
       move(retExpr), move(retInit));
+}
+
+Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
+      mlir::ElementsAttr attr) {
+  mlir::Type elemType = tensorty.getElementType();
+
+  if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
+    if (denseAttr.isSplat()) {
+      // A constant tensor's type cannot have unknown dimensions
+      auto dims = ShapedValue::getDims(tensorty, false);
+      auto v = attrToValueTy(denseAttr.getSplatValue<mlir::Attribute>());
+
+      return Tensor(elemType, getExpr(v), move(dims));
+
+    } else {
+      int64_t rank = tensorty.getRank();
+      vector<int64_t> dims;
+      vector<Expr> dimExprs;
+      for (int i = 0; i < rank; ++i) {
+        auto dsize = tensorty.getDimSize(i);
+        assert(dsize != mlir::ShapedType::kDynamicSize);
+        dims.push_back(dsize);
+        dimExprs.push_back(Index(dsize));
+      }
+
+      // [i1, i2, ..., iN]
+      vector<uint64_t> idxND(rank);
+      vector<Expr> exprs;
+
+      while (true) {
+        if (idxND.back() == dims.back()) {
+          int focus = rank - 1;
+          while (1 <= focus && idxND[focus] == dims[focus]) {
+            idxND[focus] = 0;
+            idxND[focus - 1]++;
+            focus--;
+          }
+
+          if (idxND[0] == dims[0])
+            break;
+        }
+
+        exprs.push_back(getExpr(
+            attrToValueTy(denseAttr.getValues<mlir::Attribute>()[idxND])));
+        idxND.back()++;
+      }
+
+      return Tensor(elemType, move(exprs)).reshape(dimExprs);
+    }
+
+  } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
+    auto sparseIndexValues = sparseAttr.getIndices().getValues<uint64_t>();
+    auto elemTy = tensorty.getElementType();
+    auto rank = tensorty.getRank();
+    vector<uint64_t> dims;
+    for (unsigned i = 0; i < rank; ++i)
+      dims.push_back(tensorty.getDimSize(i));
+
+    // Unspecified locations are filled with zero.
+    auto zero = getZero(elemTy);
+    if (!zero)
+      throw UnsupportedException("unsupported element type");
+
+    vector<vector<uint64_t>> sparseIndices;
+    vector<Expr> sparseValues;
+
+    auto sparseIndBeg = sparseIndexValues.begin();
+    while (sparseIndBeg != sparseIndexValues.end()) {
+      vector<uint64_t> curIndices;
+      for (unsigned i = 0; i < rank; ++i) {
+        curIndices.push_back(*sparseIndBeg);
+        sparseIndBeg++;
+      }
+
+      auto value = sparseAttr.getValues<mlir::Attribute>()[curIndices];
+      sparseIndices.push_back(move(curIndices));
+
+      auto e = attrToValueTy(value);
+      sparseValues.push_back(getExpr(e));
+    }
+    return Tensor(elemTy, sparseIndices, sparseValues, dims, *zero);
+  }
+
+  throw UnsupportedException("unsupported attribute");
 }
 
 Expr Tensor::to1DArrayWithOfs(
@@ -1294,4 +1378,59 @@ vector<Expr> MemRef::Layout::getInverseIndices(const Expr &idx) const {
     indices.push_back(inverse.select(idx));
 
   return indices;
+}
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream &os, const ValueTy &v) {
+  visit([&](auto &&itm) {
+    os << itm;
+  }, v);
+  return os;
+}
+
+Expr getExpr(const ValueTy &v) {
+  optional<Expr> e;
+  visit([&](auto &&itm) {
+    e = (Expr)itm;
+  }, v);
+  return move(*e);
+}
+
+ValueTy eval(const ValueTy &v, smt::Model m) {
+  optional<ValueTy> e;
+  visit([&](auto &&itm) {
+    e = itm.eval(m);
+  }, v);
+  return move(*e);
+}
+
+ValueTy attrToValueTy(mlir::Attribute a) {
+  auto ty = a.getType();
+  if (ty.isa<mlir::FloatType>()) {
+    return Float::constant(a.dyn_cast<mlir::FloatAttr>().getValue(), ty);
+  } else if (ty.isa<mlir::IntegerType>()) {
+    if (64 < ty.getIntOrFloatBitWidth())
+      throw UnsupportedException("Integer size is too large");
+
+    return Integer(a.dyn_cast<mlir::IntegerAttr>().getValue());
+  } else if (ty.isIndex()) {
+    llvm::APInt i = a.dyn_cast<mlir::IntegerAttr>().getValue();
+    assert(i.getBitWidth() == 64);
+    int64_t ii = i.getSExtValue();
+    assert(-2147483648ll <= ii && ii <= 2147483647ll);
+    return Index(ii);
+  }
+
+  throw UnsupportedException("Unsupported type");
+}
+
+optional<ValueTy> fromExpr(Expr &&e, mlir::Type ty) {
+  if (ty.isIndex())
+    return Index(e);
+  else if (ty.isa<mlir::FloatType>())
+    return Float(e, ty);
+  else if (ty.isa<mlir::IntegerType>()) {
+    assert(e.sort().bitwidth() == ty.getIntOrFloatBitWidth());
+    return Integer(e);
+  }
+  return {};
 }

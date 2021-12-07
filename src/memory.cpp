@@ -115,8 +115,15 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
       verbose("memory init") << "Assigning bid = " << i << " to global var "
           << glb.getName() << "...\n";
 
-      string name = "#" + glb.getName().str() + "_array";
-      newArrs.push_back(Expr::mkFreshVar(arrSort, name));
+      if (glb.constant()) {
+        auto tensorTy = mlir::RankedTensorType::get(glb.type().getShape(),
+            glb.type().getElementType());
+        Tensor t = Tensor::fromElemsAttr(tensorTy, *glb.initial_value());
+        newArrs.push_back(t.asArray());
+      } else {
+        string name = "#" + glb.getName().str() + "_array";
+        newArrs.push_back(Expr::mkFreshVar(arrSort, name));
+      }
       newWrit.push_back(Expr::mkBool(!glb.constant()));
       newNumElems.push_back(Index(glb.type().getNumElements()));
       newLiveness.push_back(Expr::mkBool(true));
