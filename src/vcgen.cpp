@@ -450,8 +450,19 @@ static Results validate(ValidationInput vinput) {
   Defer timePrinter([&]() {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
-
   using namespace aop;
+  auto printSematics = [](AbsLevelFpDot afd, AbsLevelFpCast afc,
+      AbsLevelIntDot aid, AbsFpAddSumEncoding fas) {
+    llvm::outs()
+      << "\n===============================================================\n"
+      << "  Giving more precise semantics to abstractly defined ops...\n"
+      << "  AbsLevelFpDot : " << (afd == AbsLevelFpDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
+      << "  AbsLevelFpCast : " << (afc == AbsLevelFpCast::FULLY_ABS ? "FULLY_ABS" : "PRECISE") << "\n"
+      << "  AbsLevelIntDot : " << (aid == AbsLevelIntDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
+      << "  AbsFpAddSumEncoding : " << (fas == AbsFpAddSumEncoding::USE_SUM_ONLY ? "USE_SUM_ONLY" : fas == AbsFpAddSumEncoding::DEFAULT ? "DEFAULT" : "USE_ADD_ONLY") << "\n"
+      << "===============================================================\n\n";
+  };
+
   bool fpAssocAdd = vinput.isFpAddAssociative;
   setAbstraction(
       AbsLevelFpDot::FULLY_ABS,
@@ -505,10 +516,8 @@ static Results validate(ValidationInput vinput) {
   if (!vinput.dumpSMTPath.empty())
     vinput.dumpSMTPath += "_noabs";
 
-  llvm::outs()
-      << "\n===============================================================\n"
-      << "  Giving more precise semantics to abstractly defined ops...\n"
-      << "===============================================================\n\n";
+  printSematics(getAbsLevelFpDot(), getAbsLevelFpCast(), getAbsLevelIntDot(),
+                           getAbsFpAddSumEncoding());
 
   bool useAllLogic = fpAssocAdd;
   res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
@@ -537,10 +546,8 @@ static Results validate(ValidationInput vinput) {
       vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(vinput.useMultisetForFpSum);
 
-  llvm::outs()
-      << "\n===============================================================\n"
-      << "  Giving more precise semantics to abstractly defined ops...\n"
-      << "===============================================================\n\n";
+  printSematics(getAbsLevelFpDot(), getAbsLevelFpCast(), getAbsLevelIntDot(),
+                           getAbsFpAddSumEncoding());
 
   res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
   if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)

@@ -186,6 +186,11 @@ void setEncodingOptions(bool use_multiset) {
   useMultiset = use_multiset;
 }
 
+AbsLevelFpDot getAbsLevelFpDot() { return alFpDot; }
+AbsLevelFpCast getAbsLevelFpCast() { return alFpCast; }
+AbsLevelIntDot getAbsLevelIntDot() { return alIntDot; }
+AbsFpAddSumEncoding getAbsFpAddSumEncoding() { return fpAddSum; }
+
 bool getFpAddAssociativity() { return isFpAddAssociative; }
 
 AbsFpEncoding &getFloatEncoding() { return *floatEnc; }

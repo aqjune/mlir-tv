@@ -59,6 +59,10 @@ void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot, AbsFpAddSumEn
 // useMultiset: To encode commutativity of fp summation, use multiset?
 void setEncodingOptions(bool useMultiset);
 
+AbsLevelFpDot getAbsLevelFpDot();
+AbsLevelFpCast getAbsLevelFpCast();
+AbsLevelIntDot getAbsLevelIntDot();
+AbsFpAddSumEncoding getAbsFpAddSumEncoding();
 bool getFpAddAssociativity();
 
 smt::Expr getFpAssociativePrecondition();
