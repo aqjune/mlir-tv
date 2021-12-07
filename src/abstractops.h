@@ -54,7 +54,9 @@ void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
 void setEncodingOptions(bool useMultiset);
 
 bool getFpAddAssociativity();
+bool getFpCastIsPrecise();
 
+smt::Expr getFpTruncatePrecondition();
 smt::Expr getFpAssociativePrecondition();
 smt::Expr getFpUltPrecondition();
 
@@ -109,6 +111,8 @@ private:
   std::optional<smt::FnDecl> fp_expfn;
   std::optional<smt::FnDecl> fp_hashfn;
   std::string fn_suffix;
+
+  smt::Expr fpTruncatePrecondition;
 
 private:
   AbsFpEncoding(const llvm::fltSemantics &semantics,
@@ -172,6 +176,7 @@ public:
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr getFpAssociativePrecondition();
+  smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
 
 private:
   smt::Expr lambdaSum(const smt::Expr &a, const smt::Expr &n);

@@ -664,6 +664,7 @@ EXPR_BVOP_UINT64(operator^)
 Expr Expr::operator^(const Expr &rhs) const {
   Expr e;
   SET_Z3_USEOP(e, rhs, operator^);
+  // TOFIX: ^ may be bool!
   SET_CVC5_USEOP(e, rhs, BITVECTOR_XOR);
   return e;
 }
