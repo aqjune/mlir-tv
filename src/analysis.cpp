@@ -138,6 +138,10 @@ void analyzeOp(mlir::memref::GetGlobalOp op, AnalysisResult &res) {
   auto mop = op.getOperation()->getParentOfType<mlir::ModuleOp>();
   auto glb = mlir::cast<mlir::memref::GlobalOp>(mop.lookupSymbol(glbName));
   res.memref.usedGlobals[glbName.str()] = glb;
+
+  if (glb.constant() && glb.initial_value()) {
+    analyzeElemAttr(*glb.initial_value(), res);
+  }
 }
 
 template<>
@@ -197,6 +201,7 @@ static void analyzeBlock(
     ANALYZE(op, mlir::tosa::ConstOp, res);
 
     // Non-constant operations; increase varCount if return type matches
+    // For constant globals: conservatively assume that they increase varCount
     for (const auto &result: op.getResults()) {
       analyzeVariable(result, res);
     }

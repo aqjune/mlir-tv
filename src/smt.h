@@ -108,8 +108,6 @@ public:
   Expr urem(uint64_t rhs) const;
   Expr udiv(const Expr &rhs) const;
   Expr udiv(uint64_t rhs) const;
-  Expr mod(const Expr &rhs) const;
-  Expr mod(uint64_t rhs) const;
 
   Expr ult(const Expr &rhs) const;
   Expr ult(uint64_t rhs) const;
@@ -141,8 +139,6 @@ public:
   Expr operator-(uint64_t rhs) const;
   Expr operator*(const Expr &rhs) const;
   Expr operator*(uint64_t rhs) const;
-  Expr operator%(const Expr &rhs) const;
-  Expr operator%(uint64_t rhs) const;
   Expr operator^(const Expr &rhs) const;
   Expr operator^(uint64_t rhs) const;
   Expr operator&(const Expr &rhs) const;

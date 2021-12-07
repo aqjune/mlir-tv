@@ -534,10 +534,6 @@ static vector<mlir::memref::GlobalOp> mergeGlobals(
       continue;
     }
 
-    if (glbSrc.constant())
-      throw UnsupportedException(
-          "Constant globals are not supported (" + name + ")");
-
     auto glbTgt = tgtItr->second;
     if (glbSrc.type() != glbTgt.type() ||
         glbSrc.isPrivate() != glbTgt.isPrivate() ||
@@ -553,10 +549,15 @@ static vector<mlir::memref::GlobalOp> mergeGlobals(
     mergedGlbs.push_back(glbSrc);
   }
 
-  for (auto &[name, glbTgt]: tgtGlobals) {
+  for (auto &[name, glbTgt0]: tgtGlobals) {
+    auto glbTgt = glbTgt0;
     auto tgtItr = srcGlobals.find(name);
     if (tgtItr == srcGlobals.end()) {
-      throw UnsupportedException("Introducing new globals is not supported");
+      if (glbTgt.constant()) {
+        mergedGlbs.push_back(glbTgt);
+      } else
+        throw UnsupportedException("Introducing new non-const globals "
+            "is not supported");
     }
   }
 
