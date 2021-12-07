@@ -38,8 +38,9 @@ enum class AbsLevelIntDot {
 };
 
 enum class AbsLevelFpSum {
-  FULLY_ABS = 0, // fp_add, fp_sum is a fully abstract function (no relation between them)
-  ADD_ONLY = 1, // use only addf function
+  SUM_ONLY = 0, // When --associativity given, encode addition using only sum_fn
+  RESPECTIVE = 1, // Encode addition using fp_add, fp_sum respectivly (no relation between them)
+  ADD_ONLY = 2, // Use only addf function
 };
 
 // unrollIntSum: Fully unroll sum(arr) where arr is an int array of const size

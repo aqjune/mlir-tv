@@ -452,19 +452,17 @@ static Results validate(ValidationInput vinput) {
   });
 
   using namespace aop;
-  // Don't enable fp add associativity even if vinput.associativeAdd is true
-  // because simply encoding it as UF is more efficient.
-  // We can turn it on in the next iteration.
+  bool fpAssocAdd = vinput.isFpAddAssociative;
   setAbstraction(
       AbsLevelFpDot::FULLY_ABS,
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
-      AbsLevelFpSum::FULLY_ABS,
-      /*isFpAddAssociative*/false,
+      fpAssocAdd ? AbsLevelFpSum::SUM_ONLY : AbsLevelFpSum::RESPECTIVE,
+      fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
-  setEncodingOptions(/*useMultiset*/false);
+  setEncodingOptions(vinput.useMultisetForFpSum);
 
   auto res = tryValidation(vinput, true, false, elapsedMillisec);
 
@@ -478,14 +476,13 @@ static Results validate(ValidationInput vinput) {
   }
 
   auto usedOps = aop::getUsedAbstractOps();
-  bool fpAssocAdd = vinput.isFpAddAssociative;
   // dot = mul + sum?
   bool useSumMulForFpDot = usedOps.fpDot && usedOps.fpSum && usedOps.fpMul;
   bool useSumMulForIntDot = usedOps.intDot && usedOps.intSum; // Eh.. int mul?
-  bool useAddFOnly = usedOps.fpSum;
+  bool useAddFOnly = !fpAssocAdd && usedOps.fpSum;
   bool fpCastRound = usedOps.fpCastRound;
   bool tryRefinedAbstraction =
-      fpAssocAdd || useSumMulForFpDot || useSumMulForIntDot || fpCastRound || useAddFOnly;
+    useSumMulForFpDot || useSumMulForIntDot || fpCastRound || useAddFOnly;
 
   if (!tryRefinedAbstraction)
     return res;
@@ -496,7 +493,7 @@ static Results validate(ValidationInput vinput) {
           AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
       fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
-      useAddFOnly ? AbsLevelFpSum::ADD_ONLY : AbsLevelFpSum::FULLY_ABS,
+      useAddFOnly ? AbsLevelFpSum::ADD_ONLY : AbsLevelFpSum::RESPECTIVE,
       fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,

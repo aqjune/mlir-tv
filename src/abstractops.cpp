@@ -675,7 +675,7 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   auto length = n.asUInt();
 
   optional<Expr> sumExpr;
-  if (alFpSum == AbsLevelFpSum::FULLY_ABS) {
+  if (alFpSum == AbsLevelFpSum::SUM_ONLY || alFpSum == AbsLevelFpSum::RESPECTIVE) {
     usedOps.fpSum = true;
     sumExpr = (getFpAddAssociativity() && useMultiset) ? multisetSum(a, n) :  lambdaSum(a, n);
   } else {
