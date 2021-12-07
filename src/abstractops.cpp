@@ -34,7 +34,7 @@ map<unsigned, FnDecl> int_sumfn;
 map<unsigned, FnDecl> int_dotfn;
 
 // ----- Constants and global vars for abstract sumf operations ------
-aop::AbsLevelFpSum alFpSum;
+aop::AbsFpAddSumEncoding fpAddSum;
 
 FnDecl getIntSumFn(unsigned bitwidth) {
   auto itr = int_sumfn.find(bitwidth);
@@ -91,7 +91,7 @@ namespace aop {
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(
-    AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, AbsLevelFpSum afs,
+    AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, AbsFpAddSumEncoding fas,
     bool addAssoc,
     bool unrollIntSum,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
@@ -99,7 +99,7 @@ void setAbstraction(
   alFpDot = afd;
   alFpCast = afc;
   alIntDot = aid;
-  alFpSum = afs;
+  fpAddSum = fas;
   doUnrollIntSum = unrollIntSum;
   isFpAddAssociative = addAssoc;
 
@@ -507,7 +507,7 @@ Expr AbsFpEncoding::neg(const Expr &f) {
 }
 
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
-  if (alFpSum == AbsLevelFpSum::SUM_ONLY) {
+  if (fpAddSum == AbsFpAddSumEncoding::USE_SUM_ONLY) {
     auto i = Index::var("idx", VarType::BOUND);
     auto lambda = Expr::mkLambda(i, Expr::mkIte(i == Index::zero(), _f1, _f2));
     auto n = Index(2);
@@ -686,7 +686,8 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   auto length = n.asUInt();
 
   optional<Expr> sumExpr;
-  if (alFpSum == AbsLevelFpSum::SUM_ONLY || alFpSum == AbsLevelFpSum::RESPECTIVE) {
+  if (fpAddSum == AbsFpAddSumEncoding::USE_SUM_ONLY
+      || fpAddSum == AbsFpAddSumEncoding::DEFAULT) {
     sumExpr = (getFpAddAssociativity() && useMultiset) ? multisetSum(a, n) :  lambdaSum(a, n);
   } else {
     if (!length || length > 10) {
@@ -869,7 +870,7 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
       uint64_t alen, blen;
       if (!an.isUInt(alen) || !bn.isUInt(blen)) continue;
       // if addf, sumfn are repective, we only consider same length array
-      if (alFpSum == AbsLevelFpSum::RESPECTIVE && alen != blen) continue;
+      if (fpAddSum == AbsFpAddSumEncoding::DEFAULT && alen != blen) continue;
 
       auto aVal = *hashValues[i];
       auto bVal = *hashValues[j];

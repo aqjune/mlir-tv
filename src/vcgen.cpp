@@ -407,7 +407,7 @@ static void checkIsSrcAlwaysUB(
       aop::AbsLevelFpDot::SUM_MUL,
       aop::AbsLevelFpCast::PRECISE,
       aop::AbsLevelIntDot::SUM_MUL,
-      aop::AbsLevelFpSum::ADD_ONLY,
+      aop::AbsFpAddSumEncoding::USE_ADD_ONLY,
       vinput.isFpAddAssociative,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
@@ -457,7 +457,7 @@ static Results validate(ValidationInput vinput) {
       AbsLevelFpDot::FULLY_ABS,
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
-      fpAssocAdd ? AbsLevelFpSum::SUM_ONLY : AbsLevelFpSum::RESPECTIVE,
+      fpAssocAdd ? AbsFpAddSumEncoding::USE_SUM_ONLY : AbsFpAddSumEncoding::DEFAULT,
       fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
@@ -490,16 +490,16 @@ static Results validate(ValidationInput vinput) {
 
   // Refine the current abstraction.
   setAbstraction(
-      (useSumMulForFpDot || fpAssocAdd) ?
-          AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
-      fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
-      useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
-      fpAssocAdd ?  AbsLevelFpSum::SUM_ONLY :
-          useAddFOnly ? AbsLevelFpSum::ADD_ONLY : AbsLevelFpSum::RESPECTIVE,
-      fpAssocAdd,
-      vinput.unrollIntSum,
-      vinput.f32NonConstsCount, vinput.f32Consts,
-      vinput.f64NonConstsCount, vinput.f64Consts);
+    (useSumMulForFpDot || fpAssocAdd) ?
+        AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
+    fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
+    useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
+    fpAssocAdd ?  AbsFpAddSumEncoding::USE_SUM_ONLY :
+      (useAddFOnly ? AbsFpAddSumEncoding::USE_ADD_ONLY : AbsFpAddSumEncoding::DEFAULT),
+    fpAssocAdd,
+    vinput.unrollIntSum,
+    vinput.f32NonConstsCount, vinput.f32Consts,
+    vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(vinput.useMultisetForFpSum);
 
   if (!vinput.dumpSMTPath.empty())
@@ -530,7 +530,7 @@ static Results validate(ValidationInput vinput) {
           AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
       fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
-      AbsLevelFpSum::ADD_ONLY,
+      AbsFpAddSumEncoding::USE_ADD_ONLY,
       fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
