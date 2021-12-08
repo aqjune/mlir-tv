@@ -989,13 +989,14 @@ void encodeOp(State &st, mlir::tosa::GatherOp op, bool) {
   vector<Expr> indVars = Index::boundIndexVars(outputDims.size());
   auto [idx, idxInbounds] = indices.get({indVars[0], indVars[1]});
   auto [outputValue, inputInbounds] = values.get({indVars[0], idx, indVars[2]});
-  auto isInitialized = values.isInitialized({indVars[0], idx, indVars[2]});
 
   st.wellDefined(op, move(idxInbounds));
   st.wellDefined(op, move(inputInbounds));
-  st.regs.add(op, Tensor::mkLambda(
+  st.wellDefined(op, values.isFullyInitialized());
+  st.wellDefined(op, indices.isFullyInitialized());
+  st.regs.add(op, Tensor::mkInitializedLambda(
       values.getElemType(), move(outputDims), move(indVars),
-      move(outputValue), move(isInitialized)));
+      move(outputValue)));
 }
 
 
@@ -2574,6 +2575,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::Conv2DOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ExpOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::GatherOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReduceSumOp, encodeMemWriteOps);
@@ -2582,7 +2584,6 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::SubOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TransposeOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tosa::GatherOp, encodeMemWriteOps);
 
     throw UnsupportedException(&op);
   }
