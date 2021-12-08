@@ -985,15 +985,19 @@ void encodeOp(State &st, mlir::tosa::GatherOp op, bool) {
   auto indices = st.regs.get<Tensor>(op.indices());
   // output tensor dim = [N, W, C]
   // output[n][w][c] = values[n][indices[n][w]][c]
-  vector<Expr> outputDims = {values.getDim(0), indices.getDim(1), values.getDim(2)};
+  vector<Expr> outputDims =
+      {values.getDim(0), indices.getDim(1), values.getDim(2)};
   vector<Expr> indVars = Index::boundIndexVars(outputDims.size());
   auto [idx, idxInbounds] = indices.get({indVars[0], indVars[1]});
   auto [outputValue, inputInbounds] = values.get({indVars[0], idx, indVars[2]});
+  auto isInitialized = values.isInitialized({indVars[0], idx, indVars[2]});
 
-  st.wellDefined(op, move(idxInbounds));
-  st.wellDefined(op, move(inputInbounds));
-  st.wellDefined(op, values.isFullyInitialized());
+  // Touched elements must have been initialized.
+  st.wellDefined(op, Expr::mkForall(indVars,
+      fitsInDims(indVars, outputDims).implies(
+          move(idxInbounds) & move(inputInbounds) & move(isInitialized))));
   st.wellDefined(op, indices.isFullyInitialized());
+
   st.regs.add(op, Tensor::mkInitializedLambda(
       values.getElemType(), move(outputDims), move(indVars),
       move(outputValue)));
