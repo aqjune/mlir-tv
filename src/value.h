@@ -26,6 +26,7 @@ public:
   static smt::Sort sortFloat32();
   static Float var(std::string &&name, mlir::Type ty, VarType vty);
   static Float constant(const llvm::APFloat &apf, mlir::Type ty);
+  static Float one(mlir::Type ty);
 
   // Returns e^x
   static Float exp(const Float &x);

@@ -1624,6 +1624,20 @@ void encodeOp(State &st, mlir::tosa::NegateOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::tosa::ReciprocalOp op, bool) {
+  auto opty = op.getOperand().getType().dyn_cast<mlir::RankedTensorType>();
+  if (!opty || !opty.getElementType().isa<mlir::FloatType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported operand type");
+
+  auto elemty = opty.getElementType().cast<mlir::FloatType>();
+  mlir::Value arg0 = op.getOperand();
+
+  encodeUnaryOp(st, op, arg0,
+      [elemty](auto &&a) { return Float::one(elemty).div(a); },
+      {});
+}
+
+template<>
 void encodeOp(State &st, mlir::tosa::ExpOp op, bool) {
   auto opty = op.getOperand().getType();
   if (!opty.isa<mlir::RankedTensorType>())
@@ -2592,6 +2606,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::GatherOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ReciprocalOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReduceSumOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReshapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ReverseOp, encodeMemWriteOps);

@@ -131,6 +131,17 @@ Float Float::constant(const llvm::APFloat &apf, mlir::Type ty) {
   return {aop::getFpEncoding(ty).constant(apf), ty};
 }
 
+Float Float::one(mlir::Type t) {
+  if (t.isF32()) {
+    return constant(llvm::APFloat(1.0f), t);
+  } else if (t.isF64()) {
+    return constant(llvm::APFloat(1.0), t);
+  }
+
+  throw UnsupportedException(t, "Unknown float type");
+}
+
+
 Float Float::exp(const Float &x) {
   return {aop::getFpEncoding(x.type).exp(x.e), x.type};
 }
