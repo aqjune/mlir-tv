@@ -885,6 +885,14 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
       precond = precond & associativity;
     }
   }
+
+  // To support summation without identity equals to orginal one sum([a])=sum([a, 0, 0])
+  // add  precondition for hash(-0) = 0
+  auto hashfn = getHashFnForAddAssoc();
+  auto fpAddIdentity = zero(true);
+  auto hashIdentity = Expr::mkBV(0, getHashRangeBits());
+  precond = precond & (hashfn.apply(fpAddIdentity) == hashIdentity);
+
   precond = precond.simplify();
   return precond;
 }
