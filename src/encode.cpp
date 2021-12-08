@@ -974,6 +974,30 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
 
 }
 
+template<>
+void encodeOp(State &st, mlir::tosa::GatherOp op, bool) {
+  // values, output - 3D dimension, indices - 2D dimension.
+  // These were checked by default MLIR verifier
+
+  // input's dim sizes = [N, K, C]
+  auto values = st.regs.get<Tensor>(op.values());
+  // indices's dim sizes = [N, W]
+  auto indices = st.regs.get<Tensor>(op.indices());
+  // output tensor dim = [N, W, C]
+  // output[n][w][c] = values[n][indices[n][w]][c]
+  vector<Expr> outputDims = {values.getDim(0), indices.getDim(1), values.getDim(2)};
+  vector<Expr> indVars = Index::boundIndexVars(outputDims.size());
+  auto [idx, idxInbounds] = indices.get({indVars[0], indVars[1]});
+  auto [outputValue, inputInbounds] = values.get({indVars[0], idx, indVars[2]});
+  auto isInitialized = values.isInitialized({indVars[0], idx, indVars[2]});
+
+  st.wellDefined(op, move(idxInbounds));
+  st.wellDefined(op, move(inputInbounds));
+  st.regs.add(op, Tensor::mkLambda(
+      values.getElemType(), move(outputDims), move(indVars),
+      move(outputValue), move(isInitialized)));
+}
+
 
 template<>
 void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
@@ -2558,6 +2582,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::SubOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TransposeOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::GatherOp, encodeMemWriteOps);
 
     throw UnsupportedException(&op);
   }
