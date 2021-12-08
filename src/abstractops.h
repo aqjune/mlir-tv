@@ -13,6 +13,7 @@ struct UsedAbstractOps {
   bool fpDot;
   bool fpAdd;
   bool fpMul;
+  bool fpDiv;
   bool fpSum;
   bool fpUlt;
   bool fpCastRound;
@@ -113,6 +114,7 @@ private:
   std::optional<smt::FnDecl> fp_dotfn;
   std::optional<smt::FnDecl> fp_addfn;
   std::optional<smt::FnDecl> fp_mulfn;
+  std::optional<smt::FnDecl> fp_divfn;
   std::optional<smt::FnDecl> fp_ultfn;
   std::optional<smt::FnDecl> fp_extendfn;
   std::optional<smt::FnDecl> fp_truncatefn;
@@ -148,6 +150,9 @@ private:
   // Returns a fully abstract mul fn fp_mul(value_bv_bits-1, value_bv_bits-1)
   // -> BV(value_bv_bits)
   smt::FnDecl getMulFn();
+  // Returns a fully abstract div fn fp_mul(value_bv_bits-1, value_bv_bits-1)
+  // -> BV(value_bv_bits)
+  smt::FnDecl getDivFn();
   smt::FnDecl getAssocSumFn();
   smt::FnDecl getSumFn();
   smt::FnDecl getDotFn();
@@ -175,6 +180,7 @@ public:
   smt::Expr neg(const smt::Expr &f);
   smt::Expr add(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr mul(const smt::Expr &f1, const smt::Expr &f2);
+  smt::Expr div(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr exp(const smt::Expr &x);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);

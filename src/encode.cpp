@@ -351,6 +351,15 @@ void encodeOp(State &st, mlir::arith::MulFOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::arith::DivFOp op, bool) {
+  mlir::Value arg0 = op.getOperand(0);
+  mlir::Value arg1 = op.getOperand(1);
+
+  encodeBinaryOp(st, op, arg0, arg1,
+      [](auto &&a, auto &&b) { return a.div(b); }, {});
+}
+
+template<>
 void encodeOp(State &st, mlir::arith::NegFOp op, bool) {
   mlir::Value arg = op.getOperand();
 
@@ -2520,6 +2529,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::IndexCastOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::DivFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::NegFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
