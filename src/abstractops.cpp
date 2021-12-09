@@ -310,7 +310,7 @@ FnDecl AbsFpEncoding::getExtendFn(const AbsFpEncoding &tgt) {
 
 FnDecl AbsFpEncoding::getTruncateFn(const AbsFpEncoding &tgt) {
   if (!fp_truncatefn) {
-    auto src_fty = sort();
+    auto src_fty = Sort::bvSort(fp_bitwidth);
     auto tgt_fty = Sort::bvSort(tgt.fp_bitwidth);
     fp_truncatefn.emplace({src_fty}, tgt_fty, "fp_truncate_" + fn_suffix);
   }
