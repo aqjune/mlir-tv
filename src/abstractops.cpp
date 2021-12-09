@@ -287,7 +287,7 @@ FnDecl AbsFpEncoding::getDotFn() {
 
 FnDecl AbsFpEncoding::getUltFn() {
   if (!fp_ultfn) {
-    auto fty = Sort::bvSort(fp_bitwidth);
+    auto fty = sort();
     auto fty2 = Sort::bvSort(1); // i1 type (boolean value)
     fp_ultfn.emplace({fty, fty}, fty2, "fp_ult_" + fn_suffix);
   }
@@ -296,8 +296,8 @@ FnDecl AbsFpEncoding::getUltFn() {
 
 FnDecl AbsFpEncoding::getExtendFn(const AbsFpEncoding &tgt) {
   if (!fp_extendfn) {
-    auto src_fty = Sort::bvSort(fp_bitwidth);
-    auto tgt_fty = Sort::bvSort(tgt.fp_bitwidth);
+    auto src_fty = sort();
+    auto tgt_fty = tgt.sort();
     fp_extendfn.emplace({src_fty}, tgt_fty, "fp_extend_" + fn_suffix);
   }
   return *fp_extendfn;
@@ -305,8 +305,8 @@ FnDecl AbsFpEncoding::getExtendFn(const AbsFpEncoding &tgt) {
 
 FnDecl AbsFpEncoding::getTruncateFn(const AbsFpEncoding &tgt) {
   if (!fp_truncatefn) {
-    auto src_fty = Sort::bvSort(fp_bitwidth);
-    auto tgt_fty = Sort::bvSort(tgt.fp_bitwidth);
+    auto src_fty = sort();
+    auto tgt_fty = tgt.sort();
     fp_truncatefn.emplace({src_fty}, tgt_fty, "fp_truncate_" + fn_suffix);
   }
   return *fp_truncatefn;
@@ -314,7 +314,7 @@ FnDecl AbsFpEncoding::getTruncateFn(const AbsFpEncoding &tgt) {
 
 FnDecl AbsFpEncoding::getExpFn() {
   if (!fp_expfn) {
-    auto fty = Sort::bvSort(fp_bitwidth);
+    auto fty = sort();
     fp_expfn.emplace({fty}, fty, "fp_exp_" + fn_suffix);
   }
   return *fp_expfn;
@@ -322,7 +322,7 @@ FnDecl AbsFpEncoding::getExpFn() {
 
 FnDecl AbsFpEncoding::getHashFnForAddAssoc() {
   if (!fp_hashfn) {
-    auto fty = Sort::bvSort(fp_bitwidth);
+    auto fty = sort();
     fp_hashfn.emplace(fty, Sort::bvSort(getHashRangeBits()),
         "fp_hash_" + fn_suffix);
   } else {
