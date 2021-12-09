@@ -120,9 +120,8 @@ private:
   std::optional<smt::FnDecl> fp_truncatefn;
   std::optional<smt::FnDecl> fp_expfn;
   std::optional<smt::FnDecl> fp_hashfn;
+  std::optional<smt::FnDecl> fp_rounddirfn;
   std::string fn_suffix;
-
-  smt::Expr fpTruncatePrecondition;
 
 private:
   AbsFpEncoding(const llvm::fltSemantics &semantics,
@@ -160,6 +159,7 @@ private:
   smt::FnDecl getTruncateFn(const AbsFpEncoding &tgt);
   smt::FnDecl getExpFn();
   smt::FnDecl getHashFnForAddAssoc();
+  smt::FnDecl getRoundDirFn();
 
   size_t getHashRangeBits() const;
   uint64_t getSignBit() const;

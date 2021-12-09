@@ -222,8 +222,7 @@ AbsFpEncoding &getFpEncoding(mlir::Type ty) {
 AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned smaller_value_bw, unsigned prec_bw,
        std::string &&fn_suffix)
-     :semantics(semantics), fn_suffix(move(fn_suffix)),
-      fpTruncatePrecondition(Expr::mkBool(true)) {
+     :semantics(semantics), fn_suffix(move(fn_suffix)) {
   assert(smaller_value_bw > 0);
   // BWs for casting
   value_bit_info = { limit_bw, smaller_value_bw, prec_bw };
@@ -311,7 +310,7 @@ FnDecl AbsFpEncoding::getExtendFn(const AbsFpEncoding &tgt) {
 
 FnDecl AbsFpEncoding::getTruncateFn(const AbsFpEncoding &tgt) {
   if (!fp_truncatefn) {
-    auto src_fty = Sort::bvSort(fp_bitwidth);
+    auto src_fty = sort();
     auto tgt_fty = Sort::bvSort(tgt.fp_bitwidth);
     fp_truncatefn.emplace({src_fty}, tgt_fty, "fp_truncate_" + fn_suffix);
   }
@@ -336,6 +335,15 @@ FnDecl AbsFpEncoding::getHashFnForAddAssoc() {
     assert(fp_hashfn->getRange().bitwidth() == getHashRangeBits());
   }
   return *fp_hashfn;
+}
+
+FnDecl AbsFpEncoding::getRoundDirFn() {
+  if (!fp_rounddirfn) {
+    auto src_fty = Sort::bvSort(value_bitwidth);
+    auto tgt_fty = Sort::bvSort(1);
+    fp_rounddirfn.emplace({src_fty}, tgt_fty, "fp_rounddir_" + fn_suffix);
+  }
+  return *fp_rounddirfn;
 }
 
 size_t AbsFpEncoding::getHashRangeBits() const {
@@ -778,8 +786,7 @@ Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
 Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   usedOps.fpCastRound = true;
 
-  if (tgt.value_bit_info.limit_bitwidth == 0 
-      && tgt.value_bit_info.prec_bitwidth == 0) {
+  if (!getFpCastIsPrecise()) {
     // Fully abstract encoding 
     return getExtendFn(tgt).apply(f);
   }
@@ -811,38 +818,44 @@ Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
 Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   usedOps.fpCastRound = true;
 
-  if (getFpCastIsPrecise()) {
-    assert(value_bitwidth > tgt.value_bitwidth &&
-         "tgt cannot have bigger value_bitwidth than src");
-
-    if (tgt.value_bit_info.limit_bitwidth != 0 ||
-          tgt.value_bit_info.prec_bitwidth != 0)
-      throw UnsupportedException(
-        "Truncating from large-size type to middle-size type is not supported");
-
-    auto sign_bit = f.extract(fp_bitwidth - 1, value_bitwidth);
-    auto sign_pos = Expr::mkBV(0, SIGN_BITS);
-    auto value_bits = f.extract(value_bitwidth - 1, 0);
-    auto limit_bits = value_bits.extract(
-      value_bitwidth - 1, value_bitwidth - value_bit_info.limit_bitwidth);
-    auto limit_zero = Expr::mkBV(0, value_bit_info.limit_bitwidth);
-
-    const auto floored_small_value = value_bits.extract(
-        value_bitwidth - 1 - value_bit_info.limit_bitwidth,
-        value_bit_info.prec_bitwidth);
-    const auto ceiled_small_value = floored_small_value + 1;
-    const auto floored_float = sign_bit.concat(floored_small_value);
-    const auto ceiled_float = sign_bit.concat(ceiled_small_value);
-    assert(floored_float.bitwidth() == tgt.sort().bitwidth());
-
-    fpTruncatePrecondition &= Expr::mkIte(
-        isnan(f) | f == infinity() | f == infinity(true),
-        Expr::mkBool(true),
-        (getTruncateFn(tgt).apply(f) == floored_float.simplify()) ^
-            (getTruncateFn(tgt).apply(f) == ceiled_float.simplify()));
+  if (!getFpCastIsPrecise()) {
+    // Fully abstract encoding
+    return getTruncateFn(tgt).apply(f);
   }
 
-  return getTruncateFn(tgt).apply(f);
+  assert(value_bitwidth > tgt.value_bitwidth &&
+        "tgt cannot have bigger value_bitwidth than src");
+
+  if (tgt.value_bit_info.limit_bitwidth != 0 ||
+        tgt.value_bit_info.prec_bitwidth != 0)
+    throw UnsupportedException(
+      "Truncating from large-size type to middle-size type is not supported");
+
+  auto sign_bit = f.extract(fp_bitwidth - 1, value_bitwidth);
+  auto sign_pos = Expr::mkBV(0, SIGN_BITS);
+  auto value_bits = f.extract(value_bitwidth - 1, 0);
+  auto limit_bits = value_bits.extract(
+    value_bitwidth - 1, value_bitwidth - value_bit_info.limit_bitwidth);
+  auto limit_zero = Expr::mkBV(0, value_bit_info.limit_bitwidth);
+
+  const auto round_dir = getRoundDirFn().apply(value_bits);
+  const auto floored_value = value_bits.extract(
+      value_bitwidth - 1 - value_bit_info.limit_bitwidth,
+      value_bit_info.prec_bitwidth);
+  const auto ceiled_value = floored_value + 1;
+
+  const auto floored_float = sign_bit.concat(floored_value);
+  const auto ceiled_float = sign_bit.concat(ceiled_value);
+  assert(floored_float.bitwidth() == tgt.sort().bitwidth());
+
+  return Expr::mkIte(isnan(f), tgt.nan(),
+          Expr::mkIte(f == infinity(), tgt.infinity(),
+          Expr::mkIte(f == infinity(true), tgt.infinity(true),
+          Expr::mkIte(limit_bits != limit_zero,
+            Expr::mkIte(sign_bit == sign_pos,
+              tgt.infinity(), tgt.infinity(true)),
+            Expr::mkIte(round_dir == Expr::mkBV(0, 1),
+            floored_float, ceiled_float)))));
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() {
@@ -908,36 +921,17 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
 }
 
 Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
-  const unsigned int small_value_msb =
-      value_bitwidth - value_bit_info.limit_bitwidth - 1;
-  const unsigned int small_value_lsb =
-      small_value_msb - value_bit_info.smaller_value_bitwidth + 1;
-  const Expr sign_true = Expr::mkBV(1, SIGN_BITS);
-
-  Expr precond = fpTruncatePrecondition;
-  // Handle constants not in absrepr
-  precond &= (getTruncateFn(tgt).apply({nan()}) == tgt.nan());
-  precond &= (getTruncateFn(tgt).apply({infinity()}) == tgt.infinity());
-  precond &= (getTruncateFn(tgt).apply({infinity(true)}) == tgt.infinity(true));
-  precond &= (getTruncateFn(tgt).apply({zero()}) == tgt.zero());
-  precond &= (getTruncateFn(tgt).apply({zero(true)}) == tgt.zero(true));
+  Expr precond = Expr::mkBool(true);
 
   for (auto &[fp, absrepr] : fpconst_absrepr) {
-    auto casting_info = *getCastingInfo(fp);
-    if (!casting_info.zero_limit_bits) {
-      precond &= (getTruncateFn(tgt).apply({absrepr}) == 
-        Expr::mkIte(absrepr.getMSB() == sign_true,
-          tgt.infinity(true), tgt.infinity()));
-    } else {
-      Expr rounded_abs_value =
-          absrepr.extract(small_value_msb, small_value_lsb).simplify();
+    if (!fp.isNegative()) {
+      auto casting_info = *getCastingInfo(fp);
+      auto value_bits = absrepr.extract(value_bitwidth - 1, 0);
       if (casting_info.is_rounded_upward) {
-        rounded_abs_value = rounded_abs_value + 1;
+        precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(1, 1));
+      } else {
+        precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(0, 1));
       }
-
-      const Expr rounded_value =
-        absrepr.getMSB().concat(rounded_abs_value).simplify();
-      precond &= (getTruncateFn(tgt).apply({absrepr}) == rounded_value);
     }
   }
 
