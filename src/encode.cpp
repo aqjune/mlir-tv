@@ -1650,6 +1650,47 @@ void encodeOp(State &st, mlir::tosa::ExpOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
+  auto input = op.input();   // [N, IC]
+  auto weight = op.weight(); // [OC, IC]
+  auto bias = op.bias();     // [OC]
+  if (!input.getType().isa<mlir::RankedTensorType>() ||
+      !weight.getType().isa<mlir::RankedTensorType>() ||
+      !bias.getType().isa<mlir::RankedTensorType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported operand type");
+
+  auto inputTensor = st.regs.get<Tensor>(input);
+  auto weightTensor = st.regs.get<Tensor>(weight);
+  auto biasTensor = st.regs.get<Tensor>(bias);
+
+  st.wellDefined(op, inputTensor.getDim(1) == weightTensor.getDim(1));
+  st.wellDefined(op, weightTensor.getDim(0) == biasTensor.getDim(0));
+  st.wellDefined(op, inputTensor.isFullyInitialized());
+  st.wellDefined(op, weightTensor.isFullyInitialized());
+  st.wellDefined(op, biasTensor.isFullyInitialized());
+
+  auto mul = inputTensor.matmul(weightTensor.transpose());
+
+  // Output: [N, OC]
+  auto idxVars = Index::boundIndexVars(2);
+  vector<Expr> sizes = {inputTensor.getDim(0), weightTensor.getDim(0)};
+  auto biasBroadcasted = biasTensor.affine(idxVars, {idxVars[1]}, move(sizes));
+
+  auto elemTy = getElemTy(input);
+  auto res = mul.elementwiseBinOp(biasBroadcasted, elemTy,
+      [elemTy](Expr &&a, Expr &&b) -> Expr {
+    if (elemTy.isa<mlir::FloatType>()) {
+      return Float(a, elemTy).add(Float(b, elemTy));
+    } else if (elemTy.isa<mlir::IntegerType>()) {
+      return a + b;
+    }
+    throw UnsupportedException("Unsupported type");
+  });
+
+  st.regs.add(op, res);
+}
+
+template<>
 void encodeOp(State &st, mlir::tosa::ReduceSumOp op, bool) {
   auto input = op.input();
   auto inputTy = input.getType().dyn_cast<mlir::RankedTensorType>();
@@ -2603,6 +2644,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::Conv2DOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ExpOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::FullyConnectedOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::GatherOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::MulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::NegateOp, encodeMemWriteOps);

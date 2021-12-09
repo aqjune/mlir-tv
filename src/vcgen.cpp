@@ -216,6 +216,7 @@ static Results checkRefinement(
   verbose("checkRefinement") << "use logic: " << logic << "\n";
 
   { // 1. Check UB
+    verbose("checkRefinement") << "1. Check UB\n";
     Solver s(logic);
     auto not_refines =
         (st_src.isWellDefined() & !st_tgt.isWellDefined()).simplify();
@@ -234,6 +235,7 @@ static Results checkRefinement(
   }
 
   if (st_src.retValues.size() != 0) { // 2. Check the return values
+    verbose("checkRefinement") << "2. Check return values\n";
     unsigned numret = st_src.retValues.size();
     assert(numret == st_tgt.retValues.size());
     for (unsigned i = 0; i < numret; ++i) {
@@ -273,6 +275,7 @@ static Results checkRefinement(
 
   if (st_src.m->getTotalNumBlocks() > 0 ||
       st_tgt.m->getTotalNumBlocks() > 0) { // 3. Check memory refinement
+    verbose("checkRefinement") << "3. Check memory refinement\n";
     Solver s(logic);
     auto refinementPerType = st_tgt.m->refines(*st_src.m);
     // [refines, params]
