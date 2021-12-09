@@ -65,7 +65,9 @@ AbsLevelFpCast getAbsLevelFpCast();
 AbsLevelIntDot getAbsLevelIntDot();
 AbsFpAddSumEncoding getAbsFpAddSumEncoding();
 bool getFpAddAssociativity();
+bool getFpCastIsPrecise();
 
+smt::Expr getFpTruncatePrecondition();
 smt::Expr getFpAssociativePrecondition();
 smt::Expr getFpUltPrecondition();
 
@@ -120,6 +122,7 @@ private:
   std::optional<smt::FnDecl> fp_truncatefn;
   std::optional<smt::FnDecl> fp_expfn;
   std::optional<smt::FnDecl> fp_hashfn;
+  std::optional<smt::FnDecl> fp_rounddirfn;
   std::string fn_suffix;
 
 private:
@@ -161,6 +164,7 @@ private:
   smt::FnDecl getTruncateFn(const AbsFpEncoding &tgt);
   smt::FnDecl getExpFn();
   smt::FnDecl getHashFnForAddAssoc();
+  smt::FnDecl getRoundDirFn();
 
   size_t getHashRangeBits() const;
   uint64_t getSignBit() const;
@@ -188,6 +192,7 @@ public:
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr getFpAssociativePrecondition();
+  smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
 
 private:
   smt::Expr lambdaSum(const smt::Expr &a, const smt::Expr &n);
