@@ -907,14 +907,23 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
                 padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
 
-  Expr output = Expr::mkIte(cond, input.get(srcInd).first, *getZero(elemTy))
-                + bias.get({padInd[3]}).first;
+  Expr padVal = Expr::mkIte(cond, input.get(srcInd).first,
+                    Float::constant(llvm::APFloat(-0.0), elemTy));
 
-  auto padInput = Tensor::mkInitializedLambda(
-                    elemTy, move(padDims), move(padInd), output);
+  auto paddedTensor = Tensor::mkInitializedLambda(
+                    elemTy, move(padDims), move(padInd), padVal);
 
-  auto t = padInput.conv(weight,
+
+  auto t = paddedTensor.conv(weight,
                       strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
+
+  vector<Expr> outDims = t.getDims();
+  vector<Expr> outInd = Index::boundIndexVars(t.getRank());
+
+  auto output = Tensor::mkInitializedLambda(
+                  elemTy, move(outDims), move(outInd), 
+                  bias.get({outInd[3]}).first + t.get(outInd).first
+                );
 
   st.wellDefined(op, input.isFullyInitialized());
   st.wellDefined(op, weight.isFullyInitialized());
