@@ -27,8 +27,8 @@ static void analyzeAPFloat(
     // They will be specially treated in setAbstraction() (abstractops.cpp)
     return;
 
-  auto val_f32_floor = val, val_f32_round = val;
-  auto val_f64 = val, val_f64_floor = val, val_f64_round = val;
+  auto val_f32_round = val, val_f32_floor = val, val_f32_ceil = val;
+  auto val_f64 = val, val_f64_floor = val, val_f64_ceil = val;
   bool lost_info; // dummy
 
   llvm::APFloat::opStatus op_status;
@@ -43,35 +43,42 @@ static void analyzeAPFloat(
     val_f32_floor.convert(llvm::APFloat::IEEEsingle(),
                           // floor for correct BV mapping (ordering issue)
                           llvm::APFloat::rmTowardZero, &lost_info);
+    // ceiled value should also be added
+    // as unknown variable(s) may have to be rounded upward
+    if (val.isNegative()) {
+      val_f32_ceil.convert(llvm::APFloat::IEEEsingle(),
+                          llvm::APFloat::rmTowardNegative, &lost_info);
+    } else {
+      val_f32_ceil.convert(llvm::APFloat::IEEEsingle(),
+                          llvm::APFloat::rmTowardPositive, &lost_info);
+    }
   } else {
     throw UnsupportedException(ty, "Unsupported type");
   }
 
-  val_f64_round = val_f32_round;
-  val_f64_round.convert(llvm::APFloat::IEEEdouble(),
+  // clear signs, as constSet only includes positive FPs
+  if (val_f64.isNegative()) {
+    val_f32_floor.clearSign();
+    val_f32_ceil.clearSign();
+    val_f64.clearSign();
+  }
+
+  val_f64_ceil = val_f32_ceil;
+  val_f64_ceil.convert(llvm::APFloat::IEEEdouble(),
                         // doesn't really matter in extension
                         llvm::APFloat::rmTowardZero, &lost_info);
   val_f64_floor = val_f32_floor;
   val_f64_floor.convert(llvm::APFloat::IEEEdouble(),
                         // doesn't really matter in extension
-                        llvm::APFloat::rmTowardZero, &lost_info);
-
-  // Signs are preserved regardless of the conversion
-  if (val_f64.isNegative()) {
-    val_f32_round.clearSign();
-    val_f32_floor.clearSign();
-    val_f64.clearSign();
-    val_f64_round.clearSign();
-    val_f64_floor.clearSign();
-  }
+                        llvm::APFloat::rmTowardZero, &lost_info);  
 
   // Values beyond the float range are mapped to Inf
   if (!(op_status & llvm::APFloat::opOverflow)) {
-    res.F32.constSet.insert(val_f32_round);
+    res.F32.constSet.insert(val_f32_ceil);
     res.F32.constSet.insert(val_f32_floor);
-    // Rounded and floored values should be added to F64 as well
-    // for correct mapping
-    res.F64.constSet.insert(val_f64_round);
+    // Ceiled and floored values should be added to F64 as well
+    // to map values correctly between different precisions
+    res.F64.constSet.insert(val_f64_ceil);
     res.F64.constSet.insert(val_f64_floor);
   }
   res.F64.constSet.insert(val_f64);
