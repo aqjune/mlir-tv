@@ -427,9 +427,9 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       }
     }
 
-    Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(e_value).simplify();
+    Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(e_value);
     fpconst_absrepr.emplace(fp_const, e_pos);
-    Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(e_value).simplify();
+    Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(e_value);
     fpconst_absrepr.emplace(-fp_const, e_neg);
   }
 }
