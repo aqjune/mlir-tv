@@ -838,13 +838,13 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
     Expr ai = a.select(i), bi = b.select(i);
     Expr identity = zero(true);
     // Encode commutativity: dot(a, b) = dot(b, a)
-    Expr lhs = getDotFn().apply({
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity)),
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity))});
-    Expr rhs = getDotFn().apply({
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity)),
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity))});
-    return lhs + rhs;
+    Expr arr1 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity));
+    Expr arr2 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity));
+    Expr lhs = getDotFn().apply({arr1, arr2});
+    Expr rhs = getDotFn().apply({arr2, arr1});
+    // To prevent the LSB of dot(x, x) from always being 0, separately deal with
+    // the case using 'arr1 == arr2'.
+    return Expr::mkIte(arr1 == arr2, lhs, lhs + rhs);
 
   } else if (alFpDot == AbsLevelFpDot::SUM_MUL) {
     // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
