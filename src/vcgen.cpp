@@ -10,6 +10,7 @@
 #include "vcgen.h"
 #include "analysis.h"
 
+#include "magic_enum.hpp"
 #include <chrono>
 #include <fstream>
 #include <functional>
@@ -216,6 +217,7 @@ static Results checkRefinement(
   verbose("checkRefinement") << "use logic: " << logic << "\n";
 
   { // 1. Check UB
+    verbose("checkRefinement") << "1. Check UB\n";
     Solver s(logic);
     auto not_refines =
         (st_src.isWellDefined() & !st_tgt.isWellDefined()).simplify();
@@ -234,6 +236,7 @@ static Results checkRefinement(
   }
 
   if (st_src.retValues.size() != 0) { // 2. Check the return values
+    verbose("checkRefinement") << "2. Check return values\n";
     unsigned numret = st_src.retValues.size();
     assert(numret == st_tgt.retValues.size());
     for (unsigned i = 0; i < numret; ++i) {
@@ -273,6 +276,7 @@ static Results checkRefinement(
 
   if (st_src.m->getTotalNumBlocks() > 0 ||
       st_tgt.m->getTotalNumBlocks() > 0) { // 3. Check memory refinement
+    verbose("checkRefinement") << "3. Check memory refinement\n";
     Solver s(logic);
     auto refinementPerType = st_tgt.m->refines(*st_src.m);
     // [refines, params]
@@ -379,6 +383,9 @@ static tuple<State, State, Expr> encodeFinalStates(
   if(aop::getUsedAbstractOps().fpUlt)
     preconds.push_back(aop::getFpUltPrecondition());
 
+  if (aop::getFpCastIsPrecise())
+    preconds.push_back(aop::getFpTruncatePrecondition());
+
   Expr precond =
       exprAnd(preconds) & st_src.precondition() & st_tgt.precondition();
   precond = precond.simplify();
@@ -416,8 +423,12 @@ static void checkIsSrcAlwaysUB(
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
+  // Set blocks as initially alive, since making them dead always makes the
+  // program more undefined. (This may not be true if ptr-to-int casts exist,
+  // but we don't have a plan to support that)
   auto initMemory = make_unique<Memory>(
-      vinput.numBlocksPerType, vinput.numBlocksPerType, vinput.globals);
+      vinput.numBlocksPerType, vinput.numBlocksPerType, vinput.globals,
+      /*blocks initially alive*/true);
   auto st = encodeFinalState(vinput, move(initMemory), false, true,
       args_dummy, preconds);
 
@@ -456,15 +467,10 @@ static Results validate(ValidationInput vinput) {
     llvm::outs()
       << "\n===============================================================\n"
       << "  Giving more precise semantics to abstractly defined ops...\n"
-      << "  AbsLevelFpDot : " <<
-              (afd == AbsLevelFpDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
-      << "  AbsLevelFpCast : " <<
-              (afc == AbsLevelFpCast::FULLY_ABS ? "FULLY_ABS" : "PRECISE") << "\n"
-      << "  AbsLevelIntDot : " <<
-              (aid == AbsLevelIntDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
-      << "  AbsFpAddSumEncoding : " << 
-              (fas == AbsFpAddSumEncoding::USE_SUM_ONLY ? "USE_SUM_ONLY" :
-              (fas == AbsFpAddSumEncoding::DEFAULT ? "DEFAULT" : "USE_ADD_ONLY")) << "\n"
+      << "  AbsLevelFpDot: " << magic_enum::enum_name(afd) << "\n"
+      << "  AbsLevelFpCast: " << magic_enum::enum_name(afc) << "\n"
+      << "  AbsLevelIntDot: " << magic_enum::enum_name(aid) << "\n"
+      << "  AbsFpAddSumEncoding: " << magic_enum::enum_name(fas) << "\n"
       << "===============================================================\n\n";
   };
 
@@ -473,7 +479,8 @@ static Results validate(ValidationInput vinput) {
       AbsLevelFpDot::FULLY_ABS,
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
-      fpAssocAdd ? AbsFpAddSumEncoding::USE_SUM_ONLY : AbsFpAddSumEncoding::DEFAULT,
+      fpAssocAdd ? AbsFpAddSumEncoding::USE_SUM_ONLY :
+                   AbsFpAddSumEncoding::DEFAULT,
       fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
@@ -493,29 +500,30 @@ static Results validate(ValidationInput vinput) {
 
   auto usedOps = aop::getUsedAbstractOps();
   // dot = mul + sum?
-  bool useSumForFp = (usedOps.fpAdd || usedOps.fpSum);
-  bool useSumMulForFpDot = usedOps.fpDot && useSumForFp && usedOps.fpMul;
+  bool useSumMulForFpDot = usedOps.fpDot;
   bool useSumMulForIntDot = usedOps.intDot && usedOps.intSum; // Eh.. int mul?
   bool useAddFOnly = !fpAssocAdd && usedOps.fpSum;
   bool fpCastRound = usedOps.fpCastRound;
   bool tryRefinedAbstraction =
-    useSumMulForFpDot || fpAssocAdd || useSumMulForIntDot || fpCastRound || useAddFOnly;
+      useSumMulForFpDot || fpAssocAdd || useSumMulForIntDot || fpCastRound ||
+      useAddFOnly;
 
   if (!tryRefinedAbstraction)
     return res;
 
   // Refine the current abstraction.
   setAbstraction(
-    (useSumMulForFpDot || fpAssocAdd) ?
-        AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
-    fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
-    useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
-    fpAssocAdd ?  AbsFpAddSumEncoding::USE_SUM_ONLY :
-      (useAddFOnly ? AbsFpAddSumEncoding::USE_ADD_ONLY : AbsFpAddSumEncoding::DEFAULT),
-    fpAssocAdd,
-    vinput.unrollIntSum,
-    vinput.f32NonConstsCount, vinput.f32Consts,
-    vinput.f64NonConstsCount, vinput.f64Consts);
+      (useSumMulForFpDot || fpAssocAdd) ?
+          AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
+      fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
+      useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
+      fpAssocAdd ?  AbsFpAddSumEncoding::USE_SUM_ONLY :
+        (useAddFOnly ? AbsFpAddSumEncoding::USE_ADD_ONLY :
+                       AbsFpAddSumEncoding::DEFAULT),
+      fpAssocAdd,
+      vinput.unrollIntSum,
+      vinput.f32NonConstsCount, vinput.f32Consts,
+      vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(vinput.useMultisetForFpSum);
 
   if (!vinput.dumpSMTPath.empty())

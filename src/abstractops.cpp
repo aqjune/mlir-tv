@@ -64,6 +64,7 @@ FnDecl getIntDotFn(unsigned bitwidth) {
 struct FPCastingInfo {
   bool zero_limit_bits;
   bool zero_prec_bits;
+  bool is_rounded_upward;
 };
 optional<FPCastingInfo> getCastingInfo(llvm::APFloat fp_const) {
   auto semantics = llvm::APFloat::SemanticsToEnum(fp_const.getSemantics());
@@ -71,16 +72,24 @@ optional<FPCastingInfo> getCastingInfo(llvm::APFloat fp_const) {
   if (semantics == llvm::APFloat::Semantics::S_IEEEsingle) {
     return nullopt;
   } else if (semantics == llvm::APFloat::Semantics::S_IEEEdouble) {
+    auto fp_const_floor = fp_const;
+    fp_const_floor.convert(llvm::APFloat::IEEEsingle(),
+                      // floor to analyze rounding direction
+                      llvm::APFloat::rmTowardZero, &lost_info);
+
     auto op_status = fp_const.convert(llvm::APFloat::IEEEsingle(),
-                    // floor in case of truncation (ordering issue)
-                    llvm::APFloat::rmTowardZero, &lost_info);
+                      // round to correctly analyze overflow
+                      llvm::APFloat::rmNearestTiesToEven, &lost_info);
     if (op_status & llvm::APFloat::opOverflow) {
       zero_limit_bits = false;
     }
     bool zero_prec_bits = !lost_info;
-    return FPCastingInfo{zero_limit_bits, zero_prec_bits};
+    bool is_rounded_upward = (fp_const_floor != fp_const);
+
+    return FPCastingInfo {zero_limit_bits, zero_prec_bits, is_rounded_upward};
   } else {
-    throw UnsupportedException("Cannot analyze casting information for this type");
+    throw UnsupportedException(
+      "Cannot analyze casting information for this type");
   }
 }
 }
@@ -104,6 +113,10 @@ void setAbstraction(
   isFpAddAssociative = addAssoc;
 
   // without suffix f, it will become llvm::APFloat with double semantics
+  // Note that 0.0 and 1.0 may already have been added during analysis.
+  // 0.0 and 1.0 are necessary to prove several arithmetic properties,
+  // so we're manually inserting 0.0 and 1.0
+  // just in case they are not added during the analysis.
   floatConsts.emplace(0.0f);
   floatConsts.emplace(1.0f);
   doubleConsts.emplace(0.0);
@@ -139,8 +152,8 @@ void setAbstraction(
     const_max_nonzero_precs = max(const_nonzero_precs, const_max_nonzero_precs);
 
     // all double variables may have same SVB but have different PBs
-    const unsigned min_prec_bitwidth =
-        max(log2_ceil(doubleNonConstsCnt), log2_ceil(const_max_nonzero_precs));
+    const unsigned min_prec_bitwidth = max((uint64_t)1,
+      max(log2_ceil(const_max_nonzero_precs), log2_ceil(doubleNonConstsCnt)));
 
     // Decide min_limit_bitwidth.
     // We're not going to simply use log2(consts_nonzero_limit) as limit bit
@@ -192,6 +205,8 @@ AbsLevelIntDot getAbsLevelIntDot() { return alIntDot; }
 AbsFpAddSumEncoding getAbsFpAddSumEncoding() { return fpAddSum; }
 
 bool getFpAddAssociativity() { return isFpAddAssociative; }
+
+bool getFpCastIsPrecise() { return alFpCast == AbsLevelFpCast::PRECISE; }
 
 AbsFpEncoding &getFloatEncoding() { return *floatEnc; }
 AbsFpEncoding &getDoubleEncoding() { return *doubleEnc; }
@@ -287,7 +302,7 @@ FnDecl AbsFpEncoding::getDotFn() {
 
 FnDecl AbsFpEncoding::getUltFn() {
   if (!fp_ultfn) {
-    auto fty = Sort::bvSort(fp_bitwidth);
+    auto fty = sort();
     auto fty2 = Sort::bvSort(1); // i1 type (boolean value)
     fp_ultfn.emplace({fty, fty}, fty2, "fp_ult_" + fn_suffix);
   }
@@ -296,8 +311,8 @@ FnDecl AbsFpEncoding::getUltFn() {
 
 FnDecl AbsFpEncoding::getExtendFn(const AbsFpEncoding &tgt) {
   if (!fp_extendfn) {
-    auto src_fty = Sort::bvSort(fp_bitwidth);
-    auto tgt_fty = Sort::bvSort(tgt.fp_bitwidth);
+    auto src_fty = sort();
+    auto tgt_fty = tgt.sort();
     fp_extendfn.emplace({src_fty}, tgt_fty, "fp_extend_" + fn_suffix);
   }
   return *fp_extendfn;
@@ -305,8 +320,8 @@ FnDecl AbsFpEncoding::getExtendFn(const AbsFpEncoding &tgt) {
 
 FnDecl AbsFpEncoding::getTruncateFn(const AbsFpEncoding &tgt) {
   if (!fp_truncatefn) {
-    auto src_fty = Sort::bvSort(fp_bitwidth);
-    auto tgt_fty = Sort::bvSort(tgt.fp_bitwidth);
+    auto src_fty = sort();
+    auto tgt_fty = tgt.sort();
     fp_truncatefn.emplace({src_fty}, tgt_fty, "fp_truncate_" + fn_suffix);
   }
   return *fp_truncatefn;
@@ -314,7 +329,7 @@ FnDecl AbsFpEncoding::getTruncateFn(const AbsFpEncoding &tgt) {
 
 FnDecl AbsFpEncoding::getExpFn() {
   if (!fp_expfn) {
-    auto fty = Sort::bvSort(fp_bitwidth);
+    auto fty = sort();
     fp_expfn.emplace({fty}, fty, "fp_exp_" + fn_suffix);
   }
   return *fp_expfn;
@@ -322,7 +337,7 @@ FnDecl AbsFpEncoding::getExpFn() {
 
 FnDecl AbsFpEncoding::getHashFnForAddAssoc() {
   if (!fp_hashfn) {
-    auto fty = Sort::bvSort(fp_bitwidth);
+    auto fty = sort();
     fp_hashfn.emplace(fty, Sort::bvSort(getHashRangeBits()),
         "fp_hash_" + fn_suffix);
   } else {
@@ -330,6 +345,15 @@ FnDecl AbsFpEncoding::getHashFnForAddAssoc() {
     assert(fp_hashfn->getRange().bitwidth() == getHashRangeBits());
   }
   return *fp_hashfn;
+}
+
+FnDecl AbsFpEncoding::getRoundDirFn() {
+  if (!fp_rounddirfn) {
+    auto src_fty = Sort::bvSort(value_bitwidth);
+    auto tgt_fty = Sort::bvSort(1);
+    fp_rounddirfn.emplace({src_fty}, tgt_fty, "fp_rounddir_" + fn_suffix);
+  }
+  return *fp_rounddirfn;
 }
 
 size_t AbsFpEncoding::getHashRangeBits() const {
@@ -354,8 +378,7 @@ uint64_t AbsFpEncoding::getSignBit() const {
 }
 
 void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
-  // 0 is reserved for zero
-  uint64_t value_id = 1;
+  uint64_t value_id = 0;
   // prec_offset_map[smaller value]: next precision bit
   map<uint64_t, uint64_t> prec_offset_map;
 
@@ -368,14 +391,15 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       continue;
     }
 
-    unsigned limit_value_bitwidth =
+    const unsigned limit_value_bitwidth =
         value_bit_info.limit_bitwidth + value_bit_info.smaller_value_bitwidth;
-    Expr e_value = Expr::mkBV(value_id, limit_value_bitwidth);
+    Expr e_value = Expr::mkBV(value_id, limit_value_bitwidth); // dummy
 
     if (value_bit_info.limit_bitwidth == 0 &&
         value_bit_info.prec_bitwidth == 0) {
       // this encoding is the smallest encoding or does not support casting
       value_id += 1;
+      e_value = Expr::mkBV(value_id, limit_value_bitwidth);
     } else {
       auto casting_info = getCastingInfo(fp_const);
       assert(casting_info.has_value() &&
@@ -384,13 +408,13 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       if (!casting_info->zero_limit_bits) {
         // these values should be mapped to Inf when truncated.
         // In the higher precision, freshly start value_id with limit bit set
-        unsigned value_prec_bitwidth = 
+        const unsigned value_prec_bitwidth = 
           value_bit_info.smaller_value_bitwidth + value_bit_info.prec_bitwidth;
         value_id = max(value_id, (uint64_t)1 << value_prec_bitwidth);
         e_value = Expr::mkBV(value_id, value_bitwidth);
         value_id += 1;
       } else if (!casting_info->zero_prec_bits) {
-        // this value will be *floored* to same value,
+        // this value will be rounded to same value,
         // so do not change smaller_value and increment prec bit.
         auto itr = prec_offset_map.insert({value_id, 1}).first;
         uint64_t prec = itr->second;
@@ -400,15 +424,16 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         // Increase the next precision bit.
         itr->second++;
       } else {
+        // this value will be rounded to different value,
+        // so assign different smaller_value
+        value_id += 1;
+        e_value = Expr::mkBV(value_id, limit_value_bitwidth);
+
         // this encoding may not have prec bits
         if (value_bit_info.prec_bitwidth > 0) {
           Expr e_prec = Expr::mkBV(0, value_bit_info.prec_bitwidth);
           e_value = e_value.concat(e_prec);
         }
-
-        // this value will be *floored* to different value,
-        // so assign different smaller_value
-        value_id += 1;
       }
     }
 
@@ -747,7 +772,8 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
 
   uint64_t length;
   if (!n.isUInt(length))
-    throw UnsupportedException("Only an array of constant length is supported.");
+    throw UnsupportedException(
+        "Only an array of constant length is supported.");
 
   auto elemtSort = a.select(Index(0)).sort();
   auto bag = Expr::mkEmptyBag(elemtSort);
@@ -765,20 +791,23 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
 
 Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   if (getFpAddAssociativity() && !n.isNumeral())
-    throw UnsupportedException("Only an array of constant length is supported.");
+    throw UnsupportedException(
+        "Only an array of constant length is supported.");
   auto length = n.asUInt();
 
   optional<Expr> sumExpr;
   if (fpAddSum == AbsFpAddSumEncoding::USE_SUM_ONLY
       || fpAddSum == AbsFpAddSumEncoding::DEFAULT) {
-    sumExpr = (getFpAddAssociativity() && useMultiset) ? multisetSum(a, n) :  lambdaSum(a, n);
+    sumExpr = (getFpAddAssociativity() && useMultiset) ?
+        multisetSum(a, n) :  lambdaSum(a, n);
   } else {
     if (!length || length > 10) {
-      verbose("fpSum") << "ADD_ONLY applies only array length less than equals to 10.\n";
+      verbose("fpSum") << "ADD_ONLY applies only array length less than or"
+                          " equals to 10.\n";
       verbose("fpSum") << "Fallback to lambdaSum...\n";
       sumExpr = lambdaSum(a, n);
     } else {
-      verbose("fpSum") << "Sum of array unrolled to fp_add.\n";
+      verbose("fpSum") << "Sum of an array unrolled to fp_add.\n";
       auto sum = a.select(Index(0));
       for (auto i = 1; i < length; i++) {
         sum = add(sum, a.select(Index(i)));
@@ -812,13 +841,13 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
     Expr ai = a.select(i), bi = b.select(i);
     Expr identity = zero(true);
     // Encode commutativity: dot(a, b) = dot(b, a)
-    Expr lhs = getDotFn().apply({
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity)),
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity))});
-    Expr rhs = getDotFn().apply({
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity)),
-        Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity))});
-    return lhs + rhs;
+    Expr arr1 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity));
+    Expr arr2 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity));
+    Expr lhs = getDotFn().apply({arr1, arr2});
+    Expr rhs = getDotFn().apply({arr2, arr1});
+    // To prevent the LSB of dot(x, x) from always being 0, separately deal with
+    // the case using 'arr1 == arr2'.
+    return Expr::mkIte(arr1 == arr2, lhs, lhs + rhs);
 
   } else if (alFpDot == AbsLevelFpDot::SUM_MUL) {
     // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
@@ -839,8 +868,7 @@ Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
 Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   usedOps.fpCastRound = true;
 
-  if (tgt.value_bit_info.limit_bitwidth == 0 
-      && tgt.value_bit_info.prec_bitwidth == 0) {
+  if (!getFpCastIsPrecise()) {
     // Fully abstract encoding 
     return getExtendFn(tgt).apply(f);
   }
@@ -872,17 +900,18 @@ Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
 Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   usedOps.fpCastRound = true;
 
-  if (value_bit_info.limit_bitwidth == 0 && value_bit_info.prec_bitwidth == 0) {
-    // Fully abstract encoding 
-    return getExtendFn(tgt).apply(f);
+  if (!getFpCastIsPrecise()) {
+    // Fully abstract encoding
+    return getTruncateFn(tgt).apply(f);
   }
 
   assert(value_bitwidth > tgt.value_bitwidth &&
-         "tgt cannot have bigger value_bitwidth than src");
+        "tgt cannot have bigger value_bitwidth than src");
 
-  if (tgt.value_bit_info.limit_bitwidth != 0 || tgt.value_bit_info.prec_bitwidth != 0)
-    throw UnsupportedException("Truncating from large-size type to middle-size "
-        "type is not supported");
+  if (tgt.value_bit_info.limit_bitwidth != 0 ||
+        tgt.value_bit_info.prec_bitwidth != 0)
+    throw UnsupportedException(
+      "Truncating from large-size type to middle-size type is not supported");
 
   auto sign_bit = f.extract(fp_bitwidth - 1, value_bitwidth);
   auto sign_pos = Expr::mkBV(0, SIGN_BITS);
@@ -891,18 +920,24 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
     value_bitwidth - 1, value_bitwidth - value_bit_info.limit_bitwidth);
   auto limit_zero = Expr::mkBV(0, value_bit_info.limit_bitwidth);
 
-  auto truncated_float = value_bits.extract(
+  const auto round_dir = getRoundDirFn().apply(value_bits);
+  const auto floored_value = value_bits.extract(
       value_bitwidth - 1 - value_bit_info.limit_bitwidth,
       value_bit_info.prec_bitwidth);
-  truncated_float = sign_bit.concat(truncated_float);
-  assert(truncated_float.bitwidth() == tgt.sort().bitwidth());
-  
+  const auto ceiled_value = floored_value + 1;
+
+  const auto floored_float = sign_bit.concat(floored_value);
+  const auto ceiled_float = sign_bit.concat(ceiled_value);
+  assert(floored_float.bitwidth() == tgt.sort().bitwidth());
+
   return Expr::mkIte(isnan(f), tgt.nan(),
-      Expr::mkIte(f == infinity(), tgt.infinity(),
-      Expr::mkIte(f == infinity(true), tgt.infinity(true),
-      Expr::mkIte(limit_bits != limit_zero,
-        Expr::mkIte(sign_bit == sign_pos, tgt.infinity(), tgt.infinity(true)),
-        truncated_float.simplify()))));
+          Expr::mkIte(f == infinity(), tgt.infinity(),
+          Expr::mkIte(f == infinity(true), tgt.infinity(true),
+          Expr::mkIte(limit_bits != limit_zero,
+            Expr::mkIte(sign_bit == sign_pos,
+              tgt.infinity(), tgt.infinity(true)),
+            Expr::mkIte(round_dir == Expr::mkBV(0, 1),
+            floored_float, ceiled_float)))));
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() {
@@ -975,7 +1010,24 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
   return precond;
 }
 
+Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
+  Expr precond = Expr::mkBool(true);
 
+  for (auto &[fp, absrepr] : fpconst_absrepr) {
+    if (!fp.isNegative()) {
+      auto casting_info = *getCastingInfo(fp);
+      auto value_bits = absrepr.extract(value_bitwidth - 1, 0);
+      if (casting_info.is_rounded_upward) {
+        precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(1, 1));
+      } else {
+        precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(0, 1));
+      }
+    }
+  }
+
+  precond = precond.simplify();
+  return precond;
+}
 
 Expr getFpAssociativePrecondition() {
   // Calling this function doesn't make sense if add is not associative
@@ -1005,6 +1057,15 @@ Expr getFpUltPrecondition() {
   }
   // TODO: double
 
+  return cond;
+}
+
+Expr getFpTruncatePrecondition() {
+  // Calling this function doesn't make sense if casting is imprecise
+  assert(alFpCast == AbsLevelFpCast::PRECISE);
+
+  // if alFpCast is true, floatEnc and doubleEnc will exist
+  Expr cond = doubleEnc->getFpTruncatePrecondition(*floatEnc);
   return cond;
 }
 

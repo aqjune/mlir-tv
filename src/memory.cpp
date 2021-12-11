@@ -73,7 +73,8 @@ static Expr isSafeToWrite(
 
 Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
                const TypeMap<size_t> &maxNumLocalBlocksPerType,
-               const vector<mlir::memref::GlobalOp> &globals):
+               const vector<mlir::memref::GlobalOp> &globals,
+               bool blocksInitiallyAlive):
     bidBits(calcBidBW(numGlobalBlocksPerType, maxNumLocalBlocksPerType)),
     globalBlocksCnt(numGlobalBlocksPerType),
     maxLocalBlocksCnt(maxNumLocalBlocksPerType),
@@ -139,7 +140,11 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
       newArrs.push_back(Expr::mkFreshVar(arrSort, suffix2("array")));
       newWrit.push_back(Expr::mkFreshVar(boolSort, suffix2("writable")));
       newNumElems.push_back(Expr::mkFreshVar(idxSort, suffix2("numelems")));
-      newLiveness.push_back(Expr::mkFreshVar(boolSort, suffix2("liveness")));
+
+      if (blocksInitiallyAlive)
+        newLiveness.push_back(Expr::mkBool(true));
+      else
+        newLiveness.push_back(Expr::mkFreshVar(boolSort, suffix2("liveness")));
     }
 
     arrays.insert({elemTy, move(newArrs)});

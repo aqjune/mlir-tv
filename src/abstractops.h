@@ -39,8 +39,9 @@ enum class AbsLevelIntDot {
 };
 
 enum class AbsFpAddSumEncoding {
-  USE_SUM_ONLY = 0, // When --associativity given, encode addition using only sum_fn
-  DEFAULT = 1, // Encode addition using fp_add, fp_sum respectivly (no relation between them)
+  USE_SUM_ONLY = 0, // When --associativity is given, encode an addition as sum
+  DEFAULT = 1, // Encode addition using fp_add, fp_sum respectivly
+               // (no relation between them)
   USE_ADD_ONLY = 2, // Use only addf function
 };
 
@@ -49,7 +50,8 @@ enum class AbsFpAddSumEncoding {
 // floatNonConstsCnt: # of non-constant distinct f32 values necessary to
 // validate the transformation.
 // NOTE: This resets the used abstract ops record.
-void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot, AbsFpAddSumEncoding,
+void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
+                    AbsFpAddSumEncoding,
                     bool isFpAddAssociative,
                     bool unrollIntSum,
                     unsigned floatNonConstsCnt,
@@ -65,7 +67,9 @@ AbsLevelFpCast getAbsLevelFpCast();
 AbsLevelIntDot getAbsLevelIntDot();
 AbsFpAddSumEncoding getAbsFpAddSumEncoding();
 bool getFpAddAssociativity();
+bool getFpCastIsPrecise();
 
+smt::Expr getFpTruncatePrecondition();
 smt::Expr getFpAssociativePrecondition();
 smt::Expr getFpUltPrecondition();
 
@@ -120,6 +124,7 @@ private:
   std::optional<smt::FnDecl> fp_truncatefn;
   std::optional<smt::FnDecl> fp_expfn;
   std::optional<smt::FnDecl> fp_hashfn;
+  std::optional<smt::FnDecl> fp_rounddirfn;
   std::string fn_suffix;
 
 private:
@@ -161,6 +166,7 @@ private:
   smt::FnDecl getTruncateFn(const AbsFpEncoding &tgt);
   smt::FnDecl getExpFn();
   smt::FnDecl getHashFnForAddAssoc();
+  smt::FnDecl getRoundDirFn();
 
   size_t getHashRangeBits() const;
   uint64_t getSignBit() const;
@@ -188,6 +194,7 @@ public:
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr getFpAssociativePrecondition();
+  smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
 
 private:
   smt::Expr lambdaSum(const smt::Expr &a, const smt::Expr &n);
