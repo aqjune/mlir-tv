@@ -1,4 +1,4 @@
-// EXPECT: "[fpSum]: Sum of array unrolled to fp_add."
+// EXPECT: "[fpSum]: Sum of an array unrolled to fp_add."
 // ARGS: --verbose
 
 func @sum() -> tensor<f32>
