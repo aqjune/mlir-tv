@@ -1,9 +1,9 @@
 #include "abstractops.h"
 #include "debug.h"
 #include "memory.h"
+#include "opts.h"
 #include "smt.h"
 #include "vcgen.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
@@ -26,20 +26,26 @@
 using namespace std;
 using namespace mlir;
 
+llvm::cl::OptionCategory MlirTvCategory("mlir-tv options", "");
+
 llvm::cl::opt<string> filename_src(llvm::cl::Positional,
   llvm::cl::desc("first-mlir-file"),
-  llvm::cl::Required, llvm::cl::value_desc("filename"));
+  llvm::cl::Required, llvm::cl::value_desc("filename"),
+  llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<string> filename_tgt(llvm::cl::Positional,
   llvm::cl::desc("second-mlir-file"),
-  llvm::cl::Required, llvm::cl::value_desc("filename"));
+  llvm::cl::Required, llvm::cl::value_desc("filename"),
+  llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<unsigned> arg_smt_to("smt-to",
   llvm::cl::desc("Timeout for SMT queries (default=30000)"),
-  llvm::cl::init(30000), llvm::cl::value_desc("ms"));
+  llvm::cl::init(30000), llvm::cl::value_desc("ms"),
+  llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
-  llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"));
+  llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"),
+  llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<smt::SolverType> arg_solver("solver",
   llvm::cl::desc("Type of SMT solvers used when verifying"
@@ -49,37 +55,44 @@ llvm::cl::opt<smt::SolverType> arg_solver("solver",
     clEnumValN(smt::SolverType::Z3, "Z3", "Z3 Solver"),
     clEnumValN(smt::SolverType::CVC5, "CVC5", "CVC5 Solver"),
     clEnumValN(smt::SolverType::ALL, "ALL", "Z3, CVC5 Solvers")
-  )
+  ),
+  llvm::cl::cat(MlirTvCategory)
 );
 
 llvm::cl::opt<int> fp_bits("fp-bits",
   llvm::cl::desc("The number of bits for the abstract representation of "
                  "non-constant float and double values."),
-  llvm::cl::init(-1), llvm::cl::value_desc("number"));
+  llvm::cl::init(-1), llvm::cl::value_desc("number"),
+  llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::desc("Number of memory blocks per type required to validate"
-                 " translation"),
-  llvm::cl::init(0), llvm::cl::value_desc("number"));
+                 " translation (set 0 to determine it via analysis)"),
+  llvm::cl::init(0), llvm::cl::value_desc("number"),
+  llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<bool> arg_associative_sum("associative",
   llvm::cl::desc("Assume that floating point add is associative "
                  "(experimental)"),
-  llvm::cl::init(false));
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<bool> arg_unroll_int_sum("unroll-int-sum",
   llvm::cl::desc("Fully unroll summation of integer arrays whose sizes are"
                  " known to be constant"),
-  llvm::cl::init(false));
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<bool> arg_verbose("verbose",
   llvm::cl::desc("Be verbose about what's going on"), llvm::cl::Hidden,
-  llvm::cl::init(false));
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<bool> arg_multiset("multiset",
   llvm::cl::desc("Use multiset when encoding the associativity of the floating"
                  " point addition"),  llvm::cl::Hidden,
-  llvm::cl::init(false));
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
 
 // These functions are excerpted from ToolUtilities.cpp in mlir
 static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
