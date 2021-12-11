@@ -1153,7 +1153,7 @@ void encodeOp(State &st, mlir::linalg::InitTensorOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op, bool) {
+void encodeOp(State &st, mlir::tensor::CollapseShapeOp op, bool) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
   mlir::RankedTensorType resTy = op.getResultType();
 
@@ -1183,7 +1183,7 @@ void encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op, bool) {
+void encodeOp(State &st, mlir::tensor::ExpandShapeOp op, bool) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
 
   // The fresh variables created by ShapedValue::getDims will be ignored
@@ -2617,8 +2617,6 @@ static void encodeBlock(
     ENCODE(st, op, mlir::linalg::InitTensorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::MatmulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::PadTensorOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::linalg::TensorExpandShapeOp, encodeMemWriteOps);
     
     ENCODE(st, op, mlir::shape::ShapeOfOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::shape::ToExtentTensorOp, encodeMemWriteOps);
@@ -2633,6 +2631,8 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tensor::FromElementsOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::GenerateOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::InsertSliceOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tensor::CollapseShapeOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tensor::ExpandShapeOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::tosa::AbsOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::AddOp, encodeMemWriteOps);
