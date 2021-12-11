@@ -2,6 +2,7 @@
 #include "debug.h"
 #include "encode.h"
 #include "memory.h"
+#include "opts.h"
 #include "print.h"
 #include "smt.h"
 #include "state.h"
@@ -42,9 +43,44 @@ public:
   set<llvm::APFloat> f32Consts, f64Consts;
   vector<mlir::memref::GlobalOp> globals;
   bool isFpAddAssociative;
-  bool unrollIntSum;
+  bool unrollIntSum; // sum(arr) := arr[0] + ... + arr[arr.len-1]
   bool useMultisetForFpSum;
 };
+
+
+llvm::cl::opt<bool> arg_fp_add_associative("associative",
+  llvm::cl::desc("Assume that floating point add is associative "
+                 "(experimental)"),
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
+
+llvm::cl::opt<bool> arg_unroll_int_sum("unroll-int-sum",
+  llvm::cl::desc("Fully unroll summation of integer arrays whose sizes are"
+                 " known to be constant"),
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
+
+llvm::cl::opt<bool> arg_multiset("multiset",
+  llvm::cl::desc("Use multiset when encoding the associativity of the floating"
+                 " point addition"),  llvm::cl::Hidden,
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
+
+llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
+  llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"),
+  llvm::cl::cat(MlirTvCategory));
+
+llvm::cl::opt<int> fp_bits("fp-bits",
+  llvm::cl::desc("The number of bits for the abstract representation of "
+                 "non-constant float and double values."),
+  llvm::cl::init(-1), llvm::cl::value_desc("number"),
+  llvm::cl::cat(MlirTvCategory));
+
+llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
+  llvm::cl::desc("Number of memory blocks per type required to validate"
+                 " translation (set 0 to determine it via analysis)"),
+  llvm::cl::init(0), llvm::cl::value_desc("number"),
+  llvm::cl::cat(MlirTvCategory));
 
 };
 
@@ -527,7 +563,7 @@ static Results validate(ValidationInput vinput) {
   setEncodingOptions(vinput.useMultisetForFpSum);
 
   if (!vinput.dumpSMTPath.empty())
-    vinput.dumpSMTPath += "_noabs";
+    vinput.dumpSMTPath += "_refine2";
 
   printSematics(getAbsLevelFpDot(), getAbsLevelFpCast(), getAbsLevelIntDot(),
                            getAbsFpAddSumEncoding());
@@ -545,6 +581,9 @@ static Results validate(ValidationInput vinput) {
   bool tryThirdRefinedAbstraction = !fpAssocAdd && usedOps.fpSum;
   if (!tryThirdRefinedAbstraction)
     return res;
+
+  if (!vinput.dumpSMTPath.empty())
+    vinput.dumpSMTPath += "_refine3";
 
   // Refine the current abstraction.
   setAbstraction(
@@ -615,12 +654,7 @@ static vector<mlir::memref::GlobalOp> mergeGlobals(
 }
 
 Results validate(
-    mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
-    const string &dumpSMTPath,
-    unsigned int numBlocksPerType,
-    pair<unsigned, unsigned> fpBits, bool isFpAddAssociative,
-    bool unrollIntSum,
-    bool useMultiset) {
+    mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
@@ -662,7 +696,7 @@ Results validate(
     ValidationInput vinput;
     vinput.src = srcfn;
     vinput.tgt = tgtfn;
-    vinput.dumpSMTPath = dumpSMTPath;
+    vinput.dumpSMTPath = arg_dump_smt_to.getValue();
     vinput.globals = globals;
 
     vinput.numBlocksPerType = src_res.memref.argCount;
@@ -676,16 +710,15 @@ Results validate(
           "types do not alias. This can cause missing bugs.\n";
     }
 
-    if (numBlocksPerType) {
+    if (num_memblocks.getValue() != 0) {
       for (auto &[ty, cnt]: vinput.numBlocksPerType)
-        cnt = numBlocksPerType;
+        cnt = num_memblocks.getValue();
     }
 
-    if (fpBits.first) {
-      assert(fpBits.first < 32 && fpBits.second < 32 &&
-             "Given fp bits are too large");
-      vinput.f32NonConstsCount = 1u << fpBits.first;
-      vinput.f64NonConstsCount = 1u << fpBits.second;
+    if (fp_bits.getValue() != 0) {
+      assert(fp_bits.getValue() < 32 && "Given fp bits are too large");
+      vinput.f32NonConstsCount = vinput.f64NonConstsCount =
+          1u << fp_bits.getValue();
     } else {
       // Count non-constant floating points whose absolute values are distinct.
       auto countNonConstFps = [](const auto& src_res, const auto& tgt_res, const auto& ew) {
@@ -695,19 +728,23 @@ Results validate(
         } else {
           return src_res.argCount + // # of variables in argument lists
             src_res.varCount + tgt_res.varCount + // # of variables in registers
-            src_res.elemCounts + tgt_res.elemCounts; // # of ShapedType elements count
+            src_res.elemCounts + tgt_res.elemCounts;
+                // # of ShapedType elements count
         }
       };
 
-      auto isElementwise = src_res.isElementwiseFPOps || tgt_res.isElementwiseFPOps;
-      vinput.f32NonConstsCount = countNonConstFps(src_res.F32, tgt_res.F32, isElementwise);
-      vinput.f64NonConstsCount = countNonConstFps(src_res.F64, tgt_res.F64, isElementwise);
+      auto isElementwise = src_res.isElementwiseFPOps ||
+                           tgt_res.isElementwiseFPOps;
+      vinput.f32NonConstsCount =
+          countNonConstFps(src_res.F32, tgt_res.F32, isElementwise);
+      vinput.f64NonConstsCount =
+          countNonConstFps(src_res.F64, tgt_res.F64, isElementwise);
     }
     vinput.f32Consts = f32_consts;
     vinput.f64Consts = f64_consts;
-    vinput.isFpAddAssociative = isFpAddAssociative;
-    vinput.unrollIntSum = unrollIntSum;
-    vinput.useMultisetForFpSum = useMultiset;
+    vinput.isFpAddAssociative = arg_fp_add_associative.getValue();
+    vinput.unrollIntSum = arg_unroll_int_sum.getValue();
+    vinput.useMultisetForFpSum = arg_multiset.getValue();
 
     try {
       verificationResult.merge(validate(vinput));
