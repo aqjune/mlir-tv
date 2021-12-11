@@ -70,6 +70,8 @@ endif()
 
 # Warn about unused variables
 target_compile_options(${PROJECT_OBJ} PUBLIC -Wunused-variable)
+# Using cl::opt requires this
+target_compile_options(${PROJECT_OBJ} PUBLIC -fno-rtti)
 
 # Try using libc if possible
 if(USE_LIBC)
@@ -146,7 +148,6 @@ endif()
 add_executable(${PROJECT_NAME} src/main.cpp)
 add_dependencies(${PROJECT_NAME} ${PROJECT_LIB})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_LIB})
-target_compile_options(${PROJECT_NAME} PRIVATE -fno-rtti)
 
 enable_testing()
 add_subdirectory(${PROJECT_SOURCE_DIR}/tests)
