@@ -24,6 +24,8 @@ aop::AbsLevelFpDot alFpDot;
 aop::AbsLevelFpCast alFpCast;
 bool isFpAddAssociative;
 bool doUnrollIntSum;
+unsigned maxUnrollFpSumBound;
+
 optional<aop::AbsFpEncoding> floatEnc;
 optional<aop::AbsFpEncoding> doubleEnc;
 
@@ -103,6 +105,7 @@ void setAbstraction(
     AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, AbsFpAddSumEncoding fas,
     bool addAssoc,
     bool unrollIntSum,
+    unsigned unrollFpSumBound,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
     unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
   alFpDot = afd;
@@ -110,6 +113,7 @@ void setAbstraction(
   alIntDot = aid;
   fpAddSum = fas;
   doUnrollIntSum = unrollIntSum;
+  maxUnrollFpSumBound = unrollFpSumBound;
   isFpAddAssociative = addAssoc;
 
   // without suffix f, it will become llvm::APFloat with double semantics
@@ -801,9 +805,9 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
     sumExpr = (getFpAddAssociativity() && useMultiset) ?
         multisetSum(a, n) :  lambdaSum(a, n);
   } else {
-    if (!length || length > 10) {
+    if (!length || length > maxUnrollFpSumBound) {
       verbose("fpSum") << "ADD_ONLY applies only array length less than or"
-                          " equals to 10.\n";
+                          " equals to " << maxUnrollFpSumBound << ".\n";
       verbose("fpSum") << "Fallback to lambdaSum...\n";
       sumExpr = lambdaSum(a, n);
     } else {

@@ -42,11 +42,13 @@ enum class AbsFpAddSumEncoding {
   USE_SUM_ONLY = 0, // When --associativity is given, encode an addition as sum
   DEFAULT = 1, // Encode addition using fp_add, fp_sum respectivly
                // (no relation between them)
-  USE_ADD_ONLY = 2, // Use only addf function
+  UNROLL_TO_ADD = 2, // Unroll sum to add if the size of array is small enough
 };
 
 // unrollIntSum: Fully unroll sum(arr) where arr is an int array of const size
 //               as arr[0] + arr[1] + .. + arr[len-1]?
+// unrollFpSumBound: If AbsFpAddSumEncoding is UNROLL_TO_ADD, specify the max.
+//                   size of an array to unroll
 // floatNonConstsCnt: # of non-constant distinct f32 values necessary to
 // validate the transformation.
 // NOTE: This resets the used abstract ops record.
@@ -54,6 +56,7 @@ void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
                     AbsFpAddSumEncoding,
                     bool isFpAddAssociative,
                     bool unrollIntSum,
+                    unsigned unrollFpSumBound,
                     unsigned floatNonConstsCnt,
                     std::set<llvm::APFloat> floatConsts,
                     unsigned doubleNonConstsCnt,

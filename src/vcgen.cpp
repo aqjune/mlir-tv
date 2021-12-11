@@ -60,6 +60,12 @@ llvm::cl::opt<bool> arg_unroll_int_sum("unroll-int-sum",
   llvm::cl::init(false),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<unsigned> arg_unroll_fp_sum_bound("unroll-fp-sum-bound",
+  llvm::cl::desc("If the summation of floating point is to be unrolled after "
+                 "abstraction refinement, specify the max array size."),
+  llvm::cl::init(10),
+  llvm::cl::cat(MlirTvCategory));
+
 llvm::cl::opt<bool> arg_multiset("multiset",
   llvm::cl::desc("Use multiset when encoding the associativity of the floating"
                  " point addition"),  llvm::cl::Hidden,
@@ -450,9 +456,10 @@ static void checkIsSrcAlwaysUB(
       aop::AbsLevelFpDot::SUM_MUL,
       aop::AbsLevelFpCast::PRECISE,
       aop::AbsLevelIntDot::SUM_MUL,
-      aop::AbsFpAddSumEncoding::USE_ADD_ONLY,
+      aop::AbsFpAddSumEncoding::UNROLL_TO_ADD,
       vinput.isFpAddAssociative,
       vinput.unrollIntSum,
+      arg_unroll_fp_sum_bound.getValue(),
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
   aop::setEncodingOptions(vinput.useMultisetForFpSum);
@@ -519,6 +526,7 @@ static Results validate(ValidationInput vinput) {
                    AbsFpAddSumEncoding::DEFAULT,
       fpAssocAdd,
       vinput.unrollIntSum,
+      arg_unroll_fp_sum_bound.getValue(),
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(vinput.useMultisetForFpSum);
@@ -554,10 +562,12 @@ static Results validate(ValidationInput vinput) {
       fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
       fpAssocAdd ?  AbsFpAddSumEncoding::USE_SUM_ONLY :
-        (useAddFOnly ? AbsFpAddSumEncoding::USE_ADD_ONLY :
+        (useAddFOnly ? AbsFpAddSumEncoding::UNROLL_TO_ADD :
                        AbsFpAddSumEncoding::DEFAULT),
       fpAssocAdd,
       vinput.unrollIntSum,
+      arg_unroll_fp_sum_bound.getValue(),
+
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(vinput.useMultisetForFpSum);
@@ -589,11 +599,13 @@ static Results validate(ValidationInput vinput) {
   setAbstraction(
       (useSumMulForFpDot || fpAssocAdd) ?
           AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
-      fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
-      useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
-      AbsFpAddSumEncoding::USE_ADD_ONLY,
+      fpCastRound ?        AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
+      useSumMulForIntDot ? AbsLevelIntDot::SUM_MUL : AbsLevelIntDot::FULLY_ABS,
+      AbsFpAddSumEncoding::UNROLL_TO_ADD,
       fpAssocAdd,
       vinput.unrollIntSum,
+      arg_unroll_fp_sum_bound.getValue(),
+
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(vinput.useMultisetForFpSum);
