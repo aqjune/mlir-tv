@@ -495,8 +495,7 @@ static Results validate(ValidationInput vinput) {
 
   auto usedOps = aop::getUsedAbstractOps();
   // dot = mul + sum?
-  bool useSumForFp = (usedOps.fpAdd || usedOps.fpSum);
-  bool useSumMulForFpDot = usedOps.fpDot && useSumForFp && usedOps.fpMul;
+  bool useSumMulForFpDot = usedOps.fpDot;
   bool useSumMulForIntDot = usedOps.intDot && usedOps.intSum; // Eh.. int mul?
   bool useAddFOnly = !fpAssocAdd && usedOps.fpSum;
   bool fpCastRound = usedOps.fpCastRound;
@@ -508,16 +507,16 @@ static Results validate(ValidationInput vinput) {
 
   // Refine the current abstraction.
   setAbstraction(
-    (useSumMulForFpDot || fpAssocAdd) ?
-        AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
-    fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
-    useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
-    fpAssocAdd ?  AbsFpAddSumEncoding::USE_SUM_ONLY :
-      (useAddFOnly ? AbsFpAddSumEncoding::USE_ADD_ONLY : AbsFpAddSumEncoding::DEFAULT),
-    fpAssocAdd,
-    vinput.unrollIntSum,
-    vinput.f32NonConstsCount, vinput.f32Consts,
-    vinput.f64NonConstsCount, vinput.f64Consts);
+      (useSumMulForFpDot || fpAssocAdd) ?
+          AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
+      fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
+      useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
+      fpAssocAdd ?  AbsFpAddSumEncoding::USE_SUM_ONLY :
+        (useAddFOnly ? AbsFpAddSumEncoding::USE_ADD_ONLY : AbsFpAddSumEncoding::DEFAULT),
+      fpAssocAdd,
+      vinput.unrollIntSum,
+      vinput.f32NonConstsCount, vinput.f32Consts,
+      vinput.f64NonConstsCount, vinput.f64Consts);
   setEncodingOptions(vinput.useMultisetForFpSum);
 
   if (!vinput.dumpSMTPath.empty())
