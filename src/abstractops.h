@@ -15,7 +15,6 @@ struct UsedAbstractOps {
   bool fpMul;
   bool fpDiv;
   bool fpSum;
-  bool fpUlt;
   bool fpCastRound;
   // Int ops
   bool intDot;
@@ -74,7 +73,7 @@ bool getFpCastIsPrecise();
 
 smt::Expr getFpTruncatePrecondition();
 smt::Expr getFpAssociativePrecondition();
-smt::Expr getFpUltPrecondition();
+smt::Expr getFpConstantPrecondition();
 
 smt::Expr intSum(const smt::Expr &arr, const smt::Expr &n);
 smt::Expr intDot(const smt::Expr &arr1, const smt::Expr &arr2,
@@ -93,7 +92,6 @@ private:
   std::optional<smt::Expr> fpconst_inf_neg;
   // Abstract representation of valid fp constants.
   std::map<llvm::APFloat, smt::Expr> fpconst_absrepr;
-  uint64_t fpconst_absrepr_num = 0;
 
   const static unsigned SIGN_BITS = 1;
   // The BV width of abstract fp encoding.
@@ -198,6 +196,7 @@ public:
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr getFpAssociativePrecondition();
   smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
+  smt::Expr getFpConstantPrecondition();
 
 private:
   smt::Expr lambdaSum(const smt::Expr &a, const smt::Expr &n);

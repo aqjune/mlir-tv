@@ -419,11 +419,10 @@ static tuple<State, State, Expr> encodeFinalStates(
   State st_tgt = encodeFinalState(
       vinput, move(initMemTgt), printOps, false, args, preconds);
 
+  preconds.push_back(aop::getFpConstantPrecondition());
+
   if (aop::getFpAddAssociativity())
     preconds.push_back(aop::getFpAssociativePrecondition());
-
-  if(aop::getUsedAbstractOps().fpUlt)
-    preconds.push_back(aop::getFpUltPrecondition());
 
   if (aop::getFpCastIsPrecise())
     preconds.push_back(aop::getFpTruncatePrecondition());
