@@ -929,7 +929,7 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   st.wellDefined(op, weight.isFullyInitialized());
   st.wellDefined(op, bias.isFullyInitialized());
 
-  st.regs.add(op, t);
+  st.regs.add(op, output);
 
 }
 
