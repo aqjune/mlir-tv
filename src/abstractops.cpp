@@ -799,7 +799,8 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
     sumExpr = (getFpAddAssociativity() && useMultiset) ? multisetSum(a, n) :  lambdaSum(a, n);
   } else {
     if (!length || length > 10) {
-      verbose("fpSum") << "ADD_ONLY applies only array length less than equals to 10.\n";
+      verbose("fpSum") << "ADD_ONLY applies only array length less than or"
+                          " equals to 10.\n";
       verbose("fpSum") << "Fallback to lambdaSum...\n";
       sumExpr = lambdaSum(a, n);
     } else {

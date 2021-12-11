@@ -62,6 +62,8 @@ void printCounterEx(
 
       auto t_src = get<Tensor>(st_src.retValues[retvalidx]).eval(m);
       auto t_tgt = get<Tensor>(st_tgt.retValues[retvalidx]).eval(m);
+      auto elemTy = t_src.getElemType();
+      assert(elemTy == t_tgt.getElemType());
 
       llvm::outs() << "Dimensions (src): " << or_omit(t_src.getDims()) << '\n';
       llvm::outs() << "Dimensions (tgt): " << or_omit(t_tgt.getDims()) << '\n';
@@ -72,12 +74,11 @@ void printCounterEx(
         auto param = m.eval(params[0]);
         auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
         llvm::outs() << "Index: " << or_omit(indices) << '\n';
-        llvm::outs() << "Element (src): "
-                    << or_omit(t_src.get(indices).first.simplify())
-                    << '\n';
-        llvm::outs() << "Element (tgt): "
-                    << or_omit(t_tgt.get(indices).first.simplify())
-                    << '\n';
+
+        auto srcElem = fromExpr(t_src.get(indices).first.simplify(), elemTy);
+        auto tgtElem = fromExpr(t_tgt.get(indices).first.simplify(), elemTy);
+        llvm::outs() << "Element (src): " << *srcElem << '\n';
+        llvm::outs() << "Element (tgt): " << *tgtElem << '\n';
       }
 
     } else {
