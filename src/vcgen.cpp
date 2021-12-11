@@ -463,10 +463,10 @@ static Results validate(ValidationInput vinput) {
     llvm::outs()
       << "\n===============================================================\n"
       << "  Giving more precise semantics to abstractly defined ops...\n"
-      << "  AbsLevelFpDot : " << magic_enum::enum_name(afd) << "\n"
-      << "  AbsLevelFpCast : " << magic_enum::enum_name(afc) << "\n"
-      << "  AbsLevelIntDot : " << magic_enum::enum_name(aid) << "\n"
-      << "  AbsFpAddSumEncoding : " << magic_enum::enum_name(fas) << "\n"
+      << "  AbsLevelFpDot: " << magic_enum::enum_name(afd) << "\n"
+      << "  AbsLevelFpCast: " << magic_enum::enum_name(afc) << "\n"
+      << "  AbsLevelIntDot: " << magic_enum::enum_name(aid) << "\n"
+      << "  AbsFpAddSumEncoding: " << magic_enum::enum_name(fas) << "\n"
       << "===============================================================\n\n";
   };
 
@@ -512,7 +512,8 @@ static Results validate(ValidationInput vinput) {
       fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
       useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
       fpAssocAdd ?  AbsFpAddSumEncoding::USE_SUM_ONLY :
-        (useAddFOnly ? AbsFpAddSumEncoding::USE_ADD_ONLY : AbsFpAddSumEncoding::DEFAULT),
+        (useAddFOnly ? AbsFpAddSumEncoding::USE_ADD_ONLY :
+                       AbsFpAddSumEncoding::DEFAULT),
       fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,

@@ -772,7 +772,8 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
 
   uint64_t length;
   if (!n.isUInt(length))
-    throw UnsupportedException("Only an array of constant length is supported.");
+    throw UnsupportedException(
+        "Only an array of constant length is supported.");
 
   auto elemtSort = a.select(Index(0)).sort();
   auto bag = Expr::mkEmptyBag(elemtSort);
@@ -790,13 +791,15 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
 
 Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   if (getFpAddAssociativity() && !n.isNumeral())
-    throw UnsupportedException("Only an array of constant length is supported.");
+    throw UnsupportedException(
+        "Only an array of constant length is supported.");
   auto length = n.asUInt();
 
   optional<Expr> sumExpr;
   if (fpAddSum == AbsFpAddSumEncoding::USE_SUM_ONLY
       || fpAddSum == AbsFpAddSumEncoding::DEFAULT) {
-    sumExpr = (getFpAddAssociativity() && useMultiset) ? multisetSum(a, n) :  lambdaSum(a, n);
+    sumExpr = (getFpAddAssociativity() && useMultiset) ?
+        multisetSum(a, n) :  lambdaSum(a, n);
   } else {
     if (!length || length > 10) {
       verbose("fpSum") << "ADD_ONLY applies only array length less than or"
@@ -804,7 +807,7 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
       verbose("fpSum") << "Fallback to lambdaSum...\n";
       sumExpr = lambdaSum(a, n);
     } else {
-      verbose("fpSum") << "Sum of array unrolled to fp_add.\n";
+      verbose("fpSum") << "Sum of an array unrolled to fp_add.\n";
       auto sum = a.select(Index(0));
       for (auto i = 1; i < length; i++) {
         sum = add(sum, a.select(Index(i)));
