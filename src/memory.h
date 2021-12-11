@@ -33,7 +33,8 @@ class Memory {
 public:
   Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
          const TypeMap<size_t> &maxNumLocalBlocksPerType,
-         const std::vector<mlir::memref::GlobalOp> &globals);
+         const std::vector<mlir::memref::GlobalOp> &globals,
+         bool blocksInitiallyAlive = false);
 
   void setIsSrc(bool flag) { isSrc = flag; }
 

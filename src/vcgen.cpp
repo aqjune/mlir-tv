@@ -423,8 +423,12 @@ static void checkIsSrcAlwaysUB(
 
   ArgInfo args_dummy;
   vector<Expr> preconds;
+  // Set blocks as initially alive, since making them dead always makes the
+  // program more undefined. (This may not be true if ptr-to-int casts exist,
+  // but we don't have a plan to support that)
   auto initMemory = make_unique<Memory>(
-      vinput.numBlocksPerType, vinput.numBlocksPerType, vinput.globals);
+      vinput.numBlocksPerType, vinput.numBlocksPerType, vinput.globals,
+      /*blocks initially alive*/true);
   auto st = encodeFinalState(vinput, move(initMemory), false, true,
       args_dummy, preconds);
 
@@ -475,7 +479,8 @@ static Results validate(ValidationInput vinput) {
       AbsLevelFpDot::FULLY_ABS,
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
-      fpAssocAdd ? AbsFpAddSumEncoding::USE_SUM_ONLY : AbsFpAddSumEncoding::DEFAULT,
+      fpAssocAdd ? AbsFpAddSumEncoding::USE_SUM_ONLY :
+                   AbsFpAddSumEncoding::DEFAULT,
       fpAssocAdd,
       vinput.unrollIntSum,
       vinput.f32NonConstsCount, vinput.f32Consts,
@@ -500,7 +505,8 @@ static Results validate(ValidationInput vinput) {
   bool useAddFOnly = !fpAssocAdd && usedOps.fpSum;
   bool fpCastRound = usedOps.fpCastRound;
   bool tryRefinedAbstraction =
-    useSumMulForFpDot || fpAssocAdd || useSumMulForIntDot || fpCastRound || useAddFOnly;
+      useSumMulForFpDot || fpAssocAdd || useSumMulForIntDot || fpCastRound ||
+      useAddFOnly;
 
   if (!tryRefinedAbstraction)
     return res;
