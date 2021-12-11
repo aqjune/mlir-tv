@@ -10,6 +10,7 @@
 #include "vcgen.h"
 #include "analysis.h"
 
+#include "magic_enum.hpp"
 #include <chrono>
 #include <fstream>
 #include <functional>
@@ -462,15 +463,10 @@ static Results validate(ValidationInput vinput) {
     llvm::outs()
       << "\n===============================================================\n"
       << "  Giving more precise semantics to abstractly defined ops...\n"
-      << "  AbsLevelFpDot : " <<
-              (afd == AbsLevelFpDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
-      << "  AbsLevelFpCast : " <<
-              (afc == AbsLevelFpCast::FULLY_ABS ? "FULLY_ABS" : "PRECISE") << "\n"
-      << "  AbsLevelIntDot : " <<
-              (aid == AbsLevelIntDot::FULLY_ABS ? "FULLY_ABS" : "SUM_MUL") << "\n"
-      << "  AbsFpAddSumEncoding : " << 
-              (fas == AbsFpAddSumEncoding::USE_SUM_ONLY ? "USE_SUM_ONLY" :
-              (fas == AbsFpAddSumEncoding::DEFAULT ? "DEFAULT" : "USE_ADD_ONLY")) << "\n"
+      << "  AbsLevelFpDot : " << magic_enum::enum_name(afd) << "\n"
+      << "  AbsLevelFpCast : " << magic_enum::enum_name(afc) << "\n"
+      << "  AbsLevelIntDot : " << magic_enum::enum_name(aid) << "\n"
+      << "  AbsFpAddSumEncoding : " << magic_enum::enum_name(fas) << "\n"
       << "===============================================================\n\n";
   };
 
