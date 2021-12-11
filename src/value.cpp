@@ -369,8 +369,12 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
 
   Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
   Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
-  Expr outputExpr = aop::getFpEncoding(elemType).dot(
-      inputExpr, filterExpr, ::get1DSize(cubeSize));
+
+  Expr sz = ::get1DSize(cubeSize);
+  Expr outputExpr =
+      elemType.isa<mlir::IntegerType>() ?
+        aop::intDot(inputExpr, filterExpr, sz) :
+        aop::getFpEncoding(elemType).dot(inputExpr, filterExpr, sz);
 
   return {move(outputIdxs), move(outputExpr)};
 }
