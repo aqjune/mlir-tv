@@ -182,7 +182,7 @@ void analyzeOp(mlir::arith::ConstantFloatOp op, AnalysisResult &res) {
 template<>
 void analyzeOp(mlir::arith::ConstantOp op, AnalysisResult &res) {
   auto tensorty = op.getType().dyn_cast<mlir::RankedTensorType>();
-  auto eattr = op.value().dyn_cast<mlir::ElementsAttr>();
+  auto eattr = op.getValue().dyn_cast<mlir::ElementsAttr>();
   if (!tensorty || !eattr) return;
 
   analyzeElemAttr(eattr, res);
