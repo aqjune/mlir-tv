@@ -408,7 +408,9 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       continue;
     }
 
-    optional<Expr> e_value; // dummy
+    const unsigned limit_value_bitwidth =
+        value_bit_info.limit_bitwidth + value_bit_info.smaller_value_bitwidth;
+    optional<Expr> e_value;
 
     if (value_bit_info.limit_bitwidth == 0 &&
         value_bit_info.prec_bitwidth == 0) {
