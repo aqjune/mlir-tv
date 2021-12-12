@@ -61,5 +61,17 @@ public:
   bool operator()(const Expr &e) const;
 };
 
+class Equals: Matcher {
+  std::function<bool(const Expr &)> lhsMatcher, rhsMatcher;
+
+public:
+  template<class T1, class T2>
+  Equals(T1 &&lhs, T2 &&rhs):
+      lhsMatcher(std::move(lhs)), rhsMatcher(std::move(rhs)) {}
+
+  bool match(const Expr &expr) const { return (*this)(expr); }
+  bool operator()(const Expr &e) const;
+};
+
 }
 }
