@@ -1060,36 +1060,53 @@ Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
   auto prev_tgt_fp = llvm::APFloat(0.0f);
   for (const auto &[fp, absrepr] : fpconst_absrepr) {
     // only value bits are relevant in truncation
-    if (!fp.isNegative()) {
-      const auto casting_info = *getCastingInfo(fp);
-      if (casting_info.zero_prec_bits) {
-        auto tgt_fp = fp;
-        tgt_fp.convert(tgt.semantics, llvm::APFloat::rmTowardZero, &loses_info);
-        bool isEpsilon = 
-          (tgt_fp.bitcastToAPInt() - prev_tgt_fp.bitcastToAPInt()).isOne();
-        if (isEpsilon) {
-          // remove the gap between two adjacent values
-          const auto sv_bitwidth = value_bit_info.truncated_bitwidth;
-          const auto prev_var = Expr::mkVar(Sort::bvSort(sv_bitwidth),
-                                  "fp_const_sval_" + to_string(value_id) + "_");
+    if (fp.isNegative())
+      continue;
+
+    const auto casting_info = *getCastingInfo(fp);
+    if (casting_info.zero_prec_bits) {
+      auto tgt_fp = fp;
+      tgt_fp.convert(tgt.semantics, llvm::APFloat::rmTowardZero, &loses_info);
+      bool isEpsilon = 
+        (tgt_fp.bitcastToAPInt() - prev_tgt_fp.bitcastToAPInt()).isOne();
+
+      if (isEpsilon) {
+        // remove the gap between two adjacent values
+        const auto sv_bitwidth = value_bit_info.truncated_bitwidth;
+        const auto prev_var = Expr::mkVar(Sort::bvSort(sv_bitwidth),
+                                "fp_const_sval_" + to_string(value_id) + "_");
+        const auto var = Expr::mkVar(Sort::bvSort(sv_bitwidth), 
           const auto var = Expr::mkVar(Sort::bvSort(sv_bitwidth), 
-                            "fp_const_sval_" + to_string(value_id + 1) + "_");
-          precond &= ((var == prev_var + 1) == Expr::mkBool(true));
-        }
-        value_id += 1;
-        prev_tgt_fp = tgt_fp;
+        const auto var = Expr::mkVar(Sort::bvSort(sv_bitwidth), 
+                          "fp_const_sval_" + to_string(value_id + 1) + "_");
+        precond &= var == (prev_var + 1);
+
+        verbose("getFpTruncatePrecondition") << "("
+            << prev_tgt_fp.convertToDouble() << ", "
+            << tgt_fp.convertToDouble() << "): " << var << " == "
+            << (prev_var + 1) << '\n';
+      }
+      value_id += 1;
+      prev_tgt_fp = tgt_fp;
+    } else {
+      const auto value_bits = getMagnitudeBits(absrepr);
+      if (casting_info.is_rounded_upward) {
+        auto e = (getRoundDirFn().apply({value_bits}) == Expr::mkBV(1, 1));
+        verbose("getFpTruncatePrecondition") << fp.convertToDouble() << ": "
+            << e << '\n';
+
+        precond &= e;
       } else {
-        const auto value_bits = getMagnitudeBits(absrepr);
-        if (casting_info.is_rounded_upward) {
-          precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(1, 1));
-        } else {
-          precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(0, 1));
-        }
+        auto e = (getRoundDirFn().apply({value_bits}) == Expr::mkBV(0, 1));
+        verbose("getFpTruncatePrecondition") << fp.convertToDouble() << ": "
+            << e << '\n';
+
+        precond &= e;
       }
     }
   }
 
-  return precond.simplify();
+  return precond;
 }
 
 Expr AbsFpEncoding::getFpConstantPrecondition() {
