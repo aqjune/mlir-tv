@@ -396,6 +396,21 @@ bool Expr::isTrue() const {
   return res;
 }
 
+bool Expr::isVar() const {
+  bool res = false;
+  IF_Z3_ENABLED(res |= z3 && z3->is_app() && z3->is_const());
+  // TODO: CVC5
+  return res;
+}
+
+string Expr::getVarName() const {
+  assert(isVar());
+  // TODO: CVC5
+  string name;
+  IF_Z3_ENABLED(name = z3->decl().name().str());
+  return name;
+}
+
 #define EXPR_BVOP_UINT64(NAME) \
 Expr Expr:: NAME (uint64_t arg) const {\
   return NAME(mkBV(arg, sort().bitwidth())); \
@@ -752,24 +767,37 @@ Expr Expr::operator==(const Expr &rhs) const {
 
   {
     using namespace matchers;
-    optional<Expr> lhsh, lhsl, rhsh, rhsl;
-    if (Concat(Any(lhsh), Any(lhsl)).match(*this) &&
-        Concat(Any(rhsh), Any(rhsl)).match(rhs) &&
-        lhsl->bitwidth() == rhsl->bitwidth()) {
-      uint64_t lhsl_const, rhsl_const;
-      if (lhsl->isUInt(lhsl_const) && rhsl->isUInt(rhsl_const)) {
-        if (lhsl_const != rhsl_const)
-          return Expr::mkBool(false);
-        else
-          return *lhsh == *rhsh;
+    optional<Expr> lhsh, lhsl;
+    if (Concat(Any(lhsh), Any(lhsl)).match(*this)) {
+      optional<Expr> rhsh, rhsl;
+      if (Concat(Any(rhsh), Any(rhsl)).match(rhs) &&
+          lhsl->bitwidth() == rhsl->bitwidth()) {
+        uint64_t lhsl_const, rhsl_const;
+        // [lhsh, lhsl_const] == [rhsh, rhsl_const]
+        if (lhsl->isUInt(lhsl_const) && rhsl->isUInt(rhsl_const)) {
+          if (lhsl_const != rhsl_const)
+            return Expr::mkBool(false);
+          else
+            return *lhsh == *rhsh;
+        }
+
+        uint64_t lhsh_const, rhsh_const;
+        // [lhsh_const, lhsl] == [rhsh_const, rhsl]
+        if (lhsh->isUInt(lhsh_const) && rhsh->isUInt(rhsh_const)) {
+          if (lhsh_const != rhsh_const)
+            return Expr::mkBool(false);
+          else
+            return *lhsl == *rhsl;
+        }
       }
 
-      uint64_t lhsh_const, rhsh_const;
-      if (lhsh->isUInt(lhsh_const) && rhsh->isUInt(rhsh_const)) {
-        if (lhsh_const != rhsh_const)
+      uint64_t lhsh_const, rhs_const;
+      // [lhsh_const, lshl] == rhs_const
+      if (lhsh->isUInt(lhsh_const) && rhs.isUInt(rhs_const)) {
+        if ((rhs_const >> lhsl->bitwidth()) != lhsh_const)
           return Expr::mkBool(false);
         else
-          return *lhsl == *rhsl;
+          return *lhsl == (rhs_const ^ (lhsh_const << lhsl->bitwidth()));
       }
     }
   }

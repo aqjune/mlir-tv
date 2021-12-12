@@ -103,6 +103,9 @@ public:
   // Returns true if at least one expr in z3, cvc5, ... is constant false.
   bool isFalse() const;
   bool isTrue() const;
+  // Returns true if this is a variable.
+  bool isVar() const;
+  std::string getVarName() const;
 
   Expr urem(const Expr &rhs) const;
   Expr urem(uint64_t rhs) const;
