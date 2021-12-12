@@ -416,8 +416,10 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
 
     if (value_bit_info.limit_bitwidth == 0 &&
         value_bit_info.prec_bitwidth == 0) {
-      // this encoding is the smallest encoding or does not support casting
+      // This encoding is the smallest encoding or does not support casting
       value_id += 1;
+      // This naming convention is used by getFpTruncatePrecondition to relate
+      // float and double constants
       e_value = Expr::mkVar(Sort::bvSort(value_bitwidth),
                             "fp_const_sval_" + to_string(value_id) + "_");
     } else {
