@@ -436,7 +436,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         uint64_t prec = itr->second;
         assert(prec < (1ull << value_bit_info.prec_bitwidth));
         Expr e_prec = Expr::mkBV(prec, value_bit_info.prec_bitwidth);
-        e_value = e_value->concat(e_prec);
+        e_value = Expr::mkBV(value_id, limit_value_bitwidth).concat(e_prec);
         // Increase the next precision bit.
         itr->second++;
       } else {
