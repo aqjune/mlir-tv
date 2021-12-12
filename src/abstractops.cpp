@@ -64,15 +64,22 @@ FnDecl getIntDotFn(unsigned bitwidth) {
 }
 
 struct FPCastingInfo {
+  // If false, the result of rounding is +inf
   bool zero_limit_bits;
+  // If false, rounding loses lowest bits
   bool zero_prec_bits;
   bool is_rounded_upward;
 };
+
 optional<FPCastingInfo> getCastingInfo(llvm::APFloat fp_const) {
+  assert(!fp_const.isNegative());
+
   auto semantics = llvm::APFloat::SemanticsToEnum(fp_const.getSemantics());
   bool zero_limit_bits = true, lost_info;
+
   if (semantics == llvm::APFloat::Semantics::S_IEEEsingle) {
     return nullopt;
+
   } else if (semantics == llvm::APFloat::Semantics::S_IEEEdouble) {
     auto fp_const_floor = fp_const;
     fp_const_floor.convert(llvm::APFloat::IEEEsingle(),
@@ -136,8 +143,10 @@ void setAbstraction(
     unsigned consts_nonzero_limit = 0;
     unsigned const_nonzero_precs = 0, const_max_nonzero_precs = 0;
 
-    // Visit fp consts by increasing order
+    // Visit non-negative fp consts by increasing order
     for (const auto& dbl_const : doubleConsts) {
+      assert(!dbl_const.isNegative());
+
       auto casting_info = getCastingInfo(dbl_const);
 
       if (!casting_info->zero_limit_bits) {
