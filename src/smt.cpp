@@ -600,9 +600,11 @@ Expr Expr::extract(unsigned hbit, unsigned lbit) const {
 
   using namespace matchers;
   optional<Expr> lhs, rhs;
-  if (lbit == 0 && Concat(Any(lhs), Any(rhs)).match(*this) &&
-      hbit == rhs->bitwidth() - 1) {
-    return *rhs;
+  if (Concat(Any(lhs), Any(rhs)).match(*this)) {
+    if (lbit == 0 && hbit == rhs->bitwidth() - 1)
+      return *rhs;
+    else if (lbit == rhs->bitwidth() && hbit == bitwidth() - 1)
+      return *lhs;
   } else if (lbit == 0 && ZeroExt(Any(lhs)).match(*this) &&
              hbit == lhs->bitwidth() - 1) {
     return *lhs;
