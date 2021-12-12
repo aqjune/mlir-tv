@@ -583,6 +583,13 @@ Expr Expr::extract(unsigned hbit, unsigned lbit) const {
     return Expr::mkBV(u, hbit - lbit + 1);
   }
 
+  using namespace matchers;
+  optional<Expr> lhs, rhs;
+  if (Concat(Any(lhs), Any(rhs)).match(*this) && lbit == 0 &&
+      hbit == rhs->bitwidth() - 1) {
+    return *rhs;
+  }
+
   Expr e;
   SET_Z3(e, fmap(this->z3, [&hbit, &lbit](auto e) {
     return e.extract(hbit, lbit); 
@@ -1273,6 +1280,27 @@ bool Store::operator()(const Expr &expr) const {
   setZ3(val, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 2)));
 #endif // SOLVER_Z3
   return arrMatcher(arr) && idxMatcher(idx) && valMatcher(val);
+}
+
+bool Concat::operator()(const Expr &expr) const {
+  // FIXME: cvc5
+#ifdef SOLVER_Z3
+  auto e = expr.getZ3Expr();
+  if (!e.is_app())
+    return false;
+
+  Z3_app a = e;
+  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_CONCAT)
+    return false;
+#endif // SOLVER_Z3
+
+  Expr lhs = newExpr(), rhs = newExpr();
+#ifdef SOLVER_Z3
+  setZ3(lhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+  setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
+#endif // SOLVER_Z3
+  return lhsMatcher(lhs) && rhsMatcher(rhs);
 }
 
 bool Equals::operator()(const Expr &expr) const {
