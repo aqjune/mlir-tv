@@ -479,6 +479,9 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       }
     }
 
+    verbose("addConstants") << fp_const.convertToDouble() << ": " << *e_value
+        << "\n";
+
     Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(*e_value);
     fpconst_absrepr.emplace(fp_const, e_pos);
     Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(*e_value);
@@ -1075,8 +1078,6 @@ Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
         const auto sv_bitwidth = value_bit_info.truncated_bitwidth;
         const auto prev_var = Expr::mkVar(Sort::bvSort(sv_bitwidth),
                                 "fp_const_sval_" + to_string(value_id) + "_");
-        const auto var = Expr::mkVar(Sort::bvSort(sv_bitwidth), 
-          const auto var = Expr::mkVar(Sort::bvSort(sv_bitwidth), 
         const auto var = Expr::mkVar(Sort::bvSort(sv_bitwidth), 
                           "fp_const_sval_" + to_string(value_id + 1) + "_");
         precond &= var == (prev_var + 1);
