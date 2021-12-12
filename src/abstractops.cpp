@@ -399,7 +399,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       continue;
     }
 
-    auto e_value = Expr::mkBV(0, value_bitwidth); // dummy
+    optional<Expr> e_value; // dummy
 
     if (value_bit_info.limit_bitwidth == 0 &&
         value_bit_info.prec_bitwidth == 0) {
@@ -422,41 +422,50 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
           value_bit_info.smaller_value_bitwidth + value_bit_info.prec_bitwidth;
         auto sv_prec_bits = Expr::mkFreshVar(Sort::bvSort(sv_prec_bitwidth),
                             "fp_const_sval_prec_bits_");
-        limit_bits = Expr::mkFreshVar(limit_bits.sort(), "fp_const_limit_bits_");
-        limit_bits = Expr::mkIte(limit_bits == 0, limit_bits + 1, limit_bits);
+
+        limit_bits = Expr::mkFreshVar(limit_bits, "fp_const_limit_bits_");
+        // Make it non-zero
+        limit_bits = Expr::mkIte(limit_bits == 0,
+            Expr::mkBV(1, limit_bits), limit_bits);
         e_value = limit_bits.concat(sv_prec_bits);
+
       } else if (!casting_info->zero_prec_bits) {
         // this value will be rounded to same value,
         // so do not change smaller_value and increment prec bit.
         auto itr = prec_offset_map.insert({value_id, 1}).first;
         uint64_t prec = itr->second;
         assert(prec < (1ull << value_bit_info.prec_bitwidth));
-        auto prec_bits = Expr::mkFreshVar(Sort::bvSort(value_bit_info.prec_bitwidth),
-                                          "fp_const_prec_bits");
-        prec_bits = Expr::mkIte(prec_bits == 0, prec_bits + 1, prec_bits);
-        sv_bits = Expr::mkVar(sv_bits.sort(), 
+
+        auto prec_bits = Expr::mkFreshVar(
+            Sort::bvSort(value_bit_info.prec_bitwidth),
+            "fp_const_prec_bits");
+        // Make prec bits non-zero
+        prec_bits = Expr::mkIte(prec_bits == 0,
+            Expr::mkBV(1, prec_bits), prec_bits);
+        sv_bits = Expr::mkVar(sv_bits, 
                               "fp_const_sval_" + to_string(value_id) + "_");
         e_value = limit_bits.concat(sv_bits).concat(prec_bits);
         // Increase the next precision bit.
         itr->second++;
+
       } else {
         // this value will be rounded to different value,
         // so assign different smaller_value
         value_id += 1;
-        sv_bits = Expr::mkVar(sv_bits.sort(), 
+        sv_bits = Expr::mkVar(sv_bits, 
                               "fp_const_sval_" + to_string(value_id) + "_");
         e_value = limit_bits.concat(sv_bits);
         // this encoding may not have prec bits
         if (value_bit_info.prec_bitwidth > 0) {
           auto prec_bits = Expr::mkBV(0, value_bit_info.prec_bitwidth);
-          e_value = e_value.concat(prec_bits);
+          e_value = e_value->concat(prec_bits);
         }
       }
     }
 
-    Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(e_value);
+    Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(*e_value);
     fpconst_absrepr.emplace(fp_const, e_pos);
-    Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(e_value);
+    Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(*e_value);
     fpconst_absrepr.emplace(-fp_const, e_neg);
   }
 }
