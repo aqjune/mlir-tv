@@ -97,7 +97,7 @@ private:
 
   const static unsigned SIGN_BITS = 1;
   // The BV width of abstract fp encoding.
-  // fp_bv_bits = SIGN_BITS + value_bv_bits
+  // fp_bv_bits = SIGN_BITS + value_bv_bits (magnitude)
   unsigned fp_bitwidth;
   unsigned value_bitwidth;
 
@@ -202,6 +202,12 @@ public:
 private:
   smt::Expr lambdaSum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr multisetSum(const smt::Expr &a, const smt::Expr &n);
+
+  smt::Expr getSignBit(const smt::Expr &f) const;
+  smt::Expr getMagnitudeBits(const smt::Expr &f) const;
+  smt::Expr getLimitBits(const smt::Expr &f) const;
+  smt::Expr getTruncatedBits(const smt::Expr &f) const;
+  std::optional<smt::Expr> getPrecisionBits(const smt::Expr &f) const;
 };
 
 AbsFpEncoding &getFloatEncoding();
