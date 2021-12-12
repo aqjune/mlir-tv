@@ -750,6 +750,30 @@ Expr Expr::operator==(const Expr &rhs) const {
   if (isUInt(a) && rhs.isUInt(b))
     return mkBool(a == b);
 
+  {
+    using namespace matchers;
+    optional<Expr> lhsh, lhsl, rhsh, rhsl;
+    if (Concat(Any(lhsh), Any(lhsl)).match(*this) &&
+        Concat(Any(rhsh), Any(rhsl)).match(rhs) &&
+        lhsl->bitwidth() == rhsl->bitwidth()) {
+      uint64_t lhsl_const, rhsl_const;
+      if (lhsl->isUInt(lhsl_const) && rhsl->isUInt(rhsl_const)) {
+        if (lhsl_const != rhsl_const)
+          return Expr::mkBool(false);
+        else
+          return *lhsh == *rhsh;
+      }
+
+      uint64_t lhsh_const, rhsh_const;
+      if (lhsh->isUInt(lhsh_const) && rhsh->isUInt(rhsh_const)) {
+        if (lhsh_const != rhsh_const)
+          return Expr::mkBool(false);
+        else
+          return *lhsl == *rhsl;
+      }
+    }
+  }
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator==);
   SET_CVC5_USEOP(e, rhs, EQUAL);
