@@ -1100,29 +1100,26 @@ Expr AbsFpEncoding::getFpConstantPrecondition() {
   bool firstItr = true;
 
   for (const auto &[fp, absrepr] : fpconst_absrepr) {
-    assert(!fp.isInfinity());
+    assert(!fp.isInfinity() && !fp.isZero());
 
-    if (fp.isNegative()) {
-      precond &= prev_absrepr.ugt(absrepr);
-    } else {
-      if (prev_fp.isNegative() && !firstItr) {
-        // neg -> pos border
-        precond &= prev_absrepr.ugt(zero(true));
-        prev_absrepr = zero();
-      }
-      precond &= prev_absrepr.ult(absrepr);
+    if (!fp.isNegative()) {
+      // SMT encoding of x and -x is equivalent modulo sign bit; exit early
+      break;
     }
 
-    firstItr = false;
+    precond &= prev_absrepr.ugt(absrepr);
+    verbose("getFpConstantPrecondition") << prev_fp.convertToDouble()
+        << " < " << fp.convertToDouble() << ": "
+        << absrepr << " < " << prev_absrepr << "\n";
+
     prev_fp = fp;
     prev_absrepr = absrepr;
+    firstItr = false;
   }
   if (!fpconst_absrepr.empty()) {
-    if (fpconst_absrepr.rbegin()->first.isNegative()) {
-      precond &= prev_absrepr.ugt(zero(true));
-    } else {
-      precond &= prev_absrepr.ult(infinity());
-    }
+    precond &= prev_absrepr.ugt(zero(true));
+    verbose("getFpConstantPrecondition") << prev_fp.convertToDouble()
+        << " < -0.0: " << zero(true) << " < " << prev_absrepr << "\n";
   }
 
   return precond.simplify();
