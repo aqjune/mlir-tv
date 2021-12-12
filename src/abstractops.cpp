@@ -395,7 +395,7 @@ uint64_t AbsFpEncoding::getSignBit() const {
 
 void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
   uint64_t value_id = 0;
-  Expr small_value_bits = Expr::mkBV(0, value_bit_info.smaller_value_bitwidth);
+  Expr small_value_bits = Expr::mkBV(0, value_bit_info.truncated_bitwidth);
   // prec_offset_map[smaller value]: next precision bit
   map<uint64_t, uint64_t> prec_offset_map;
 
@@ -430,13 +430,13 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
 
       // default zero-init BVs
       auto limit_bits = Expr::mkBV(0, value_bit_info.limit_bitwidth);
-      auto sv_bits = Expr::mkBV(0, value_bit_info.smaller_value_bitwidth);
+      auto sv_bits = Expr::mkBV(0, value_bit_info.truncated_bitwidth);
 
       if (!casting_info->zero_limit_bits) {
         // Rounding becomes inf.
         value_id += 1;
         const unsigned int sv_prec_bitwidth =
-          value_bit_info.smaller_value_bitwidth + value_bit_info.prec_bitwidth;
+          value_bit_info.truncated_bitwidth + value_bit_info.prec_bitwidth;
         auto sv_prec_bits = Expr::mkFreshVar(Sort::bvSort(sv_prec_bitwidth),
                             "fp_const_sval_prec_bits_");
 
@@ -575,17 +575,17 @@ Expr AbsFpEncoding::nan() const {
 
 Expr AbsFpEncoding::isnan(const Expr &f) {
   // Modulo the sign bit, there is only one NaN representation in abs encoding.
-  return f.extract(value_bitwidth - 1, 0) == nan().extract(value_bitwidth - 1, 0);
+  return getMagnitudeBits(f) == getMagnitudeBits(nan());
 }
 
 Expr AbsFpEncoding::abs(const Expr &f) {
-  return Expr::mkBV(0, 1).concat(f.extract(fp_bitwidth - 2, 0));
+  return Expr::mkBV(0, 1).concat(getMagnitudeBits(f));
 }
 
 Expr AbsFpEncoding::neg(const Expr &f) {
-  auto sign = f.extract(fp_bitwidth - 1, fp_bitwidth - 1);
+  auto sign = getSignBit(f);
   auto sign_negated = sign ^ 1;
-  return sign_negated.concat(f.extract(fp_bitwidth - 2, 0));
+  return sign_negated.concat(getMagnitudeBits(f));
 }
 
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
@@ -619,8 +619,8 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   // This NaN case is specially treated below.
   // Simply redirect the result to zero.
   fp_add_res = Expr::mkIte(isnan(fp_add_res), zero(), fp_add_res);
-  auto fp_add_sign = fp_add_res.getMSB();
-  auto fp_add_value = fp_add_res.extract(value_bitwidth - 1, 0);
+  auto fp_add_sign = getSignBit(fp_add_res);
+  auto fp_add_value = getMagnitudeBits(fp_add_res);
 
   return Expr::mkIte(f1 == fp_id, f2,         // -0.0 + x -> x
     Expr::mkIte(f2 == fp_id, f1,              // x + -0.0 -> x
@@ -647,8 +647,7 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
       // neg + neg -> neg
       bv_true.concat(fp_add_value),
-    Expr::mkIte(f1.extract(value_bitwidth - 1, 0) ==
-                f2.extract(value_bitwidth - 1, 0),
+    Expr::mkIte(getMagnitudeBits(f1) == getMagnitudeBits(f2),
       // x + -x -> 0.0
       zero(),
       fp_add_res
@@ -671,14 +670,15 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   // Handle non-canonical NaNs
   const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
   const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
-  const auto f1_nosign = f1.extract(fp_bitwidth - 2, 0);
-  const auto f2_nosign = f2.extract(fp_bitwidth - 2, 0);
+  const auto f1_nosign = getMagnitudeBits(f1);
+  const auto f2_nosign = getMagnitudeBits(f2);
 
   // Encode commutativity of mul.
   // To avoid that the LSB of mul(x, x) is always 0, encode separately.
   auto mul_abs = Expr::mkIte(f1_nosign == f2_nosign,
     getMulFn().apply({f1_nosign, f1_nosign}),
-    getMulFn().apply({f1_nosign, f2_nosign}) + getMulFn().apply({f2_nosign, f1_nosign})
+    getMulFn().apply({f1_nosign, f2_nosign}) +
+        getMulFn().apply({f2_nosign, f1_nosign})
   );
   // getMulFn()'s range is BV[VALUE_BITS] because it encodes absolute size of mul.
   // We zero-extend 1 bit (SIGN-BIT) which is actually a dummy bit.
@@ -721,8 +721,8 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   // pos * pos | neg * neg -> pos, pos * neg | neg * pos -> neg
   return Expr::mkIte(fpmul_res == fp_nan, fp_nan,
     Expr::mkIte(f1.getMSB() == f2.getMSB(),
-      bv_false.concat(fpmul_res.extract(value_bitwidth - 1, 0)),
-      bv_true.concat(fpmul_res.extract(value_bitwidth - 1, 0))
+      bv_false.concat(getMagnitudeBits(fpmul_res)),
+      bv_true.concat(getMagnitudeBits(fpmul_res))
   ));
 }
 
@@ -742,8 +742,8 @@ Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
   // Handle non-canonical NaNs
   const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
   const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
-  const auto f1_nosign = f1.extract(fp_bitwidth - 2, 0);
-  const auto f2_nosign = f2.extract(fp_bitwidth - 2, 0);
+  const auto f1_nosign = getMagnitudeBits(f1);
+  const auto f2_nosign = getMagnitudeBits(f2);
 
   auto div_abs = getDivFn().apply({f1_nosign, f2_nosign});
   // getDivFn()'s range is BV[VALUE_BITS] because it encodes absolute size of mul.
@@ -789,8 +789,8 @@ Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
   // pos / pos | neg / neg -> pos, pos / neg | neg / pos -> neg
   return Expr::mkIte(fpdiv_res == fp_nan, fp_nan,
     Expr::mkIte(f1.getMSB() == f2.getMSB(),
-      bv_false.concat(fpdiv_res.extract(value_bitwidth - 1, 0)),
-      bv_true.concat(fpdiv_res.extract(value_bitwidth - 1, 0))
+      bv_false.concat(getMagnitudeBits(fpdiv_res)),
+      bv_true.concat(getMagnitudeBits(fpdiv_res))
   ));
 }
 
@@ -921,9 +921,9 @@ Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
     throw UnsupportedException("Casting from middle-size type to large-size "
         "type is not supported");
 
-  auto sign_bit = f.extract(fp_bitwidth - 1, value_bitwidth);
+  auto sign_bit = getSignBit(f);
   auto limit_zero = Expr::mkBV(0, tgt.value_bit_info.limit_bitwidth);
-  auto value_bits = f.extract(value_bitwidth - 1, 0);
+  auto value_bits = getMagnitudeBits(f);
   
   auto extended_float = sign_bit.concat(limit_zero).concat(value_bits);
   if (tgt.value_bit_info.prec_bitwidth > 0) {
@@ -950,27 +950,25 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
         "tgt cannot have bigger value_bitwidth than src");
 
   if (tgt.value_bit_info.limit_bitwidth != 0 ||
-        tgt.value_bit_info.prec_bitwidth != 0)
+      tgt.value_bit_info.prec_bitwidth != 0)
     throw UnsupportedException(
       "Truncating from large-size type to middle-size type is not supported");
 
-  auto sign_bit = f.extract(fp_bitwidth - 1, value_bitwidth);
+  auto sign_bit = getSignBit(f);
   auto sign_pos = Expr::mkBV(0, SIGN_BITS);
-  auto value_bits = f.extract(value_bitwidth - 1, 0);
-  auto limit_bits = value_bits.extract(
-    value_bitwidth - 1, value_bitwidth - value_bit_info.limit_bitwidth);
-  auto limit_zero = Expr::mkBV(0, value_bit_info.limit_bitwidth);
-  auto prec_bits = value_bits.extract(value_bit_info.prec_bitwidth - 1, 0);
+  auto value_bits = getMagnitudeBits(f);
+  auto limit_bits = getLimitBits(f);
+  auto limit_zero = Expr::mkBV(0, limit_bits);
+  auto prec_bits = getPrecisionBits(f);
 
   const auto round_dir = getRoundDirFn().apply(value_bits);
-  const auto floored_value = value_bits.extract(
-      value_bitwidth - 1 - value_bit_info.limit_bitwidth,
-      value_bit_info.prec_bitwidth);
+  const auto floored_value = getTruncatedBits(value_bits);
   const auto ceiled_value = floored_value + 1;
 
   const auto floored_float = sign_bit.concat(floored_value);
   const auto ceiled_float = sign_bit.concat(ceiled_value);
   assert(floored_float.bitwidth() == tgt.sort().bitwidth());
+  const auto is_prec_zero = prec_bits ? *prec_bits == 0 : Expr::mkBool(true);
 
   return Expr::mkIte(isnan(f), tgt.nan(),
           Expr::mkIte(f == infinity(), tgt.infinity(),
@@ -978,9 +976,9 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
           Expr::mkIte(limit_bits != limit_zero,
             Expr::mkIte(sign_bit == sign_pos,
               tgt.infinity(), tgt.infinity(true)),
-            Expr::mkIte(prec_bits == 0, floored_float,
-            Expr::mkIte(round_dir == Expr::mkBV(0, 1),
-              floored_float, ceiled_float))))));
+            Expr::mkIte(is_prec_zero, floored_float,
+              Expr::mkIte(round_dir == Expr::mkBV(0, 1),
+                floored_float, ceiled_float))))));
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() {
@@ -1071,7 +1069,7 @@ Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
           (tgt_fp.bitcastToAPInt() - prev_tgt_fp.bitcastToAPInt()).isOne();
         if (isEpsilon) {
           // remove the gap between two adjacent values
-          const auto sv_bitwidth = value_bit_info.smaller_value_bitwidth;
+          const auto sv_bitwidth = value_bit_info.truncated_bitwidth;
           const auto prev_var = Expr::mkVar(Sort::bvSort(sv_bitwidth),
                                   "fp_const_sval_" + to_string(value_id) + "_");
           const auto var = Expr::mkVar(Sort::bvSort(sv_bitwidth), 
@@ -1081,7 +1079,7 @@ Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
         value_id += 1;
         prev_tgt_fp = tgt_fp;
       } else {
-        const auto value_bits = absrepr.extract(value_bitwidth - 1, 0);
+        const auto value_bits = getMagnitudeBits(absrepr);
         if (casting_info.is_rounded_upward) {
           precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(1, 1));
         } else {
@@ -1131,7 +1129,6 @@ Expr getFpAssociativePrecondition() {
   // TODO: double
 
   return cond;
-
 }
 
 Expr getFpUltPrecondition() {
