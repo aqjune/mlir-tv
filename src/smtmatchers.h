@@ -73,6 +73,17 @@ public:
   bool operator()(const Expr &e) const;
 };
 
+class ZeroExt: Matcher {
+  std::function<bool(const Expr &)> matcher;
+
+public:
+  template<class T1>
+  ZeroExt(T1 &&lhs): matcher(std::move(lhs)) {}
+
+  bool match(const Expr &expr) const { return (*this)(expr); }
+  bool operator()(const Expr &e) const;
+};
+
 class Equals: Matcher {
   std::function<bool(const Expr &)> lhsMatcher, rhsMatcher;
 

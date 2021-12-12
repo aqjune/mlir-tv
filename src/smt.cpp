@@ -585,9 +585,12 @@ Expr Expr::extract(unsigned hbit, unsigned lbit) const {
 
   using namespace matchers;
   optional<Expr> lhs, rhs;
-  if (Concat(Any(lhs), Any(rhs)).match(*this) && lbit == 0 &&
+  if (lbit == 0 && Concat(Any(lhs), Any(rhs)).match(*this) &&
       hbit == rhs->bitwidth() - 1) {
     return *rhs;
+  } else if (lbit == 0 && ZeroExt(Any(lhs)).match(*this) &&
+             hbit == lhs->bitwidth() - 1) {
+    return *lhs;
   }
 
   Expr e;
@@ -746,6 +749,30 @@ Expr Expr::operator==(const Expr &rhs) const {
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBool(a == b);
+
+  {
+    using namespace matchers;
+    optional<Expr> lhsh, lhsl, rhsh, rhsl;
+    if (Concat(Any(lhsh), Any(lhsl)).match(*this) &&
+        Concat(Any(rhsh), Any(rhsl)).match(rhs) &&
+        lhsl->bitwidth() == rhsl->bitwidth()) {
+      uint64_t lhsl_const, rhsl_const;
+      if (lhsl->isUInt(lhsl_const) && rhsl->isUInt(rhsl_const)) {
+        if (lhsl_const != rhsl_const)
+          return Expr::mkBool(false);
+        else
+          return *lhsh == *rhsh;
+      }
+
+      uint64_t lhsh_const, rhsh_const;
+      if (lhsh->isUInt(lhsh_const) && rhsh->isUInt(rhsh_const)) {
+        if (lhsh_const != rhsh_const)
+          return Expr::mkBool(false);
+        else
+          return *lhsl == *rhsl;
+      }
+    }
+  }
 
   Expr e;
   SET_Z3_USEOP(e, rhs, operator==);
@@ -1313,6 +1340,26 @@ bool Concat::operator()(const Expr &expr) const {
   setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
 #endif // SOLVER_Z3
   return lhsMatcher(lhs) && rhsMatcher(rhs);
+}
+
+bool ZeroExt::operator()(const Expr &expr) const {
+  // FIXME: cvc5
+#ifdef SOLVER_Z3
+  auto e = expr.getZ3Expr();
+  if (!e.is_app())
+    return false;
+
+  Z3_app a = e;
+  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_ZERO_EXT)
+    return false;
+#endif // SOLVER_Z3
+
+  Expr subexpr = newExpr();
+#ifdef SOLVER_Z3
+  setZ3(subexpr, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+#endif // SOLVER_Z3
+  return matcher(subexpr);
 }
 
 bool Equals::operator()(const Expr &expr) const {
