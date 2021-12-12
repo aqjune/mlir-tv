@@ -189,10 +189,10 @@ void setAbstraction(
     const unsigned doubleLimitBits = min(min_limit_bitwidth,
                                           32u - doublePrecBits);
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
-    doublePrecBits, &*floatEnc, "double");
+        doublePrecBits, &*floatEnc, "double");
   } else {
     const unsigned doubleBits = 
-      log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2);
+        log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2);
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
   }
   doubleEnc->addConstants(doubleConsts);
@@ -225,9 +225,12 @@ AbsFpEncoding &getFpEncoding(mlir::Type ty) {
 
 AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned smaller_value_bw, unsigned prec_bw,
-       std::string &&fn_suffix)
-     :semantics(semantics), fn_suffix(move(fn_suffix)) {
+       std::string &&fnsuffix)
+     :semantics(semantics), fn_suffix(move(fnsuffix)) {
   assert(smaller_value_bw > 0);
+  verbose("AbsFpEncoding") << fn_suffix << ": limit bits: " << limit_bw
+      << ", smaller value bits: " << smaller_value_bw << ", precision bits: "
+      << prec_bw << '\n';
   // BWs for casting
   value_bit_info = { limit_bw, smaller_value_bw, prec_bw };
   value_bitwidth = value_bit_info.get_value_bitwidth();

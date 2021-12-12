@@ -76,10 +76,10 @@ llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
   llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"),
   llvm::cl::cat(MlirTvCategory));
 
-llvm::cl::opt<int> fp_bits("fp-bits",
+llvm::cl::opt<unsigned> fp_bits("fp-bits",
   llvm::cl::desc("The number of bits for the abstract representation of "
                  "non-constant float and double values."),
-  llvm::cl::init(-1), llvm::cl::value_desc("number"),
+  llvm::cl::init(0), llvm::cl::value_desc("number"),
   llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
