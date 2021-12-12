@@ -1159,6 +1159,33 @@ Expr getFpTruncatePrecondition() {
   return cond;
 }
 
+Expr AbsFpEncoding::getSignBit(const smt::Expr &f) const {
+  assert(fp_bitwidth - value_bitwidth == SIGN_BITS);
+  return f.extract(fp_bitwidth - 1, value_bitwidth);
+}
+
+Expr AbsFpEncoding::getMagnitudeBits(const smt::Expr &f) const {
+  return f.extract(value_bitwidth - 1, 0);
+}
+
+Expr AbsFpEncoding::getLimitBits(const smt::Expr &f) const {
+  assert(value_bit_info.limit_bitwidth > 0);
+  return f.extract(value_bitwidth - 1,
+      value_bitwidth - value_bit_info.limit_bitwidth);
+}
+
+Expr AbsFpEncoding::getTruncatedBits(const smt::Expr &f) const {
+  unsigned hw =
+      value_bit_info.prec_bitwidth + value_bit_info.truncated_bitwidth - 1;
+  return f.extract(hw, value_bit_info.prec_bitwidth);
+}
+
+optional<Expr> AbsFpEncoding::getPrecisionBits(const smt::Expr &f) const {
+  if (value_bit_info.prec_bitwidth == 0)
+    return nullopt;
+  return f.extract(value_bit_info.prec_bitwidth - 1, 0);
+}
+
 Expr getFpConstantPrecondition() {
   Expr cond = Expr::mkBool(true);
 
