@@ -399,6 +399,10 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
   // prec_offset_map[smaller value]: next precision bit
   map<uint64_t, uint64_t> prec_offset_map;
 
+  auto mkNonzero = [](Expr &&e) {
+    return Expr::mkIte(e == 0, Expr::mkBV(1, e), e);
+  };
+
   // Visit non-negative constants in increasing order.
   for (const auto& fp_const: const_set) {
     assert(!fp_const.isNegative() &&
@@ -420,37 +424,36 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       auto casting_info = getCastingInfo(fp_const);
       assert(casting_info.has_value() &&
              "this encoding requires casting info analysis for constants");
-      
+      assert(value_bit_info.limit_bitwidth > 0 && "limit bits cannot be zero");
+
       // default zero-init BVs
       auto limit_bits = Expr::mkBV(0, value_bit_info.limit_bitwidth);
       auto sv_bits = Expr::mkBV(0, value_bit_info.smaller_value_bitwidth);
 
       if (!casting_info->zero_limit_bits) {
+        // Rounding becomes inf.
         value_id += 1;
         const unsigned int sv_prec_bitwidth =
           value_bit_info.smaller_value_bitwidth + value_bit_info.prec_bitwidth;
         auto sv_prec_bits = Expr::mkFreshVar(Sort::bvSort(sv_prec_bitwidth),
                             "fp_const_sval_prec_bits_");
 
-        limit_bits = Expr::mkFreshVar(limit_bits, "fp_const_limit_bits_");
-        // Make it non-zero
-        limit_bits = Expr::mkIte(limit_bits == 0,
-            Expr::mkBV(1, limit_bits), limit_bits);
+        limit_bits = mkNonzero(
+            Expr::mkFreshVar(limit_bits, "fp_const_limit_bits_"));
         e_value = limit_bits.concat(sv_prec_bits);
 
       } else if (!casting_info->zero_prec_bits) {
-        // this value will be rounded to same value,
-        // so do not change smaller_value and increment prec bit.
+        // Rounding loses bits & the result becomes equivalent to the previous
+        // rounding output.
+        // e.g. fp_const is 2.2 (it was 2.1 in the prev. iter)
+        // Do not change smaller_value and increment prec bit.
         auto itr = prec_offset_map.insert({value_id, 1}).first;
         uint64_t prec = itr->second;
         assert(prec < (1ull << value_bit_info.prec_bitwidth));
 
-        auto prec_bits = Expr::mkFreshVar(
+        auto prec_bits = mkNonzero(Expr::mkFreshVar(
             Sort::bvSort(value_bit_info.prec_bitwidth),
-            "fp_const_prec_bits");
-        // Make prec bits non-zero
-        prec_bits = Expr::mkIte(prec_bits == 0,
-            Expr::mkBV(1, prec_bits), prec_bits);
+            "fp_const_prec_bits"));
         sv_bits = Expr::mkVar(sv_bits, 
                               "fp_const_sval_" + to_string(value_id) + "_");
         e_value = limit_bits.concat(sv_bits).concat(prec_bits);
@@ -458,8 +461,10 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         itr->second++;
 
       } else {
-        // this value will be rounded to different value,
-        // so assign different smaller_value
+        // Rounding does not lose bits, but will become a value other than the
+        // previous one
+        // e.g. fp_const is 3.0 (it was 2.2 in the prev. iter)
+        // Assign different smaller_value
         value_id += 1;
         sv_bits = Expr::mkVar(sv_bits, 
                               "fp_const_sval_" + to_string(value_id) + "_");
