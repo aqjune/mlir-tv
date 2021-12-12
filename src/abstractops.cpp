@@ -409,7 +409,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
 
     const unsigned limit_value_bitwidth =
         value_bit_info.limit_bitwidth + value_bit_info.smaller_value_bitwidth;
-    Expr e_value = Expr::mkBV(value_id, limit_value_bitwidth); // dummy
+    optional<Expr> e_value;
 
     if (value_bit_info.limit_bitwidth == 0 &&
         value_bit_info.prec_bitwidth == 0) {
@@ -436,7 +436,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         uint64_t prec = itr->second;
         assert(prec < (1ull << value_bit_info.prec_bitwidth));
         Expr e_prec = Expr::mkBV(prec, value_bit_info.prec_bitwidth);
-        e_value = e_value.concat(e_prec);
+        e_value = e_value->concat(e_prec);
         // Increase the next precision bit.
         itr->second++;
       } else {
@@ -448,14 +448,14 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         // this encoding may not have prec bits
         if (value_bit_info.prec_bitwidth > 0) {
           Expr e_prec = Expr::mkBV(0, value_bit_info.prec_bitwidth);
-          e_value = e_value.concat(e_prec);
+          e_value = e_value->concat(e_prec);
         }
       }
     }
 
-    Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(e_value);
+    Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(*e_value);
     fpconst_absrepr.emplace(fp_const, e_pos);
-    Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(e_value);
+    Expr e_neg = Expr::mkBV(1, SIGN_BITS).concat(*e_value);
     fpconst_absrepr.emplace(-fp_const, e_neg);
   }
 }
