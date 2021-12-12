@@ -396,6 +396,21 @@ bool Expr::isTrue() const {
   return res;
 }
 
+bool Expr::isVar() const {
+  bool res = false;
+  IF_Z3_ENABLED(res |= z3 && z3->is_app() && z3->is_const());
+  // TODO: CVC5
+  return res;
+}
+
+string Expr::getVarName() const {
+  assert(isVar());
+  // TODO: CVC5
+  string name;
+  IF_Z3_ENABLED(name = z3->decl().name().str());
+  return name;
+}
+
 #define EXPR_BVOP_UINT64(NAME) \
 Expr Expr:: NAME (uint64_t arg) const {\
   return NAME(mkBV(arg, sort().bitwidth())); \
