@@ -104,11 +104,11 @@ private:
   // Bits for casting.
   struct ValueBitInfo {
     unsigned limit_bitwidth;
-    unsigned smaller_value_bitwidth;
+    unsigned truncated_bitwidth;
     unsigned prec_bitwidth;
 
     unsigned get_value_bitwidth() {
-      return limit_bitwidth + smaller_value_bitwidth + prec_bitwidth;
+      return limit_bitwidth + truncated_bitwidth + prec_bitwidth;
     }
   };
   ValueBitInfo value_bit_info;

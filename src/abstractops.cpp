@@ -408,7 +408,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
     }
 
     const unsigned limit_value_bitwidth =
-        value_bit_info.limit_bitwidth + value_bit_info.smaller_value_bitwidth;
+        value_bit_info.limit_bitwidth + value_bit_info.truncated_bitwidth;
     optional<Expr> e_value;
 
     if (value_bit_info.limit_bitwidth == 0 &&
@@ -425,7 +425,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         // these values should be mapped to Inf when truncated.
         // In the higher precision, freshly start value_id with limit bit set
         const unsigned value_prec_bitwidth = 
-          value_bit_info.smaller_value_bitwidth + value_bit_info.prec_bitwidth;
+          value_bit_info.truncated_bitwidth + value_bit_info.prec_bitwidth;
         value_id = max(value_id, (uint64_t)1 << value_prec_bitwidth);
         e_value = Expr::mkBV(value_id, value_bitwidth);
         value_id += 1;
@@ -1102,7 +1102,7 @@ Expr AbsFpEncoding::getLimitBits(const smt::Expr &f) const {
 
 Expr AbsFpEncoding::getTruncatedBits(const smt::Expr &f) const {
   unsigned hw =
-      value_bit_info.prec_bitwidth + value_bit_info.smaller_value_bitwidth - 1;
+      value_bit_info.prec_bitwidth + value_bit_info.truncated_bitwidth - 1;
   return f.extract(hw, value_bit_info.prec_bitwidth);
 }
 
