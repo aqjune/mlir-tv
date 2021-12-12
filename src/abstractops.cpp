@@ -579,7 +579,7 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   const auto bv_true = Expr::mkBV(1, 1);
   const auto bv_false = Expr::mkBV(0, 1);
 
-  // Handle non-canonical NaNs
+  // Handle non-canonical NaNs (can have two different signs)
   const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
   const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
 
