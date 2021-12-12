@@ -1097,23 +1097,32 @@ Expr AbsFpEncoding::getFpConstantPrecondition() {
   
   auto prev_fp = llvm::APFloat::getInf(semantics, true);
   auto prev_absrepr = infinity(true);
+  bool firstItr = true;
+
   for (const auto &[fp, absrepr] : fpconst_absrepr) {
+    assert(!fp.isInfinity());
+
     if (fp.isNegative()) {
-      precond &= (prev_absrepr.ugt(absrepr) == Expr::mkBool(true));
+      precond &= prev_absrepr.ugt(absrepr);
     } else {
-      if (prev_fp.isNegative()) {
+      if (prev_fp.isNegative() && !firstItr) {
         // neg -> pos border
-        precond &= (prev_absrepr.ugt(zero(true)) == Expr::mkBool(true));
+        precond &= prev_absrepr.ugt(zero(true));
         prev_absrepr = zero();
-      } 
-      precond &= (prev_absrepr.ult(absrepr) == Expr::mkBool(true));
+      }
+      precond &= prev_absrepr.ult(absrepr);
     }
 
+    firstItr = false;
     prev_fp = fp;
     prev_absrepr = absrepr;
   }
-  if (fpconst_absrepr.crbegin() != fpconst_absrepr.crend()) {
-    precond &= (prev_absrepr.ult(infinity()));
+  if (!fpconst_absrepr.empty()) {
+    if (fpconst_absrepr.rbegin()->first.isNegative()) {
+      precond &= prev_absrepr.ugt(zero(true));
+    } else {
+      precond &= prev_absrepr.ult(infinity());
+    }
   }
 
   return precond.simplify();
@@ -1126,25 +1135,6 @@ Expr getFpAssociativePrecondition() {
   Expr cond = Expr::mkBool(true);
   if (floatEnc)
     cond &= floatEnc->getFpAssociativePrecondition();
-  // TODO: double
-
-  return cond;
-}
-
-Expr getFpUltPrecondition() {
-  Expr cond = Expr::mkBool(true);
-
-  if (floatEnc) {
-    auto constants = floatEnc->getAllConstants();
-    for (auto &[const1, expr1]: constants) {
-      for (auto &[const2, expr2]: constants) {
-        if (const1.compare(const2) == llvm::APFloat::cmpLessThan ||
-              const1.compare(const2) == llvm::APFloat::cmpUnordered) {
-          cond = cond & floatEnc->fult(expr1, expr2) == Integer::boolTrue();
-        }
-      }
-    }
-  }
   // TODO: double
 
   return cond;
