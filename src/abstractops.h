@@ -53,8 +53,20 @@ struct AbstractionLevel {
   bool printOps;
   bool useAllLogic;
 
+  // C++ prioirty_queue keep the largest value on top.
   bool operator < (const AbstractionLevel &other) const {
-    return alFpDot < other.alFpDot;
+    if (fpAddSumEncoding == other.fpAddSumEncoding)
+      if (alFpDot == other.alFpDot)
+        if (alFpCast == other.alFpCast)
+            return alIntDot > other.alIntDot;
+        else
+          return alFpCast > other.alFpCast;
+      else
+        return alFpDot > other.alFpDot;
+    else
+      // Give lowest priority on AbsFpAddSumEncoding
+      // (because "UNROLL_TO_ADD" takes a long time in some tests)
+      return fpAddSumEncoding > other.fpAddSumEncoding;
   }
 };
 

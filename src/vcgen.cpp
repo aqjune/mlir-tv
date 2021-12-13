@@ -509,7 +509,7 @@ static Results validate(ValidationInput vinput) {
   auto printSematics = [](AbstractionLevel &level) {
     llvm::outs()
       << "\n===============================================================\n"
-      << "  Giving more precise semantics to abstractly defined ops...\n"
+      << "  Current semantics of abstractly defined ops..\n"
       << "  AbsLevelFpDot: " << magic_enum::enum_name(level.alFpDot) << "\n"
       << "  AbsLevelFpCast: " << magic_enum::enum_name(level.alFpCast) << "\n"
       << "  AbsLevelIntDot: " << magic_enum::enum_name(level.alIntDot) << "\n"
