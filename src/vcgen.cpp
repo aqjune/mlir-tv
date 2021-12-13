@@ -506,7 +506,7 @@ static Results validate(ValidationInput vinput) {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
   using namespace aop;
-  auto printSematics = [](AbstractionLevel &level) {
+  auto printSematics = [](AbstractionLevel &level, Results &result) {
     llvm::outs()
       << "\n===============================================================\n"
       << "  Current semantics of abstractly defined ops..\n"
@@ -514,9 +514,11 @@ static Results validate(ValidationInput vinput) {
       << "  AbsLevelFpCast: " << magic_enum::enum_name(level.alFpCast) << "\n"
       << "  AbsLevelIntDot: " << magic_enum::enum_name(level.alIntDot) << "\n"
       << "  AbsFpAddSumEncoding: " << magic_enum::enum_name(level.fpAddSumEncoding) << "\n"
+      << "  Verification Result: " << magic_enum::enum_name(result.code) << "\n"
       << "===============================================================\n\n";
   };
 
+  Results result(Results::Code::TIMEOUT);
   set<AbstractionLevel> checked;
   priority_queue<AbstractionLevel> queue;
 
@@ -533,7 +535,6 @@ static Results validate(ValidationInput vinput) {
     if (checked.count(level)) continue;
 
     checked.insert(level);
-    printSematics(level);
     setAbstraction(level.alFpDot, level.alFpCast, level.alIntDot, level.fpAddSumEncoding,
       vinput.isFpAddAssociative,
       vinput.unrollIntSum,
@@ -543,11 +544,14 @@ static Results validate(ValidationInput vinput) {
     setEncodingOptions(vinput.useMultisetForFpSum);
 
     auto res = tryValidation(vinput, level.printOps, level.useAllLogic, elapsedMillisec);
-    if (res.code == Results::INCONSISTENT)
+    printSematics(level, res);
+    if (res.code == Results::INCONSISTENT) {
       return res;
-    else if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
+    } else if (res.code == Results::SUCCESS) {
       checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, false, elapsedMillisec);
       return res;
+    } else {
+      result = res;
     }
 
     auto usedOps = aop::getUsedAbstractOps();
@@ -595,9 +599,11 @@ static Results validate(ValidationInput vinput) {
     }
   }
 
-  // If verification failed even when the most concrete semantic is given,
-  // then it's return value mismatch
-  return Results(Results::RETVALUE);
+  if (result.code == Results::TIMEOUT)
+    checkIsSrcAlwaysUB(vinput, false, false, elapsedMillisec);
+
+  // If verification failed even when the most concrete semantic is given, return the last results
+  return result;
 }
 
 static vector<mlir::memref::GlobalOp> mergeGlobals(
