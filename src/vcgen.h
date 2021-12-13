@@ -43,10 +43,4 @@ enum class VerificationStep {
   Memory
 };
 
-Results validate(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt,
-    const std::string &dump_smt_to,
-    unsigned int numBlocksPerType,
-    std::pair<unsigned, unsigned> fpBits, // (float, double)
-    bool associativeAdd,
-    bool unrollIntSum, // sum(arr) := arr[0] + ... + arr[arr.len-1]
-    bool useMultiset);
+Results validate(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt);

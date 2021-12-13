@@ -42,11 +42,13 @@ enum class AbsFpAddSumEncoding {
   USE_SUM_ONLY = 0, // When --associativity is given, encode an addition as sum
   DEFAULT = 1, // Encode addition using fp_add, fp_sum respectivly
                // (no relation between them)
-  USE_ADD_ONLY = 2, // Use only addf function
+  UNROLL_TO_ADD = 2, // Unroll sum to add if the size of array is small enough
 };
 
 // unrollIntSum: Fully unroll sum(arr) where arr is an int array of const size
 //               as arr[0] + arr[1] + .. + arr[len-1]?
+// unrollFpSumBound: If AbsFpAddSumEncoding is UNROLL_TO_ADD, specify the max.
+//                   size of an array to unroll
 // floatNonConstsCnt: # of non-constant distinct f32 values necessary to
 // validate the transformation.
 // NOTE: This resets the used abstract ops record.
@@ -54,6 +56,7 @@ void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
                     AbsFpAddSumEncoding,
                     bool isFpAddAssociative,
                     bool unrollIntSum,
+                    unsigned unrollFpSumBound,
                     unsigned floatNonConstsCnt,
                     std::set<llvm::APFloat> floatConsts,
                     unsigned doubleNonConstsCnt,
@@ -94,18 +97,18 @@ private:
 
   const static unsigned SIGN_BITS = 1;
   // The BV width of abstract fp encoding.
-  // fp_bv_bits = SIGN_BITS + value_bv_bits
+  // fp_bv_bits = SIGN_BITS + value_bv_bits (magnitude)
   unsigned fp_bitwidth;
   unsigned value_bitwidth;
 
   // Bits for casting.
   struct ValueBitInfo {
     unsigned limit_bitwidth;
-    unsigned smaller_value_bitwidth;
+    unsigned truncated_bitwidth;
     unsigned prec_bitwidth;
 
     unsigned get_value_bitwidth() {
-      return limit_bitwidth + smaller_value_bitwidth + prec_bitwidth;
+      return limit_bitwidth + truncated_bitwidth + prec_bitwidth;
     }
   };
   ValueBitInfo value_bit_info;
@@ -182,6 +185,7 @@ public:
   std::vector<std::pair<llvm::APFloat, smt::Expr>> getAllConstants() const;
   std::vector<llvm::APFloat> possibleConsts(const smt::Expr &e) const;
   smt::Expr isnan(const smt::Expr &f);
+  smt::Expr iszero(const smt::Expr &f, bool isNegative);
   smt::Expr abs(const smt::Expr &f);
   smt::Expr neg(const smt::Expr &f);
   smt::Expr add(const smt::Expr &f1, const smt::Expr &f2);
@@ -199,6 +203,12 @@ public:
 private:
   smt::Expr lambdaSum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr multisetSum(const smt::Expr &a, const smt::Expr &n);
+
+  smt::Expr getSignBit(const smt::Expr &f) const;
+  smt::Expr getMagnitudeBits(const smt::Expr &f) const;
+  smt::Expr getLimitBits(const smt::Expr &f) const;
+  smt::Expr getTruncatedBits(const smt::Expr &f) const;
+  std::optional<smt::Expr> getPrecisionBits(const smt::Expr &f) const;
 };
 
 AbsFpEncoding &getFloatEncoding();

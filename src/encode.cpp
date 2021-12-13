@@ -414,7 +414,7 @@ void encodeOp(State &st, mlir::arith::XOrIOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::arith::CmpFOp op, bool) {
-  switch (op.predicate()) {
+  switch (op.getPredicate()) {
   case mlir::arith::CmpFPredicate::OLT: { // ordered (unsinged) less than "<"
     auto op1Type = op.getOperand(0).getType();
     auto op2Type = op.getOperand(1).getType();
@@ -475,7 +475,7 @@ void encodeOp(State &st, mlir::arith::ConstantFloatOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::arith::ConstantOp op, bool) {
-  auto attr = op.value();
+  auto attr = op.getValue();
   auto ty = op.getType();
   auto rty = ty.dyn_cast<mlir::RankedTensorType>();
 
@@ -644,9 +644,9 @@ void encodeOp(State &st, mlir::ReturnOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::SelectOp op, bool) {
-  auto condTy = op.condition().getType();
-  auto trueTy = op.true_value().getType();
-  auto falseTy = op.true_value().getType();
+  auto condTy = op.getCondition().getType();
+  auto trueTy = op.getTrueValue().getType();
+  auto falseTy = op.getFalseValue().getType();
 
   if (trueTy.isa<mlir::TensorType>() && falseTy.isa<mlir::TensorType>()) {
     if (trueTy.isa<mlir::UnrankedTensorType>() ||
@@ -655,16 +655,16 @@ void encodeOp(State &st, mlir::SelectOp op, bool) {
     // It is guaranteed by mlir's verifier that condTy cannot be unranked
     assert(!condTy.isa<mlir::UnrankedTensorType>());
 
-    auto trueValue = st.regs.get<Tensor>(op.true_value());
-    auto falseValue = st.regs.get<Tensor>(op.false_value());
+    auto trueValue = st.regs.get<Tensor>(op.getTrueValue());
+    auto falseValue = st.regs.get<Tensor>(op.getFalseValue());
     // Encoding UB is necessary to support select of tensors -> linalg.generic
     Expr welldef = listsEqual(trueValue.getDims(), falseValue.getDims());
     function<Expr(const vector<Expr>&)> condFn =
         [&](const vector<Expr> &indices) -> Expr {
-      return st.regs.get<Integer>(op.condition());
+      return st.regs.get<Integer>(op.getCondition());
     };
     if (condTy.isa<mlir::RankedTensorType>()) {
-      auto condValue = st.regs.get<Tensor>(op.condition());
+      auto condValue = st.regs.get<Tensor>(op.getCondition());
       // Copy condValue
       condFn = [condValue](const vector<Expr> &indices) -> Expr {
         return condValue.get(indices).first;
@@ -689,9 +689,9 @@ void encodeOp(State &st, mlir::SelectOp op, bool) {
           op.getOperation(),
           "For MemRef operands, i1 typed condition is supported only");
 
-    auto trueValue = st.regs.get<MemRef>(op.true_value());
-    auto falseValue = st.regs.get<MemRef>(op.false_value());
-    auto condValue = st.regs.get<Integer>(op.condition());
+    auto trueValue = st.regs.get<MemRef>(op.getTrueValue());
+    auto falseValue = st.regs.get<MemRef>(op.getFalseValue());
+    auto condValue = st.regs.get<Integer>(op.getCondition());
     auto result = MemRef::mkIte(condValue, trueValue, falseValue);
 
     st.regs.add(op, result);
@@ -702,9 +702,9 @@ void encodeOp(State &st, mlir::SelectOp op, bool) {
   } else {
     assert(trueTy.isIntOrFloat() || trueTy.isIndex());
 
-    auto trueValue = st.regs.getExpr(op.true_value());
-    auto falseValue = st.regs.getExpr(op.false_value());
-    auto condValue = st.regs.get<Integer>(op.condition());
+    auto trueValue = st.regs.getExpr(op.getTrueValue());
+    auto falseValue = st.regs.getExpr(op.getFalseValue());
+    auto condValue = st.regs.get<Integer>(op.getCondition());
     auto isTrue = (Expr)condValue == Integer::boolTrue();
     st.regs.add(op, Expr::mkIte(isTrue, trueValue, falseValue), op.getType());
   }
@@ -1162,7 +1162,7 @@ void encodeOp(State &st, mlir::linalg::InitTensorOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op, bool) {
+void encodeOp(State &st, mlir::tensor::CollapseShapeOp op, bool) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
   mlir::RankedTensorType resTy = op.getResultType();
 
@@ -1192,7 +1192,7 @@ void encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op, bool) {
+void encodeOp(State &st, mlir::tensor::ExpandShapeOp op, bool) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
 
   // The fresh variables created by ShapedValue::getDims will be ignored
@@ -2626,8 +2626,6 @@ static void encodeBlock(
     ENCODE(st, op, mlir::linalg::InitTensorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::MatmulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::PadTensorOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::linalg::TensorExpandShapeOp, encodeMemWriteOps);
     
     ENCODE(st, op, mlir::shape::ShapeOfOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::shape::ToExtentTensorOp, encodeMemWriteOps);
@@ -2642,6 +2640,8 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tensor::FromElementsOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::GenerateOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::InsertSliceOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tensor::CollapseShapeOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tensor::ExpandShapeOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::tosa::AbsOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::AddOp, encodeMemWriteOps);
