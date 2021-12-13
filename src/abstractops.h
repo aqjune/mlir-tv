@@ -45,6 +45,19 @@ enum class AbsFpAddSumEncoding {
   UNROLL_TO_ADD = 2, // Unroll sum to add if the size of array is small enough
 };
 
+struct AbstractionLevel {
+  AbsLevelFpDot alFpDot;
+  AbsLevelFpCast alFpCast;
+  AbsLevelIntDot alIntDot;
+  AbsFpAddSumEncoding fpAddSumEncoding;
+  bool printOps;
+  bool useAllLogic;
+
+  bool operator < (const AbstractionLevel &other) const {
+    return alFpDot < other.alFpDot;
+  }
+};
+
 // unrollIntSum: Fully unroll sum(arr) where arr is an int array of const size
 //               as arr[0] + arr[1] + .. + arr[len-1]?
 // unrollFpSumBound: If AbsFpAddSumEncoding is UNROLL_TO_ADD, specify the max.
@@ -65,10 +78,6 @@ void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
 // useMultiset: To encode commutativity of fp summation, use multiset?
 void setEncodingOptions(bool useMultiset);
 
-AbsLevelFpDot getAbsLevelFpDot();
-AbsLevelFpCast getAbsLevelFpCast();
-AbsLevelIntDot getAbsLevelIntDot();
-AbsFpAddSumEncoding getAbsFpAddSumEncoding();
 bool getFpAddAssociativity();
 bool getFpCastIsPrecise();
 
