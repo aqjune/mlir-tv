@@ -555,44 +555,34 @@ static Results validate(ValidationInput vinput) {
     }
 
     auto usedOps = aop::getUsedAbstractOps();
+    auto nextLevel = level;
     /* 1. fp dot abstraction level */
     if (level.alFpDot == AbsLevelFpDot::FULLY_ABS) {
       if (usedOps.fpDot || vinput.isFpAddAssociative)
-        queue.push({AbsLevelFpDot::SUM_MUL,
-            level.alFpCast,
-            level.alIntDot,
-            level.fpAddSumEncoding,
-            /* printOps */ false,
-            /* useAllLogic */vinput.isFpAddAssociative});
+        nextLevel.alFpDot = AbsLevelFpDot::SUM_MUL;
     }
     /* 2. fp cast abstraction level */
     if (level.alFpCast == AbsLevelFpCast::FULLY_ABS) {
       if (usedOps.fpCastRound)
-        queue.push({level.alFpDot,
-            AbsLevelFpCast::PRECISE,
-            level.alIntDot,
-            level.fpAddSumEncoding,
-            /* printOps */ false,
-            /* useAllLogic */vinput.isFpAddAssociative});
+        nextLevel.alFpCast = AbsLevelFpCast::PRECISE;
     }
     /* 3. int dot abstraction level */
     if (level.alIntDot == AbsLevelIntDot::FULLY_ABS) {
       if (usedOps.intDot && usedOps.intSum)
-        queue.push({level.alFpDot,
-            level.alFpCast,
-            AbsLevelIntDot::SUM_MUL,
-            level.fpAddSumEncoding,
+        nextLevel.alIntDot = AbsLevelIntDot::SUM_MUL;
+    }
+    if (!checked.count(nextLevel))
+      queue.push({nextLevel.alFpDot, nextLevel.alFpCast, nextLevel.alIntDot,
+            nextLevel.fpAddSumEncoding,
             /* printOps */ false,
             /* useAllLogic */vinput.isFpAddAssociative});
-    }
+
     /* 4. fp add, sum encoding level */
     /* Dose not lowering abstraction level when "AbsFpAddSumEncoding::USE_SUM_ONLY"
         because this encoding only turned on when --associative given. */
     if (level.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
       if (usedOps.fpSum)
-        queue.push({level.alFpDot,
-            level.alFpCast,
-            level.alIntDot,
+        queue.push({nextLevel.alFpDot, nextLevel.alFpCast, nextLevel.alIntDot,
             AbsFpAddSumEncoding::UNROLL_TO_ADD,
             /* printOps */ false,
             /* useAllLogic */vinput.isFpAddAssociative});
