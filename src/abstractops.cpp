@@ -552,6 +552,10 @@ Expr AbsFpEncoding::isnan(const Expr &f) {
   return getMagnitudeBits(f) == getMagnitudeBits(nan());
 }
 
+Expr AbsFpEncoding::iszero(const Expr &f, bool isNegative) {
+  return f == zero(isNegative);
+}
+
 Expr AbsFpEncoding::abs(const Expr &f) {
   return Expr::mkBV(0, 1).concat(getMagnitudeBits(f));
 }
@@ -615,10 +619,10 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     // If signbit(f1) == 0 /\ signbit(f2) == 0, signbit(fpAdd(f1, f2)) = 0.
     // If signbit(f1) == 1 /\ signbit(f2) == 1, signbit(fpAdd(f1, f2)) = 1.
     // Otherwise, we can just use the arbitrary sign yielded from fp_add.
-    Expr::mkIte(((f1.getMSB() == bv_false) & (f2.getMSB() == bv_false)),
+    Expr::mkIte(((getSignBit(f1) == bv_false) & (getSignBit(f2) == bv_false)),
       // pos + pos -> pos
       bv_false.concat(fp_add_value),
-    Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
+    Expr::mkIte(((getSignBit(f1) == bv_true) & (getSignBit(f2) == bv_true)),
       // neg + neg -> neg
       bv_true.concat(fp_add_value),
     Expr::mkIte(getMagnitudeBits(f1) == getMagnitudeBits(f2),
@@ -631,8 +635,6 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
 Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   usedOps.fpMul = true;
 
-  auto fp_zero_pos = zero();
-  auto fp_zero_neg = zero(true);
   auto fp_id = one();
   auto fp_minusone = one(true);
   auto fp_inf_pos = infinity();
@@ -677,15 +679,15 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   // +-Inf * +-0.0 -> NaN , +-Inf * x -> ?Inf (if x != 0.0)
   // IEEE 754-2019 section 7.2 'Invalid operation'
   Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg),
-    Expr::mkIte((f2 == fp_zero_pos) | (f2 == fp_zero_neg), fp_nan, fp_inf_pos),
+    Expr::mkIte(iszero(f2, false) | iszero(f2, true), fp_nan, fp_inf_pos),
   // +-0.0 * +-Inf -> NaN , x * +-Inf -> ?Inf (if x != 0.0)
   // IEEE 754-2019 section 7.2 'Invalid operation'
   Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg),
-    Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg), fp_nan, fp_inf_pos),
+    Expr::mkIte(iszero(f1, false) | iszero(f1, true), fp_nan, fp_inf_pos),
   // +-0.0 * x -> ?0.0, x * +-0.0 -> ?0.0
-  Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg) | (f2 == fp_zero_pos) |
-              (f2 == fp_zero_neg), 
-    fp_zero_pos,
+  Expr::mkIte(iszero(f1, false) | iszero(f1, true) | iszero(f2, false) |
+              iszero(f2, true), 
+    zero(),
     // If both operands do not fall into any of the cases above,
     // use fp_mul for abstract representation.
     mul_abs_res
@@ -694,7 +696,7 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   // And at last we replace the sign with signbit(f1) ^ signbit(f2)
   // pos * pos | neg * neg -> pos, pos * neg | neg * pos -> neg
   return Expr::mkIte(fpmul_res == fp_nan, fp_nan,
-    Expr::mkIte(f1.getMSB() == f2.getMSB(),
+    Expr::mkIte(getSignBit(f1) == getSignBit(f2),
       bv_false.concat(getMagnitudeBits(fpmul_res)),
       bv_true.concat(getMagnitudeBits(fpmul_res))
   ));
