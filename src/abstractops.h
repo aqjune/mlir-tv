@@ -186,6 +186,8 @@ public:
   std::vector<llvm::APFloat> possibleConsts(const smt::Expr &e) const;
   smt::Expr isnan(const smt::Expr &f);
   smt::Expr iszero(const smt::Expr &f, bool isNegative);
+  smt::Expr isinf(const smt::Expr &f, bool isNegative);
+
   smt::Expr abs(const smt::Expr &f);
   smt::Expr neg(const smt::Expr &f);
   smt::Expr add(const smt::Expr &f1, const smt::Expr &f2);
