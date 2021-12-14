@@ -66,7 +66,8 @@ static vector<T> vecAdd(const vector<T> &a, const vector<T> &b) {
   return c;
 }
 
-static Expr evalIndexCastOp(mlir::Type src, mlir::Type tgt, Expr &&val) {
+static Expr evalIndexCastOp(mlir::Type src, mlir::Type tgt, Index &&idx) {
+  Expr val = idx;
   assert(val.sort().isBV());
 
   unsigned srcWidth = val.sort().bitwidth();
@@ -1009,7 +1010,8 @@ void encodeOp(State &st, mlir::tosa::GatherOp op, bool) {
   vector<Expr> outputDims =
       {values.getDim(0), indices.getDim(1), values.getDim(2)};
   vector<Expr> indVars = Index::boundIndexVars(outputDims.size());
-  auto [idx, idxInbounds] = indices.get({indVars[0], indVars[1]});
+  auto [idx0, idxInbounds] = indices.get({indVars[0], indVars[1]});
+  Index idx(idx0); // unlock ops
   auto [outputValue, inputInbounds] = values.get({indVars[0], idx, indVars[2]});
   auto isInitialized = values.isInitialized({indVars[0], idx, indVars[2]});
 

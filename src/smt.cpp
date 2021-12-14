@@ -285,6 +285,14 @@ bool Expr::hasCVC5Term() const {
 }
 #endif // SOLVER_CVC5
 
+void Expr::lockOps() {
+  isOpLocked = true;
+}
+
+void Expr::unlockOps() {
+  isOpLocked = false;
+}
+
 Expr Expr::simplify() const {
   Expr e;
   SET_Z3(e, fmap(this->z3, [](auto e) { return e.simplify(); }));
@@ -429,9 +437,14 @@ Expr Expr:: NAME (uint64_t arg) const {\
     return solver.mkTerm(cvc5::api::op, e2, *rhs.cvc5); \
   }))
 
+#define CHECK_LOCK() assert(!isOpLocked)
+#define CHECK_LOCK_OTHER(other) assert(!other.isOpLocked)
+#define CHECK_LOCK2(rhs) assert(!isOpLocked && !rhs.isOpLocked)
 
 EXPR_BVOP_UINT64(urem)
 Expr Expr::urem(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBV(a % b, rhs.bitwidth());
@@ -444,6 +457,8 @@ Expr Expr::urem(const Expr &rhs) const {
 
 EXPR_BVOP_UINT64(udiv)
 Expr Expr::udiv(const Expr& rhs) const {
+  CHECK_LOCK2(rhs);
+
   uint64_t rhsval;
   if (rhs.isUInt(rhsval) && rhsval == 1)
     return *this;
@@ -460,6 +475,8 @@ Expr Expr::udiv(const Expr& rhs) const {
 
 EXPR_BVOP_UINT64(ult)
 Expr Expr::ult(const Expr& rhs) const {
+  CHECK_LOCK2(rhs);
+
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBool(a < b);
@@ -472,6 +489,8 @@ Expr Expr::ult(const Expr& rhs) const {
 
 EXPR_BVOP_UINT64(ule)
 Expr Expr::ule(const Expr& rhs) const {
+  CHECK_LOCK2(rhs);
+
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBool(a <= b);
@@ -570,6 +589,8 @@ Expr Expr::store(uint64_t idx, const Expr &val) const {
 }
 
 Expr Expr::insert(const Expr &elem) const {
+  CHECK_LOCK2(elem);
+
   Expr e;
   // Z3 doesn't support multisets. We encode it using a const array.
   SET_Z3(e, fmap(z3, [&](auto arrayz3) {
@@ -590,6 +611,8 @@ Expr Expr::getMSB() const {
 }
 
 Expr Expr::extract(unsigned hbit, unsigned lbit) const {
+  CHECK_LOCK();
+
   uint64_t u;
   if (isUInt(u) && hbit < 64) {
     u = u >> lbit;
@@ -623,6 +646,8 @@ Expr Expr::extract(unsigned hbit, unsigned lbit) const {
 }
 
 Expr Expr::concat(const Expr &lowbits) const {
+  CHECK_LOCK();
+
   Expr e;
   SET_Z3_USEOP(e, lowbits, concat);
   SET_CVC5_USEOP(e, lowbits, BITVECTOR_CONCAT);
@@ -630,6 +655,8 @@ Expr Expr::concat(const Expr &lowbits) const {
 }
 
 Expr Expr::zext(unsigned bits) const {
+  CHECK_LOCK();
+
   Expr e;
   SET_Z3_USEOP_CONST(e, bits, zext);
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
@@ -641,6 +668,8 @@ Expr Expr::zext(unsigned bits) const {
 }
 
 Expr Expr::sext(unsigned bits) const {
+  CHECK_LOCK();
+
   Expr e;
   SET_Z3_USEOP_CONST(e, bits, sext);
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
@@ -652,6 +681,8 @@ Expr Expr::sext(unsigned bits) const {
 }
 
 Expr Expr::implies(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
   Expr e;
   SET_Z3_USEOP(e, rhs, implies);
   SET_CVC5_USEOP(e, rhs, IMPLIES);
@@ -668,6 +699,8 @@ Expr Expr::isNonZero() const {
 
 EXPR_BVOP_UINT64(operator+)
 Expr Expr::operator+(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBV(a + b, rhs.bitwidth());
@@ -680,6 +713,8 @@ Expr Expr::operator+(const Expr &rhs) const {
 
 EXPR_BVOP_UINT64(operator-)
 Expr Expr::operator-(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBV(a - b, rhs.bitwidth());
@@ -692,6 +727,8 @@ Expr Expr::operator-(const Expr &rhs) const {
 
 EXPR_BVOP_UINT64(operator*)
 Expr Expr::operator*(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBV(a * b, rhs.bitwidth());
@@ -711,6 +748,8 @@ Expr Expr::operator^(const Expr &rhs) const {
 }
 
 Expr Expr::operator&(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
   if (rhs.isFalse() || isTrue())
     return rhs;
   else if (rhs.isTrue() || isFalse())
@@ -727,12 +766,16 @@ Expr Expr::operator&(const Expr &rhs) const {
 }
 
 Expr Expr::operator&(bool rhs) const {
+  CHECK_LOCK();
+
   if (!rhs)
     return mkBool(false);
   return *this;
 }
 
 Expr Expr::operator|(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
   if (rhs.isTrue() || isFalse())
     return rhs;
   else if (rhs.isFalse() || isTrue())
@@ -753,6 +796,8 @@ Expr Expr::operator|(const Expr &rhs) const {
 }
 
 Expr Expr::operator|(bool rhs) const {
+  CHECK_LOCK();
+
   if (rhs)
     return mkBool(true);
   return *this;
@@ -811,6 +856,8 @@ Expr Expr::operator==(const Expr &rhs) const {
 }
 
 Expr Expr::operator!() const {
+  CHECK_LOCK();
+
   if (isTrue())
     return mkBool(false);
   else if (isFalse())
@@ -823,6 +870,8 @@ Expr Expr::operator!() const {
 }
 
 Expr Expr::operator~() const {
+  CHECK_LOCK();
+
   if (isTrue())
     return mkBool(false);
   else if (isFalse())
@@ -837,6 +886,8 @@ Expr Expr::operator~() const {
 }
 
 Expr &Expr::operator&=(const Expr &rhs) {
+  CHECK_LOCK2(rhs);
+
   Expr e = *this & rhs;
   SET_Z3(*this, move(e.z3));
   SET_CVC5(*this, move(e.cvc5));
@@ -844,6 +895,8 @@ Expr &Expr::operator&=(const Expr &rhs) {
 }
 
 Expr &Expr::operator|=(const Expr &rhs) {
+  CHECK_LOCK2(rhs);
+
   Expr e = *this | rhs;
   SET_Z3(*this, move(e.z3));
   SET_CVC5(*this, move(e.cvc5));
@@ -1045,6 +1098,9 @@ Expr Expr::mkEmptyBag(const Sort &domain) {
 }
 
 Expr Expr::mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed) {
+  CHECK_LOCK_OTHER(a);
+  CHECK_LOCK_OTHER(b);
+
   return is_signed ?
       ((a + b).sext(1) == a.sext(1) + b.sext(1)) :
       ((a.zext(1) + b.zext(1)).getMSB() == 0);
