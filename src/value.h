@@ -18,6 +18,7 @@ class Float {
 public:
   Float(const smt::Expr &e, mlir::Type type): e(e), type(type) {
     assert(type.isa<mlir::FloatType>());
+    this->e.unlockOps();
   }
 
   operator smt::Expr() const { return e; }
@@ -79,6 +80,9 @@ public:
   //   auto [v, inbounds] = shaped_value.get(indices)
   //   useAsInt(Integer(v)) // valid only if shaped_value has integer elems
   //   useAsFloat(Float(v)) // valid only if shaped_value has float elems
+  // NOTE: Don't directly use the returned element (v)!
+  // Please use it with a proper wrapper (Float, Index, Integer).
+  // Using it without wrapper will raise an assertion failure 
   virtual std::pair<smt::Expr, smt::Expr> get(
       const std::vector<smt::Expr> &indices) const = 0;
 

@@ -610,7 +610,7 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
 
   usedOps.fpAdd = true;
 
-  const auto &fp_id = zero(true);
+  const auto fp_id = zero(true);
   const auto fp_inf_pos = infinity();
   const auto fp_inf_neg = infinity(true);
   const auto fp_nan = nan();

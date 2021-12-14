@@ -75,7 +75,8 @@ public:
 
 class Expr : private Object<T_Z3(z3::expr), T_CVC5(cvc5::api::Term)> {
 private:
-  Expr() {}
+  Expr(): isOpLocked(false) {}
+  bool isOpLocked;
 
 public:
 #ifdef SOLVER_Z3
@@ -86,6 +87,10 @@ public:
   cvc5::api::Term getCVC5Term() const;
   bool hasCVC5Term() const;
 #endif // SOLVER_CVC5
+
+  // Lock arithmetic operations that create new expressions for debugging.
+  void lockOps();
+  void unlockOps();
 
   Expr simplify() const;
   Sort sort() const;

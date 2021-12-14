@@ -1,9 +1,9 @@
 #include "abstractops.h"
-#include "value.h"
+#include "memory.h"
 #include "smt.h"
 #include "smtmatchers.h"
-#include "memory.h"
 #include "utils.h"
+#include "value.h"
 
 using namespace smt;
 using namespace std;
@@ -463,6 +463,9 @@ Expr Tensor::isInBounds(const vector<smt::Expr> &indices) const {
 
 pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
   auto elem = arr.select(to1DIdx(indices, dims));
+  // Don't directly use this element!
+  // Please use it with a proper wrapper (Float, Index, Integer).
+  elem.lockOps();
   return {elem, isInBounds(indices)};
 }
 
@@ -1196,6 +1199,7 @@ MemRef::Layout MemRef::getLayout(
 pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto [loaded, success] = m->load(elemType, bid, (Expr)offset + idx);
+  loaded.lockOps();
 
   return {loaded, (success & inbounds).simplify()};
 }
