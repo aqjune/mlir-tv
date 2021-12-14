@@ -920,9 +920,12 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   vector<Expr> outDims = t.getDims();
   vector<Expr> outInd = Index::boundIndexVars(t.getRank());
 
+  auto biasf = Float(bias.get({outInd[3]}).first, elemTy);
+  auto tf = Float(t.get(outInd).first, elemTy);
+
   auto output = Tensor::mkInitializedLambda(
                   elemTy, move(outDims), move(outInd), 
-                  bias.get({outInd[3]}).first + t.get(outInd).first
+                  biasf.add(tf)
                 );
 
   st.wellDefined(op, input.isFullyInitialized());
