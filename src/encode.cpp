@@ -885,37 +885,48 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   // bias: a 1-dim array whose size is F
   auto bias = st.regs.get<Tensor>(op.bias());
 
+  auto elemTy = getElemTy(op.getResult());
+  Float minusZero = Float::constant(llvm::APFloat(-0.0), elemTy);
+
+  optional<Tensor> paddedTensor;
+
+  if (!llvm::all_of(op.pad(), [](mlir::Attribute a) {
+      return a.cast<mlir::IntegerAttr>().getInt() == 0; })) {
+
+    // pad = [top, bottom, left, right], filled with zero
+    vector<Expr> pad = getFromArrayAttr<Index>(op.pad());
+    assert(pad.size() == 4);
+
+    // input rank should be 4
+    vector<Expr> padInd = Index::boundIndexVars(input.getRank());
+    vector<Expr> srcDims = input.getDims();
+
+    vector<Expr> srcInd = {padInd[0], padInd[1] - pad[0],
+                              padInd[2] - pad[2], padInd[3]};
+
+    vector<Expr> padDims = {srcDims[0], srcDims[1] + pad[0] + pad[1],
+                              srcDims[2] + pad[2] + pad[3], srcDims[3]};
+
+    auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
+                  padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
+
+    Expr padVal = Expr::mkIte(cond, input.get(srcInd).first, minusZero);
+
+    paddedTensor = Tensor::mkInitializedLambda(
+                    elemTy, move(padDims), move(padInd), padVal);
+
+  } else {
+    paddedTensor = input;
+  }
+
   // strides = [strides_y, strides_x]
   vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
-  // pad = [top, bottom, left, right], filled with zero
-  vector<Expr> pad = getFromArrayAttr<Index>(op.pad());
   // dilations = [dilations_y, dilations_x]
   vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
 
-  assert(strides.size() == 2 && dilations.size() == 2 && pad.size() == 4);
-  auto elemTy = getElemTy(op.getResult());
+  assert(strides.size() == 2 && dilations.size() == 2);
 
-  // input rank should be 4
-  vector<Expr> padInd = Index::boundIndexVars(input.getRank());
-  vector<Expr> srcDims = input.getDims();
-
-  vector<Expr> srcInd = {padInd[0], padInd[1] - pad[0],
-                            padInd[2] - pad[2], padInd[3]};
-
-  vector<Expr> padDims = {srcDims[0], srcDims[1] + pad[0] + pad[1],
-                            srcDims[2] + pad[2] + pad[3], srcDims[3]};
-
-  auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
-                padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
-
-  Expr padVal = Expr::mkIte(cond, input.get(srcInd).first,
-                    Float::constant(llvm::APFloat(-0.0), elemTy));
-
-  auto paddedTensor = Tensor::mkInitializedLambda(
-                    elemTy, move(padDims), move(padInd), padVal);
-
-
-  auto t = paddedTensor.conv(weight,
+  auto t = paddedTensor->conv(weight,
                       strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
 
   vector<Expr> outDims = t.getDims();
@@ -2638,15 +2649,15 @@ static void encodeBlock(
     ENCODE(st, op, mlir::sparse_tensor::ConvertOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::tensor::CastOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tensor::CollapseShapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::DimOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tensor::ExpandShapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::InsertOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::ExtractOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::ExtractSliceOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::FromElementsOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::GenerateOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::InsertSliceOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tensor::CollapseShapeOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tensor::ExpandShapeOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::tosa::AbsOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::AddOp, encodeMemWriteOps);

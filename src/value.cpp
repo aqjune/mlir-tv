@@ -1,9 +1,9 @@
 #include "abstractops.h"
-#include "value.h"
+#include "memory.h"
 #include "smt.h"
 #include "smtmatchers.h"
-#include "memory.h"
 #include "utils.h"
+#include "value.h"
 
 using namespace smt;
 using namespace std;

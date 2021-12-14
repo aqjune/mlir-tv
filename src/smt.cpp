@@ -481,6 +481,16 @@ Expr Expr::ult(const Expr& rhs) const {
   if (isUInt(a) && rhs.isUInt(b))
     return mkBool(a < b);
 
+  {
+    using namespace matchers;
+    optional<Expr> dummy, divisor;
+    uint64_t a, b;
+    if (URem(Any(dummy), Any(divisor)).match(*this)) {
+      if (divisor->isUInt(a) && rhs.isUInt(b) && a <= b)
+        return mkBool(true);
+    }
+  }
+
   Expr e;
   SET_Z3_USEOP(e, rhs, ult);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_ULT);
@@ -494,6 +504,8 @@ Expr Expr::ule(const Expr& rhs) const {
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBool(a <= b);
+  else if (isUInt(a) && a == 0)
+    return Expr::mkBool(true);
 
   Expr e;
   SET_Z3_USEOP(e, rhs, ule);
@@ -718,6 +730,8 @@ Expr Expr::operator-(const Expr &rhs) const {
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBV(a - b, rhs.bitwidth());
+  else if (rhs.isUInt(b) && b == 0)
+    return *this;
 
   Expr e;
   SET_Z3_USEOP(e, rhs, operator-);
@@ -732,6 +746,8 @@ Expr Expr::operator*(const Expr &rhs) const {
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBV(a * b, rhs.bitwidth());
+  else if (rhs.isUInt(b) && b == 1)
+    return *this;
 
   Expr e;
   SET_Z3_USEOP(e, rhs, operator*);
@@ -1405,6 +1421,27 @@ bool Concat::operator()(const Expr &expr) const {
   Z3_app a = e;
   Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
   if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_CONCAT)
+    return false;
+#endif // SOLVER_Z3
+
+  Expr lhs = newExpr(), rhs = newExpr();
+#ifdef SOLVER_Z3
+  setZ3(lhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+  setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
+#endif // SOLVER_Z3
+  return lhsMatcher(lhs) && rhsMatcher(rhs);
+}
+
+bool URem::operator()(const Expr &expr) const {
+  // FIXME: cvc5
+#ifdef SOLVER_Z3
+  auto e = expr.getZ3Expr();
+  if (!e.is_app())
+    return false;
+
+  Z3_app a = e;
+  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_BUREM)
     return false;
 #endif // SOLVER_Z3
 
