@@ -513,7 +513,8 @@ vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
   }
 
   // for 'reserved' values that do not belong to fpconst_absrepr
-  if (fpconst_nan && fpconst_nan->isIdentical(e_simp)) {
+  if (fpconst_nan &&
+      getMagnitudeBits(*fpconst_nan).isIdentical(getMagnitudeBits(e_simp))) {
     vec.push_back(llvm::APFloat::getNaN(semantics));
   } else if (fpconst_zero_pos && fpconst_zero_pos->isIdentical(e_simp)) {
     vec.push_back(llvm::APFloat::getZero(semantics));
