@@ -284,14 +284,8 @@ static Results checkRefinement(
     for (unsigned i = 0; i < numret; ++i) {
       Solver s(logic);
 
-      optional<Expr> refines_opt;
-      vector<Expr> params;
-      visit([&](auto &&src, auto &&tgt) {
-        auto typedSrc = (decltype(tgt)) src;
-        tie(refines_opt, params) = tgt.refines(typedSrc);
-      }, st_src.retValues[i], st_tgt.retValues[i]);
-
-      Expr refines = move(*refines_opt);
+      auto [refines, params] =
+          ::refines(st_tgt.retValues[i], st_src.retValues[i]);
 
       auto not_refines =
         (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines)
