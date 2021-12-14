@@ -542,7 +542,8 @@ vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
   }
 
   // for 'reserved' values that do not belong to fpconst_absrepr
-  if (fpconst_nan && fpconst_nan->isIdentical(e_simp)) {
+  if (fpconst_nan &&
+      getMagnitudeBits(*fpconst_nan).isIdentical(getMagnitudeBits(e_simp))) {
     vec.push_back(llvm::APFloat::getNaN(semantics));
   } else if (fpconst_zero_pos && fpconst_zero_pos->isIdentical(e_simp)) {
     vec.push_back(llvm::APFloat::getZero(semantics));
@@ -579,6 +580,14 @@ Expr AbsFpEncoding::nan() const {
 Expr AbsFpEncoding::isnan(const Expr &f) {
   // Modulo the sign bit, there is only one NaN representation in abs encoding.
   return getMagnitudeBits(f) == getMagnitudeBits(nan());
+}
+
+Expr AbsFpEncoding::isinf(const Expr &f, bool isNegative) {
+  return f == infinity(isNegative);
+}
+
+Expr AbsFpEncoding::iszero(const Expr &f, bool isNegative) {
+  return f == zero(isNegative);
 }
 
 Expr AbsFpEncoding::abs(const Expr &f) {
@@ -631,12 +640,12 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
         Expr::mkIte(f2 == fp_nan, f2,         // x + NaN -> NaN
     // inf + -inf -> NaN, -inf + inf -> NaN
     // IEEE 754-2019 section 7.2 'Invalid operation'
-    Expr::mkIte(((f1 == fp_inf_pos) & (f2 == fp_inf_neg)) |
-                ((f1 == fp_inf_neg) & (f2 == fp_inf_pos)), fp_nan,
+    Expr::mkIte((isinf(f1, false) & isinf(f2, true)) |
+                (isinf(f1, true) & isinf(f2, false)), fp_nan,
     // inf + x -> inf, -inf + x -> -inf (both commutative)
     // IEEE 754-2019 section 6.1 'Infinity arithmetic'
-    Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg), f1,
-      Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg), f2,
+    Expr::mkIte(isinf(f1, false) | isinf(f1, true), f1,
+      Expr::mkIte(isinf(f2, false) | isinf(f2, true), f2,
     // If both operands do not fall into any of the cases above,
     // use fp_add for abstract representation.
     // 
@@ -644,10 +653,10 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     // If signbit(f1) == 0 /\ signbit(f2) == 0, signbit(fpAdd(f1, f2)) = 0.
     // If signbit(f1) == 1 /\ signbit(f2) == 1, signbit(fpAdd(f1, f2)) = 1.
     // Otherwise, we can just use the arbitrary sign yielded from fp_add.
-    Expr::mkIte(((f1.getMSB() == bv_false) & (f2.getMSB() == bv_false)),
+    Expr::mkIte(((getSignBit(f1) == bv_false) & (getSignBit(f2) == bv_false)),
       // pos + pos -> pos
       bv_false.concat(fp_add_value),
-    Expr::mkIte(((f1.getMSB() == bv_true) & (f2.getMSB() == bv_true)),
+    Expr::mkIte(((getSignBit(f1) == bv_true) & (getSignBit(f2) == bv_true)),
       // neg + neg -> neg
       bv_true.concat(fp_add_value),
     Expr::mkIte(getMagnitudeBits(f1) == getMagnitudeBits(f2),
@@ -660,8 +669,6 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
 Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   usedOps.fpMul = true;
 
-  auto fp_zero_pos = zero();
-  auto fp_zero_neg = zero(true);
   auto fp_id = one();
   auto fp_minusone = one(true);
   auto fp_inf_pos = infinity();
@@ -705,16 +712,16 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   Expr::mkIte(f2 == fp_nan, f2,
   // +-Inf * +-0.0 -> NaN , +-Inf * x -> ?Inf (if x != 0.0)
   // IEEE 754-2019 section 7.2 'Invalid operation'
-  Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg),
-    Expr::mkIte((f2 == fp_zero_pos) | (f2 == fp_zero_neg), fp_nan, fp_inf_pos),
+  Expr::mkIte(isinf(f1, false) | isinf(f1, true),
+    Expr::mkIte(iszero(f2, false) | iszero(f2, true), fp_nan, fp_inf_pos),
   // +-0.0 * +-Inf -> NaN , x * +-Inf -> ?Inf (if x != 0.0)
   // IEEE 754-2019 section 7.2 'Invalid operation'
-  Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg),
-    Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg), fp_nan, fp_inf_pos),
+  Expr::mkIte(isinf(f2, false) | isinf(f2, true),
+    Expr::mkIte(iszero(f1, false) | iszero(f1, true), fp_nan, fp_inf_pos),
   // +-0.0 * x -> ?0.0, x * +-0.0 -> ?0.0
-  Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg) | (f2 == fp_zero_pos) |
-              (f2 == fp_zero_neg), 
-    fp_zero_pos,
+  Expr::mkIte(iszero(f1, false) | iszero(f1, true) | iszero(f2, false) |
+              iszero(f2, true), 
+    zero(),
     // If both operands do not fall into any of the cases above,
     // use fp_mul for abstract representation.
     mul_abs_res
@@ -723,7 +730,7 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   // And at last we replace the sign with signbit(f1) ^ signbit(f2)
   // pos * pos | neg * neg -> pos, pos * neg | neg * pos -> neg
   return Expr::mkIte(fpmul_res == fp_nan, fp_nan,
-    Expr::mkIte(f1.getMSB() == f2.getMSB(),
+    Expr::mkIte(getSignBit(f1) == getSignBit(f2),
       bv_false.concat(getMagnitudeBits(fpmul_res)),
       bv_true.concat(getMagnitudeBits(fpmul_res))
   ));
@@ -771,18 +778,18 @@ Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
   // +-Inf / +-Inf -> NaN, x / +-Inf -> ?0.0 (if x != Inf)
   // IEEE 754-2019 section 7.2 'Invalid operation'
   // IEEE 754-2019 section 6.1 'Infinity arithmetic'
-  Expr::mkIte((f2 == fp_inf_pos) | (f2 == fp_inf_neg),
-    Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg), fp_nan, fp_zero_pos),
+  Expr::mkIte(isinf(f2, false) | isinf(f2, true),
+    Expr::mkIte(isinf(f1, false) | isinf(f1, true), fp_nan, fp_zero_pos),
   // +-Inf / x -> ?Inf (if x != Inf)
   // IEEE 754-2019 section 6.1 'Infinity arithmetic'
-  Expr::mkIte((f1 == fp_inf_pos) | (f1 == fp_inf_neg), fp_inf_pos,
+  Expr::mkIte(isinf(f1, false) | isinf(f1, true), fp_inf_pos,
   // +-0.0 / +-0.0 -> NaN, x / +-0.0 -> ?Inf (if x != 0.0 | Inf)
   // IEEE 754-2019 section 7.2 'Invalid operation'
   // IEEE 754-2019 section 7.3 'Division by zero'
   // Division by zero should explicitly signal exception.
   // However, LLVM chooses to simply continue the execution without notifying
-  Expr::mkIte((f2 == fp_zero_pos) | (f2 == fp_zero_neg),
-    Expr::mkIte((f1 == fp_zero_pos) | (f1 == fp_zero_neg), fp_nan, fp_inf_pos),
+  Expr::mkIte(iszero(f2, false) | iszero(f2, true),
+    Expr::mkIte(iszero(f1, false) | iszero(f1, true), fp_nan, fp_inf_pos),
     // If both operands do not fall into any of the cases above,
     // use fp_div for abstract representation.
     div_abs_res

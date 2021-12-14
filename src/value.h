@@ -411,3 +411,5 @@ smt::Expr getExpr(const ValueTy &vty);
 ValueTy eval(const ValueTy &vty, smt::Model m);
 ValueTy attrToValueTy(mlir::Attribute a);
 std::optional<ValueTy> fromExpr(smt::Expr &&e, mlir::Type ty);
+std::pair<smt::Expr, std::vector<smt::Expr>> refines(
+    const ValueTy &v_tgt, const ValueTy &v_src);
