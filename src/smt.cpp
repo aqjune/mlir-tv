@@ -730,6 +730,10 @@ Expr Expr::operator+(const Expr &rhs) const {
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBV(a + b, rhs.bitwidth());
+  else if (isUInt(a) && a == 0)
+    return rhs;
+  else if (isUInt(b) && b == 0)
+    return *this;
 
   Expr e;
   SET_Z3_USEOP(e, rhs, operator+);
