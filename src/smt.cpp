@@ -485,10 +485,24 @@ Expr Expr::ult(const Expr& rhs) const {
     using namespace matchers;
     optional<Expr> dummy, divisor;
     uint64_t a, b;
+    // (bvurem _, d) < d -> true
     if (URem(Any(dummy), Any(divisor)).match(*this)) {
       if (divisor->isUInt(a) && rhs.isUInt(b) && a <= b)
         return mkBool(true);
     }
+
+    optional<Expr> llhs, lrhs, rlhs, rrhs;
+    bool lhsConcatMatch = Concat(Any(llhs), Any(lrhs)).match(*this);
+    bool rhsConcatMatch = Concat(Any(rlhs), Any(rrhs)).match(rhs);
+    // [llhs, lrhs] < [llhs, rrhs] -> lrhs < rrhs
+    if (lhsConcatMatch && rhsConcatMatch && llhs->isIdentical(*rlhs))
+      return lrhs->ult(*rrhs);
+    else if (lhsConcatMatch && llhs->isUInt(a) && rhs.isUInt(b) &&
+             (b >> lrhs->bitwidth()) == a)
+      return lrhs->ult(b ^ (a << lrhs->bitwidth()));
+    else if (rhsConcatMatch && this->isUInt(a) && rlhs->isUInt(b) &&
+             (a >> rrhs->bitwidth()) == b)
+      return rrhs->ugt(a ^ (b << rrhs->bitwidth()));
   }
 
   Expr e;
