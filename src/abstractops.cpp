@@ -269,7 +269,7 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_divfn.reset();
   fp_ultfn.reset();
   fp_hashfn.reset();
-  fp_sum_relations.clear();
+  fp_sums.clear();
 }
 
 FnDecl AbsFpEncoding::getAddFn() {
@@ -376,18 +376,14 @@ FnDecl AbsFpEncoding::getRoundDirFn() {
 }
 
 size_t AbsFpEncoding::getHashRangeBits() const {
-  uint64_t numRelations = fp_sum_relations.size();
+  uint64_t numSums = fp_sums.size();
   uint64_t maxLength = 0;
-  for (auto &rel: fp_sum_relations) {
-    auto expr = get<1>(rel);
-    uint64_t length;
-    if (!expr.isUInt(length))
-      length = Tensor::MAX_TENSOR_SIZE;
-    if (maxLength < length)
-      maxLength = length;
+
+  for (auto &rel: fp_sums) {
+    maxLength = max(maxLength, rel.len);
   }
 
-  uint64_t bounds = numRelations * numRelations * maxLength;
+  uint64_t bounds = numSums * numSums * maxLength;
   return max((uint64_t)1, log2_ceil(bounds));
 }
 
@@ -816,8 +812,24 @@ Expr AbsFpEncoding::lambdaSum(const smt::Expr &a, const smt::Expr &n) {
       Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
         Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
 
+  uint64_t len;
+  if (getFpAddAssociativity() && n.isUInt(len))
+    fp_sums.push_back({a, {}, len, result});
+
+  return result;
+}
+
+Expr AbsFpEncoding::lambdaSum(const vector<smt::Expr> &elems) {
+  usedOps.fpSum = true;
+
+  assert(elems.size() == 2 && "Currently supports sum of two elems only");
+
+  auto i = Index::var("idx", VarType::BOUND);
+  auto lambda = Expr::mkLambda(i, Expr::mkIte(i == 0, elems[0], elems[1]));
+  Expr result = getSumFn()(lambda);
+
   if (getFpAddAssociativity())
-    fp_sum_relations.push_back({a, n, result});
+    fp_sums.push_back({lambda, elems, elems.size(), result});
 
   return result;
 }
@@ -839,22 +851,37 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
   }
 
   Expr result = getAssocSumFn()(bag);
-  fp_sum_relations.push_back({bag, n, result});
+  fp_sums.push_back({bag, {}, length, result});
 
   return result;
 }
 
 Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
+  return sum(a, n, nullopt);
+}
+
+Expr AbsFpEncoding::sum(const Expr &a, const Expr &n,
+    optional<vector<smt::Expr>> &&elems) {
   if (getFpAddAssociativity() && !n.isNumeral())
     throw UnsupportedException(
         "Only an array of constant length is supported.");
+
   auto length = n.asUInt();
+  if (elems) {
+    assert(length == elems->size());
+  }
 
   optional<Expr> sumExpr;
   if (fpAddSum == AbsFpAddSumEncoding::USE_SUM_ONLY
       || fpAddSum == AbsFpAddSumEncoding::DEFAULT) {
-    sumExpr = (getFpAddAssociativity() && useMultiset) ?
-        multisetSum(a, n) :  lambdaSum(a, n);
+    if (getFpAddAssociativity() && useMultiset)
+      sumExpr = multisetSum(a, n);
+    else {
+      if (elems)
+        sumExpr = lambdaSum(*elems);
+      else
+        sumExpr = lambdaSum(a, n);
+    }
   } else {
     if (!length || length > maxUnrollFpSumBound) {
       verbose("fpSum") << "ADD_ONLY applies only array length less than or"
@@ -874,7 +901,6 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   
   auto ret = Expr::mkIte(n == Index::zero(), zero(true),
       Expr::mkIte(n == Index::one(), a.select(Index(0)), *sumExpr));
-  ret = ret.simplify();
   return ret;
 }
 
@@ -998,35 +1024,33 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
   if (useMultiset) {
     // precondition between `bag equality <-> assoc_sumfn`
     Expr precond = Expr::mkBool(true);
-    for (unsigned i = 0; i < fp_sum_relations.size(); i ++) {
-      for (unsigned j = i + 1; j < fp_sum_relations.size(); j ++) {
-        auto [abag, an, asum] = fp_sum_relations[i];
-        auto [bbag, bn, bsum] = fp_sum_relations[j];
-        uint64_t alen, blen;
-        if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
+    for (unsigned i = 0; i < fp_sums.size(); i ++) {
+      for (unsigned j = i + 1; j < fp_sums.size(); j ++) {
+        auto [abag, aelems, alen, asum] = fp_sums[i];
+        auto [bbag, belems, blen, bsum] = fp_sums[j];
+
         precond = precond & (abag == bbag).implies(asum == bsum);
       }
     }
-    precond = precond.simplify();
     return precond;
   }
 
-  vector<optional<Expr>> hashValues(fp_sum_relations.size());
-  for (unsigned i = 0; i < fp_sum_relations.size(); i ++) {
-    auto [a, an, asum] = fp_sum_relations[i];
-    uint64_t alen;
-    if (!an.isUInt(alen)) continue;
+  vector<optional<Expr>> hashValues(fp_sums.size());
+  auto hashfn = getHashFnForAddAssoc();
 
-    auto hashfn = getHashFnForAddAssoc();
+  for (unsigned i = 0; i < fp_sums.size(); i ++) {
+    const auto &[a, aelems, alen, asum] = fp_sums[i];
+
     auto aVal = Expr::mkBV(0, getHashRangeBits());
 
     for (unsigned j = 0; j < alen; j ++) {
-      auto elem = (a.select(Index(j))).simplify();
+      auto elem = !aelems.empty() ? aelems[j] : a.select(Index(j));
+
       optional<Expr> current;
       for (unsigned k = 0; k < i; k ++) {
-        auto [b, bn, bsum] = fp_sum_relations[k];
-        auto other = bsum.simplify();
-        if (elem.isIdentical(other)) current = hashValues[k];
+        const auto &[b, belems, blen, bsum] = fp_sums[k];
+        if ((bsum == elem).simplify().isTrue())
+          current = hashValues[k];
       }
       aVal = aVal + current.value_or(hashfn.apply(elem));
     }
@@ -1035,27 +1059,28 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
 
   // precondition between `hashfn <-> sumfn`
   Expr precond = Expr::mkBool(true);
-  for (unsigned i = 0; i < fp_sum_relations.size(); i ++) {
-    for (unsigned j = i + 1; j < fp_sum_relations.size(); j ++) {
-      auto [a, an, asum] = fp_sum_relations[i];
-      auto [b, bn, bsum] = fp_sum_relations[j];
-      uint64_t alen, blen;
-      if (!an.isUInt(alen) || !bn.isUInt(blen)) continue;
+  for (unsigned i = 0; i < fp_sums.size(); i ++) {
+    const auto &[a, aelems, alen, asum] = fp_sums[i];
+
+    for (unsigned j = i + 1; j < fp_sums.size(); j ++) {
+      const auto &[b, belems, blen, bsum] = fp_sums[j];
+
       // if addf, sumfn are repective, we only consider same length array
       if (fpAddSum == AbsFpAddSumEncoding::DEFAULT && alen != blen) continue;
 
       auto aVal = *hashValues[i];
       auto bVal = *hashValues[j];
       // precond: sumfn(A) != sumfn(B) -> hashfn(A) != hashfn(B)
-      // This means if two summations are different, we can find concrete hash function that hashes into different value.
+      // This means if two summations are different, we can find concrete hash
+      // function that hashes into different value.
       auto associativity = (!(asum == bsum)).implies(!(aVal == bVal));
       precond = precond & associativity;
     }
   }
 
-  // To support summation without identity equals to orginal one sum([a])=sum([a, 0, 0])
-  // add  precondition for hash(-0) = 0
-  auto hashfn = getHashFnForAddAssoc();
+  // To support summation without identity equals to orginal one
+  //   sum([a])=sum([a, 0, 0])
+  // add a precondition for hash(-0) = 0
   auto fpAddIdentity = zero(true);
   auto hashIdentity = Expr::mkBV(0, getHashRangeBits());
   precond = precond & (hashfn.apply(fpAddIdentity) == hashIdentity);

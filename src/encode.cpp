@@ -886,7 +886,10 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   auto bias = st.regs.get<Tensor>(op.bias());
 
   auto elemTy = getElemTy(op.getResult());
-  Float minusZero = Float::constant(llvm::APFloat(-0.0), elemTy);
+  if (!elemTy.isa<mlir::FloatType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+
+  Float zero = Float::constant(llvm::APFloat(0.0), elemTy);
 
   optional<Tensor> paddedTensor;
 
@@ -910,7 +913,7 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
     auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
                   padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
 
-    Expr padVal = Expr::mkIte(cond, input.get(srcInd).first, minusZero);
+    Expr padVal = Expr::mkIte(cond, input.get(srcInd).first, zero);
 
     paddedTensor = Tensor::mkInitializedLambda(
                     elemTy, move(padDims), move(padInd), padVal);

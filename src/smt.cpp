@@ -446,7 +446,9 @@ Expr Expr::urem(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
   uint64_t a, b;
-  if (isUInt(a) && rhs.isUInt(b))
+  // If divisor is zero, follow the solver's behavior
+  // (see also: rewriter.hi_div0 in Z3)
+  if (isUInt(a) && rhs.isUInt(b) && b != 0)
     return mkBV(a % b, rhs.bitwidth());
 
   Expr e;
@@ -464,7 +466,9 @@ Expr Expr::udiv(const Expr& rhs) const {
     return *this;
 
   uint64_t a, b;
-  if (isUInt(a) && rhs.isUInt(b))
+  // If divisor is zero, follow the solver's behavior
+  // (see also: rewriter.hi_div0 in Z3)
+  if (isUInt(a) && rhs.isUInt(b) && b != 0)
     return mkBV(a / b, rhs.bitwidth());
 
   Expr e;
@@ -485,10 +489,24 @@ Expr Expr::ult(const Expr& rhs) const {
     using namespace matchers;
     optional<Expr> dummy, divisor;
     uint64_t a, b;
+    // (bvurem _, d) < d -> true
     if (URem(Any(dummy), Any(divisor)).match(*this)) {
       if (divisor->isUInt(a) && rhs.isUInt(b) && a <= b)
         return mkBool(true);
     }
+
+    optional<Expr> llhs, lrhs, rlhs, rrhs;
+    bool lhsConcatMatch = Concat(Any(llhs), Any(lrhs)).match(*this);
+    bool rhsConcatMatch = Concat(Any(rlhs), Any(rrhs)).match(rhs);
+    // [llhs, lrhs] < [llhs, rrhs] -> lrhs < rrhs
+    if (lhsConcatMatch && rhsConcatMatch && llhs->isIdentical(*rlhs))
+      return lrhs->ult(*rrhs);
+    else if (lhsConcatMatch && llhs->isUInt(a) && rhs.isUInt(b) &&
+             (b >> lrhs->bitwidth()) == a)
+      return lrhs->ult(b ^ (a << lrhs->bitwidth()));
+    else if (rhsConcatMatch && this->isUInt(a) && rlhs->isUInt(b) &&
+             (a >> rrhs->bitwidth()) == b)
+      return rrhs->ugt(a ^ (b << rrhs->bitwidth()));
   }
 
   Expr e;
@@ -716,6 +734,10 @@ Expr Expr::operator+(const Expr &rhs) const {
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBV(a + b, rhs.bitwidth());
+  else if (isUInt(a) && a == 0)
+    return rhs;
+  else if (rhs.isUInt(b) && b == 0)
+    return *this;
 
   Expr e;
   SET_Z3_USEOP(e, rhs, operator+);
