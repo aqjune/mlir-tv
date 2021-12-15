@@ -446,7 +446,9 @@ Expr Expr::urem(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
   uint64_t a, b;
-  if (isUInt(a) && rhs.isUInt(b))
+  // If divisor is zero, follow the solver's behavior
+  // (see also: rewriter.hi_div0 in Z3)
+  if (isUInt(a) && rhs.isUInt(b) && b != 0)
     return mkBV(a % b, rhs.bitwidth());
 
   Expr e;
@@ -464,7 +466,9 @@ Expr Expr::udiv(const Expr& rhs) const {
     return *this;
 
   uint64_t a, b;
-  if (isUInt(a) && rhs.isUInt(b))
+  // If divisor is zero, follow the solver's behavior
+  // (see also: rewriter.hi_div0 in Z3)
+  if (isUInt(a) && rhs.isUInt(b) && b != 0)
     return mkBV(a / b, rhs.bitwidth());
 
   Expr e;

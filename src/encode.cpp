@@ -886,6 +886,9 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   auto bias = st.regs.get<Tensor>(op.bias());
 
   auto elemTy = getElemTy(op.getResult());
+  if (!elemTy.isa<mlir::FloatType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+
   Float zero = Float::constant(llvm::APFloat(0.0), elemTy);
 
   optional<Tensor> paddedTensor;
