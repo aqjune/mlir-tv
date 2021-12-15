@@ -200,8 +200,11 @@ void setAbstraction(
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
         doublePrecBits, &*floatEnc, "double");
   } else {
+    // doubleBits must be at least as large as floatBits, to represent all
+    // float constants in double.
     const unsigned doubleBits = 
-        log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2);
+        max(log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2),
+            (uint64_t)floatBits);
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
   }
   doubleEnc->addConstants(doubleConsts);
