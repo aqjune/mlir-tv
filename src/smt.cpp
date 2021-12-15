@@ -736,7 +736,7 @@ Expr Expr::operator+(const Expr &rhs) const {
     return mkBV(a + b, rhs.bitwidth());
   else if (isUInt(a) && a == 0)
     return rhs;
-  else if (isUInt(b) && b == 0)
+  else if (rhs.isUInt(b) && b == 0)
     return *this;
 
   Expr e;
