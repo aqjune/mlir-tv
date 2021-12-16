@@ -1203,7 +1203,9 @@ Expr getFpAssociativePrecondition() {
   Expr cond = Expr::mkBool(true);
   if (floatEnc)
     cond &= floatEnc->getFpAssociativePrecondition();
-  // TODO: double
+
+  if (doubleEnc)
+    cond &= doubleEnc->getFpAssociativePrecondition();
 
   return cond;
 }
