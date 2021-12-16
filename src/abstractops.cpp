@@ -200,8 +200,11 @@ void setAbstraction(
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
         doublePrecBits, &*floatEnc, "double");
   } else {
+    // doubleBits must be at least as large as floatBits, to represent all
+    // float constants in double.
     const unsigned doubleBits = 
-        log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2);
+        max(log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2),
+            (uint64_t)floatBits);
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
   }
   doubleEnc->addConstants(doubleConsts);
@@ -391,8 +394,13 @@ uint64_t AbsFpEncoding::getSignBit() const {
 
 void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
   uint64_t value_id = 0;
+  Expr small_value_bits = Expr::mkBV(0, value_bit_info.truncated_bitwidth);
   // prec_offset_map[smaller value]: next precision bit
   map<uint64_t, uint64_t> prec_offset_map;
+
+  auto mkNonzero = [](Expr &&e) {
+    return Expr::mkIte(e == 0, Expr::mkBV(1, e), e);
+  };
 
   // Visit non-negative constants in increasing order.
   for (const auto& fp_const: const_set) {
@@ -403,51 +411,75 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       continue;
     }
 
-    const unsigned limit_value_bitwidth =
-        value_bit_info.limit_bitwidth + value_bit_info.truncated_bitwidth;
     optional<Expr> e_value;
 
     if (value_bit_info.limit_bitwidth == 0 &&
         value_bit_info.prec_bitwidth == 0) {
-      // this encoding is the smallest encoding or does not support casting
+      // This encoding is the smallest encoding or does not support casting
       value_id += 1;
-      e_value = Expr::mkBV(value_id, limit_value_bitwidth);
+      // This naming convention is used by getFpTruncatePrecondition to relate
+      // float and double constants
+      e_value = Expr::mkVar(Sort::bvSort(value_bitwidth),
+                            "fp_const_sval_" + to_string(value_id) + "_");
     } else {
       auto casting_info = getCastingInfo(fp_const);
       assert(casting_info.has_value() &&
              "this encoding requires casting info analysis for constants");
+      assert(value_bit_info.limit_bitwidth > 0 && "limit bits cannot be zero");
+
+      // default zero-init BVs
+      auto limit_bits = Expr::mkBV(0, value_bit_info.limit_bitwidth);
+      auto sv_bits = Expr::mkBV(0, value_bit_info.truncated_bitwidth);
 
       if (!casting_info->zero_limit_bits) {
-        // these values should be mapped to Inf when truncated.
-        // In the higher precision, freshly start value_id with limit bit set
-        const unsigned value_prec_bitwidth = 
-          value_bit_info.truncated_bitwidth + value_bit_info.prec_bitwidth;
-        value_id = max(value_id, (uint64_t)1 << value_prec_bitwidth);
-        e_value = Expr::mkBV(value_id, value_bitwidth);
+        // Rounding becomes inf.
         value_id += 1;
+        const unsigned int sv_prec_bitwidth =
+          value_bit_info.truncated_bitwidth + value_bit_info.prec_bitwidth;
+        auto sv_prec_bits = Expr::mkFreshVar(Sort::bvSort(sv_prec_bitwidth),
+                            "fp_const_sval_prec_bits_");
+
+        limit_bits = mkNonzero(
+            Expr::mkFreshVar(limit_bits, "fp_const_limit_bits_"));
+        e_value = limit_bits.concat(sv_prec_bits);
+
       } else if (!casting_info->zero_prec_bits) {
-        // this value will be rounded to same value,
-        // so do not change smaller_value and increment prec bit.
+        // Rounding loses bits & the result becomes equivalent to the previous
+        // rounding output.
+        // e.g. fp_const is 2.2 (it was 2.1 in the prev. iter)
+        // Do not change smaller_value and increment prec bit.
         auto itr = prec_offset_map.insert({value_id, 1}).first;
         uint64_t prec = itr->second;
         assert(prec < (1ull << value_bit_info.prec_bitwidth));
-        Expr e_prec = Expr::mkBV(prec, value_bit_info.prec_bitwidth);
-        e_value = Expr::mkBV(value_id, limit_value_bitwidth).concat(e_prec);
+
+        auto prec_bits = mkNonzero(Expr::mkFreshVar(
+            Sort::bvSort(value_bit_info.prec_bitwidth),
+            "fp_const_prec_bits"));
+        sv_bits = Expr::mkVar(sv_bits, 
+                              "fp_const_sval_" + to_string(value_id) + "_");
+        e_value = limit_bits.concat(sv_bits).concat(prec_bits);
         // Increase the next precision bit.
         itr->second++;
-      } else {
-        // this value will be rounded to different value,
-        // so assign different smaller_value
-        value_id += 1;
-        e_value = Expr::mkBV(value_id, limit_value_bitwidth);
 
+      } else {
+        // Rounding does not lose bits, but will become a value other than the
+        // previous one
+        // e.g. fp_const is 3.0 (it was 2.2 in the prev. iter)
+        // Assign different smaller_value
+        value_id += 1;
+        sv_bits = Expr::mkVar(sv_bits, 
+                              "fp_const_sval_" + to_string(value_id) + "_");
+        e_value = limit_bits.concat(sv_bits);
         // this encoding may not have prec bits
         if (value_bit_info.prec_bitwidth > 0) {
-          Expr e_prec = Expr::mkBV(0, value_bit_info.prec_bitwidth);
-          e_value = e_value->concat(e_prec);
+          auto prec_bits = Expr::mkBV(0, value_bit_info.prec_bitwidth);
+          e_value = e_value->concat(prec_bits);
         }
       }
     }
+
+    verbose("addConstants") << fp_const.convertToDouble() << ": " << *e_value
+        << "\n";
 
     Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(*e_value);
     fpconst_absrepr.emplace(fp_const, e_pos);
@@ -493,6 +525,24 @@ vector<pair<llvm::APFloat, Expr>> AbsFpEncoding::getAllConstants() const {
         *fpconst_inf_neg);
 
   return constants;
+}
+
+void AbsFpEncoding::evalConsts(smt::Model model) {
+  for (auto &[k, v]: fpconst_absrepr) {
+    v = model.eval(v);
+  }
+
+  if (fpconst_nan) {
+    *fpconst_nan = model.eval(*fpconst_nan);
+  } else if (fpconst_zero_pos) {
+    *fpconst_zero_pos = model.eval(*fpconst_zero_pos);
+  } else if (fpconst_zero_neg) {
+    *fpconst_zero_neg = model.eval(*fpconst_zero_neg);
+  } else if (fpconst_inf_pos) {
+    *fpconst_inf_pos = model.eval(*fpconst_inf_pos);
+  } else if (fpconst_inf_neg) {
+    *fpconst_inf_neg = model.eval(*fpconst_inf_neg);
+  }
 }
 
 vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
@@ -910,7 +960,6 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
 }
 
 Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
-  usedOps.fpUlt = true;
   return getUltFn().apply({f1, f2});
 }
 
@@ -966,8 +1015,8 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   auto sign_pos = Expr::mkBV(0, SIGN_BITS);
   auto value_bits = getMagnitudeBits(f);
   auto limit_bits = getLimitBits(f);
-  auto limit_zero = Expr::mkBV(0, value_bit_info.limit_bitwidth);
-  auto prec_bits = getPrecisionBits(value_bits);
+  auto limit_zero = Expr::mkBV(0, limit_bits);
+  auto prec_bits = getPrecisionBits(f);
 
   const auto round_dir = getRoundDirFn().apply(value_bits);
   const auto floored_value = getTruncatedBits(value_bits);
@@ -1061,20 +1110,90 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
 Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
   Expr precond = Expr::mkBool(true);
 
-  for (auto &[fp, absrepr] : fpconst_absrepr) {
-    if (!fp.isNegative()) {
-      auto casting_info = *getCastingInfo(fp);
-      auto value_bits = getMagnitudeBits(absrepr);
+  // keep track of value_id of fp_const_sval on our own
+  uint64_t value_id = 0;
+  bool loses_info; // dummy
+  auto prev_tgt_fp = llvm::APFloat(0.0f);
+  for (const auto &[fp, absrepr] : fpconst_absrepr) {
+    // only value bits are relevant in truncation
+    if (fp.isNegative())
+      continue;
+
+    const auto casting_info = *getCastingInfo(fp);
+    if (casting_info.zero_prec_bits) {
+      auto tgt_fp = fp;
+      tgt_fp.convert(tgt.semantics, llvm::APFloat::rmTowardZero, &loses_info);
+      bool isEpsilon = 
+        (tgt_fp.bitcastToAPInt() - prev_tgt_fp.bitcastToAPInt()).isOne();
+
+      if (isEpsilon) {
+        // remove the gap between two adjacent values
+        const auto sv_bitwidth = value_bit_info.truncated_bitwidth;
+        const auto prev_var = Expr::mkVar(Sort::bvSort(sv_bitwidth),
+                                "fp_const_sval_" + to_string(value_id) + "_");
+        const auto var = Expr::mkVar(Sort::bvSort(sv_bitwidth), 
+                          "fp_const_sval_" + to_string(value_id + 1) + "_");
+        precond &= var == (prev_var + 1);
+
+        verbose("getFpTruncatePrecondition") << "("
+            << prev_tgt_fp.convertToDouble() << ", "
+            << tgt_fp.convertToDouble() << "): " << var << " == "
+            << (prev_var + 1) << '\n';
+      }
+      value_id += 1;
+      prev_tgt_fp = tgt_fp;
+    } else {
+      const auto value_bits = getMagnitudeBits(absrepr);
       if (casting_info.is_rounded_upward) {
-        precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(1, 1));
+        auto e = (getRoundDirFn().apply({value_bits}) == Expr::mkBV(1, 1));
+        verbose("getFpTruncatePrecondition") << fp.convertToDouble() << ": "
+            << e << '\n';
+
+        precond &= e;
       } else {
-        precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(0, 1));
+        auto e = (getRoundDirFn().apply({value_bits}) == Expr::mkBV(0, 1));
+        verbose("getFpTruncatePrecondition") << fp.convertToDouble() << ": "
+            << e << '\n';
+
+        precond &= e;
       }
     }
   }
 
-  precond = precond.simplify();
   return precond;
+}
+
+Expr AbsFpEncoding::getFpConstantPrecondition() {
+  Expr precond = Expr::mkBool(true);
+  
+  auto prev_fp = llvm::APFloat::getInf(semantics, true);
+  auto prev_absrepr = infinity(true);
+  bool firstItr = true;
+
+  for (const auto &[fp, absrepr] : fpconst_absrepr) {
+    assert(!fp.isInfinity() && !fp.isZero());
+
+    if (!fp.isNegative()) {
+      // SMT encoding of x and -x is equivalent modulo sign bit; exit early
+      break;
+    }
+
+    precond &= prev_absrepr.ugt(absrepr);
+    verbose("getFpConstantPrecondition") << prev_fp.convertToDouble()
+        << " < " << fp.convertToDouble() << ": "
+        << absrepr << " < " << prev_absrepr << "\n";
+
+    prev_fp = fp;
+    prev_absrepr = absrepr;
+    firstItr = false;
+  }
+  if (!fpconst_absrepr.empty()) {
+    precond &= prev_absrepr.ugt(zero(true));
+    verbose("getFpConstantPrecondition") << prev_fp.convertToDouble()
+        << " < -0.0: " << zero(true) << " < " << prev_absrepr << "\n";
+  }
+
+  return precond.simplify();
 }
 
 Expr getFpAssociativePrecondition() {
@@ -1089,25 +1208,6 @@ Expr getFpAssociativePrecondition() {
   return cond;
 }
 
-Expr getFpUltPrecondition() {
-  Expr cond = Expr::mkBool(true);
-
-  if (floatEnc) {
-    auto constants = floatEnc->getAllConstants();
-    for (auto &[const1, expr1]: constants) {
-      for (auto &[const2, expr2]: constants) {
-        if (const1.compare(const2) == llvm::APFloat::cmpLessThan ||
-              const1.compare(const2) == llvm::APFloat::cmpUnordered) {
-          cond = cond & floatEnc->fult(expr1, expr2) == Integer::boolTrue();
-        }
-      }
-    }
-  }
-  // TODO: double
-
-  return cond;
-}
-
 Expr getFpTruncatePrecondition() {
   // Calling this function doesn't make sense if casting is imprecise
   assert(alFpCast == AbsLevelFpCast::PRECISE);
@@ -1115,6 +1215,14 @@ Expr getFpTruncatePrecondition() {
   // if alFpCast is true, floatEnc and doubleEnc will exist
   Expr cond = doubleEnc->getFpTruncatePrecondition(*floatEnc);
   return cond;
+}
+
+void evalConsts(smt::Model model) {
+  if (floatEnc)
+    floatEnc->evalConsts(model);
+
+  if (doubleEnc)
+    doubleEnc->evalConsts(model);
 }
 
 Expr AbsFpEncoding::getSignBit(const smt::Expr &f) const {
@@ -1144,6 +1252,18 @@ optional<Expr> AbsFpEncoding::getPrecisionBits(const smt::Expr &f) const {
   return f.extract(value_bit_info.prec_bitwidth - 1, 0);
 }
 
+Expr getFpConstantPrecondition() {
+  Expr cond = Expr::mkBool(true);
+
+  if (floatEnc) {
+    cond &= floatEnc->getFpConstantPrecondition();
+  }
+  if (doubleEnc) {
+    cond &= doubleEnc->getFpConstantPrecondition();
+  }
+
+  return cond.simplify();
+}
 
 // ----- Integer operations ------
 

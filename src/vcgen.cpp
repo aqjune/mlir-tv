@@ -244,6 +244,7 @@ static Results checkRefinement(
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res.hasSat()) {
       llvm::outs() << "== Result: " << msg << "\n";
+      aop::evalConsts(s.getModel());
       printCounterEx(
           s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx,
           memElemType);
@@ -413,11 +414,10 @@ static tuple<State, State, Expr> encodeFinalStates(
   State st_tgt = encodeFinalState(
       vinput, move(initMemTgt), printOps, false, args, preconds);
 
+  preconds.push_back(aop::getFpConstantPrecondition());
+
   if (aop::getFpAddAssociativity())
     preconds.push_back(aop::getFpAssociativePrecondition());
-
-  if(aop::getUsedAbstractOps().fpUlt)
-    preconds.push_back(aop::getFpUltPrecondition());
 
   if (aop::getFpCastIsPrecise())
     preconds.push_back(aop::getFpTruncatePrecondition());

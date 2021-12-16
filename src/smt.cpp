@@ -989,6 +989,10 @@ Expr Expr::mkFreshVar(const Sort &s, const std::string &prefix) {
   return e;
 }
 
+Expr Expr::mkFreshVar(const Expr &sort_of, const std::string &prefix) {
+  return mkFreshVar(sort_of.sort(), prefix);
+}
+
 Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
   Expr e;
   SET_Z3(e, fupdate2(sctx.z3, s.z3, [&name](auto &ctx, auto &sortz3){
@@ -1010,6 +1014,10 @@ Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
   return e;
 }
 
+Expr Expr::mkVar(const Expr &sort_of, const std::string &name, bool boundVar) {
+  return mkVar(sort_of.sort(), name, boundVar);
+}
+
 Expr Expr::mkBV(const uint64_t val, const size_t sz) {
   Expr e;
   SET_Z3(e, fupdate(sctx.z3, [val, sz](auto &ctx){
@@ -1019,6 +1027,10 @@ Expr Expr::mkBV(const uint64_t val, const size_t sz) {
     return ctx.mkBitVector(sz, val);
   }));
   return e;
+}
+
+Expr Expr::mkBV(const uint64_t val, const Expr &sort_of) {
+  return mkBV(val, sort_of.bitwidth());
 }
 
 Expr Expr::mkBool(const bool val) {
