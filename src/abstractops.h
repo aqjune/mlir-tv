@@ -75,6 +75,8 @@ smt::Expr getFpTruncatePrecondition();
 smt::Expr getFpAssociativePrecondition();
 smt::Expr getFpConstantPrecondition();
 
+void evalConsts(smt::Model model);
+
 smt::Expr intSum(const smt::Expr &arr, const smt::Expr &n);
 smt::Expr intDot(const smt::Expr &arr1, const smt::Expr &arr2,
                  const smt::Expr &n);
@@ -189,6 +191,7 @@ public:
   smt::Expr nan() const;
 
   std::vector<std::pair<llvm::APFloat, smt::Expr>> getAllConstants() const;
+  void evalConsts(smt::Model model);
   std::vector<llvm::APFloat> possibleConsts(const smt::Expr &e) const;
   smt::Expr isnan(const smt::Expr &f);
   smt::Expr iszero(const smt::Expr &f, bool isNegative);

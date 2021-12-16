@@ -244,6 +244,7 @@ static Results checkRefinement(
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res.hasSat()) {
       llvm::outs() << "== Result: " << msg << "\n";
+      aop::evalConsts(s.getModel());
       printCounterEx(
           s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx,
           memElemType);
