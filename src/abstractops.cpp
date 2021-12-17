@@ -949,11 +949,14 @@ Expr AbsFpEncoding::cmp(mlir::arith::CmpFPredicate pred,
   const Expr falseBV = Expr::mkBV(0, 1);
 
   const Expr hasNaN = isnan(f1) | isnan(f2);
-  const Expr cmpEQ = Expr::mkIte(f1 == f2, trueBV, falseBV);
-  const Expr cmpNE = Expr::mkIte(f1 != f2, trueBV, falseBV);
 
   const Expr f1Sign = getSignBit(f1), f2Sign = getSignBit(f2);
   const Expr f1Magn = getMagnitudeBits(f1), f2Magn = getMagnitudeBits(f2);
+
+  const Expr cmpEQ = Expr::mkIte(f1 == f2 | (f1Magn.isZero() & f2Magn.isZero()),
+                        trueBV, falseBV);
+  const Expr cmpNE = Expr::mkIte(f1 != f2 & !(f1Magn.isZero() & f2Magn.isZero()),
+                        trueBV, falseBV);
   const Expr cmpLT = Expr::mkIte(f1Sign.ugt(f2Sign), trueBV,
                       Expr::mkIte(f1Sign.ult(f2Sign), falseBV,
                       Expr::mkIte(f1Magn == f2Magn, falseBV,
