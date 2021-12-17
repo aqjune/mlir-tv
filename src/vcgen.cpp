@@ -447,11 +447,16 @@ static void checkIsSrcAlwaysUB(
 
   // Set the abstract level to be as concrete as possible because we may not
   // be able to detect always-UB cases
-  aop::setAbstraction(
-      aop::AbsLevelFpDot::SUM_MUL,
-      aop::AbsLevelFpCast::PRECISE,
-      aop::AbsLevelIntDot::SUM_MUL,
-      aop::AbsFpAddSumEncoding::UNROLL_TO_ADD,
+  aop::Abstraction concreteAbs = {
+    .fpDot = aop::AbsLevelFpDot::SUM_MUL,
+    .fpCast = aop::AbsLevelFpCast::PRECISE,
+    .intDot = aop::AbsLevelIntDot::SUM_MUL,
+    .fpAddSumEncoding =
+        vinput.isFpAddAssociative ?
+          aop::AbsFpAddSumEncoding::USE_SUM_ONLY:
+          aop::AbsFpAddSumEncoding::UNROLL_TO_ADD
+  };
+  aop::setAbstraction(concreteAbs,
       vinput.isFpAddAssociative,
       vinput.unrollIntSum,
       arg_unroll_fp_sum_bound.getValue(),
@@ -507,11 +512,11 @@ static Results validate(ValidationInput vinput) {
     llvm::outs()
       << "\n===============================================================\n"
       << "  Abstractions used for the validation:\n"
-      << "  - dot ops (fp): " << magic_enum::enum_name(abs.alFpDot) << "\n"
-      << "  - cast ops (fp): " << magic_enum::enum_name(abs.alFpCast) << "\n"
+      << "  - dot ops (fp): " << magic_enum::enum_name(abs.fpDot) << "\n"
+      << "  - cast ops (fp): " << magic_enum::enum_name(abs.fpCast) << "\n"
       << "  - add/sum ops (fp): "
       << magic_enum::enum_name(abs.fpAddSumEncoding) << "\n"
-      << "  - dot ops (int): " << magic_enum::enum_name(abs.alIntDot) << "\n"
+      << "  - dot ops (int): " << magic_enum::enum_name(abs.intDot) << "\n"
       << "===============================================================\n\n";
   };
 
@@ -531,15 +536,14 @@ static Results validate(ValidationInput vinput) {
   const string dumpSMTPath = vinput.dumpSMTPath;
 
   while (!queue.empty()) {
-    auto [level, useAllLogic] = queue.front();
+    auto [abs, useAllLogic] = queue.front();
     queue.pop();
 
     if (itrCount > 0)
       llvm::outs() << "Validating the transformation with a refined "
           "abstraction...\n";
 
-    setAbstraction(level.alFpDot, level.alFpCast, level.alIntDot,
-        level.fpAddSumEncoding,
+    setAbstraction(abs,
         vinput.isFpAddAssociative,
         vinput.unrollIntSum,
         arg_unroll_fp_sum_bound.getValue(),
@@ -554,7 +558,7 @@ static Results validate(ValidationInput vinput) {
 
     bool printOps = itrCount == 0;
     auto res = tryValidation(vinput, printOps, useAllLogic, elapsedMillisec);
-    printSematics(level, res);
+    printSematics(abs, res);
     if (res.code == Results::INCONSISTENT) {
       return res;
     } else if (res.code == Results::SUCCESS) {
@@ -567,34 +571,32 @@ static Results validate(ValidationInput vinput) {
     // Do refinement of the abstraction.
     // Perform refinement in a lock-step manner to avoid combinatorial explosion
     auto usedOps = aop::getUsedAbstractOps();
-    auto nextLevel = level;
+    auto nextAbs = abs;
     bool isChanged = false;
     /* 1. fp dot abstraction level */
-    if (level.alFpDot == AbsLevelFpDot::FULLY_ABS) {
+    if (abs.fpDot == AbsLevelFpDot::FULLY_ABS) {
       if (usedOps.fpDot || vinput.isFpAddAssociative) {
-        nextLevel.alFpDot = AbsLevelFpDot::SUM_MUL;
+        nextAbs.fpDot = AbsLevelFpDot::SUM_MUL;
         isChanged = true;
       }
     }
     /* 2. fp cast abstraction level */
-    if (level.alFpCast == AbsLevelFpCast::FULLY_ABS) {
+    if (abs.fpCast == AbsLevelFpCast::FULLY_ABS) {
       if (usedOps.fpCastRound) {
-        nextLevel.alFpCast = AbsLevelFpCast::PRECISE;
+        nextAbs.fpCast = AbsLevelFpCast::PRECISE;
         isChanged = true;
       }
     }
     /* 3. int dot abstraction level */
-    if (level.alIntDot == AbsLevelIntDot::FULLY_ABS) {
+    if (abs.intDot == AbsLevelIntDot::FULLY_ABS) {
       if (usedOps.intDot && usedOps.intSum) {
-        nextLevel.alIntDot = AbsLevelIntDot::SUM_MUL;
+        nextAbs.intDot = AbsLevelIntDot::SUM_MUL;
         isChanged = true;
       }
     }
 
     if (isChanged) {
-      queue.push({{nextLevel.alFpDot, nextLevel.alFpCast, nextLevel.alIntDot,
-            nextLevel.fpAddSumEncoding},
-            /* useAllLogic */vinput.isFpAddAssociative});
+      queue.push({nextAbs, /* useAllLogic */vinput.isFpAddAssociative});
     } else {
       /* 4. fp add, sum encoding level */
       // Since UNROLL_TO_ADD may cause big slowdown, turn in off at the end
@@ -602,11 +604,11 @@ static Results validate(ValidationInput vinput) {
       // Do not refine fpAddSumEncoding if it is USE_SUM_ONLY.
       //  USE_SUM_ONLY is used only when --associative is given, and it cannot
       //  be refined further.
-      if (level.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
-        if (usedOps.fpSum)
-          queue.push({{nextLevel.alFpDot, nextLevel.alFpCast,
-              nextLevel.alIntDot, AbsFpAddSumEncoding::UNROLL_TO_ADD},
-              /* useAllLogic */vinput.isFpAddAssociative});
+      if (abs.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
+        if (usedOps.fpSum) {
+          nextAbs.fpAddSumEncoding = AbsFpAddSumEncoding::UNROLL_TO_ADD;
+          queue.push({nextAbs, /* useAllLogic */vinput.isFpAddAssociative});
+        }
       }
     }
 

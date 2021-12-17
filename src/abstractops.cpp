@@ -17,11 +17,10 @@ string freshName(string prefix) {
 
 bool useMultiset;
 aop::UsedAbstractOps usedOps;
+aop::Abstraction abstraction;
 
 // ----- Constants and global vars for abstract floating point operations ------
 
-aop::AbsLevelFpDot alFpDot;
-aop::AbsLevelFpCast alFpCast;
 bool isFpAddAssociative;
 bool doUnrollIntSum;
 unsigned maxUnrollFpSumBound;
@@ -31,12 +30,10 @@ optional<aop::AbsFpEncoding> doubleEnc;
 
 // ----- Constants and global vars for abstract int operations ------
 
-aop::AbsLevelIntDot alIntDot;
 map<unsigned, FnDecl> int_sumfn;
 map<unsigned, FnDecl> int_dotfn;
 
 // ----- Constants and global vars for abstract sumf operations ------
-aop::AbsFpAddSumEncoding fpAddSum;
 
 FnDecl getIntSumFn(unsigned bitwidth) {
   auto itr = int_sumfn.find(bitwidth);
@@ -109,19 +106,19 @@ namespace aop {
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(
-    AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, AbsFpAddSumEncoding fas,
+    Abstraction abs,
     bool addAssoc,
     bool unrollIntSum,
     unsigned unrollFpSumBound,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
     unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
-  alFpDot = afd;
-  alFpCast = afc;
-  alIntDot = aid;
-  fpAddSum = fas;
+  abstraction = abs;
   doUnrollIntSum = unrollIntSum;
   maxUnrollFpSumBound = unrollFpSumBound;
   isFpAddAssociative = addAssoc;
+
+  assert(!addAssoc ||
+      abs.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY);
 
   // without suffix f, it will become llvm::APFloat with double semantics
   // Note that 0.0 and 1.0 may already have been added during analysis.
@@ -139,7 +136,7 @@ void setAbstraction(
   floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
   floatEnc->addConstants(floatConsts);
 
-  if (afc == AbsLevelFpCast::PRECISE) {
+  if (abstraction.fpCast == AbsLevelFpCast::PRECISE) {
     unsigned consts_nonzero_limit = 0;
     unsigned const_nonzero_precs = 0, const_max_nonzero_precs = 0;
 
@@ -217,7 +214,9 @@ void setEncodingOptions(bool use_multiset) {
 
 bool getFpAddAssociativity() { return isFpAddAssociative; }
 
-bool getFpCastIsPrecise() { return alFpCast == AbsLevelFpCast::PRECISE; }
+bool getFpCastIsPrecise() { 
+  return abstraction.fpCast == AbsLevelFpCast::PRECISE;
+}
 
 AbsFpEncoding &getFloatEncoding() { return *floatEnc; }
 AbsFpEncoding &getDoubleEncoding() { return *doubleEnc; }
@@ -613,7 +612,7 @@ Expr AbsFpEncoding::neg(const Expr &f) {
 }
 
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
-  if (fpAddSum == AbsFpAddSumEncoding::USE_SUM_ONLY) {
+  if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY) {
     auto i = Index::var("idx", VarType::BOUND);
     auto lambda = Expr::mkLambda(i, Expr::mkIte(i == Index::zero(), _f1, _f2));
     auto n = Index(2);
@@ -885,8 +884,8 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n,
   }
 
   optional<Expr> sumExpr;
-  if (fpAddSum == AbsFpAddSumEncoding::USE_SUM_ONLY
-      || fpAddSum == AbsFpAddSumEncoding::DEFAULT) {
+  if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY
+      || abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
     if (getFpAddAssociativity() && useMultiset)
       sumExpr = multisetSum(a, n);
     else {
@@ -928,7 +927,7 @@ Expr AbsFpEncoding::exp(const Expr &x) {
 }
 
 Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
-  if (alFpDot == AbsLevelFpDot::FULLY_ABS) {
+  if (abstraction.fpDot == AbsLevelFpDot::FULLY_ABS) {
     usedOps.fpDot = true;
     auto i = (Expr)Index::var("idx", VarType::BOUND);
 
@@ -943,7 +942,7 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
     // the case using 'arr1 == arr2'.
     return Expr::mkIte(arr1 == arr2, lhs, lhs + rhs);
 
-  } else if (alFpDot == AbsLevelFpDot::SUM_MUL) {
+  } else if (abstraction.fpDot == AbsLevelFpDot::SUM_MUL) {
     // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     Expr ai = a.select(i), bi = b.select(i);
@@ -1079,7 +1078,9 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
       const auto &[b, belems, blen, bsum] = fp_sums[j];
 
       // if addf, sumfn are repective, we only consider same length array
-      if (fpAddSum == AbsFpAddSumEncoding::DEFAULT && alen != blen) continue;
+      if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT &&
+          alen != blen)
+        continue;
 
       auto aVal = *hashValues[i];
       auto bVal = *hashValues[j];
@@ -1207,9 +1208,9 @@ Expr getFpAssociativePrecondition() {
 
 Expr getFpTruncatePrecondition() {
   // Calling this function doesn't make sense if casting is imprecise
-  assert(alFpCast == AbsLevelFpCast::PRECISE);
+  assert(abstraction.fpCast == AbsLevelFpCast::PRECISE);
 
-  // if alFpCast is true, floatEnc and doubleEnc will exist
+  // if fpCast is true, floatEnc and doubleEnc will exist
   Expr cond = doubleEnc->getFpTruncatePrecondition(*floatEnc);
   return cond;
 }
@@ -1290,7 +1291,7 @@ Expr intSum(const Expr &a, const Expr &n) {
 }
 
 Expr intDot(const Expr &a, const Expr &b, const Expr &n) {
-  if (alIntDot == AbsLevelIntDot::FULLY_ABS) {
+  if (abstraction.intDot == AbsLevelIntDot::FULLY_ABS) {
     usedOps.intDot = true;
 
     auto i = (Expr)Index::var("idx", VarType::BOUND);
@@ -1307,7 +1308,7 @@ Expr intDot(const Expr &a, const Expr &b, const Expr &n) {
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero))});
     return lhs + rhs;
 
-  } else if (alIntDot == AbsLevelIntDot::SUM_MUL) {
+  } else if (abstraction.intDot == AbsLevelIntDot::SUM_MUL) {
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     Expr ai = a.select(i), bi = b.select(i);
     Expr arr = Expr::mkLambda(i, ai * bi);

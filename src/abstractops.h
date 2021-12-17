@@ -46,9 +46,9 @@ enum class AbsFpAddSumEncoding {
 };
 
 struct Abstraction {
-  AbsLevelFpDot alFpDot;
-  AbsLevelFpCast alFpCast;
-  AbsLevelIntDot alIntDot;
+  AbsLevelFpDot fpDot;
+  AbsLevelFpCast fpCast;
+  AbsLevelIntDot intDot;
   AbsFpAddSumEncoding fpAddSumEncoding;
 };
 
@@ -60,8 +60,7 @@ struct Abstraction {
 // validate the transformation.
 // NOTE: This resets the used abstract ops record, but does not reset encoding
 //    options (see setEncodingOptions).
-void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
-                    AbsFpAddSumEncoding,
+void setAbstraction(Abstraction abs,
                     bool isFpAddAssociative,
                     bool unrollIntSum,
                     unsigned unrollFpSumBound,
