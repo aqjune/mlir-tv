@@ -2,20 +2,12 @@
 
 #include "smt.h"
 #include "llvm/ADT/APFloat.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <vector>
 #include <set>
 
 namespace aop {
-
-enum class CmpPredicate {
-  // Ordered comparison: 
-  OEQ, ONE, OLE, OLT, OGE, OGT,
-  // Unordered comparison
-  UEQ, UNE, ULE, ULT, UGE, UGT,
-  // ETC
-  ORD, UNO, TRUE, FALSE,
-};
 
 struct UsedAbstractOps {
   // Float ops
@@ -218,7 +210,8 @@ public:
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
-  smt::Expr cmp(const CmpPredicate pred, const smt::Expr &f1, const smt::Expr &f2);
+  smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
+      const smt::Expr &f2);
   smt::Expr getFpAssociativePrecondition();
   smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
   smt::Expr getFpConstantPrecondition();

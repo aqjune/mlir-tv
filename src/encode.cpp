@@ -415,61 +415,7 @@ void encodeOp(State &st, mlir::arith::XOrIOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::arith::CmpFOp op, bool) {
-  aop::CmpPredicate pred;
-  switch (op.getPredicate()) {
-    case mlir::arith::CmpFPredicate::OEQ:
-      pred = aop::CmpPredicate::OEQ;
-      break;
-    case mlir::arith::CmpFPredicate::ONE:
-      pred = aop::CmpPredicate::ONE;
-      break;
-    case mlir::arith::CmpFPredicate::OLE:
-      pred = aop::CmpPredicate::OLE;
-      break;
-    case mlir::arith::CmpFPredicate::OLT:
-      pred = aop::CmpPredicate::OLT;
-      break;
-    case mlir::arith::CmpFPredicate::OGE:
-      pred = aop::CmpPredicate::OGE;
-      break;
-    case mlir::arith::CmpFPredicate::OGT:
-      pred = aop::CmpPredicate::OGT;
-      break;
-    case mlir::arith::CmpFPredicate::UEQ:
-      pred = aop::CmpPredicate::UEQ;
-      break;
-    case mlir::arith::CmpFPredicate::UNE:
-      pred = aop::CmpPredicate::UNE;
-      break;
-    case mlir::arith::CmpFPredicate::ULE:
-      pred = aop::CmpPredicate::ULE;
-      break;
-    case mlir::arith::CmpFPredicate::ULT:
-      pred = aop::CmpPredicate::ULT;
-      break;
-    case mlir::arith::CmpFPredicate::UGE:
-      pred = aop::CmpPredicate::UGE;
-      break;
-    case mlir::arith::CmpFPredicate::UGT:
-      pred = aop::CmpPredicate::UGT;
-      break;
-    case mlir::arith::CmpFPredicate::ORD:
-      pred = aop::CmpPredicate::ORD;
-      break;
-    case mlir::arith::CmpFPredicate::UNO:
-      pred = aop::CmpPredicate::UNO;
-      break;
-    case mlir::arith::CmpFPredicate::AlwaysTrue:
-      pred = aop::CmpPredicate::TRUE;
-      break;
-    case mlir::arith::CmpFPredicate::AlwaysFalse:
-      pred = aop::CmpPredicate::FALSE;
-      break;
-    default:
-      throw UnsupportedException(op.getOperation(),
-                                  "Unsupported cmpf predicate");
-  }
-  
+  auto pred = op.getPredicate();
   auto op1Type = op.getOperand(0).getType();
   auto op2Type = op.getOperand(1).getType();
 

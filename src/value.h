@@ -35,7 +35,7 @@ public:
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
   Float div(const Float &b) const;
-  Integer cmp(const aop::CmpPredicate pred, const Float &b) const;
+  Integer cmp(const mlir::arith::CmpFPredicate pred, const Float &b) const;
   Float abs() const;
   Float neg() const;
   Float extend(const mlir::Type &tgt_type) const;

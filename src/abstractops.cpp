@@ -943,7 +943,7 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
   llvm_unreachable("Unknown abstraction level for fp dot");
 }
 
-Expr AbsFpEncoding::cmp(const CmpPredicate pred,
+Expr AbsFpEncoding::cmp(mlir::arith::CmpFPredicate pred,
                         const Expr &f1, const Expr &f2) {
   const Expr trueBV = Expr::mkBV(1, 1);
   const Expr falseBV = Expr::mkBV(0, 1);
@@ -966,37 +966,37 @@ Expr AbsFpEncoding::cmp(const CmpPredicate pred,
                         trueBV, falseBV))));
 
   switch (pred) {
-  case CmpPredicate::OEQ:
+  case mlir::arith::CmpFPredicate::OEQ:
     return Expr::mkIte(hasNaN, falseBV, cmpEQ);
-  case CmpPredicate::ONE:
+  case mlir::arith::CmpFPredicate::ONE:
     return Expr::mkIte(hasNaN, falseBV, cmpNE);
-  case CmpPredicate::OLE:
+  case mlir::arith::CmpFPredicate::OLE:
     return Expr::mkIte(hasNaN, falseBV, cmpEQ | cmpLT);
-  case CmpPredicate::OLT:
+  case mlir::arith::CmpFPredicate::OLT:
     return Expr::mkIte(hasNaN, falseBV, cmpLT);
-  case CmpPredicate::OGE:
+  case mlir::arith::CmpFPredicate::OGE:
     return Expr::mkIte(hasNaN, falseBV, cmpEQ | cmpGT);
-  case CmpPredicate::OGT:
+  case mlir::arith::CmpFPredicate::OGT:
     return Expr::mkIte(hasNaN, falseBV, cmpGT);
-  case CmpPredicate::UEQ:
+  case mlir::arith::CmpFPredicate::UEQ:
     return Expr::mkIte(hasNaN, trueBV, cmpEQ);
-  case CmpPredicate::UNE:
+  case mlir::arith::CmpFPredicate::UNE:
     return Expr::mkIte(hasNaN, trueBV, cmpNE);
-  case CmpPredicate::ULE:
+  case mlir::arith::CmpFPredicate::ULE:
     return Expr::mkIte(hasNaN, trueBV, cmpEQ | cmpLT);
-  case CmpPredicate::ULT:
+  case mlir::arith::CmpFPredicate::ULT:
     return Expr::mkIte(hasNaN, trueBV, cmpLT);
-  case CmpPredicate::UGE:
+  case mlir::arith::CmpFPredicate::UGE:
     return Expr::mkIte(hasNaN, trueBV, cmpEQ | cmpGT);
-  case CmpPredicate::UGT:
+  case mlir::arith::CmpFPredicate::UGT:
     return Expr::mkIte(hasNaN, trueBV, cmpGT);
-  case CmpPredicate::ORD:
+  case mlir::arith::CmpFPredicate::ORD:
     return Expr::mkIte(hasNaN, falseBV, trueBV);
-  case CmpPredicate::UNO:
+  case mlir::arith::CmpFPredicate::UNO:
     return Expr::mkIte(hasNaN, trueBV, falseBV);
-  case CmpPredicate::TRUE:
+  case mlir::arith::CmpFPredicate::AlwaysTrue:
     return trueBV;
-  case CmpPredicate::FALSE:
+  case mlir::arith::CmpFPredicate::AlwaysFalse:
     return falseBV;
   default:
     throw UnsupportedException("Invalid cmpf predicate");

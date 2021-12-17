@@ -202,7 +202,8 @@ Float Float::div(const Float &b) const {
   return Float(aop::getFpEncoding(type).div(e, b.e), type);
 }
 
-Integer Float::cmp(const aop::CmpPredicate pred, const Float &b) const {
+Integer Float::cmp(const mlir::arith::CmpFPredicate pred, const Float &b)
+    const {
   return Integer(aop::getFpEncoding(type).cmp(pred, e, b.e));
 }
 
