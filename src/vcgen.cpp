@@ -506,7 +506,7 @@ static Results validate(ValidationInput vinput) {
 
     llvm::outs()
       << "\n===============================================================\n"
-      << "  Abstractions used for the previous validation:\n"
+      << "  Abstractions used for the validation:\n"
       << "  - dot ops (fp): " << magic_enum::enum_name(abs.alFpDot) << "\n"
       << "  - cast ops (fp): " << magic_enum::enum_name(abs.alFpCast) << "\n"
       << "  - add/sum ops (fp): "
@@ -516,24 +516,27 @@ static Results validate(ValidationInput vinput) {
   };
 
   Results result(Results::Code::TIMEOUT);
-  set<Abstraction> checked;
-  priority_queue<Abstraction> queue;
+  // (abstraction, use ALL logic?)
+  queue<pair<Abstraction, bool>> queue;
 
-  queue.push({AbsLevelFpDot::FULLY_ABS,
+  queue.push({{AbsLevelFpDot::FULLY_ABS,
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
       vinput.isFpAddAssociative ? AbsFpAddSumEncoding::USE_SUM_ONLY :
-                  AbsFpAddSumEncoding::DEFAULT,
+                  AbsFpAddSumEncoding::DEFAULT},
       /* useAllLogic */false });
 
   bool isFirst = true;
   setEncodingOptions(vinput.useMultisetForFpSum);
 
   while (!queue.empty()) {
-    auto level = queue.top(); queue.pop();
-    if (checked.count(level)) continue;
+    auto [level, useAllLogic] = queue.front();
+    queue.pop();
 
-    checked.insert(level);
+    if (!isFirst)
+      llvm::outs() << "Validating the transformation with a refined "
+          "abstraction...\n";
+
     setAbstraction(level.alFpDot, level.alFpCast, level.alIntDot,
         level.fpAddSumEncoding,
         vinput.isFpAddAssociative,
@@ -542,8 +545,7 @@ static Results validate(ValidationInput vinput) {
         vinput.f32NonConstsCount, vinput.f32Consts,
         vinput.f64NonConstsCount, vinput.f64Consts);
 
-    auto res = tryValidation(vinput, isFirst, level.useAllLogic,
-        elapsedMillisec);
+    auto res = tryValidation(vinput, isFirst, useAllLogic, elapsedMillisec);
     printSematics(level, res);
     if (res.code == Results::INCONSISTENT) {
       return res;
@@ -554,36 +556,50 @@ static Results validate(ValidationInput vinput) {
       result = res;
     }
 
+    // Do refinement of the abstraction.
+    // Perform refinement in a lock-step manner to avoid combinatorial explosion
     auto usedOps = aop::getUsedAbstractOps();
     auto nextLevel = level;
+    bool isChanged = false;
     /* 1. fp dot abstraction level */
     if (level.alFpDot == AbsLevelFpDot::FULLY_ABS) {
-      if (usedOps.fpDot || vinput.isFpAddAssociative)
+      if (usedOps.fpDot || vinput.isFpAddAssociative) {
         nextLevel.alFpDot = AbsLevelFpDot::SUM_MUL;
+        isChanged = true;
+      }
     }
     /* 2. fp cast abstraction level */
     if (level.alFpCast == AbsLevelFpCast::FULLY_ABS) {
-      if (usedOps.fpCastRound)
+      if (usedOps.fpCastRound) {
         nextLevel.alFpCast = AbsLevelFpCast::PRECISE;
+        isChanged = true;
+      }
     }
     /* 3. int dot abstraction level */
     if (level.alIntDot == AbsLevelIntDot::FULLY_ABS) {
-      if (usedOps.intDot && usedOps.intSum)
+      if (usedOps.intDot && usedOps.intSum) {
         nextLevel.alIntDot = AbsLevelIntDot::SUM_MUL;
+        isChanged = true;
+      }
     }
-    if (!checked.count(nextLevel))
-      queue.push({nextLevel.alFpDot, nextLevel.alFpCast, nextLevel.alIntDot,
-            nextLevel.fpAddSumEncoding,
-            /* useAllLogic */vinput.isFpAddAssociative});
 
-    /* 4. fp add, sum encoding level */
-    /* Dose not lowering abstraction level when "AbsFpAddSumEncoding::USE_SUM_ONLY"
-        because this encoding only turned on when --associative given. */
-    if (level.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
-      if (usedOps.fpSum)
-        queue.push({nextLevel.alFpDot, nextLevel.alFpCast, nextLevel.alIntDot,
-            AbsFpAddSumEncoding::UNROLL_TO_ADD,
+    if (isChanged) {
+      queue.push({{nextLevel.alFpDot, nextLevel.alFpCast, nextLevel.alIntDot,
+            nextLevel.fpAddSumEncoding},
             /* useAllLogic */vinput.isFpAddAssociative});
+    } else {
+      /* 4. fp add, sum encoding level */
+      // Since UNROLL_TO_ADD may cause big slowdown, turn in off at the end
+      // only.
+      // Do not refine fpAddSumEncoding if it is USE_SUM_ONLY.
+      //  USE_SUM_ONLY is used only when --associative is given, and it cannot
+      //  be refined further.
+      if (level.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
+        if (usedOps.fpSum)
+          queue.push({{nextLevel.alFpDot, nextLevel.alFpCast,
+              nextLevel.alIntDot, AbsFpAddSumEncoding::UNROLL_TO_ADD},
+              /* useAllLogic */vinput.isFpAddAssociative});
+      }
     }
 
     isFirst = false;

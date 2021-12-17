@@ -50,25 +50,6 @@ struct Abstraction {
   AbsLevelFpCast alFpCast;
   AbsLevelIntDot alIntDot;
   AbsFpAddSumEncoding fpAddSumEncoding;
-  bool useAllLogic;
-
-  // Given two abstractions l1 and l2, l1 < l2 if l2 is more abstract
-  // than l1.
-  // It's defined so because the top element of a lattice is considered to be
-  // the most abstract one in the programming language world.
-  // Between two concrete abstractions, we give total order by saying l1 < l2
-  // if using l1 is likely to cause bigger slowdown than using l2.
-  bool operator < (const Abstraction &other) const {
-    if (fpAddSumEncoding != other.fpAddSumEncoding) {
-      assert((fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY &&
-              other.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY) ||
-             (fpAddSumEncoding != AbsFpAddSumEncoding::USE_SUM_ONLY &&
-              other.fpAddSumEncoding != AbsFpAddSumEncoding::USE_SUM_ONLY));
-    }
-    return std::tie(fpAddSumEncoding, alFpDot, alFpCast, alIntDot) >
-        std::tie(other.fpAddSumEncoding, other.alFpDot, other.alFpCast,
-                 other.alIntDot);
-  }
 };
 
 // unrollIntSum: Fully unroll sum(arr) where arr is an int array of const size
