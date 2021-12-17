@@ -526,14 +526,15 @@ static Results validate(ValidationInput vinput) {
                   AbsFpAddSumEncoding::DEFAULT},
       /* useAllLogic */false });
 
-  bool isFirst = true;
+  unsigned itrCount = 0;
   setEncodingOptions(vinput.useMultisetForFpSum);
+  const string dumpSMTPath = vinput.dumpSMTPath;
 
   while (!queue.empty()) {
     auto [level, useAllLogic] = queue.front();
     queue.pop();
 
-    if (!isFirst)
+    if (itrCount > 0)
       llvm::outs() << "Validating the transformation with a refined "
           "abstraction...\n";
 
@@ -545,7 +546,14 @@ static Results validate(ValidationInput vinput) {
         vinput.f32NonConstsCount, vinput.f32Consts,
         vinput.f64NonConstsCount, vinput.f64Consts);
 
-    auto res = tryValidation(vinput, isFirst, useAllLogic, elapsedMillisec);
+    if (!dumpSMTPath.empty()) {
+      vinput.dumpSMTPath = dumpSMTPath;
+      if (itrCount > 0)
+        vinput.dumpSMTPath += "_refined_" + to_string(itrCount);
+    }
+
+    bool printOps = itrCount == 0;
+    auto res = tryValidation(vinput, printOps, useAllLogic, elapsedMillisec);
     printSematics(level, res);
     if (res.code == Results::INCONSISTENT) {
       return res;
@@ -602,7 +610,7 @@ static Results validate(ValidationInput vinput) {
       }
     }
 
-    isFirst = false;
+    ++itrCount;
   }
 
   if (result.code == Results::TIMEOUT)
