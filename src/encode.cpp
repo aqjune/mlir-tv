@@ -415,43 +415,91 @@ void encodeOp(State &st, mlir::arith::XOrIOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::arith::CmpFOp op, bool) {
+  aop::CmpPredicate pred;
   switch (op.getPredicate()) {
-  case mlir::arith::CmpFPredicate::OLT: { // ordered (unsinged) less than "<"
-    auto op1Type = op.getOperand(0).getType();
-    auto op2Type = op.getOperand(1).getType();
-
-    if (op1Type.isa<mlir::TensorType>() && op2Type.isa<mlir::TensorType>()) {
-      auto a = st.regs.get<Tensor>(op.getOperand(0));
-      auto b = st.regs.get<Tensor>(op.getOperand(1));
-      assert(a.getElemType() == b.getElemType());
-
-      auto elemty = a.getElemType();
-      auto resultElemTy = getElemTy(op.getResult());
-      auto f = [&](Expr &&a, Expr &&b) -> Expr {
-        if (elemty.isa<mlir::FloatType>()) {
-          return Float(a, elemty).fult(Float(b, elemty));
-        }
-        throw UnsupportedException(op.getOperation(),
-            "cmpf only accepts floating points");
-      };
-      st.regs.add(op, a.elementwiseBinOp(b, resultElemTy, f));
-      st.wellDefined(op, listsEqual(a.getDims(), b.getDims()));
-      st.wellDefined(op, a.isFullyInitialized());
-      st.wellDefined(op, b.isFullyInitialized());
-
-    } else if (op1Type.isa<mlir::FloatType>() &&
-               op2Type.isa<mlir::FloatType>()) {
-      auto a = st.regs.get<Float>(op.getOperand(0));
-      auto b = st.regs.get<Float>(op.getOperand(1));
-      st.regs.add(op, Integer(a.fult(b)));
-
-    } else {
-      throw UnsupportedException(op.getOperation(), "Unsupported cmpf operand");
-    }
-    break;
+    case mlir::arith::CmpFPredicate::OEQ:
+      pred = aop::CmpPredicate::OEQ;
+      break;
+    case mlir::arith::CmpFPredicate::ONE:
+      pred = aop::CmpPredicate::ONE;
+      break;
+    case mlir::arith::CmpFPredicate::OLE:
+      pred = aop::CmpPredicate::OLE;
+      break;
+    case mlir::arith::CmpFPredicate::OLT:
+      pred = aop::CmpPredicate::OLT;
+      break;
+    case mlir::arith::CmpFPredicate::OGE:
+      pred = aop::CmpPredicate::OGE;
+      break;
+    case mlir::arith::CmpFPredicate::OGT:
+      pred = aop::CmpPredicate::OGT;
+      break;
+    case mlir::arith::CmpFPredicate::UEQ:
+      pred = aop::CmpPredicate::UEQ;
+      break;
+    case mlir::arith::CmpFPredicate::UNE:
+      pred = aop::CmpPredicate::UNE;
+      break;
+    case mlir::arith::CmpFPredicate::ULE:
+      pred = aop::CmpPredicate::ULE;
+      break;
+    case mlir::arith::CmpFPredicate::ULT:
+      pred = aop::CmpPredicate::ULT;
+      break;
+    case mlir::arith::CmpFPredicate::UGE:
+      pred = aop::CmpPredicate::UGE;
+      break;
+    case mlir::arith::CmpFPredicate::UGT:
+      pred = aop::CmpPredicate::UGT;
+      break;
+    case mlir::arith::CmpFPredicate::ORD:
+      pred = aop::CmpPredicate::ORD;
+      break;
+    case mlir::arith::CmpFPredicate::UNO:
+      pred = aop::CmpPredicate::UNO;
+      break;
+    case mlir::arith::CmpFPredicate::AlwaysTrue:
+      pred = aop::CmpPredicate::TRUE;
+      break;
+    case mlir::arith::CmpFPredicate::AlwaysFalse:
+      pred = aop::CmpPredicate::FALSE;
+      break;
+    default:
+      throw UnsupportedException(op.getOperation(),
+                                  "Unsupported cmpf predicate");
   }
-  default:
-    throw UnsupportedException(op.getOperation(), "Unsupported cmpf predicate");
+  
+  auto op1Type = op.getOperand(0).getType();
+  auto op2Type = op.getOperand(1).getType();
+
+  if (op1Type.isa<mlir::TensorType>() && op2Type.isa<mlir::TensorType>()) {
+    auto a = st.regs.get<Tensor>(op.getOperand(0));
+    auto b = st.regs.get<Tensor>(op.getOperand(1));
+    assert(a.getElemType() == b.getElemType());
+
+    auto elemty = a.getElemType();
+    auto resultElemTy = getElemTy(op.getResult());
+    auto f = [&](Expr &&a, Expr &&b) -> Expr {
+      if (elemty.isa<mlir::FloatType>()) {
+        return Float(a, elemty).cmp(pred, Float(b, elemty));
+      }
+      throw UnsupportedException(op.getOperation(),
+          "cmpf only accepts floating points");
+    };
+    st.regs.add(op, a.elementwiseBinOp(b, resultElemTy, f));
+    st.wellDefined(op, listsEqual(a.getDims(), b.getDims()));
+    st.wellDefined(op, a.isFullyInitialized());
+    st.wellDefined(op, b.isFullyInitialized());
+
+  } else if (op1Type.isa<mlir::FloatType>() &&
+              op2Type.isa<mlir::FloatType>()) {
+    auto a = st.regs.get<Float>(op.getOperand(0));
+    auto b = st.regs.get<Float>(op.getOperand(1));
+    st.regs.add(op, Integer(a.cmp(pred, b)));
+
+  } else {
+    throw UnsupportedException(op.getOperation(), "Unsupported cmpf operand");
   }
 }
 

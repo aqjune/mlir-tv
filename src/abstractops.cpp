@@ -267,7 +267,6 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_addfn.reset();
   fp_mulfn.reset();
   fp_divfn.reset();
-  fp_ultfn.reset();
   fp_hashfn.reset();
   fp_sums.clear();
 }
@@ -317,15 +316,6 @@ FnDecl AbsFpEncoding::getDotFn() {
   if (!fp_dotfn)
     fp_dotfn.emplace({arrs, arrs}, sort(), "fp_dot_" + fn_suffix);
   return *fp_dotfn;
-}
-
-FnDecl AbsFpEncoding::getUltFn() {
-  if (!fp_ultfn) {
-    auto fty = sort();
-    auto fty2 = Sort::bvSort(1); // i1 type (boolean value)
-    fp_ultfn.emplace({fty, fty}, fty2, "fp_ult_" + fn_suffix);
-  }
-  return *fp_ultfn;
 }
 
 FnDecl AbsFpEncoding::getExtendFn(const AbsFpEncoding &tgt) {
@@ -959,8 +949,64 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
   llvm_unreachable("Unknown abstraction level for fp dot");
 }
 
-Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
-  return getUltFn().apply({f1, f2});
+Expr AbsFpEncoding::cmp(const CmpPredicate pred,
+                        const Expr &f1, const Expr &f2) {
+  const Expr trueBV = Expr::mkBV(1, 1);
+  const Expr falseBV = Expr::mkBV(0, 1);
+
+  const Expr hasNaN = isnan(f1) | isnan(f2);
+  const Expr cmpEQ = Expr::mkIte(f1 == f2, trueBV, falseBV);
+  const Expr cmpNE = Expr::mkIte(f1 != f2, trueBV, falseBV);
+
+  const Expr f1Sign = getSignBit(f1), f2Sign = getSignBit(f2);
+  const Expr f1Magn = getMagnitudeBits(f1), f2Magn = getMagnitudeBits(f2);
+  const Expr cmpLT = Expr::mkIte(f1Sign.ugt(f2Sign), trueBV,
+                      Expr::mkIte(f1Sign.ult(f2Sign), falseBV,
+                      Expr::mkIte(f1Magn == f2Magn, falseBV,
+                      Expr::mkIte(f1Magn.ult(f2Magn) ^ f1Sign.isNonZero(),
+                        trueBV, falseBV))));
+  const Expr cmpGT = Expr::mkIte(f1Sign.ult(f2Sign), trueBV,
+                      Expr::mkIte(f1Sign.ugt(f2Sign), falseBV,
+                      Expr::mkIte(f1Magn == f2Magn, falseBV,
+                      Expr::mkIte(f1Magn.ugt(f2Magn) ^ f1Sign.isNonZero(),
+                        trueBV, falseBV))));
+
+  switch (pred) {
+  case CmpPredicate::OEQ:
+    return Expr::mkIte(hasNaN, falseBV, cmpEQ);
+  case CmpPredicate::ONE:
+    return Expr::mkIte(hasNaN, falseBV, cmpNE);
+  case CmpPredicate::OLE:
+    return Expr::mkIte(hasNaN, falseBV, cmpEQ | cmpLT);
+  case CmpPredicate::OLT:
+    return Expr::mkIte(hasNaN, falseBV, cmpLT);
+  case CmpPredicate::OGE:
+    return Expr::mkIte(hasNaN, falseBV, cmpEQ | cmpGT);
+  case CmpPredicate::OGT:
+    return Expr::mkIte(hasNaN, falseBV, cmpGT);
+  case CmpPredicate::UEQ:
+    return Expr::mkIte(hasNaN, trueBV, cmpEQ);
+  case CmpPredicate::UNE:
+    return Expr::mkIte(hasNaN, trueBV, cmpNE);
+  case CmpPredicate::ULE:
+    return Expr::mkIte(hasNaN, trueBV, cmpEQ | cmpLT);
+  case CmpPredicate::ULT:
+    return Expr::mkIte(hasNaN, trueBV, cmpLT);
+  case CmpPredicate::UGE:
+    return Expr::mkIte(hasNaN, trueBV, cmpEQ | cmpGT);
+  case CmpPredicate::UGT:
+    return Expr::mkIte(hasNaN, trueBV, cmpGT);
+  case CmpPredicate::ORD:
+    return Expr::mkIte(hasNaN, falseBV, trueBV);
+  case CmpPredicate::UNO:
+    return Expr::mkIte(hasNaN, trueBV, falseBV);
+  case CmpPredicate::TRUE:
+    return trueBV;
+  case CmpPredicate::FALSE:
+    return falseBV;
+  default:
+    throw UnsupportedException("Invalid cmpf predicate");
+  }
 }
 
 Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {

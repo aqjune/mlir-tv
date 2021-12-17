@@ -1,5 +1,6 @@
 #pragma once
 
+#include "abstractops.h"
 #include "simplevalue.h"
 #include "llvm/ADT/APFloat.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
@@ -9,7 +10,6 @@ class Memory;
 
 std::optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type ty);
 std::optional<smt::Expr> getZero(mlir::Type eltType);
-
 
 class Float {
   smt::Expr e;
@@ -35,7 +35,7 @@ public:
   Float add(const Float &b) const;
   Float mul(const Float &b) const;
   Float div(const Float &b) const;
-  Integer fult(const Float &b) const;
+  Integer cmp(const aop::CmpPredicate pred, const Float &b) const;
   Float abs() const;
   Float neg() const;
   Float extend(const mlir::Type &tgt_type) const;
