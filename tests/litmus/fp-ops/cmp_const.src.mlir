@@ -1,8 +1,8 @@
 // VERIFY
 
 func @oeq() -> i1 {
-  %i = arith.constant 2.0 : f32
-  %v = arith.constant 2.0 : f32
+  %i = arith.constant 3.0 : f32
+  %v = arith.constant 3.0 : f32
   %c = arith.cmpf "oeq", %i, %v : f32
   return %c : i1
 }
@@ -43,8 +43,8 @@ func @ogt() -> i1 {
 }
 
 func @ueq() -> i1 {
-  %i = arith.constant 2.0 : f32
-  %v = arith.constant 2.0 : f32
+  %i = arith.constant 3.0 : f32
+  %v = arith.constant 3.0 : f32
   %c = arith.cmpf "ueq", %i, %v : f32
   return %c : i1
 }
