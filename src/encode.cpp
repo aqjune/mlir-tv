@@ -926,41 +926,42 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
 
   assert(strides.size() == 2 && dilations.size() == 2);
 
-  vector<Expr> outInd = Index::boundIndexVars(4); 
-  vector<Expr> tmpInd = outInd;
-  auto n = outInd[0];
-  auto c = outInd[3].udiv(weight.getDims()[3]);
-  auto m = outInd[3].urem(weight.getDims()[3]);
-  auto padDims = paddedTensor->getDims();
+  vector<Expr> outInd = Index::boundIndexVars(4);
   auto wDims = weight.getDims();
+  auto padDims = paddedTensor->getDims();
+  auto N = padDims[0];
+  auto M = wDims[3];
+  auto C = wDims[2];
+  auto n = outInd[0];
+  auto c = outInd[3].udiv(M);
+  auto m = outInd[3].urem(M);
 
   // change input to 1xHxWx1
   vector<Expr> input2DDims = {Index(1), padDims[1], padDims[2], Index(1)};
   vector<Expr> input2DInd = Index::boundIndexVars(4);
   Tensor input2D = Tensor::mkInitializedLambda(
                   elemTy, move(input2DDims), move(input2DInd), 
-                  paddedTensor->get({n, input2DInd[1], input2DInd[2] , c}).first
+                  paddedTensor->get({n, input2DInd[1], input2DInd[2], c}).first
                 );
-  outInd = tmpInd;
 
-  // change weight to KHxKWx1xM
-  vector<Expr> weight2DDims = {wDims[0], wDims[1], Index(1), wDims[3]};
+  // change weight to KHxKWx1x1
+  vector<Expr> weight2DDims = {wDims[0], wDims[1], Index(1), Index(1)};
   vector<Expr> weight2DInd = Index::boundIndexVars(4);
   Tensor weight2D = Tensor::mkInitializedLambda(
                   elemTy, move(weight2DDims), move(weight2DInd), 
-                  weight.get({weight2DInd[0], weight2DInd[1], c ,weight2DInd[3]}).first
+                  weight.get({weight2DInd[0], weight2DInd[1], c, m}).first
                 );
-  outInd = tmpInd;
 
-  // t is 1xOHxOWxM
+  // t is 1xOHxOWx1
   auto t = input2D.conv(weight2D,
-                      strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
+                      strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
+
   auto tDims = t.getDims();
   auto biasf = Float(bias.get({outInd[3]}).first, elemTy);
-  auto tf = Float(t.get({Index(1), outInd[1], outInd[2], m}).first, elemTy);
+  auto tf = Float(t.get({Index(0), outInd[1], outInd[2], Index(0)}).first, elemTy);
 
-  // NxOHxOWx(M*C)
-  vector<Expr> outDims = {padDims[0], tDims[1], tDims[2], wDims[2] * wDims[3]};
+  // NxOHxOWx(C*M)
+  vector<Expr> outDims = {N, tDims[1], tDims[2], C * M};
   auto output = Tensor::mkInitializedLambda(
                   elemTy, move(outDims), move(outInd), 
                   tf.add(biasf)
