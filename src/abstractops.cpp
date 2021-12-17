@@ -261,7 +261,6 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_addfn.reset();
   fp_mulfn.reset();
   fp_divfn.reset();
-  fp_ultfn.reset();
   fp_hashfn.reset();
   fp_sums.clear();
 }
@@ -311,15 +310,6 @@ FnDecl AbsFpEncoding::getDotFn() {
   if (!fp_dotfn)
     fp_dotfn.emplace({arrs, arrs}, sort(), "fp_dot_" + fn_suffix);
   return *fp_dotfn;
-}
-
-FnDecl AbsFpEncoding::getUltFn() {
-  if (!fp_ultfn) {
-    auto fty = sort();
-    auto fty2 = Sort::bvSort(1); // i1 type (boolean value)
-    fp_ultfn.emplace({fty, fty}, fty2, "fp_ult_" + fn_suffix);
-  }
-  return *fp_ultfn;
 }
 
 FnDecl AbsFpEncoding::getExtendFn(const AbsFpEncoding &tgt) {
@@ -953,8 +943,67 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
   llvm_unreachable("Unknown abstraction level for fp dot");
 }
 
-Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
-  return getUltFn().apply({f1, f2});
+Expr AbsFpEncoding::cmp(mlir::arith::CmpFPredicate pred,
+                        const Expr &f1, const Expr &f2) {
+  const Expr trueBV = Expr::mkBV(1, 1);
+  const Expr falseBV = Expr::mkBV(0, 1);
+
+  const Expr hasNaN = isnan(f1) | isnan(f2);
+
+  const Expr f1Sign = getSignBit(f1), f2Sign = getSignBit(f2);
+  const Expr f1Magn = getMagnitudeBits(f1), f2Magn = getMagnitudeBits(f2);
+
+  const Expr cmpEQ = Expr::mkIte(f1 == f2 | (f1Magn.isZero() & f2Magn.isZero()),
+                        trueBV, falseBV);
+  const Expr cmpNE = Expr::mkIte(f1 != f2 & !(f1Magn.isZero() & f2Magn.isZero()),
+                        trueBV, falseBV);
+  const Expr cmpLT = Expr::mkIte(f1Sign.ugt(f2Sign), trueBV,
+                      Expr::mkIte(f1Sign.ult(f2Sign), falseBV,
+                      Expr::mkIte(f1Magn == f2Magn, falseBV,
+                      Expr::mkIte(f1Magn.ult(f2Magn) ^ f1Sign.isNonZero(),
+                        trueBV, falseBV))));
+  const Expr cmpGT = Expr::mkIte(f1Sign.ult(f2Sign), trueBV,
+                      Expr::mkIte(f1Sign.ugt(f2Sign), falseBV,
+                      Expr::mkIte(f1Magn == f2Magn, falseBV,
+                      Expr::mkIte(f1Magn.ugt(f2Magn) ^ f1Sign.isNonZero(),
+                        trueBV, falseBV))));
+
+  switch (pred) {
+  case mlir::arith::CmpFPredicate::OEQ:
+    return Expr::mkIte(hasNaN, falseBV, cmpEQ);
+  case mlir::arith::CmpFPredicate::ONE:
+    return Expr::mkIte(hasNaN, falseBV, cmpNE);
+  case mlir::arith::CmpFPredicate::OLE:
+    return Expr::mkIte(hasNaN, falseBV, cmpEQ | cmpLT);
+  case mlir::arith::CmpFPredicate::OLT:
+    return Expr::mkIte(hasNaN, falseBV, cmpLT);
+  case mlir::arith::CmpFPredicate::OGE:
+    return Expr::mkIte(hasNaN, falseBV, cmpEQ | cmpGT);
+  case mlir::arith::CmpFPredicate::OGT:
+    return Expr::mkIte(hasNaN, falseBV, cmpGT);
+  case mlir::arith::CmpFPredicate::UEQ:
+    return Expr::mkIte(hasNaN, trueBV, cmpEQ);
+  case mlir::arith::CmpFPredicate::UNE:
+    return Expr::mkIte(hasNaN, trueBV, cmpNE);
+  case mlir::arith::CmpFPredicate::ULE:
+    return Expr::mkIte(hasNaN, trueBV, cmpEQ | cmpLT);
+  case mlir::arith::CmpFPredicate::ULT:
+    return Expr::mkIte(hasNaN, trueBV, cmpLT);
+  case mlir::arith::CmpFPredicate::UGE:
+    return Expr::mkIte(hasNaN, trueBV, cmpEQ | cmpGT);
+  case mlir::arith::CmpFPredicate::UGT:
+    return Expr::mkIte(hasNaN, trueBV, cmpGT);
+  case mlir::arith::CmpFPredicate::ORD:
+    return Expr::mkIte(hasNaN, falseBV, trueBV);
+  case mlir::arith::CmpFPredicate::UNO:
+    return Expr::mkIte(hasNaN, trueBV, falseBV);
+  case mlir::arith::CmpFPredicate::AlwaysTrue:
+    return trueBV;
+  case mlir::arith::CmpFPredicate::AlwaysFalse:
+    return falseBV;
+  default:
+    throw UnsupportedException("Invalid cmpf predicate");
+  }
 }
 
 Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {

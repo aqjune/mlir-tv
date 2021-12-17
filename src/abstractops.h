@@ -2,6 +2,7 @@
 
 #include "smt.h"
 #include "llvm/ADT/APFloat.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <vector>
 #include <set>
@@ -134,7 +135,6 @@ private:
   std::optional<smt::FnDecl> fp_addfn;
   std::optional<smt::FnDecl> fp_mulfn;
   std::optional<smt::FnDecl> fp_divfn;
-  std::optional<smt::FnDecl> fp_ultfn;
   std::optional<smt::FnDecl> fp_extendfn;
   std::optional<smt::FnDecl> fp_truncatefn;
   std::optional<smt::FnDecl> fp_expfn;
@@ -176,7 +176,6 @@ private:
   smt::FnDecl getAssocSumFn();
   smt::FnDecl getSumFn();
   smt::FnDecl getDotFn();
-  smt::FnDecl getUltFn();
   smt::FnDecl getExtendFn(const AbsFpEncoding &tgt);
   smt::FnDecl getTruncateFn(const AbsFpEncoding &tgt);
   smt::FnDecl getExpFn();
@@ -209,9 +208,10 @@ public:
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr exp(const smt::Expr &x);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
-  smt::Expr fult(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
+  smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
+      const smt::Expr &f2);
   smt::Expr getFpAssociativePrecondition();
   smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
   smt::Expr getFpConstantPrecondition();

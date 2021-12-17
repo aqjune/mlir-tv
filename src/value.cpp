@@ -1,4 +1,3 @@
-#include "abstractops.h"
 #include "memory.h"
 #include "smt.h"
 #include "smtmatchers.h"
@@ -203,8 +202,9 @@ Float Float::div(const Float &b) const {
   return Float(aop::getFpEncoding(type).div(e, b.e), type);
 }
 
-Integer Float::fult(const Float &b) const {
-  return Integer(aop::getFpEncoding(type).fult(e, b.e));
+Integer Float::cmp(const mlir::arith::CmpFPredicate pred, const Float &b)
+    const {
+  return Integer(aop::getFpEncoding(type).cmp(pred, e, b.e));
 }
 
 Float Float::abs() const {
