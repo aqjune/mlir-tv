@@ -71,3 +71,15 @@ func @ugt(%arg0: f32) -> i1 {
   %c = arith.cmpf "ugt", %i, %arg0 : f32
   return %c : i1
 }
+
+func @ord(%arg0: f32) -> i1 {
+  %i = arith.constant 0x7FC00000 : f32
+  %c = arith.cmpf "ord", %i, %arg0 : f32
+  return %c : i1
+}
+
+func @uno(%arg0: f32) -> i1 {
+  %i = arith.constant 0x7FC00000 : f32
+  %c = arith.cmpf "uno", %i, %arg0 : f32
+  return %c : i1
+}
