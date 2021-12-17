@@ -42,6 +42,14 @@ enum class AbsFpAddSumEncoding {
   DEFAULT = 1, // Encode addition using fp_add, fp_sum respectivly
                // (no relation between them)
   UNROLL_TO_ADD = 2, // Unroll sum to add if the size of array is small enough
+                     // This is more concrete semantics than DEFAULT.
+};
+
+struct Abstraction {
+  AbsLevelFpDot alFpDot;
+  AbsLevelFpCast alFpCast;
+  AbsLevelIntDot alIntDot;
+  AbsFpAddSumEncoding fpAddSumEncoding;
 };
 
 // unrollIntSum: Fully unroll sum(arr) where arr is an int array of const size
@@ -50,7 +58,8 @@ enum class AbsFpAddSumEncoding {
 //                   size of an array to unroll
 // floatNonConstsCnt: # of non-constant distinct f32 values necessary to
 // validate the transformation.
-// NOTE: This resets the used abstract ops record.
+// NOTE: This resets the used abstract ops record, but does not reset encoding
+//    options (see setEncodingOptions).
 void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
                     AbsFpAddSumEncoding,
                     bool isFpAddAssociative,
@@ -64,10 +73,6 @@ void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
 // useMultiset: To encode commutativity of fp summation, use multiset?
 void setEncodingOptions(bool useMultiset);
 
-AbsLevelFpDot getAbsLevelFpDot();
-AbsLevelFpCast getAbsLevelFpCast();
-AbsLevelIntDot getAbsLevelIntDot();
-AbsFpAddSumEncoding getAbsFpAddSumEncoding();
 bool getFpAddAssociativity();
 bool getFpCastIsPrecise();
 
