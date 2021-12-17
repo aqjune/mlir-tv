@@ -75,7 +75,8 @@ public:
 
 class Expr : private Object<T_Z3(z3::expr), T_CVC5(cvc5::api::Term)> {
 private:
-  Expr() {}
+  Expr(): isOpLocked(false) {}
+  bool isOpLocked;
 
 public:
 #ifdef SOLVER_Z3
@@ -86,6 +87,10 @@ public:
   cvc5::api::Term getCVC5Term() const;
   bool hasCVC5Term() const;
 #endif // SOLVER_CVC5
+
+  // Lock arithmetic operations that create new expressions for debugging.
+  void lockOps();
+  void unlockOps();
 
   Expr simplify() const;
   Sort sort() const;
@@ -176,11 +181,15 @@ public:
 
   // Make a fresh, unbound variable.
   static Expr mkFreshVar(const Sort &s, const std::string &prefix);
+  static Expr mkFreshVar(const Expr &sort_of, const std::string &prefix);
   // Set boundVar to true if the variable is to be used in a binder (e.g.,
   // a quantified variable, lambda).
   static Expr mkVar(
       const Sort &s, const std::string &name, bool boundVar = false);
+  static Expr mkVar(
+      const Expr &sort_of, const std::string &name, bool boundVar = false);
   static Expr mkBV(const uint64_t val, const size_t sz);
+  static Expr mkBV(const uint64_t val, const Expr &sort_of);
   static Expr mkBool(const bool val);
 
   static Expr mkForall(const std::vector<Expr> &vars, const Expr &body);

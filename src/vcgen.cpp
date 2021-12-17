@@ -245,6 +245,7 @@ static Results checkRefinement(
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res.hasSat()) {
       llvm::outs() << "== Result: " << msg << "\n";
+      aop::evalConsts(s.getModel());
       printCounterEx(
           s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx,
           memElemType);
@@ -285,14 +286,8 @@ static Results checkRefinement(
     for (unsigned i = 0; i < numret; ++i) {
       Solver s(logic);
 
-      optional<Expr> refines_opt;
-      vector<Expr> params;
-      visit([&](auto &&src, auto &&tgt) {
-        auto typedSrc = (decltype(tgt)) src;
-        tie(refines_opt, params) = tgt.refines(typedSrc);
-      }, st_src.retValues[i], st_tgt.retValues[i]);
-
-      Expr refines = move(*refines_opt);
+      auto [refines, params] =
+          ::refines(st_tgt.retValues[i], st_src.retValues[i]);
 
       auto not_refines =
         (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines)
@@ -420,11 +415,10 @@ static tuple<State, State, Expr> encodeFinalStates(
   State st_tgt = encodeFinalState(
       vinput, move(initMemTgt), printOps, false, args, preconds);
 
+  preconds.push_back(aop::getFpConstantPrecondition());
+
   if (aop::getFpAddAssociativity())
     preconds.push_back(aop::getFpAssociativePrecondition());
-
-  if(aop::getUsedAbstractOps().fpUlt)
-    preconds.push_back(aop::getFpUltPrecondition());
 
   if (aop::getFpCastIsPrecise())
     preconds.push_back(aop::getFpTruncatePrecondition());

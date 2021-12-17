@@ -19,7 +19,7 @@ class Integer {
   smt::Expr e;
 
 public:
-  Integer(const smt::Expr &e): e(e) {}
+  Integer(const smt::Expr &e): e(e) { this->e.unlockOps(); }
   Integer(int64_t i, unsigned bw);
   Integer(const llvm::APInt &api);
 
@@ -45,8 +45,8 @@ public:
   static const unsigned BITS = 32;
 
   Index(unsigned);
-  Index(const smt::Expr &e): e(e) {}
-  Index(smt::Expr &&e): e(std::move(e)) {}
+  Index(const smt::Expr &e): e(e) { this->e.unlockOps(); }
+  Index(smt::Expr &&e): e(std::move(e)) { this->e.unlockOps(); }
 
   operator smt::Expr() const { return e; }
   Index operator*(const Index &b) const { return Index(e * b.e); }

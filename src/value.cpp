@@ -1,9 +1,9 @@
 #include "abstractops.h"
-#include "value.h"
+#include "memory.h"
 #include "smt.h"
 #include "smtmatchers.h"
-#include "memory.h"
 #include "utils.h"
+#include "value.h"
 
 using namespace smt;
 using namespace std;
@@ -463,6 +463,9 @@ Expr Tensor::isInBounds(const vector<smt::Expr> &indices) const {
 
 pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
   auto elem = arr.select(to1DIdx(indices, dims));
+  // Don't directly use this element!
+  // Please use it with a proper wrapper (Float, Index, Integer).
+  elem.lockOps();
   return {elem, isInBounds(indices)};
 }
 
@@ -719,11 +722,15 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
   // Assume that src and tgt's shape equality is already checked
   Expr i = Index::var("i", VarType::UNBOUND);
   vector<Expr> params = {i};
+  ValueTy arr_i = *fromExpr(arr.select(i), elemType);
+  ValueTy arr_other_i = *fromExpr(other.arr.select(i), elemType);
+  auto refinement = ::refines(arr_i, arr_other_i);
+  assert(refinement.second.empty());
+
   return {size_match &
       i.ult(::get1DSize(dims)).implies(
         initialized.select(i).implies(
-            other.initialized.select(i) &
-            (arr.select(i) == other.arr.select(i)))),
+            other.initialized.select(i) & refinement.first)),
     params};
 }
 
@@ -1192,6 +1199,7 @@ MemRef::Layout MemRef::getLayout(
 pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto [loaded, success] = m->load(elemType, bid, (Expr)offset + idx);
+  loaded.lockOps();
 
   return {loaded, (success & inbounds).simplify()};
 }
@@ -1450,4 +1458,16 @@ optional<ValueTy> fromExpr(Expr &&e, mlir::Type ty) {
     return Integer(e);
   }
   return {};
+}
+
+pair<Expr, vector<Expr>> refines(const ValueTy &v_tgt, const ValueTy &v_src) {
+  optional<Expr> refines_opt;
+  vector<Expr> params;
+
+  visit([&](auto &&src, auto &&tgt) {
+    auto typedSrc = (decltype(tgt)) src;
+    tie(refines_opt, params) = tgt.refines(typedSrc);
+  }, v_tgt, v_src);
+
+  return {move(*refines_opt), move(params)};
 }
