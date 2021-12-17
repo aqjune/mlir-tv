@@ -433,7 +433,7 @@ static tuple<State, State, Expr> encodeFinalStates(
 static Results tryValidation(
     const ValidationInput &vinput, bool printOps, bool useAllLogic,
     int64_t &elapsedMillisec) {
-  auto enc = encodeFinalStates(vinput, true);
+  auto enc = encodeFinalStates(vinput, printOps);
   return checkRefinement(
         vinput, get<0>(enc), get<1>(enc), move(get<2>(enc)), useAllLogic,
         elapsedMillisec);
@@ -500,44 +500,50 @@ static Results validate(ValidationInput vinput) {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
   using namespace aop;
-  auto printSematics = [](AbstractionLevel &level, Results &result) {
+  auto printSematics = [](Abstraction &abs, Results &result) {
+    verbose("validate")  << "** Verification Result: "
+        << magic_enum::enum_name(result.code) << "\n";
+
     llvm::outs()
       << "\n===============================================================\n"
-      << "  Current semantics of abstractly defined ops..\n"
-      << "  AbsLevelFpDot: " << magic_enum::enum_name(level.alFpDot) << "\n"
-      << "  AbsLevelFpCast: " << magic_enum::enum_name(level.alFpCast) << "\n"
-      << "  AbsLevelIntDot: " << magic_enum::enum_name(level.alIntDot) << "\n"
-      << "  AbsFpAddSumEncoding: " << magic_enum::enum_name(level.fpAddSumEncoding) << "\n"
-      << "  Verification Result: " << magic_enum::enum_name(result.code) << "\n"
+      << "  Abstractions used for the previous validation:\n"
+      << "  - dot ops (fp): " << magic_enum::enum_name(abs.alFpDot) << "\n"
+      << "  - cast ops (fp): " << magic_enum::enum_name(abs.alFpCast) << "\n"
+      << "  - add/sum ops (fp): "
+      << magic_enum::enum_name(abs.fpAddSumEncoding) << "\n"
+      << "  - dot ops (int): " << magic_enum::enum_name(abs.alIntDot) << "\n"
       << "===============================================================\n\n";
   };
 
   Results result(Results::Code::TIMEOUT);
-  set<AbstractionLevel> checked;
-  priority_queue<AbstractionLevel> queue;
+  set<Abstraction> checked;
+  priority_queue<Abstraction> queue;
 
   queue.push({AbsLevelFpDot::FULLY_ABS,
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
       vinput.isFpAddAssociative ? AbsFpAddSumEncoding::USE_SUM_ONLY :
                   AbsFpAddSumEncoding::DEFAULT,
-      /* printOps */ true,
       /* useAllLogic */false });
+
+  bool isFirst = true;
+  setEncodingOptions(vinput.useMultisetForFpSum);
 
   while (!queue.empty()) {
     auto level = queue.top(); queue.pop();
     if (checked.count(level)) continue;
 
     checked.insert(level);
-    setAbstraction(level.alFpDot, level.alFpCast, level.alIntDot, level.fpAddSumEncoding,
-      vinput.isFpAddAssociative,
-      vinput.unrollIntSum,
-      arg_unroll_fp_sum_bound.getValue(),
-      vinput.f32NonConstsCount, vinput.f32Consts,
-      vinput.f64NonConstsCount, vinput.f64Consts);
-    setEncodingOptions(vinput.useMultisetForFpSum);
+    setAbstraction(level.alFpDot, level.alFpCast, level.alIntDot,
+        level.fpAddSumEncoding,
+        vinput.isFpAddAssociative,
+        vinput.unrollIntSum,
+        arg_unroll_fp_sum_bound.getValue(),
+        vinput.f32NonConstsCount, vinput.f32Consts,
+        vinput.f64NonConstsCount, vinput.f64Consts);
 
-    auto res = tryValidation(vinput, level.printOps, level.useAllLogic, elapsedMillisec);
+    auto res = tryValidation(vinput, isFirst, level.useAllLogic,
+        elapsedMillisec);
     printSematics(level, res);
     if (res.code == Results::INCONSISTENT) {
       return res;
@@ -568,7 +574,6 @@ static Results validate(ValidationInput vinput) {
     if (!checked.count(nextLevel))
       queue.push({nextLevel.alFpDot, nextLevel.alFpCast, nextLevel.alIntDot,
             nextLevel.fpAddSumEncoding,
-            /* printOps */ false,
             /* useAllLogic */vinput.isFpAddAssociative});
 
     /* 4. fp add, sum encoding level */
@@ -578,15 +583,17 @@ static Results validate(ValidationInput vinput) {
       if (usedOps.fpSum)
         queue.push({nextLevel.alFpDot, nextLevel.alFpCast, nextLevel.alIntDot,
             AbsFpAddSumEncoding::UNROLL_TO_ADD,
-            /* printOps */ false,
             /* useAllLogic */vinput.isFpAddAssociative});
     }
+
+    isFirst = false;
   }
 
   if (result.code == Results::TIMEOUT)
     checkIsSrcAlwaysUB(vinput, false, false, elapsedMillisec);
 
-  // If verification failed even when the most concrete semantic is given, return the last results
+  // If verification failed even when with the most concrete semantics,
+  // return the last result
   return result;
 }
 

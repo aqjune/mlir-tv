@@ -1,4 +1,4 @@
-// EXPECT: "AbsLevelFpDot: SUM_MUL"
+// EXPECT: "dot ops (fp): SUM_MUL"
 
 func @f(%a: tensor<?xf32>, %b: tensor<?xf32>) -> tensor<f32> {
   %i = linalg.init_tensor []: tensor<f32>

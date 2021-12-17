@@ -42,30 +42,32 @@ enum class AbsFpAddSumEncoding {
   DEFAULT = 1, // Encode addition using fp_add, fp_sum respectivly
                // (no relation between them)
   UNROLL_TO_ADD = 2, // Unroll sum to add if the size of array is small enough
+                     // This is more concrete semantics than DEFAULT.
 };
 
-struct AbstractionLevel {
+struct Abstraction {
   AbsLevelFpDot alFpDot;
   AbsLevelFpCast alFpCast;
   AbsLevelIntDot alIntDot;
   AbsFpAddSumEncoding fpAddSumEncoding;
-  bool printOps;
   bool useAllLogic;
 
-  // C++ prioirty_queue keep the largest value on top.
-  bool operator < (const AbstractionLevel &other) const {
-    if (fpAddSumEncoding == other.fpAddSumEncoding)
-      if (alFpDot == other.alFpDot)
-        if (alFpCast == other.alFpCast)
-            return alIntDot > other.alIntDot;
-        else
-          return alFpCast > other.alFpCast;
-      else
-        return alFpDot > other.alFpDot;
-    else
-      // Give lowest priority on AbsFpAddSumEncoding
-      // (because "UNROLL_TO_ADD" takes a long time in some tests)
-      return fpAddSumEncoding > other.fpAddSumEncoding;
+  // Given two abstractions l1 and l2, l1 < l2 if l2 is more abstract
+  // than l1.
+  // It's defined so because the top element of a lattice is considered to be
+  // the most abstract one in the programming language world.
+  // Between two concrete abstractions, we give total order by saying l1 < l2
+  // if using l1 is likely to cause bigger slowdown than using l2.
+  bool operator < (const Abstraction &other) const {
+    if (fpAddSumEncoding != other.fpAddSumEncoding) {
+      assert((fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY &&
+              other.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY) ||
+             (fpAddSumEncoding != AbsFpAddSumEncoding::USE_SUM_ONLY &&
+              other.fpAddSumEncoding != AbsFpAddSumEncoding::USE_SUM_ONLY));
+    }
+    return std::tie(fpAddSumEncoding, alFpDot, alFpCast, alIntDot) >
+        std::tie(other.fpAddSumEncoding, other.alFpDot, other.alFpCast,
+                 other.alIntDot);
   }
 };
 
@@ -75,7 +77,8 @@ struct AbstractionLevel {
 //                   size of an array to unroll
 // floatNonConstsCnt: # of non-constant distinct f32 values necessary to
 // validate the transformation.
-// NOTE: This resets the used abstract ops record.
+// NOTE: This resets the used abstract ops record, but does not reset encoding
+//    options (see setEncodingOptions).
 void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
                     AbsFpAddSumEncoding,
                     bool isFpAddAssociative,
