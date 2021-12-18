@@ -1,6 +1,7 @@
 #include "encode.h"
-#include "utils.h"
 #include "abstractops.h"
+#include "opts.h"
+#include "utils.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
@@ -25,6 +26,13 @@
 using namespace smt;
 using namespace std;
 
+llvm::cl::opt<bool> arg_assign_random_to_unsupported_ops(
+      "assign-random-to-unsupported-ops",
+  llvm::cl::desc("Assign a random value to the result of unsupported ops. "
+      "Note that this option is purely for debugging purpose. This flag will "
+      "make the validation result meaningless."),
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
 
 
 // map := (i, j, k) -> (j, k, i)
@@ -2659,16 +2667,51 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
     try { \
       encodeOp(st, op2, encodeMemWriteOps); \
     } catch (UnsupportedException ue) { \
-      if (std::holds_alternative<mlir::Operation *>(ue.getObject())) { \
-        auto *op_ue = std::get<mlir::Operation *>(ue.getObject()); \
-        if (!op_ue) \
-          throw UnsupportedException(&op, ue.getReason()); \
+      if (arg_assign_random_to_unsupported_ops.getValue()) { \
+        assignRandomValue(st, &op, printOps); \
+      } else { \
+        if (std::holds_alternative<mlir::Operation *>(ue.getObject())) { \
+          auto *op_ue = std::get<mlir::Operation *>(ue.getObject()); \
+          if (!op_ue) \
+            throw UnsupportedException(&op, ue.getReason()); \
+        } \
+        throw ue; \
       } \
-      throw ue; \
     } \
     if (callbackAfterEnc) callbackAfterEnc(&op); \
     continue; \
   }
+
+static void assignRandomValue(State &st, mlir::Operation *op, bool printOp) {
+  if (printOp) {
+    llvm::outs() << "    Assigning any value to this op ("
+        << op->getName() << ")..\n";
+  }
+
+  for (auto r: op->getResults()) {
+    auto ty = r.getType();
+    if (auto ity = ty.dyn_cast<mlir::IntegerType>()) {
+      Integer i(0, ity.getIntOrFloatBitWidth());
+      st.regs.add(r, move(i));
+
+    } else if (auto fty = ty.dyn_cast<mlir::FloatType>()) {
+      Float f = Float::constant(llvm::APFloat(0.0), fty);
+      st.regs.add(r, move(f));
+
+    } else if (auto tty = ty.dyn_cast<mlir::RankedTensorType>()) {
+      // Create fresh variables for unknown dimension sizes
+      auto dims = ShapedValue::getDims(tty);
+      static unsigned unknown_tensor = 0;
+      Tensor t(tty.getElementType(), "unknown#" + to_string(unknown_tensor++),
+          move(dims));
+      st.regs.add(r, move(t));
+
+    } else {
+      // TODO: support memref
+      throw UnsupportedException(op, "Cannot assign random value");
+    }
+  }
+}
 
 static void encodeBlock(
     State &st, mlir::Block &block, bool printOps, bool encodeMemWriteOps,
@@ -2773,7 +2816,11 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TransposeOp, encodeMemWriteOps);
 
-    throw UnsupportedException(&op);
+    if (arg_assign_random_to_unsupported_ops.getValue()) {
+      assignRandomValue(st, &op, printOps);
+    } else {
+      throw UnsupportedException(&op);
+    }
   }
   if (printOps)
     llvm::outs() << "\n";
