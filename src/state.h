@@ -3,7 +3,7 @@
 #include "memory.h"
 #include "smt.h"
 #include "value.h"
-#include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include <stack>
 #include <optional>
 #include "mlir/Support/LLVM.h"

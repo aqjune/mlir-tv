@@ -17,11 +17,10 @@ string freshName(string prefix) {
 
 bool useMultiset;
 aop::UsedAbstractOps usedOps;
+aop::Abstraction abstraction;
 
 // ----- Constants and global vars for abstract floating point operations ------
 
-aop::AbsLevelFpDot alFpDot;
-aop::AbsLevelFpCast alFpCast;
 bool isFpAddAssociative;
 bool doUnrollIntSum;
 unsigned maxUnrollFpSumBound;
@@ -31,12 +30,10 @@ optional<aop::AbsFpEncoding> doubleEnc;
 
 // ----- Constants and global vars for abstract int operations ------
 
-aop::AbsLevelIntDot alIntDot;
 map<unsigned, FnDecl> int_sumfn;
 map<unsigned, FnDecl> int_dotfn;
 
 // ----- Constants and global vars for abstract sumf operations ------
-aop::AbsFpAddSumEncoding fpAddSum;
 
 FnDecl getIntSumFn(unsigned bitwidth) {
   auto itr = int_sumfn.find(bitwidth);
@@ -109,19 +106,19 @@ namespace aop {
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
 void setAbstraction(
-    AbsLevelFpDot afd, AbsLevelFpCast afc, AbsLevelIntDot aid, AbsFpAddSumEncoding fas,
+    Abstraction abs,
     bool addAssoc,
     bool unrollIntSum,
     unsigned unrollFpSumBound,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
     unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
-  alFpDot = afd;
-  alFpCast = afc;
-  alIntDot = aid;
-  fpAddSum = fas;
+  abstraction = abs;
   doUnrollIntSum = unrollIntSum;
   maxUnrollFpSumBound = unrollFpSumBound;
   isFpAddAssociative = addAssoc;
+
+  assert(!addAssoc ||
+      abs.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY);
 
   // without suffix f, it will become llvm::APFloat with double semantics
   // Note that 0.0 and 1.0 may already have been added during analysis.
@@ -139,7 +136,7 @@ void setAbstraction(
   floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
   floatEnc->addConstants(floatConsts);
 
-  if (afc == AbsLevelFpCast::PRECISE) {
+  if (abstraction.fpCast == AbsLevelFpCast::PRECISE) {
     unsigned consts_nonzero_limit = 0;
     unsigned const_nonzero_precs = 0, const_max_nonzero_precs = 0;
 
@@ -200,8 +197,11 @@ void setAbstraction(
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
         doublePrecBits, &*floatEnc, "double");
   } else {
+    // doubleBits must be at least as large as floatBits, to represent all
+    // float constants in double.
     const unsigned doubleBits = 
-        log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2);
+        max(log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2),
+            (uint64_t)floatBits);
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
   }
   doubleEnc->addConstants(doubleConsts);
@@ -212,14 +212,11 @@ void setEncodingOptions(bool use_multiset) {
   useMultiset = use_multiset;
 }
 
-AbsLevelFpDot getAbsLevelFpDot() { return alFpDot; }
-AbsLevelFpCast getAbsLevelFpCast() { return alFpCast; }
-AbsLevelIntDot getAbsLevelIntDot() { return alIntDot; }
-AbsFpAddSumEncoding getAbsFpAddSumEncoding() { return fpAddSum; }
-
 bool getFpAddAssociativity() { return isFpAddAssociative; }
 
-bool getFpCastIsPrecise() { return alFpCast == AbsLevelFpCast::PRECISE; }
+bool getFpCastIsPrecise() { 
+  return abstraction.fpCast == AbsLevelFpCast::PRECISE;
+}
 
 AbsFpEncoding &getFloatEncoding() { return *floatEnc; }
 AbsFpEncoding &getDoubleEncoding() { return *doubleEnc; }
@@ -264,9 +261,8 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_addfn.reset();
   fp_mulfn.reset();
   fp_divfn.reset();
-  fp_ultfn.reset();
   fp_hashfn.reset();
-  fp_sum_relations.clear();
+  fp_sums.clear();
 }
 
 FnDecl AbsFpEncoding::getAddFn() {
@@ -314,15 +310,6 @@ FnDecl AbsFpEncoding::getDotFn() {
   if (!fp_dotfn)
     fp_dotfn.emplace({arrs, arrs}, sort(), "fp_dot_" + fn_suffix);
   return *fp_dotfn;
-}
-
-FnDecl AbsFpEncoding::getUltFn() {
-  if (!fp_ultfn) {
-    auto fty = sort();
-    auto fty2 = Sort::bvSort(1); // i1 type (boolean value)
-    fp_ultfn.emplace({fty, fty}, fty2, "fp_ult_" + fn_suffix);
-  }
-  return *fp_ultfn;
 }
 
 FnDecl AbsFpEncoding::getExtendFn(const AbsFpEncoding &tgt) {
@@ -373,18 +360,14 @@ FnDecl AbsFpEncoding::getRoundDirFn() {
 }
 
 size_t AbsFpEncoding::getHashRangeBits() const {
-  uint64_t numRelations = fp_sum_relations.size();
+  uint64_t numSums = fp_sums.size();
   uint64_t maxLength = 0;
-  for (auto &rel: fp_sum_relations) {
-    auto expr = get<1>(rel);
-    uint64_t length;
-    if (!expr.isUInt(length))
-      length = Tensor::MAX_TENSOR_SIZE;
-    if (maxLength < length)
-      maxLength = length;
+
+  for (auto &rel: fp_sums) {
+    maxLength = max(maxLength, rel.len);
   }
 
-  uint64_t bounds = numRelations * numRelations * maxLength;
+  uint64_t bounds = numSums * numSums * maxLength;
   return max((uint64_t)1, log2_ceil(bounds));
 }
 
@@ -395,8 +378,13 @@ uint64_t AbsFpEncoding::getSignBit() const {
 
 void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
   uint64_t value_id = 0;
+  Expr small_value_bits = Expr::mkBV(0, value_bit_info.truncated_bitwidth);
   // prec_offset_map[smaller value]: next precision bit
   map<uint64_t, uint64_t> prec_offset_map;
+
+  auto mkNonzero = [](Expr &&e) {
+    return Expr::mkIte(e == 0, Expr::mkBV(1, e), e);
+  };
 
   // Visit non-negative constants in increasing order.
   for (const auto& fp_const: const_set) {
@@ -407,51 +395,75 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       continue;
     }
 
-    const unsigned limit_value_bitwidth =
-        value_bit_info.limit_bitwidth + value_bit_info.truncated_bitwidth;
     optional<Expr> e_value;
 
     if (value_bit_info.limit_bitwidth == 0 &&
         value_bit_info.prec_bitwidth == 0) {
-      // this encoding is the smallest encoding or does not support casting
+      // This encoding is the smallest encoding or does not support casting
       value_id += 1;
-      e_value = Expr::mkBV(value_id, limit_value_bitwidth);
+      // This naming convention is used by getFpTruncatePrecondition to relate
+      // float and double constants
+      e_value = Expr::mkVar(Sort::bvSort(value_bitwidth),
+                            "fp_const_sval_" + to_string(value_id) + "_");
     } else {
       auto casting_info = getCastingInfo(fp_const);
       assert(casting_info.has_value() &&
              "this encoding requires casting info analysis for constants");
+      assert(value_bit_info.limit_bitwidth > 0 && "limit bits cannot be zero");
+
+      // default zero-init BVs
+      auto limit_bits = Expr::mkBV(0, value_bit_info.limit_bitwidth);
+      auto sv_bits = Expr::mkBV(0, value_bit_info.truncated_bitwidth);
 
       if (!casting_info->zero_limit_bits) {
-        // these values should be mapped to Inf when truncated.
-        // In the higher precision, freshly start value_id with limit bit set
-        const unsigned value_prec_bitwidth = 
-          value_bit_info.truncated_bitwidth + value_bit_info.prec_bitwidth;
-        value_id = max(value_id, (uint64_t)1 << value_prec_bitwidth);
-        e_value = Expr::mkBV(value_id, value_bitwidth);
+        // Rounding becomes inf.
         value_id += 1;
+        const unsigned int sv_prec_bitwidth =
+          value_bit_info.truncated_bitwidth + value_bit_info.prec_bitwidth;
+        auto sv_prec_bits = Expr::mkFreshVar(Sort::bvSort(sv_prec_bitwidth),
+                            "fp_const_sval_prec_bits_");
+
+        limit_bits = mkNonzero(
+            Expr::mkFreshVar(limit_bits, "fp_const_limit_bits_"));
+        e_value = limit_bits.concat(sv_prec_bits);
+
       } else if (!casting_info->zero_prec_bits) {
-        // this value will be rounded to same value,
-        // so do not change smaller_value and increment prec bit.
+        // Rounding loses bits & the result becomes equivalent to the previous
+        // rounding output.
+        // e.g. fp_const is 2.2 (it was 2.1 in the prev. iter)
+        // Do not change smaller_value and increment prec bit.
         auto itr = prec_offset_map.insert({value_id, 1}).first;
         uint64_t prec = itr->second;
         assert(prec < (1ull << value_bit_info.prec_bitwidth));
-        Expr e_prec = Expr::mkBV(prec, value_bit_info.prec_bitwidth);
-        e_value = Expr::mkBV(value_id, limit_value_bitwidth).concat(e_prec);
+
+        auto prec_bits = mkNonzero(Expr::mkFreshVar(
+            Sort::bvSort(value_bit_info.prec_bitwidth),
+            "fp_const_prec_bits"));
+        sv_bits = Expr::mkVar(sv_bits, 
+                              "fp_const_sval_" + to_string(value_id) + "_");
+        e_value = limit_bits.concat(sv_bits).concat(prec_bits);
         // Increase the next precision bit.
         itr->second++;
-      } else {
-        // this value will be rounded to different value,
-        // so assign different smaller_value
-        value_id += 1;
-        e_value = Expr::mkBV(value_id, limit_value_bitwidth);
 
+      } else {
+        // Rounding does not lose bits, but will become a value other than the
+        // previous one
+        // e.g. fp_const is 3.0 (it was 2.2 in the prev. iter)
+        // Assign different smaller_value
+        value_id += 1;
+        sv_bits = Expr::mkVar(sv_bits, 
+                              "fp_const_sval_" + to_string(value_id) + "_");
+        e_value = limit_bits.concat(sv_bits);
         // this encoding may not have prec bits
         if (value_bit_info.prec_bitwidth > 0) {
-          Expr e_prec = Expr::mkBV(0, value_bit_info.prec_bitwidth);
-          e_value = e_value->concat(e_prec);
+          auto prec_bits = Expr::mkBV(0, value_bit_info.prec_bitwidth);
+          e_value = e_value->concat(prec_bits);
         }
       }
     }
+
+    verbose("addConstants") << fp_const.convertToDouble() << ": " << *e_value
+        << "\n";
 
     Expr e_pos = Expr::mkBV(0, SIGN_BITS).concat(*e_value);
     fpconst_absrepr.emplace(fp_const, e_pos);
@@ -497,6 +509,24 @@ vector<pair<llvm::APFloat, Expr>> AbsFpEncoding::getAllConstants() const {
         *fpconst_inf_neg);
 
   return constants;
+}
+
+void AbsFpEncoding::evalConsts(smt::Model model) {
+  for (auto &[k, v]: fpconst_absrepr) {
+    v = model.eval(v);
+  }
+
+  if (fpconst_nan) {
+    *fpconst_nan = model.eval(*fpconst_nan);
+  } else if (fpconst_zero_pos) {
+    *fpconst_zero_pos = model.eval(*fpconst_zero_pos);
+  } else if (fpconst_zero_neg) {
+    *fpconst_zero_neg = model.eval(*fpconst_zero_neg);
+  } else if (fpconst_inf_pos) {
+    *fpconst_inf_pos = model.eval(*fpconst_inf_pos);
+  } else if (fpconst_inf_neg) {
+    *fpconst_inf_neg = model.eval(*fpconst_inf_neg);
+  }
 }
 
 vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
@@ -572,7 +602,7 @@ Expr AbsFpEncoding::neg(const Expr &f) {
 }
 
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
-  if (fpAddSum == AbsFpAddSumEncoding::USE_SUM_ONLY) {
+  if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY) {
     auto i = Index::var("idx", VarType::BOUND);
     auto lambda = Expr::mkLambda(i, Expr::mkIte(i == Index::zero(), _f1, _f2));
     auto n = Index(2);
@@ -784,8 +814,24 @@ Expr AbsFpEncoding::lambdaSum(const smt::Expr &a, const smt::Expr &n) {
       Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
         Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
 
+  uint64_t len;
+  if (getFpAddAssociativity() && n.isUInt(len))
+    fp_sums.push_back({a, {}, len, result});
+
+  return result;
+}
+
+Expr AbsFpEncoding::lambdaSum(const vector<smt::Expr> &elems) {
+  usedOps.fpSum = true;
+
+  assert(elems.size() == 2 && "Currently supports sum of two elems only");
+
+  auto i = Index::var("idx", VarType::BOUND);
+  auto lambda = Expr::mkLambda(i, Expr::mkIte(i == 0, elems[0], elems[1]));
+  Expr result = getSumFn()(lambda);
+
   if (getFpAddAssociativity())
-    fp_sum_relations.push_back({a, n, result});
+    fp_sums.push_back({lambda, elems, elems.size(), result});
 
   return result;
 }
@@ -807,22 +853,37 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
   }
 
   Expr result = getAssocSumFn()(bag);
-  fp_sum_relations.push_back({bag, n, result});
+  fp_sums.push_back({bag, {}, length, result});
 
   return result;
 }
 
 Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
+  return sum(a, n, nullopt);
+}
+
+Expr AbsFpEncoding::sum(const Expr &a, const Expr &n,
+    optional<vector<smt::Expr>> &&elems) {
   if (getFpAddAssociativity() && !n.isNumeral())
     throw UnsupportedException(
         "Only an array of constant length is supported.");
+
   auto length = n.asUInt();
+  if (elems) {
+    assert(length == elems->size());
+  }
 
   optional<Expr> sumExpr;
-  if (fpAddSum == AbsFpAddSumEncoding::USE_SUM_ONLY
-      || fpAddSum == AbsFpAddSumEncoding::DEFAULT) {
-    sumExpr = (getFpAddAssociativity() && useMultiset) ?
-        multisetSum(a, n) :  lambdaSum(a, n);
+  if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY
+      || abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
+    if (getFpAddAssociativity() && useMultiset)
+      sumExpr = multisetSum(a, n);
+    else {
+      if (elems)
+        sumExpr = lambdaSum(*elems);
+      else
+        sumExpr = lambdaSum(a, n);
+    }
   } else {
     if (!length || length > maxUnrollFpSumBound) {
       verbose("fpSum") << "ADD_ONLY applies only array length less than or"
@@ -842,7 +903,6 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
   
   auto ret = Expr::mkIte(n == Index::zero(), zero(true),
       Expr::mkIte(n == Index::one(), a.select(Index(0)), *sumExpr));
-  ret = ret.simplify();
   return ret;
 }
 
@@ -857,7 +917,7 @@ Expr AbsFpEncoding::exp(const Expr &x) {
 }
 
 Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
-  if (alFpDot == AbsLevelFpDot::FULLY_ABS) {
+  if (abstraction.fpDot == AbsLevelFpDot::FULLY_ABS) {
     usedOps.fpDot = true;
     auto i = (Expr)Index::var("idx", VarType::BOUND);
 
@@ -872,7 +932,7 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
     // the case using 'arr1 == arr2'.
     return Expr::mkIte(arr1 == arr2, lhs, lhs + rhs);
 
-  } else if (alFpDot == AbsLevelFpDot::SUM_MUL) {
+  } else if (abstraction.fpDot == AbsLevelFpDot::SUM_MUL) {
     // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     Expr ai = a.select(i), bi = b.select(i);
@@ -883,9 +943,67 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
   llvm_unreachable("Unknown abstraction level for fp dot");
 }
 
-Expr AbsFpEncoding::fult(const Expr &f1, const Expr &f2) {
-  usedOps.fpUlt = true;
-  return getUltFn().apply({f1, f2});
+Expr AbsFpEncoding::cmp(mlir::arith::CmpFPredicate pred,
+                        const Expr &f1, const Expr &f2) {
+  const Expr trueBV = Expr::mkBV(1, 1);
+  const Expr falseBV = Expr::mkBV(0, 1);
+
+  const Expr hasNaN = isnan(f1) | isnan(f2);
+
+  const Expr f1Sign = getSignBit(f1), f2Sign = getSignBit(f2);
+  const Expr f1Magn = getMagnitudeBits(f1), f2Magn = getMagnitudeBits(f2);
+
+  const Expr cmpEQ = Expr::mkIte(f1 == f2 | (f1Magn.isZero() & f2Magn.isZero()),
+                        trueBV, falseBV);
+  const Expr cmpNE = Expr::mkIte(f1 != f2 & !(f1Magn.isZero() & f2Magn.isZero()),
+                        trueBV, falseBV);
+  const Expr cmpLT = Expr::mkIte(f1Sign.ugt(f2Sign), trueBV,
+                      Expr::mkIte(f1Sign.ult(f2Sign), falseBV,
+                      Expr::mkIte(f1Magn == f2Magn, falseBV,
+                      Expr::mkIte(f1Magn.ult(f2Magn) ^ f1Sign.isNonZero(),
+                        trueBV, falseBV))));
+  const Expr cmpGT = Expr::mkIte(f1Sign.ult(f2Sign), trueBV,
+                      Expr::mkIte(f1Sign.ugt(f2Sign), falseBV,
+                      Expr::mkIte(f1Magn == f2Magn, falseBV,
+                      Expr::mkIte(f1Magn.ugt(f2Magn) ^ f1Sign.isNonZero(),
+                        trueBV, falseBV))));
+
+  switch (pred) {
+  case mlir::arith::CmpFPredicate::OEQ:
+    return Expr::mkIte(hasNaN, falseBV, cmpEQ);
+  case mlir::arith::CmpFPredicate::ONE:
+    return Expr::mkIte(hasNaN, falseBV, cmpNE);
+  case mlir::arith::CmpFPredicate::OLE:
+    return Expr::mkIte(hasNaN, falseBV, cmpEQ | cmpLT);
+  case mlir::arith::CmpFPredicate::OLT:
+    return Expr::mkIte(hasNaN, falseBV, cmpLT);
+  case mlir::arith::CmpFPredicate::OGE:
+    return Expr::mkIte(hasNaN, falseBV, cmpEQ | cmpGT);
+  case mlir::arith::CmpFPredicate::OGT:
+    return Expr::mkIte(hasNaN, falseBV, cmpGT);
+  case mlir::arith::CmpFPredicate::UEQ:
+    return Expr::mkIte(hasNaN, trueBV, cmpEQ);
+  case mlir::arith::CmpFPredicate::UNE:
+    return Expr::mkIte(hasNaN, trueBV, cmpNE);
+  case mlir::arith::CmpFPredicate::ULE:
+    return Expr::mkIte(hasNaN, trueBV, cmpEQ | cmpLT);
+  case mlir::arith::CmpFPredicate::ULT:
+    return Expr::mkIte(hasNaN, trueBV, cmpLT);
+  case mlir::arith::CmpFPredicate::UGE:
+    return Expr::mkIte(hasNaN, trueBV, cmpEQ | cmpGT);
+  case mlir::arith::CmpFPredicate::UGT:
+    return Expr::mkIte(hasNaN, trueBV, cmpGT);
+  case mlir::arith::CmpFPredicate::ORD:
+    return Expr::mkIte(hasNaN, falseBV, trueBV);
+  case mlir::arith::CmpFPredicate::UNO:
+    return Expr::mkIte(hasNaN, trueBV, falseBV);
+  case mlir::arith::CmpFPredicate::AlwaysTrue:
+    return trueBV;
+  case mlir::arith::CmpFPredicate::AlwaysFalse:
+    return falseBV;
+  default:
+    throw UnsupportedException("Invalid cmpf predicate");
+  }
 }
 
 Expr AbsFpEncoding::extend(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
@@ -940,8 +1058,8 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   auto sign_pos = Expr::mkBV(0, SIGN_BITS);
   auto value_bits = getMagnitudeBits(f);
   auto limit_bits = getLimitBits(f);
-  auto limit_zero = Expr::mkBV(0, value_bit_info.limit_bitwidth);
-  auto prec_bits = getPrecisionBits(value_bits);
+  auto limit_zero = Expr::mkBV(0, limit_bits);
+  auto prec_bits = getPrecisionBits(f);
 
   const auto round_dir = getRoundDirFn().apply(value_bits);
   const auto floored_value = getTruncatedBits(value_bits);
@@ -967,35 +1085,33 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
   if (useMultiset) {
     // precondition between `bag equality <-> assoc_sumfn`
     Expr precond = Expr::mkBool(true);
-    for (unsigned i = 0; i < fp_sum_relations.size(); i ++) {
-      for (unsigned j = i + 1; j < fp_sum_relations.size(); j ++) {
-        auto [abag, an, asum] = fp_sum_relations[i];
-        auto [bbag, bn, bsum] = fp_sum_relations[j];
-        uint64_t alen, blen;
-        if (!an.isUInt(alen) || !bn.isUInt(blen) || alen != blen) continue;
+    for (unsigned i = 0; i < fp_sums.size(); i ++) {
+      for (unsigned j = i + 1; j < fp_sums.size(); j ++) {
+        auto [abag, aelems, alen, asum] = fp_sums[i];
+        auto [bbag, belems, blen, bsum] = fp_sums[j];
+
         precond = precond & (abag == bbag).implies(asum == bsum);
       }
     }
-    precond = precond.simplify();
     return precond;
   }
 
-  vector<optional<Expr>> hashValues(fp_sum_relations.size());
-  for (unsigned i = 0; i < fp_sum_relations.size(); i ++) {
-    auto [a, an, asum] = fp_sum_relations[i];
-    uint64_t alen;
-    if (!an.isUInt(alen)) continue;
+  vector<optional<Expr>> hashValues(fp_sums.size());
+  auto hashfn = getHashFnForAddAssoc();
 
-    auto hashfn = getHashFnForAddAssoc();
+  for (unsigned i = 0; i < fp_sums.size(); i ++) {
+    const auto &[a, aelems, alen, asum] = fp_sums[i];
+
     auto aVal = Expr::mkBV(0, getHashRangeBits());
 
     for (unsigned j = 0; j < alen; j ++) {
-      auto elem = (a.select(Index(j))).simplify();
+      auto elem = !aelems.empty() ? aelems[j] : a.select(Index(j));
+
       optional<Expr> current;
       for (unsigned k = 0; k < i; k ++) {
-        auto [b, bn, bsum] = fp_sum_relations[k];
-        auto other = bsum.simplify();
-        if (elem.isIdentical(other)) current = hashValues[k];
+        const auto &[b, belems, blen, bsum] = fp_sums[k];
+        if ((bsum == elem).simplify().isTrue())
+          current = hashValues[k];
       }
       aVal = aVal + current.value_or(hashfn.apply(elem));
     }
@@ -1004,27 +1120,30 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
 
   // precondition between `hashfn <-> sumfn`
   Expr precond = Expr::mkBool(true);
-  for (unsigned i = 0; i < fp_sum_relations.size(); i ++) {
-    for (unsigned j = i + 1; j < fp_sum_relations.size(); j ++) {
-      auto [a, an, asum] = fp_sum_relations[i];
-      auto [b, bn, bsum] = fp_sum_relations[j];
-      uint64_t alen, blen;
-      if (!an.isUInt(alen) || !bn.isUInt(blen)) continue;
+  for (unsigned i = 0; i < fp_sums.size(); i ++) {
+    const auto &[a, aelems, alen, asum] = fp_sums[i];
+
+    for (unsigned j = i + 1; j < fp_sums.size(); j ++) {
+      const auto &[b, belems, blen, bsum] = fp_sums[j];
+
       // if addf, sumfn are repective, we only consider same length array
-      if (fpAddSum == AbsFpAddSumEncoding::DEFAULT && alen != blen) continue;
+      if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT &&
+          alen != blen)
+        continue;
 
       auto aVal = *hashValues[i];
       auto bVal = *hashValues[j];
       // precond: sumfn(A) != sumfn(B) -> hashfn(A) != hashfn(B)
-      // This means if two summations are different, we can find concrete hash function that hashes into different value.
+      // This means if two summations are different, we can find concrete hash
+      // function that hashes into different value.
       auto associativity = (!(asum == bsum)).implies(!(aVal == bVal));
       precond = precond & associativity;
     }
   }
 
-  // To support summation without identity equals to orginal one sum([a])=sum([a, 0, 0])
-  // add  precondition for hash(-0) = 0
-  auto hashfn = getHashFnForAddAssoc();
+  // To support summation without identity equals to orginal one
+  //   sum([a])=sum([a, 0, 0])
+  // add a precondition for hash(-0) = 0
   auto fpAddIdentity = zero(true);
   auto hashIdentity = Expr::mkBV(0, getHashRangeBits());
   precond = precond & (hashfn.apply(fpAddIdentity) == hashIdentity);
@@ -1036,20 +1155,90 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
 Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
   Expr precond = Expr::mkBool(true);
 
-  for (auto &[fp, absrepr] : fpconst_absrepr) {
-    if (!fp.isNegative()) {
-      auto casting_info = *getCastingInfo(fp);
-      auto value_bits = getMagnitudeBits(absrepr);
+  // keep track of value_id of fp_const_sval on our own
+  uint64_t value_id = 0;
+  bool loses_info; // dummy
+  auto prev_tgt_fp = llvm::APFloat(0.0f);
+  for (const auto &[fp, absrepr] : fpconst_absrepr) {
+    // only value bits are relevant in truncation
+    if (fp.isNegative())
+      continue;
+
+    const auto casting_info = *getCastingInfo(fp);
+    if (casting_info.zero_prec_bits) {
+      auto tgt_fp = fp;
+      tgt_fp.convert(tgt.semantics, llvm::APFloat::rmTowardZero, &loses_info);
+      bool isEpsilon = 
+        (tgt_fp.bitcastToAPInt() - prev_tgt_fp.bitcastToAPInt()).isOne();
+
+      if (isEpsilon) {
+        // remove the gap between two adjacent values
+        const auto sv_bitwidth = value_bit_info.truncated_bitwidth;
+        const auto prev_var = Expr::mkVar(Sort::bvSort(sv_bitwidth),
+                                "fp_const_sval_" + to_string(value_id) + "_");
+        const auto var = Expr::mkVar(Sort::bvSort(sv_bitwidth), 
+                          "fp_const_sval_" + to_string(value_id + 1) + "_");
+        precond &= var == (prev_var + 1);
+
+        verbose("getFpTruncatePrecondition") << "("
+            << prev_tgt_fp.convertToDouble() << ", "
+            << tgt_fp.convertToDouble() << "): " << var << " == "
+            << (prev_var + 1) << '\n';
+      }
+      value_id += 1;
+      prev_tgt_fp = tgt_fp;
+    } else {
+      const auto value_bits = getMagnitudeBits(absrepr);
       if (casting_info.is_rounded_upward) {
-        precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(1, 1));
+        auto e = (getRoundDirFn().apply({value_bits}) == Expr::mkBV(1, 1));
+        verbose("getFpTruncatePrecondition") << fp.convertToDouble() << ": "
+            << e << '\n';
+
+        precond &= e;
       } else {
-        precond &= (getRoundDirFn().apply({value_bits}) == Expr::mkBV(0, 1));
+        auto e = (getRoundDirFn().apply({value_bits}) == Expr::mkBV(0, 1));
+        verbose("getFpTruncatePrecondition") << fp.convertToDouble() << ": "
+            << e << '\n';
+
+        precond &= e;
       }
     }
   }
 
-  precond = precond.simplify();
   return precond;
+}
+
+Expr AbsFpEncoding::getFpConstantPrecondition() {
+  Expr precond = Expr::mkBool(true);
+  
+  auto prev_fp = llvm::APFloat::getInf(semantics, true);
+  auto prev_absrepr = infinity(true);
+  bool firstItr = true;
+
+  for (const auto &[fp, absrepr] : fpconst_absrepr) {
+    assert(!fp.isInfinity() && !fp.isZero());
+
+    if (!fp.isNegative()) {
+      // SMT encoding of x and -x is equivalent modulo sign bit; exit early
+      break;
+    }
+
+    precond &= prev_absrepr.ugt(absrepr);
+    verbose("getFpConstantPrecondition") << prev_fp.convertToDouble()
+        << " < " << fp.convertToDouble() << ": "
+        << absrepr << " < " << prev_absrepr << "\n";
+
+    prev_fp = fp;
+    prev_absrepr = absrepr;
+    firstItr = false;
+  }
+  if (!fpconst_absrepr.empty()) {
+    precond &= prev_absrepr.ugt(zero(true));
+    verbose("getFpConstantPrecondition") << prev_fp.convertToDouble()
+        << " < -0.0: " << zero(true) << " < " << prev_absrepr << "\n";
+  }
+
+  return precond.simplify();
 }
 
 Expr getFpAssociativePrecondition() {
@@ -1059,37 +1248,28 @@ Expr getFpAssociativePrecondition() {
   Expr cond = Expr::mkBool(true);
   if (floatEnc)
     cond &= floatEnc->getFpAssociativePrecondition();
-  // TODO: double
 
-  return cond;
-}
-
-Expr getFpUltPrecondition() {
-  Expr cond = Expr::mkBool(true);
-
-  if (floatEnc) {
-    auto constants = floatEnc->getAllConstants();
-    for (auto &[const1, expr1]: constants) {
-      for (auto &[const2, expr2]: constants) {
-        if (const1.compare(const2) == llvm::APFloat::cmpLessThan ||
-              const1.compare(const2) == llvm::APFloat::cmpUnordered) {
-          cond = cond & floatEnc->fult(expr1, expr2) == Integer::boolTrue();
-        }
-      }
-    }
-  }
-  // TODO: double
+  if (doubleEnc)
+    cond &= doubleEnc->getFpAssociativePrecondition();
 
   return cond;
 }
 
 Expr getFpTruncatePrecondition() {
   // Calling this function doesn't make sense if casting is imprecise
-  assert(alFpCast == AbsLevelFpCast::PRECISE);
+  assert(abstraction.fpCast == AbsLevelFpCast::PRECISE);
 
-  // if alFpCast is true, floatEnc and doubleEnc will exist
+  // if fpCast is true, floatEnc and doubleEnc will exist
   Expr cond = doubleEnc->getFpTruncatePrecondition(*floatEnc);
   return cond;
+}
+
+void evalConsts(smt::Model model) {
+  if (floatEnc)
+    floatEnc->evalConsts(model);
+
+  if (doubleEnc)
+    doubleEnc->evalConsts(model);
 }
 
 Expr AbsFpEncoding::getSignBit(const smt::Expr &f) const {
@@ -1119,6 +1299,18 @@ optional<Expr> AbsFpEncoding::getPrecisionBits(const smt::Expr &f) const {
   return f.extract(value_bit_info.prec_bitwidth - 1, 0);
 }
 
+Expr getFpConstantPrecondition() {
+  Expr cond = Expr::mkBool(true);
+
+  if (floatEnc) {
+    cond &= floatEnc->getFpConstantPrecondition();
+  }
+  if (doubleEnc) {
+    cond &= doubleEnc->getFpConstantPrecondition();
+  }
+
+  return cond.simplify();
+}
 
 // ----- Integer operations ------
 
@@ -1148,7 +1340,7 @@ Expr intSum(const Expr &a, const Expr &n) {
 }
 
 Expr intDot(const Expr &a, const Expr &b, const Expr &n) {
-  if (alIntDot == AbsLevelIntDot::FULLY_ABS) {
+  if (abstraction.intDot == AbsLevelIntDot::FULLY_ABS) {
     usedOps.intDot = true;
 
     auto i = (Expr)Index::var("idx", VarType::BOUND);
@@ -1165,7 +1357,7 @@ Expr intDot(const Expr &a, const Expr &b, const Expr &n) {
         Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, zero))});
     return lhs + rhs;
 
-  } else if (alIntDot == AbsLevelIntDot::SUM_MUL) {
+  } else if (abstraction.intDot == AbsLevelIntDot::SUM_MUL) {
     auto i = (Expr)Index::var("idx", VarType::BOUND);
     Expr ai = a.select(i), bi = b.select(i);
     Expr arr = Expr::mkLambda(i, ai * bi);

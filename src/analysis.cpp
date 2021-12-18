@@ -198,6 +198,13 @@ void analyzeOp(mlir::tosa::ConstOp op, AnalysisResult &res) {
 }
 
 template<>
+void analyzeOp(mlir::tosa::ClampOp op, AnalysisResult &res) {
+  auto ty = mlir::Float32Type::get(op.getContext());
+  analyzeAPFloat(ty, op.min_fp(), res);
+  analyzeAPFloat(ty, op.max_fp(), res);
+}
+
+template<>
 void analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
   // If generic loop has reduction loops, then result is not elementwise
   auto indexingMaps = op.indexing_maps().getValue();
@@ -242,6 +249,8 @@ static void analyzeBlock(
       res.isElementwiseFPOps = false;
       continue;
     }
+
+    ANALYZE(op, mlir::tosa::ClampOp, res);
 
     // Detect global vars.
     // # fps & blocks are already increased by the loop above.

@@ -2,6 +2,7 @@
 
 #include "smt.h"
 #include "llvm/ADT/APFloat.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <vector>
 #include <set>
@@ -15,7 +16,6 @@ struct UsedAbstractOps {
   bool fpMul;
   bool fpDiv;
   bool fpSum;
-  bool fpUlt;
   bool fpCastRound;
   // Int ops
   bool intDot;
@@ -43,6 +43,14 @@ enum class AbsFpAddSumEncoding {
   DEFAULT = 1, // Encode addition using fp_add, fp_sum respectivly
                // (no relation between them)
   UNROLL_TO_ADD = 2, // Unroll sum to add if the size of array is small enough
+                     // This is more concrete semantics than DEFAULT.
+};
+
+struct Abstraction {
+  AbsLevelFpDot fpDot;
+  AbsLevelFpCast fpCast;
+  AbsLevelIntDot intDot;
+  AbsFpAddSumEncoding fpAddSumEncoding;
 };
 
 // unrollIntSum: Fully unroll sum(arr) where arr is an int array of const size
@@ -51,9 +59,9 @@ enum class AbsFpAddSumEncoding {
 //                   size of an array to unroll
 // floatNonConstsCnt: # of non-constant distinct f32 values necessary to
 // validate the transformation.
-// NOTE: This resets the used abstract ops record.
-void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
-                    AbsFpAddSumEncoding,
+// NOTE: This resets the used abstract ops record, but does not reset encoding
+//    options (see setEncodingOptions).
+void setAbstraction(Abstraction abs,
                     bool isFpAddAssociative,
                     bool unrollIntSum,
                     unsigned unrollFpSumBound,
@@ -65,16 +73,14 @@ void setAbstraction(AbsLevelFpDot, AbsLevelFpCast, AbsLevelIntDot,
 // useMultiset: To encode commutativity of fp summation, use multiset?
 void setEncodingOptions(bool useMultiset);
 
-AbsLevelFpDot getAbsLevelFpDot();
-AbsLevelFpCast getAbsLevelFpCast();
-AbsLevelIntDot getAbsLevelIntDot();
-AbsFpAddSumEncoding getAbsFpAddSumEncoding();
 bool getFpAddAssociativity();
 bool getFpCastIsPrecise();
 
 smt::Expr getFpTruncatePrecondition();
 smt::Expr getFpAssociativePrecondition();
-smt::Expr getFpUltPrecondition();
+smt::Expr getFpConstantPrecondition();
+
+void evalConsts(smt::Model model);
 
 smt::Expr intSum(const smt::Expr &arr, const smt::Expr &n);
 smt::Expr intDot(const smt::Expr &arr1, const smt::Expr &arr2,
@@ -93,7 +99,6 @@ private:
   std::optional<smt::Expr> fpconst_inf_neg;
   // Abstract representation of valid fp constants.
   std::map<llvm::APFloat, smt::Expr> fpconst_absrepr;
-  uint64_t fpconst_absrepr_num = 0;
 
   const static unsigned SIGN_BITS = 1;
   // The BV width of abstract fp encoding.
@@ -113,7 +118,15 @@ private:
   };
   ValueBitInfo value_bit_info;
 
-  std::vector<std::tuple<smt::Expr, smt::Expr, smt::Expr>> fp_sum_relations;
+  // A summation of an array having static length
+  struct FpSumInfo {
+    smt::Expr arr;
+    // arrElems can be empty.
+    std::vector<smt::Expr> arrElems;
+    uint64_t len;
+    smt::Expr sumExpr;
+  };
+  std::vector<FpSumInfo> fp_sums;
 
   // These are lazily created.
   std::optional<smt::FnDecl> fp_sumfn;
@@ -122,7 +135,6 @@ private:
   std::optional<smt::FnDecl> fp_addfn;
   std::optional<smt::FnDecl> fp_mulfn;
   std::optional<smt::FnDecl> fp_divfn;
-  std::optional<smt::FnDecl> fp_ultfn;
   std::optional<smt::FnDecl> fp_extendfn;
   std::optional<smt::FnDecl> fp_truncatefn;
   std::optional<smt::FnDecl> fp_expfn;
@@ -164,7 +176,6 @@ private:
   smt::FnDecl getAssocSumFn();
   smt::FnDecl getSumFn();
   smt::FnDecl getDotFn();
-  smt::FnDecl getUltFn();
   smt::FnDecl getExtendFn(const AbsFpEncoding &tgt);
   smt::FnDecl getTruncateFn(const AbsFpEncoding &tgt);
   smt::FnDecl getExpFn();
@@ -183,6 +194,7 @@ public:
   smt::Expr nan() const;
 
   std::vector<std::pair<llvm::APFloat, smt::Expr>> getAllConstants() const;
+  void evalConsts(smt::Model model);
   std::vector<llvm::APFloat> possibleConsts(const smt::Expr &e) const;
   smt::Expr isnan(const smt::Expr &f);
   smt::Expr iszero(const smt::Expr &f, bool isNegative);
@@ -196,14 +208,21 @@ public:
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr exp(const smt::Expr &x);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
-  smt::Expr fult(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
+  smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
+      const smt::Expr &f2);
   smt::Expr getFpAssociativePrecondition();
   smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
+  smt::Expr getFpConstantPrecondition();
 
 private:
+  // If elems != nullopt, a must be
+  //    lambda i, ite(i=0, elems[0], ite(i = 1, elems[1], ...))
+  smt::Expr sum(const smt::Expr &a, const smt::Expr &n,
+      std::optional<std::vector<smt::Expr>> &&elems);
   smt::Expr lambdaSum(const smt::Expr &a, const smt::Expr &n);
+  smt::Expr lambdaSum(const std::vector<smt::Expr> &elems);
   smt::Expr multisetSum(const smt::Expr &a, const smt::Expr &n);
 
   smt::Expr getSignBit(const smt::Expr &f) const;

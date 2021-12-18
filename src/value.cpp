@@ -1,4 +1,3 @@
-#include "abstractops.h"
 #include "memory.h"
 #include "smt.h"
 #include "smtmatchers.h"
@@ -95,9 +94,10 @@ Index Index::var(string &&name, VarType varty) {
 }
 vector<Expr> Index::boundIndexVars(unsigned n) {
   vector<Expr> idxs;
+  static int count = 0;
   for (unsigned i = 0; i < n; i ++) {
     idxs.push_back(
-      Index::var("i" + std::to_string(i), VarType::BOUND));
+      Index::var("i" + std::to_string(count++), VarType::BOUND));
   }
   return idxs;
 }
@@ -203,8 +203,9 @@ Float Float::div(const Float &b) const {
   return Float(aop::getFpEncoding(type).div(e, b.e), type);
 }
 
-Integer Float::fult(const Float &b) const {
-  return Integer(aop::getFpEncoding(type).fult(e, b.e));
+Integer Float::cmp(const mlir::arith::CmpFPredicate pred, const Float &b)
+    const {
+  return Integer(aop::getFpEncoding(type).cmp(pred, e, b.e));
 }
 
 Float Float::abs() const {
@@ -652,6 +653,7 @@ Tensor Tensor::elementwiseBinOp(
 
   auto idxvars = Index::boundIndexVars(getRank());
   Expr elemout = f(get(idxvars).first, b.get(idxvars).first);
+  assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
   return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);
@@ -661,6 +663,7 @@ Tensor Tensor::elementwiseUnaryOp(
     mlir::Type resultElemType, const function<Expr(Expr &&)> &f) const {
   auto idxvars = Index::boundIndexVars(getRank());
   Expr elemout = f(get(idxvars).first);
+  assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
   return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);

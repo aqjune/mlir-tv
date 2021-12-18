@@ -20,6 +20,7 @@
 #include <sstream>
 #include <variant>
 #include <vector>
+#include <queue>
 
 using namespace smt;
 using namespace std;
@@ -244,6 +245,7 @@ static Results checkRefinement(
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res.hasSat()) {
       llvm::outs() << "== Result: " << msg << "\n";
+      aop::evalConsts(s.getModel());
       printCounterEx(
           s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx,
           memElemType);
@@ -413,11 +415,10 @@ static tuple<State, State, Expr> encodeFinalStates(
   State st_tgt = encodeFinalState(
       vinput, move(initMemTgt), printOps, false, args, preconds);
 
+  preconds.push_back(aop::getFpConstantPrecondition());
+
   if (aop::getFpAddAssociativity())
     preconds.push_back(aop::getFpAssociativePrecondition());
-
-  if(aop::getUsedAbstractOps().fpUlt)
-    preconds.push_back(aop::getFpUltPrecondition());
 
   if (aop::getFpCastIsPrecise())
     preconds.push_back(aop::getFpTruncatePrecondition());
@@ -432,7 +433,7 @@ static tuple<State, State, Expr> encodeFinalStates(
 static Results tryValidation(
     const ValidationInput &vinput, bool printOps, bool useAllLogic,
     int64_t &elapsedMillisec) {
-  auto enc = encodeFinalStates(vinput, true);
+  auto enc = encodeFinalStates(vinput, printOps);
   return checkRefinement(
         vinput, get<0>(enc), get<1>(enc), move(get<2>(enc)), useAllLogic,
         elapsedMillisec);
@@ -446,11 +447,16 @@ static void checkIsSrcAlwaysUB(
 
   // Set the abstract level to be as concrete as possible because we may not
   // be able to detect always-UB cases
-  aop::setAbstraction(
-      aop::AbsLevelFpDot::SUM_MUL,
-      aop::AbsLevelFpCast::PRECISE,
-      aop::AbsLevelIntDot::SUM_MUL,
-      aop::AbsFpAddSumEncoding::UNROLL_TO_ADD,
+  aop::Abstraction concreteAbs = {
+    .fpDot = aop::AbsLevelFpDot::SUM_MUL,
+    .fpCast = aop::AbsLevelFpCast::PRECISE,
+    .intDot = aop::AbsLevelIntDot::SUM_MUL,
+    .fpAddSumEncoding =
+        vinput.isFpAddAssociative ?
+          aop::AbsFpAddSumEncoding::USE_SUM_ONLY:
+          aop::AbsFpAddSumEncoding::UNROLL_TO_ADD
+  };
+  aop::setAbstraction(concreteAbs,
       vinput.isFpAddAssociative,
       vinput.unrollIntSum,
       arg_unroll_fp_sum_bound.getValue(),
@@ -499,120 +505,122 @@ static Results validate(ValidationInput vinput) {
     llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
   });
   using namespace aop;
-  auto printSematics = [](AbsLevelFpDot afd, AbsLevelFpCast afc,
-      AbsLevelIntDot aid, AbsFpAddSumEncoding fas) {
+  auto printSematics = [](Abstraction &abs, Results &result) {
+    verbose("validate")  << "** Verification Result: "
+        << magic_enum::enum_name(result.code) << "\n";
+
     llvm::outs()
       << "\n===============================================================\n"
-      << "  Giving more precise semantics to abstractly defined ops...\n"
-      << "  AbsLevelFpDot: " << magic_enum::enum_name(afd) << "\n"
-      << "  AbsLevelFpCast: " << magic_enum::enum_name(afc) << "\n"
-      << "  AbsLevelIntDot: " << magic_enum::enum_name(aid) << "\n"
-      << "  AbsFpAddSumEncoding: " << magic_enum::enum_name(fas) << "\n"
+      << "  Abstractions used for the validation:\n"
+      << "  - dot ops (fp): " << magic_enum::enum_name(abs.fpDot) << "\n"
+      << "  - cast ops (fp): " << magic_enum::enum_name(abs.fpCast) << "\n"
+      << "  - add/sum ops (fp): "
+      << magic_enum::enum_name(abs.fpAddSumEncoding) << "\n"
+      << "  - dot ops (int): " << magic_enum::enum_name(abs.intDot) << "\n"
       << "===============================================================\n\n";
   };
 
-  bool fpAssocAdd = vinput.isFpAddAssociative;
-  setAbstraction(
-      AbsLevelFpDot::FULLY_ABS,
+  Results result(Results::Code::TIMEOUT);
+  // (abstraction, use ALL logic?)
+  queue<pair<Abstraction, bool>> queue;
+
+  queue.push({{AbsLevelFpDot::FULLY_ABS,
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
-      fpAssocAdd ? AbsFpAddSumEncoding::USE_SUM_ONLY :
-                   AbsFpAddSumEncoding::DEFAULT,
-      fpAssocAdd,
-      vinput.unrollIntSum,
-      arg_unroll_fp_sum_bound.getValue(),
-      vinput.f32NonConstsCount, vinput.f32Consts,
-      vinput.f64NonConstsCount, vinput.f64Consts);
+      vinput.isFpAddAssociative ? AbsFpAddSumEncoding::USE_SUM_ONLY :
+                  AbsFpAddSumEncoding::DEFAULT},
+      /* useAllLogic */false });
+
+  unsigned itrCount = 0;
   setEncodingOptions(vinput.useMultisetForFpSum);
+  const string dumpSMTPath = vinput.dumpSMTPath;
 
-  auto res = tryValidation(vinput, true, false, elapsedMillisec);
+  while (!queue.empty()) {
+    auto [abs, useAllLogic] = queue.front();
+    queue.pop();
 
-  if (res.code == Results::INCONSISTENT)
-    return res;
-  else if (res.code == Results::SUCCESS) {
-    // Check whether it is always UB
-    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, false,
-        elapsedMillisec);
-    return res;
+    if (itrCount > 0)
+      llvm::outs() << "Validating the transformation with a refined "
+          "abstraction...\n";
+
+    setAbstraction(abs,
+        vinput.isFpAddAssociative,
+        vinput.unrollIntSum,
+        arg_unroll_fp_sum_bound.getValue(),
+        vinput.f32NonConstsCount, vinput.f32Consts,
+        vinput.f64NonConstsCount, vinput.f64Consts);
+
+    if (!dumpSMTPath.empty()) {
+      vinput.dumpSMTPath = dumpSMTPath;
+      if (itrCount > 0)
+        vinput.dumpSMTPath += "_refined_" + to_string(itrCount);
+    }
+
+    bool printOps = itrCount == 0;
+    auto res = tryValidation(vinput, printOps, useAllLogic, elapsedMillisec);
+    printSematics(abs, res);
+    if (res.code == Results::INCONSISTENT) {
+      return res;
+    } else if (res.code == Results::SUCCESS) {
+      checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, false, elapsedMillisec);
+      return res;
+    } else {
+      result = res;
+    }
+
+    // Do refinement of the abstraction.
+    // Perform refinement in a lock-step manner to avoid combinatorial explosion
+    auto usedOps = aop::getUsedAbstractOps();
+    auto nextAbs = abs;
+    bool isChanged = false;
+    /* 1. fp dot abstraction level */
+    if (abs.fpDot == AbsLevelFpDot::FULLY_ABS) {
+      if (usedOps.fpDot || vinput.isFpAddAssociative) {
+        nextAbs.fpDot = AbsLevelFpDot::SUM_MUL;
+        isChanged = true;
+      }
+    }
+    /* 2. fp cast abstraction level */
+    if (abs.fpCast == AbsLevelFpCast::FULLY_ABS) {
+      if (usedOps.fpCastRound) {
+        nextAbs.fpCast = AbsLevelFpCast::PRECISE;
+        isChanged = true;
+      }
+    }
+    /* 3. int dot abstraction level */
+    if (abs.intDot == AbsLevelIntDot::FULLY_ABS) {
+      if (usedOps.intDot && usedOps.intSum) {
+        nextAbs.intDot = AbsLevelIntDot::SUM_MUL;
+        isChanged = true;
+      }
+    }
+
+    if (isChanged) {
+      queue.push({nextAbs, /* useAllLogic */vinput.isFpAddAssociative});
+    } else {
+      /* 4. fp add, sum encoding level */
+      // Since UNROLL_TO_ADD may cause big slowdown, turn in off at the end
+      // only.
+      // Do not refine fpAddSumEncoding if it is USE_SUM_ONLY.
+      //  USE_SUM_ONLY is used only when --associative is given, and it cannot
+      //  be refined further.
+      if (abs.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
+        if (usedOps.fpSum) {
+          nextAbs.fpAddSumEncoding = AbsFpAddSumEncoding::UNROLL_TO_ADD;
+          queue.push({nextAbs, /* useAllLogic */vinput.isFpAddAssociative});
+        }
+      }
+    }
+
+    ++itrCount;
   }
 
-  auto usedOps = aop::getUsedAbstractOps();
-  // dot = mul + sum?
-  bool useSumMulForFpDot = usedOps.fpDot;
-  bool useSumMulForIntDot = usedOps.intDot && usedOps.intSum; // Eh.. int mul?
-  bool useAddFOnly = !fpAssocAdd && usedOps.fpSum;
-  bool fpCastRound = usedOps.fpCastRound;
-  bool tryRefinedAbstraction =
-      useSumMulForFpDot || fpAssocAdd || useSumMulForIntDot || fpCastRound ||
-      useAddFOnly;
+  if (result.code == Results::TIMEOUT)
+    checkIsSrcAlwaysUB(vinput, false, false, elapsedMillisec);
 
-  if (!tryRefinedAbstraction)
-    return res;
-
-  // Refine the current abstraction.
-  setAbstraction(
-      (useSumMulForFpDot || fpAssocAdd) ?
-          AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
-      fpCastRound ? AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
-      useSumMulForIntDot? AbsLevelIntDot::SUM_MUL: AbsLevelIntDot::FULLY_ABS,
-      fpAssocAdd ?  AbsFpAddSumEncoding::USE_SUM_ONLY :
-        (useAddFOnly ? AbsFpAddSumEncoding::UNROLL_TO_ADD :
-                       AbsFpAddSumEncoding::DEFAULT),
-      fpAssocAdd,
-      vinput.unrollIntSum,
-      arg_unroll_fp_sum_bound.getValue(),
-
-      vinput.f32NonConstsCount, vinput.f32Consts,
-      vinput.f64NonConstsCount, vinput.f64Consts);
-  setEncodingOptions(vinput.useMultisetForFpSum);
-
-  if (!vinput.dumpSMTPath.empty())
-    vinput.dumpSMTPath += "_refine2";
-
-  printSematics(getAbsLevelFpDot(), getAbsLevelFpCast(), getAbsLevelIntDot(),
-                           getAbsFpAddSumEncoding());
-
-  bool useAllLogic = fpAssocAdd;
-  res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
-  if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT) {
-    // Check whether it is always UB
-    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, useAllLogic,
-                       elapsedMillisec);
-    return res;
-  }
-
-  usedOps = aop::getUsedAbstractOps();
-  bool tryThirdRefinedAbstraction = !fpAssocAdd && usedOps.fpSum;
-  if (!tryThirdRefinedAbstraction)
-    return res;
-
-  if (!vinput.dumpSMTPath.empty())
-    vinput.dumpSMTPath += "_refine3";
-
-  // Refine the current abstraction.
-  setAbstraction(
-      (useSumMulForFpDot || fpAssocAdd) ?
-          AbsLevelFpDot::SUM_MUL : AbsLevelFpDot::FULLY_ABS,
-      fpCastRound ?        AbsLevelFpCast::PRECISE : AbsLevelFpCast::FULLY_ABS,
-      useSumMulForIntDot ? AbsLevelIntDot::SUM_MUL : AbsLevelIntDot::FULLY_ABS,
-      AbsFpAddSumEncoding::UNROLL_TO_ADD,
-      fpAssocAdd,
-      vinput.unrollIntSum,
-      arg_unroll_fp_sum_bound.getValue(),
-
-      vinput.f32NonConstsCount, vinput.f32Consts,
-      vinput.f64NonConstsCount, vinput.f64Consts);
-  setEncodingOptions(vinput.useMultisetForFpSum);
-
-  printSematics(getAbsLevelFpDot(), getAbsLevelFpCast(), getAbsLevelIntDot(),
-                           getAbsFpAddSumEncoding());
-
-  res = tryValidation(vinput, false, useAllLogic, elapsedMillisec);
-  if (res.code == Results::SUCCESS || res.code == Results::TIMEOUT)
-    // Check whether it is always UB
-    checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, useAllLogic,
-                       elapsedMillisec);
-  return res;
+  // If verification failed even when with the most concrete semantics,
+  // return the last result
+  return result;
 }
 
 static vector<mlir::memref::GlobalOp> mergeGlobals(

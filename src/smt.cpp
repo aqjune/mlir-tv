@@ -446,7 +446,9 @@ Expr Expr::urem(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
   uint64_t a, b;
-  if (isUInt(a) && rhs.isUInt(b))
+  // If divisor is zero, follow the solver's behavior
+  // (see also: rewriter.hi_div0 in Z3)
+  if (isUInt(a) && rhs.isUInt(b) && b != 0)
     return mkBV(a % b, rhs.bitwidth());
 
   Expr e;
@@ -464,7 +466,9 @@ Expr Expr::udiv(const Expr& rhs) const {
     return *this;
 
   uint64_t a, b;
-  if (isUInt(a) && rhs.isUInt(b))
+  // If divisor is zero, follow the solver's behavior
+  // (see also: rewriter.hi_div0 in Z3)
+  if (isUInt(a) && rhs.isUInt(b) && b != 0)
     return mkBV(a / b, rhs.bitwidth());
 
   Expr e;
@@ -485,15 +489,43 @@ Expr Expr::ult(const Expr& rhs) const {
     using namespace matchers;
     optional<Expr> dummy, divisor;
     uint64_t a, b;
+    // (bvurem _, d) < d -> true
     if (URem(Any(dummy), Any(divisor)).match(*this)) {
       if (divisor->isUInt(a) && rhs.isUInt(b) && a <= b)
         return mkBool(true);
     }
+
+    optional<Expr> llhs, lrhs, rlhs, rrhs;
+    bool lhsConcatMatch = Concat(Any(llhs), Any(lrhs)).match(*this);
+    bool rhsConcatMatch = Concat(Any(rlhs), Any(rrhs)).match(rhs);
+    // [llhs, lrhs] < [llhs, rrhs] -> lrhs < rrhs
+    if (lhsConcatMatch && rhsConcatMatch && llhs->isIdentical(*rlhs))
+      return lrhs->ult(*rrhs);
+    else if (lhsConcatMatch && llhs->isUInt(a) && rhs.isUInt(b) &&
+             (b >> lrhs->bitwidth()) == a)
+      return lrhs->ult(b ^ (a << lrhs->bitwidth()));
+    else if (rhsConcatMatch && this->isUInt(a) && rlhs->isUInt(b) &&
+             (a >> rrhs->bitwidth()) == b)
+      return rrhs->ugt(a ^ (b << rrhs->bitwidth()));
   }
 
   Expr e;
   SET_Z3_USEOP(e, rhs, ult);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_ULT);
+  return e;
+}
+
+EXPR_BVOP_UINT64(slt)
+Expr Expr::slt(const Expr& rhs) const {
+  CHECK_LOCK2(rhs);
+
+  int64_t a, b;
+  if (isInt(a) && rhs.isInt(b))
+    return mkBool(a < b);
+
+  Expr e;
+  SET_Z3_USEOP(e, rhs, slt);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_SLT);
   return e;
 }
 
@@ -513,14 +545,38 @@ Expr Expr::ule(const Expr& rhs) const {
   return e;
 }
 
+EXPR_BVOP_UINT64(sle)
+Expr Expr::sle(const Expr& rhs) const {
+  CHECK_LOCK2(rhs);
+
+  int64_t a, b;
+  if (isInt(a) && rhs.isInt(b))
+    return mkBool(a <= b);
+
+  Expr e;
+  SET_Z3_USEOP(e, rhs, sle);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_SLE);
+  return e;
+}
+
 EXPR_BVOP_UINT64(ugt)
 Expr Expr::ugt(const Expr& rhs) const {
   return rhs.ult(*this);
 }
 
+EXPR_BVOP_UINT64(sgt)
+Expr Expr::sgt(const Expr& rhs) const {
+  return rhs.slt(*this);
+}
+
 EXPR_BVOP_UINT64(uge)
 Expr Expr::uge(const Expr& rhs) const {
   return rhs.ule(*this);
+}
+
+EXPR_BVOP_UINT64(sge)
+Expr Expr::sge(const Expr& rhs) const {
+  return rhs.sle(*this);
 }
 
 Expr Expr::select(const Expr &idx) const {
@@ -709,6 +765,12 @@ Expr Expr::isNonZero() const {
   return !isZero();
 }
 
+Expr Expr::toOneBitBV() const {
+  assert(sort().isBool());
+  return mkIte(*this, Expr::mkBV(1, 1), Expr::mkBV(0, 1));
+}
+
+
 EXPR_BVOP_UINT64(operator+)
 Expr Expr::operator+(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
@@ -716,6 +778,10 @@ Expr Expr::operator+(const Expr &rhs) const {
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBV(a + b, rhs.bitwidth());
+  else if (isUInt(a) && a == 0)
+    return rhs;
+  else if (rhs.isUInt(b) && b == 0)
+    return *this;
 
   Expr e;
   SET_Z3_USEOP(e, rhs, operator+);
@@ -967,6 +1033,10 @@ Expr Expr::mkFreshVar(const Sort &s, const std::string &prefix) {
   return e;
 }
 
+Expr Expr::mkFreshVar(const Expr &sort_of, const std::string &prefix) {
+  return mkFreshVar(sort_of.sort(), prefix);
+}
+
 Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
   Expr e;
   SET_Z3(e, fupdate2(sctx.z3, s.z3, [&name](auto &ctx, auto &sortz3){
@@ -988,6 +1058,10 @@ Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
   return e;
 }
 
+Expr Expr::mkVar(const Expr &sort_of, const std::string &name, bool boundVar) {
+  return mkVar(sort_of.sort(), name, boundVar);
+}
+
 Expr Expr::mkBV(const uint64_t val, const size_t sz) {
   Expr e;
   SET_Z3(e, fupdate(sctx.z3, [val, sz](auto &ctx){
@@ -997,6 +1071,10 @@ Expr Expr::mkBV(const uint64_t val, const size_t sz) {
     return ctx.mkBitVector(sz, val);
   }));
   return e;
+}
+
+Expr Expr::mkBV(const uint64_t val, const Expr &sort_of) {
+  return mkBV(val, sort_of.bitwidth());
 }
 
 Expr Expr::mkBool(const bool val) {
@@ -1176,6 +1254,13 @@ bool Sort::isArray() const {
   optional<bool> res;
   IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->is_array()));
   IF_CVC5_ENABLED(if(cvc5) writeOrCheck(res, cvc5->isArray()));
+  return res && *res;
+}
+
+bool Sort::isBool() const {
+  optional<bool> res;
+  IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->is_bool()));
+  IF_CVC5_ENABLED(if(cvc5) writeOrCheck(res, cvc5->isBoolean()));
   return res && *res;
 }
 

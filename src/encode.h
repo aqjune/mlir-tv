@@ -1,7 +1,7 @@
 #pragma once
 
 #include "state.h"
-#include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 
 #include <optional>
 #include <string>

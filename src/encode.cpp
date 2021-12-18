@@ -1,11 +1,12 @@
 #include "encode.h"
-#include "utils.h"
 #include "abstractops.h"
+#include "opts.h"
+#include "utils.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
-#include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
@@ -25,6 +26,13 @@
 using namespace smt;
 using namespace std;
 
+llvm::cl::opt<bool> arg_assign_random_to_unsupported_ops(
+      "assign-random-to-unsupported-ops",
+  llvm::cl::desc("Assign a random value to the result of unsupported ops. "
+      "Note that this option is purely for debugging purpose. This flag will "
+      "make the validation result meaningless."),
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
 
 
 // map := (i, j, k) -> (j, k, i)
@@ -415,43 +423,81 @@ void encodeOp(State &st, mlir::arith::XOrIOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::arith::CmpFOp op, bool) {
-  switch (op.getPredicate()) {
-  case mlir::arith::CmpFPredicate::OLT: { // ordered (unsinged) less than "<"
-    auto op1Type = op.getOperand(0).getType();
-    auto op2Type = op.getOperand(1).getType();
+  auto pred = op.getPredicate();
+  auto op1Type = op.getOperand(0).getType();
+  auto op2Type = op.getOperand(1).getType();
 
-    if (op1Type.isa<mlir::TensorType>() && op2Type.isa<mlir::TensorType>()) {
-      auto a = st.regs.get<Tensor>(op.getOperand(0));
-      auto b = st.regs.get<Tensor>(op.getOperand(1));
-      assert(a.getElemType() == b.getElemType());
+  if (op1Type.isa<mlir::TensorType>() && op2Type.isa<mlir::TensorType>()) {
+    auto a = st.regs.get<Tensor>(op.getOperand(0));
+    auto b = st.regs.get<Tensor>(op.getOperand(1));
+    assert(a.getElemType() == b.getElemType());
 
-      auto elemty = a.getElemType();
-      auto resultElemTy = getElemTy(op.getResult());
-      auto f = [&](Expr &&a, Expr &&b) -> Expr {
-        if (elemty.isa<mlir::FloatType>()) {
-          return Float(a, elemty).fult(Float(b, elemty));
-        }
-        throw UnsupportedException(op.getOperation(),
-            "cmpf only accepts floating points");
-      };
-      st.regs.add(op, a.elementwiseBinOp(b, resultElemTy, f));
-      st.wellDefined(op, listsEqual(a.getDims(), b.getDims()));
-      st.wellDefined(op, a.isFullyInitialized());
-      st.wellDefined(op, b.isFullyInitialized());
+    auto elemty = a.getElemType();
+    auto resultElemTy = getElemTy(op.getResult());
+    auto f = [&](Expr &&a, Expr &&b) -> Expr {
+      if (elemty.isa<mlir::FloatType>()) {
+        return Float(a, elemty).cmp(pred, Float(b, elemty));
+      }
+      throw UnsupportedException(op.getOperation(),
+          "cmpf only accepts floating points");
+    };
+    st.regs.add(op, a.elementwiseBinOp(b, resultElemTy, f));
+    st.wellDefined(op, listsEqual(a.getDims(), b.getDims()));
+    st.wellDefined(op, a.isFullyInitialized());
+    st.wellDefined(op, b.isFullyInitialized());
 
-    } else if (op1Type.isa<mlir::FloatType>() &&
-               op2Type.isa<mlir::FloatType>()) {
-      auto a = st.regs.get<Float>(op.getOperand(0));
-      auto b = st.regs.get<Float>(op.getOperand(1));
-      st.regs.add(op, Integer(a.fult(b)));
+  } else if (op1Type.isa<mlir::FloatType>() &&
+              op2Type.isa<mlir::FloatType>()) {
+    auto a = st.regs.get<Float>(op.getOperand(0));
+    auto b = st.regs.get<Float>(op.getOperand(1));
+    st.regs.add(op, Integer(a.cmp(pred, b)));
 
-    } else {
-      throw UnsupportedException(op.getOperation(), "Unsupported cmpf operand");
-    }
-    break;
+  } else {
+    throw UnsupportedException(op.getOperation(), "Unsupported cmpf operand");
   }
-  default:
-    throw UnsupportedException(op.getOperation(), "Unsupported cmpf predicate");
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::CmpIOp op, bool) {
+  auto op1Type = op.getOperand(0).getType();
+  auto op2Type = op.getOperand(1).getType();
+  auto fn = [&](Expr &&a0, Expr &&b0) -> Expr {
+    Expr a = Integer(a0), b = Integer(b0); // unlock arith ops
+    switch (op.getPredicate()){
+    case mlir::arith::CmpIPredicate::eq: return (a == b).toOneBitBV();
+    case mlir::arith::CmpIPredicate::ne: return (a != b).toOneBitBV();
+    case mlir::arith::CmpIPredicate::ule: return (a.ule(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::ult: return (a.ult(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::uge: return (a.uge(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::ugt: return (a.ugt(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::sle: return (a.sle(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::slt: return (a.slt(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::sge: return (a.sge(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::sgt: return (a.sgt(b)).toOneBitBV();
+    }
+    llvm_unreachable("Unknown cmpi predicate");
+  };
+
+  if (op1Type.isa<mlir::TensorType>() && op2Type.isa<mlir::TensorType>()) {
+    auto a = st.regs.get<Tensor>(op.getOperand(0));
+    auto b = st.regs.get<Tensor>(op.getOperand(1));
+    assert(a.getElemType() == b.getElemType());
+
+    auto elemty = a.getElemType();
+    auto resultElemTy = getElemTy(op.getResult());
+    st.regs.add(op, a.elementwiseBinOp(b, resultElemTy, fn));
+    st.wellDefined(op, listsEqual(a.getDims(), b.getDims()));
+    st.wellDefined(op, a.isFullyInitialized());
+    st.wellDefined(op, b.isFullyInitialized());
+
+  } else if (op1Type.isa<mlir::IntegerType>() &&
+              op2Type.isa<mlir::IntegerType>()) {
+    auto a = st.regs.get<Integer>(op.getOperand(0));
+    auto b = st.regs.get<Integer>(op.getOperand(1));
+    st.regs.add(op, Integer(fn(a, b)));
+
+  } else {
+    throw UnsupportedException(op.getOperation(), "Unsupported cmpi operand");
   }
 }
 
@@ -765,6 +811,55 @@ void encodeOp(State &st, mlir::tosa::ConcatOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::tosa::ClampOp op, bool) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+  auto elemTy = dty.getElementType();
+
+  auto input = st.regs.get<Tensor>(op.input());
+
+  auto unaryFn = [elemTy, &op](smt::Expr &&elem0) -> smt::Expr {
+    // In TOSA 0.23:
+    // apply_clip := apply_min(apply_max(value, minval), maxval)
+    // apply_max: (a >= b) ? a : b
+    // apply_min: (a < b)  ? a : b
+
+    if (elemTy.isa<mlir::IntegerType>()) {
+      Integer minval(op.min_int(), elemTy.getIntOrFloatBitWidth());
+      Integer maxval(op.max_int(), elemTy.getIntOrFloatBitWidth());
+      Integer elem(elem0);
+      elem = Expr::mkIte(((Expr)elem).sge(minval), elem, minval);
+      elem = Expr::mkIte(((Expr)elem).slt(maxval), elem, maxval);
+
+      return elem;
+    } else {
+      Float minval = Float::constant(op.min_fp(), elemTy);
+      Float maxval = Float::constant(op.max_fp(), elemTy);
+      Float elem(elem0, elemTy);
+      auto olt = mlir::arith::CmpFPredicate::OLT;
+      auto one = Expr::mkBV(1, 1);
+      // NOTE: strictly speaking, this isn't
+      // apply_min(apply_max(value, minval), maxval) because the results are
+      // different if value is NaN!
+      // But the definition makes validation of tosa-to-linalg lowering fail.
+      // Needs a discussion about this.
+      Expr e1 = Float(Expr::mkIte(
+          (Expr)elem.cmp(olt, minval) == one, minval, elem), elemTy);
+      Expr e2 = Float(Expr::mkIte(
+          (Expr)maxval.cmp(olt, elem) == one, maxval, e1), elemTy);
+
+      return e2;
+    }
+  };
+
+  auto output = input.elementwiseUnaryOp(elemTy, unaryFn);
+  
+  st.wellDefined(op, input.isFullyInitialized());
+  st.regs.add(op, output);
+}
+
+template<>
 void encodeOp(State &st, mlir::tosa::ConstOp op, bool) {
   auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
   if (!dty)
@@ -987,6 +1082,9 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   auto bias = st.regs.get<Tensor>(op.bias());
 
   auto elemTy = getElemTy(op.getResult());
+  if (!elemTy.isa<mlir::FloatType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+
   Float zero = Float::constant(llvm::APFloat(0.0), elemTy);
 
   optional<Tensor> paddedTensor;
@@ -2670,16 +2768,51 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
     try { \
       encodeOp(st, op2, encodeMemWriteOps); \
     } catch (UnsupportedException ue) { \
-      if (std::holds_alternative<mlir::Operation *>(ue.getObject())) { \
-        auto *op_ue = std::get<mlir::Operation *>(ue.getObject()); \
-        if (!op_ue) \
-          throw UnsupportedException(&op, ue.getReason()); \
+      if (arg_assign_random_to_unsupported_ops.getValue()) { \
+        assignRandomValue(st, &op, printOps); \
+      } else { \
+        if (std::holds_alternative<mlir::Operation *>(ue.getObject())) { \
+          auto *op_ue = std::get<mlir::Operation *>(ue.getObject()); \
+          if (!op_ue) \
+            throw UnsupportedException(&op, ue.getReason()); \
+        } \
+        throw ue; \
       } \
-      throw ue; \
     } \
     if (callbackAfterEnc) callbackAfterEnc(&op); \
     continue; \
   }
+
+static void assignRandomValue(State &st, mlir::Operation *op, bool printOp) {
+  if (printOp) {
+    llvm::outs() << "    Assigning any value to this op ("
+        << op->getName() << ")..\n";
+  }
+
+  for (auto r: op->getResults()) {
+    auto ty = r.getType();
+    if (auto ity = ty.dyn_cast<mlir::IntegerType>()) {
+      Integer i(0, ity.getIntOrFloatBitWidth());
+      st.regs.add(r, move(i));
+
+    } else if (auto fty = ty.dyn_cast<mlir::FloatType>()) {
+      Float f = Float::constant(llvm::APFloat(0.0), fty);
+      st.regs.add(r, move(f));
+
+    } else if (auto tty = ty.dyn_cast<mlir::RankedTensorType>()) {
+      // Create fresh variables for unknown dimension sizes
+      auto dims = ShapedValue::getDims(tty);
+      static unsigned unknown_tensor = 0;
+      Tensor t(tty.getElementType(), "unknown#" + to_string(unknown_tensor++),
+          move(dims));
+      st.regs.add(r, move(t));
+
+    } else {
+      // TODO: support memref
+      throw UnsupportedException(op, "Cannot assign random value");
+    }
+  }
+}
 
 static void encodeBlock(
     State &st, mlir::Block &block, bool printOps, bool encodeMemWriteOps,
@@ -2702,6 +2835,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::AddFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::AddIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::CmpFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::CmpIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ConstantFloatOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ConstantIndexOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ConstantIntOp, encodeMemWriteOps);
@@ -2766,6 +2900,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::BitwiseNotOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseOrOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseXorOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ClampOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConcatOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::Conv2DOp, encodeMemWriteOps);
@@ -2783,7 +2918,11 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TransposeOp, encodeMemWriteOps);
 
-    throw UnsupportedException(&op);
+    if (arg_assign_random_to_unsupported_ops.getValue()) {
+      assignRandomValue(st, &op, printOps);
+    } else {
+      throw UnsupportedException(&op);
+    }
   }
   if (printOps)
     llvm::outs() << "\n";
