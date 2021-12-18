@@ -515,6 +515,20 @@ Expr Expr::ult(const Expr& rhs) const {
   return e;
 }
 
+EXPR_BVOP_UINT64(slt)
+Expr Expr::slt(const Expr& rhs) const {
+  CHECK_LOCK2(rhs);
+
+  int64_t a, b;
+  if (isInt(a) && rhs.isInt(b))
+    return mkBool(a < b);
+
+  Expr e;
+  SET_Z3_USEOP(e, rhs, slt);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_SLT);
+  return e;
+}
+
 EXPR_BVOP_UINT64(ule)
 Expr Expr::ule(const Expr& rhs) const {
   CHECK_LOCK2(rhs);
@@ -531,14 +545,38 @@ Expr Expr::ule(const Expr& rhs) const {
   return e;
 }
 
+EXPR_BVOP_UINT64(sle)
+Expr Expr::sle(const Expr& rhs) const {
+  CHECK_LOCK2(rhs);
+
+  int64_t a, b;
+  if (isInt(a) && rhs.isInt(b))
+    return mkBool(a <= b);
+
+  Expr e;
+  SET_Z3_USEOP(e, rhs, sle);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_SLE);
+  return e;
+}
+
 EXPR_BVOP_UINT64(ugt)
 Expr Expr::ugt(const Expr& rhs) const {
   return rhs.ult(*this);
 }
 
+EXPR_BVOP_UINT64(sgt)
+Expr Expr::sgt(const Expr& rhs) const {
+  return rhs.slt(*this);
+}
+
 EXPR_BVOP_UINT64(uge)
 Expr Expr::uge(const Expr& rhs) const {
   return rhs.ule(*this);
+}
+
+EXPR_BVOP_UINT64(sge)
+Expr Expr::sge(const Expr& rhs) const {
+  return rhs.sle(*this);
 }
 
 Expr Expr::select(const Expr &idx) const {
@@ -726,6 +764,12 @@ Expr Expr::isZero() const {
 Expr Expr::isNonZero() const {
   return !isZero();
 }
+
+Expr Expr::toOneBitBV() const {
+  assert(sort().isBool());
+  return mkIte(*this, Expr::mkBV(1, 1), Expr::mkBV(0, 1));
+}
+
 
 EXPR_BVOP_UINT64(operator+)
 Expr Expr::operator+(const Expr &rhs) const {
@@ -1210,6 +1254,13 @@ bool Sort::isArray() const {
   optional<bool> res;
   IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->is_array()));
   IF_CVC5_ENABLED(if(cvc5) writeOrCheck(res, cvc5->isArray()));
+  return res && *res;
+}
+
+bool Sort::isBool() const {
+  optional<bool> res;
+  IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->is_bool()));
+  IF_CVC5_ENABLED(if(cvc5) writeOrCheck(res, cvc5->isBoolean()));
   return res && *res;
 }
 

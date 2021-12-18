@@ -652,6 +652,7 @@ Tensor Tensor::elementwiseBinOp(
 
   auto idxvars = Index::boundIndexVars(getRank());
   Expr elemout = f(get(idxvars).first, b.get(idxvars).first);
+  assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
   return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);
@@ -661,6 +662,7 @@ Tensor Tensor::elementwiseUnaryOp(
     mlir::Type resultElemType, const function<Expr(Expr &&)> &f) const {
   auto idxvars = Index::boundIndexVars(getRank());
   Expr elemout = f(get(idxvars).first);
+  assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
   return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);

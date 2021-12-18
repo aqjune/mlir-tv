@@ -119,12 +119,20 @@ public:
 
   Expr ult(const Expr &rhs) const;
   Expr ult(uint64_t rhs) const;
+  Expr slt(const Expr &rhs) const;
+  Expr slt(uint64_t rhs) const;
   Expr ule(const Expr &rhs) const;
   Expr ule(uint64_t rhs) const;
+  Expr sle(const Expr &rhs) const;
+  Expr sle(uint64_t rhs) const;
   Expr ugt(const Expr &rhs) const;
   Expr ugt(uint64_t rhs) const;
+  Expr sgt(const Expr &rhs) const;
+  Expr sgt(uint64_t rhs) const;
   Expr uge(const Expr &rhs) const;
   Expr uge(uint64_t rhs) const;
+  Expr sge(const Expr &rhs) const;
+  Expr sge(uint64_t rhs) const;
 
   /* Array operations */
   Expr select(const Expr &idx) const;
@@ -165,6 +173,7 @@ public:
   Expr implies(const Expr &rhs) const;
   Expr isZero() const;
   Expr isNonZero() const;
+  Expr toOneBitBV() const; // Convert bool to BV
 
   Expr substitute(const std::vector<Expr> &vars,
                   const std::vector<Expr> &values) const;
@@ -220,6 +229,7 @@ public:
   bool isArray() const;
   Sort getArrayDomain() const;
   bool isBV() const;
+  bool isBool() const;
 
   // Convert to a function type if this is an array type.
   // This is necessary in CVC5 because it differentiates those two.

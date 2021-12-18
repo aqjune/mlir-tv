@@ -450,6 +450,50 @@ void encodeOp(State &st, mlir::arith::CmpFOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::arith::CmpIOp op, bool) {
+  auto op1Type = op.getOperand(0).getType();
+  auto op2Type = op.getOperand(1).getType();
+  auto fn = [&](Expr &&a0, Expr &&b0) -> Expr {
+    Expr a = Integer(a0), b = Integer(b0); // unlock arith ops
+    switch (op.getPredicate()){
+    case mlir::arith::CmpIPredicate::eq: return (a == b).toOneBitBV();
+    case mlir::arith::CmpIPredicate::ne: return (a != b).toOneBitBV();
+    case mlir::arith::CmpIPredicate::ule: return (a.ule(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::ult: return (a.ult(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::uge: return (a.uge(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::ugt: return (a.ugt(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::sle: return (a.sle(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::slt: return (a.slt(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::sge: return (a.sge(b)).toOneBitBV();
+    case mlir::arith::CmpIPredicate::sgt: return (a.sgt(b)).toOneBitBV();
+    }
+    llvm_unreachable("Unknown cmpi predicate");
+  };
+
+  if (op1Type.isa<mlir::TensorType>() && op2Type.isa<mlir::TensorType>()) {
+    auto a = st.regs.get<Tensor>(op.getOperand(0));
+    auto b = st.regs.get<Tensor>(op.getOperand(1));
+    assert(a.getElemType() == b.getElemType());
+
+    auto elemty = a.getElemType();
+    auto resultElemTy = getElemTy(op.getResult());
+    st.regs.add(op, a.elementwiseBinOp(b, resultElemTy, fn));
+    st.wellDefined(op, listsEqual(a.getDims(), b.getDims()));
+    st.wellDefined(op, a.isFullyInitialized());
+    st.wellDefined(op, b.isFullyInitialized());
+
+  } else if (op1Type.isa<mlir::IntegerType>() &&
+              op2Type.isa<mlir::IntegerType>()) {
+    auto a = st.regs.get<Integer>(op.getOperand(0));
+    auto b = st.regs.get<Integer>(op.getOperand(1));
+    st.regs.add(op, Integer(fn(a, b)));
+
+  } else {
+    throw UnsupportedException(op.getOperation(), "Unsupported cmpi operand");
+  }
+}
+
+template<>
 void encodeOp(State &st, mlir::arith::ConstantIndexOp op, bool) {
   st.regs.add(op, Index(op.value()));
 }
@@ -756,6 +800,55 @@ void encodeOp(State &st, mlir::tosa::ConcatOp op, bool) {
   }
 
   st.regs.add(op.getResult(), t);
+}
+
+template<>
+void encodeOp(State &st, mlir::tosa::ClampOp op, bool) {
+  auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!dty)
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
+  auto elemTy = dty.getElementType();
+
+  auto input = st.regs.get<Tensor>(op.input());
+
+  auto unaryFn = [elemTy, &op](smt::Expr &&elem0) -> smt::Expr {
+    // In TOSA 0.23:
+    // apply_clip := apply_min(apply_max(value, minval), maxval)
+    // apply_max: (a >= b) ? a : b
+    // apply_min: (a < b)  ? a : b
+
+    if (elemTy.isa<mlir::IntegerType>()) {
+      Integer minval(op.min_int(), elemTy.getIntOrFloatBitWidth());
+      Integer maxval(op.max_int(), elemTy.getIntOrFloatBitWidth());
+      Integer elem(elem0);
+      elem = Expr::mkIte(((Expr)elem).sge(minval), elem, minval);
+      elem = Expr::mkIte(((Expr)elem).slt(maxval), elem, maxval);
+
+      return elem;
+    } else {
+      Float minval = Float::constant(op.min_fp(), elemTy);
+      Float maxval = Float::constant(op.max_fp(), elemTy);
+      Float elem(elem0, elemTy);
+      auto olt = mlir::arith::CmpFPredicate::OLT;
+      auto one = Expr::mkBV(1, 1);
+      // NOTE: strictly speaking, this isn't
+      // apply_min(apply_max(value, minval), maxval) because the results are
+      // different if value is NaN!
+      // But the definition makes validation of tosa-to-linalg lowering fail.
+      // Needs a discussion about this.
+      Expr e1 = Float(Expr::mkIte(
+          (Expr)elem.cmp(olt, minval) == one, minval, elem), elemTy);
+      Expr e2 = Float(Expr::mkIte(
+          (Expr)maxval.cmp(olt, elem) == one, maxval, e1), elemTy);
+
+      return e2;
+    }
+  };
+
+  auto output = input.elementwiseUnaryOp(elemTy, unaryFn);
+  
+  st.wellDefined(op, input.isFullyInitialized());
+  st.regs.add(op, output);
 }
 
 template<>
@@ -2598,6 +2691,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::AddFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::AddIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::CmpFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::CmpIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ConstantFloatOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ConstantIndexOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ConstantIntOp, encodeMemWriteOps);
@@ -2662,6 +2756,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::BitwiseNotOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseOrOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::BitwiseXorOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::ClampOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConcatOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::ConstOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::Conv2DOp, encodeMemWriteOps);
