@@ -969,7 +969,6 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
                   elemTy, move(outDims), move(outInd), 
                   tf.add(biasf)
                 );
-
   st.wellDefined(op, input.isFullyInitialized());
   st.wellDefined(op, weight.isFullyInitialized());
   st.wellDefined(op, bias.isFullyInitialized());
