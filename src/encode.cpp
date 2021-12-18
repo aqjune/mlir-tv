@@ -880,7 +880,7 @@ template<>
 void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   // input's dim sizes = [N, H, W, C]
   auto input = st.regs.get<Tensor>(op.input());
-  // weight's dim sizes = [M, H, W, C]
+  // weight's dim sizes = [H, W, C, M]
   auto weight = st.regs.get<Tensor>(op.weight());
   // bias: a 1-dim array whose size is C * M
   auto bias = st.regs.get<Tensor>(op.bias());
@@ -930,16 +930,15 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   auto wDims = weight.getDims();
   auto padDims = paddedTensor->getDims();
   auto N = padDims[0];
-  auto M = wDims[3];
   auto C = wDims[2];
+  auto M = wDims[3];
   auto n = outInd[0];
   auto c = outInd[3].udiv(M);
   auto m = outInd[3].urem(M);
-
   // change input to 1xHxWx1
   vector<Expr> input2DDims = {Index(1), padDims[1], padDims[2], Index(1)};
   vector<Expr> input2DInd = Index::boundIndexVars(4);
-  Tensor input2D = Tensor::mkInitializedLambda(
+  Tensor input2D = Tensor::mkInitializedLambda (
                   elemTy, move(input2DDims), move(input2DInd), 
                   paddedTensor->get({n, input2DInd[1], input2DInd[2], c}).first
                 );
@@ -964,7 +963,7 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   vector<Expr> outDims = {N, tDims[1], tDims[2], C * M};
   auto output = Tensor::mkInitializedLambda(
                   elemTy, move(outDims), move(outInd), 
-                  tf.add(biasf)
+                  tf//tf.add(biasf)
                 );
 
   st.wellDefined(op, input.isFullyInitialized());
