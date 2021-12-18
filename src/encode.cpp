@@ -935,6 +935,7 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   auto n = outInd[0];
   auto c = outInd[3].udiv(M);
   auto m = outInd[3].urem(M);
+
   // change input to 1xHxWx1
   vector<Expr> input2DDims = {Index(1), padDims[1], padDims[2], Index(1)};
   vector<Expr> input2DInd = Index::boundIndexVars(4);
@@ -957,7 +958,10 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
 
   auto tDims = t.getDims();
   auto biasf = Float(bias.get({outInd[3]}).first, elemTy);
-  auto tf = Float(t.get({Index(0), outInd[1], outInd[2], Index(0)}).first, elemTy);
+  auto tf = Float(
+              t.get({Index(0), outInd[1], outInd[2], Index(0)}).first,
+              elemTy
+            );
 
   // NxOHxOWx(C*M)
   vector<Expr> outDims = {N, tDims[1], tDims[2], C * M};
