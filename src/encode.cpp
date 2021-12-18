@@ -963,7 +963,7 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   vector<Expr> outDims = {N, tDims[1], tDims[2], C * M};
   auto output = Tensor::mkInitializedLambda(
                   elemTy, move(outDims), move(outInd), 
-                  tf//tf.add(biasf)
+                  tf.add(biasf)
                 );
 
   st.wellDefined(op, input.isFullyInitialized());
