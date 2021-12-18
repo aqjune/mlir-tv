@@ -94,9 +94,10 @@ Index Index::var(string &&name, VarType varty) {
 }
 vector<Expr> Index::boundIndexVars(unsigned n) {
   vector<Expr> idxs;
+  static int count = 0;
   for (unsigned i = 0; i < n; i ++) {
     idxs.push_back(
-      Index::var("i" + std::to_string(i), VarType::BOUND));
+      Index::var("i" + std::to_string(count++), VarType::BOUND));
   }
   return idxs;
 }
