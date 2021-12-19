@@ -1008,10 +1008,6 @@ static Tensor getPaddedTensor2D(mlir::Type elemTy,
 static Tensor addBias2D(mlir::Type elemTy, 
                         vector<Expr> dims,
                         Tensor acc, Tensor bias) {
-                      llvm::outs() << elemTy<<"\n";
-                      llvm::outs() << dims<<"\n";
-                      llvm::outs() << acc<<"\n";
-                      llvm::outs() << bias<<"\n";
   vector<Expr> ind = Index::boundIndexVars(4);
   auto tf = Float(acc.get(ind).first, elemTy);
   auto biasf = Float(bias.get({ind[3]}).first, elemTy);
