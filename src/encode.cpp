@@ -2699,11 +2699,9 @@ static void assignRandomValue(State &st, mlir::Operation *op, bool printOp) {
       st.regs.add(r, move(f));
 
     } else if (auto tty = ty.dyn_cast<mlir::RankedTensorType>()) {
-      // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(tty);
-      static unsigned unknown_tensor = 0;
-      Tensor t(tty.getElementType(), "unknown#" + to_string(unknown_tensor++),
-          move(dims));
+      auto elemTy = tty.getElementType();
+      Tensor t(elemTy, *getZero(elemTy), move(dims));
       st.regs.add(r, move(t));
 
     } else {
