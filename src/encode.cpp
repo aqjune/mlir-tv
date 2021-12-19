@@ -971,25 +971,14 @@ void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
       [](auto &&a, auto &&b) { return (Expr)a ^ (Expr)b; });
 }
 
-template<>
-void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
-  // input's dim sizes = [N, H, W, C]
-  auto input = st.regs.get<Tensor>(op.input());
-  // weight's dim sizes = [H, W, C, M]
-  auto weight = st.regs.get<Tensor>(op.weight());
-  // bias: a 1-dim array whose size is C * M
-  auto bias = st.regs.get<Tensor>(op.bias());
-
-  auto elemTy = getElemTy(op.getResult());
-  Float zero = Float::constant(llvm::APFloat(0.0), elemTy);
-
-  optional<Tensor> paddedTensor;
-
-  if (!llvm::all_of(op.pad(), [](mlir::Attribute a) {
+static Tensor getPaddedTensor(mlir::Type elemTy, 
+                                Tensor input, 
+                                mlir::ArrayAttr padding) {
+  if (!llvm::all_of(padding, [](mlir::Attribute a) {
       return a.cast<mlir::IntegerAttr>().getInt() == 0; })) {
 
     // pad = [top, bottom, left, right], filled with zero
-    vector<Expr> pad = getFromArrayAttr<Index>(op.pad());
+    vector<Expr> pad = getFromArrayAttr<Index>(padding);
     assert(pad.size() == 4);
 
     // input rank should be 4
@@ -1005,14 +994,29 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
     auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
                   padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
 
+    Float zero = Float::constant(llvm::APFloat(0.0), elemTy);
     Expr padVal = Expr::mkIte(cond, input.get(srcInd).first, zero);
 
-    paddedTensor = Tensor::mkInitializedLambda(
+    return Tensor::mkInitializedLambda(
                     elemTy, move(padDims), move(padInd), padVal);
 
   } else {
-    paddedTensor = input;
+    return input;
   }
+}
+
+template<>
+void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
+  // input's dim sizes = [N, H, W, C]
+  auto input = st.regs.get<Tensor>(op.input());
+  // weight's dim sizes = [H, W, C, M]
+  auto weight = st.regs.get<Tensor>(op.weight());
+  // bias: a 1-dim array whose size is C * M
+  auto bias = st.regs.get<Tensor>(op.bias());
+
+  auto elemTy = getElemTy(op.getResult());
+
+  auto paddedTensor = getPaddedTensor(elemTy, input, op.pad());
 
   // strides = [strides_y, strides_x]
   vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
@@ -1023,7 +1027,7 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
 
   vector<Expr> outInd = Index::boundIndexVars(4);
   auto wDims = weight.getDims();
-  auto padDims = paddedTensor->getDims();
+  auto padDims = paddedTensor.getDims();
   auto N = padDims[0];
   auto C = wDims[2];
   auto M = wDims[3];
@@ -1036,7 +1040,7 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   vector<Expr> input2DInd = Index::boundIndexVars(4);
   Tensor input2D = Tensor::mkInitializedLambda (
                   elemTy, move(input2DDims), move(input2DInd), 
-                  paddedTensor->get({n, input2DInd[1], input2DInd[2], c}).first
+                  paddedTensor.get({n, input2DInd[1], input2DInd[2], c}).first
                 );
 
   // change weight to KHxKWx1x1
@@ -1085,39 +1089,7 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   if (!elemTy.isa<mlir::FloatType>())
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  Float zero = Float::constant(llvm::APFloat(0.0), elemTy);
-
-  optional<Tensor> paddedTensor;
-
-  if (!llvm::all_of(op.pad(), [](mlir::Attribute a) {
-      return a.cast<mlir::IntegerAttr>().getInt() == 0; })) {
-
-    // pad = [top, bottom, left, right], filled with zero
-    vector<Expr> pad = getFromArrayAttr<Index>(op.pad());
-    assert(pad.size() == 4);
-
-    // input rank should be 4
-    vector<Expr> padInd = Index::boundIndexVars(input.getRank());
-    vector<Expr> srcDims = input.getDims();
-
-    vector<Expr> srcInd = {padInd[0], padInd[1] - pad[0],
-                              padInd[2] - pad[2], padInd[3]};
-
-    vector<Expr> padDims = {srcDims[0], srcDims[1] + pad[0] + pad[1],
-                              srcDims[2] + pad[2] + pad[3], srcDims[3]};
-
-    auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
-                  padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
-
-    Expr padVal = Expr::mkIte(cond, input.get(srcInd).first, zero);
-
-    paddedTensor = Tensor::mkInitializedLambda(
-                    elemTy, move(padDims), move(padInd), padVal);
-
-  } else {
-    paddedTensor = input;
-  }
-
+  auto paddedTensor = getPaddedTensor(elemTy, input, op.pad());
   // strides = [strides_y, strides_x]
   vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
   // dilations = [dilations_y, dilations_x]
@@ -1125,7 +1097,7 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
 
   assert(strides.size() == 2 && dilations.size() == 2);
 
-  auto t = paddedTensor->conv(weight,
+  auto t = paddedTensor.conv(weight,
                       strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
 
   vector<Expr> outDims = t.getDims();
