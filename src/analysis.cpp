@@ -241,13 +241,15 @@ static void analyzeBlock(
       analyzeVariable(result, res);
     }
 
+    // Check whether op has reductions such as summation, etc
     if (mlir::isa<mlir::linalg::DotOp>(op) ||
         mlir::isa<mlir::linalg::MatmulOp>(op) ||
         mlir::isa<mlir::linalg::Conv2DNchwFchwOp>(op) ||
         mlir::isa<mlir::linalg::Conv2DNhwcHwcfOp>(op) ||
-        mlir::isa<mlir::tosa::Conv2DOp>(op)) {
+        mlir::isa<mlir::tosa::Conv2DOp>(op) ||
+        mlir::isa<mlir::tosa::FullyConnectedOp>(op) ||
+        mlir::isa<mlir::tosa::ReduceSumOp>(op)) {
       res.isElementwiseFPOps = false;
-      continue;
     }
 
     ANALYZE(op, mlir::tosa::ClampOp, res);
