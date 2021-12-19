@@ -1005,6 +1005,19 @@ static Tensor getPaddedTensor2D(mlir::Type elemTy,
   }
 }
 
+static Tensor addBias2D(mlir::Type elemTy, 
+                        vector<Expr> dims,
+                        Tensor acc, Tensor bias) {
+  vector<Expr> outInd = Index::boundIndexVars(acc.getRank());
+  auto biasf = Float(bias.get({outInd[3]}).first, elemTy);
+  auto tf = Float(acc.get(outInd).first, elemTy);
+
+  return Tensor::mkInitializedLambda(
+            elemTy, move(dims), move(outInd), 
+            tf.add(biasf)
+          );
+}
+
 template<>
 void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   // input's dim sizes = [N, H, W, C]
@@ -1013,15 +1026,14 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   auto weight = st.regs.get<Tensor>(op.weight());
   // bias: a 1-dim array whose size is C * M
   auto bias = st.regs.get<Tensor>(op.bias());
-
-  auto elemTy = getElemTy(op.getResult());
-
-  auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
-
   // strides = [strides_y, strides_x]
   vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
   // dilations = [dilations_y, dilations_x]
   vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
+
+  auto elemTy = getElemTy(op.getResult());
+
+  auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
 
   assert(strides.size() == 2 && dilations.size() == 2);
 
@@ -1054,20 +1066,12 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   // t is 1xOHxOWx1
   auto t = input2D.conv(weight2D,
                       strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
-
   auto tDims = t.getDims();
-  auto biasf = Float(bias.get({outInd[3]}).first, elemTy);
-  auto tf = Float(
-              t.get({Index(0), outInd[1], outInd[2], Index(0)}).first,
-              elemTy
-            );
-
   // NxOHxOWx(C*M)
   vector<Expr> outDims = {N, tDims[1], tDims[2], C * M};
-  auto output = Tensor::mkInitializedLambda(
-                  elemTy, move(outDims), move(outInd), 
-                  tf.add(biasf)
-                );
+
+  auto output = addBias2D(elemTy, outDims, t, bias);
+  
   st.wellDefined(op, input.isFullyInitialized());
   st.wellDefined(op, weight.isFullyInitialized());
   st.wellDefined(op, bias.isFullyInitialized());
@@ -1084,16 +1088,16 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   auto weight = st.regs.get<Tensor>(op.weight());
   // bias: a 1-dim array whose size is F
   auto bias = st.regs.get<Tensor>(op.bias());
+  // strides = [strides_y, strides_x]
+  vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
+  // dilations = [dilations_y, dilations_x]
+  vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
 
   auto elemTy = getElemTy(op.getResult());
   if (!elemTy.isa<mlir::FloatType>())
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
   auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
-  // strides = [strides_y, strides_x]
-  vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
-  // dilations = [dilations_y, dilations_x]
-  vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
 
   assert(strides.size() == 2 && dilations.size() == 2);
 
@@ -1101,15 +1105,7 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
                       strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
 
   vector<Expr> outDims = t.getDims();
-  vector<Expr> outInd = Index::boundIndexVars(t.getRank());
-
-  auto biasf = Float(bias.get({outInd[3]}).first, elemTy);
-  auto tf = Float(t.get(outInd).first, elemTy);
-
-  auto output = Tensor::mkInitializedLambda(
-                  elemTy, move(outDims), move(outInd), 
-                  tf.add(biasf)
-                );
+  auto output = addBias2D(elemTy, outDims, t, bias);
 
   st.wellDefined(op, input.isFullyInitialized());
   st.wellDefined(op, weight.isFullyInitialized());
