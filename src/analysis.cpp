@@ -247,6 +247,7 @@ static void analyzeBlock(
         mlir::isa<mlir::linalg::Conv2DNchwFchwOp>(op) ||
         mlir::isa<mlir::linalg::Conv2DNhwcHwcfOp>(op) ||
         mlir::isa<mlir::tosa::Conv2DOp>(op) ||
+        mlir::isa<mlir::tosa::DepthwiseConv2DOp>(op) ||
         mlir::isa<mlir::tosa::FullyConnectedOp>(op) ||
         mlir::isa<mlir::tosa::ReduceSumOp>(op)) {
       res.isElementwiseFPOps = false;
