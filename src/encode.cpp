@@ -971,7 +971,7 @@ void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
       [](auto &&a, auto &&b) { return (Expr)a ^ (Expr)b; });
 }
 
-static Tensor getPaddedTensor(mlir::Type elemTy, 
+static Tensor getPaddedTensor2D(mlir::Type elemTy, 
                                 Tensor input, 
                                 mlir::ArrayAttr padding) {
   if (!llvm::all_of(padding, [](mlir::Attribute a) {
@@ -1016,7 +1016,7 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
 
   auto elemTy = getElemTy(op.getResult());
 
-  auto paddedTensor = getPaddedTensor(elemTy, input, op.pad());
+  auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
 
   // strides = [strides_y, strides_x]
   vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
@@ -1089,7 +1089,7 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   if (!elemTy.isa<mlir::FloatType>())
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  auto paddedTensor = getPaddedTensor(elemTy, input, op.pad());
+  auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
   // strides = [strides_y, strides_x]
   vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
   // dilations = [dilations_y, dilations_x]
