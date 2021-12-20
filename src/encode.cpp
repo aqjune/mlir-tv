@@ -685,6 +685,7 @@ void encodeOp(State &st, mlir::AffineApplyOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::ReturnOp op, bool) {
+  llvm::outs() << op.getOperand(0) << "\n";
   for (unsigned i = 0; i < op.getNumOperands(); ++i)
     st.retValues.push_back(st.regs.findOrCrash(op.getOperand(i)));
 }
@@ -1305,6 +1306,9 @@ encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op, bool encodeMemWr
 
   auto t_input = st.regs.get<Tensor>(op.image());
   auto t_filter = st.regs.get<Tensor>(op.filter());
+
+  st.wellDefined(op, t_input.getDim(3) == t_input.getDim(3));
+  st.wellDefined(op, t_filter.isFullyInitialized());
 
   auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations);
   st.regs.add(op.getResult(0), move(t_res));
