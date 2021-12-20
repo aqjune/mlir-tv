@@ -1695,12 +1695,11 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
     uint64_t v;
     bool isDimSizeOne = idx >= resType.getRank() ||
         ((((Expr)sizes[i]).isUInt(v) && v == 1) && resType.getDimSize(idx) != v);
-    if (isDimSizeOne) {
-      rankDiff --;
+
+    if (isDimSizeOne)
       outIdxs.push_back((Expr)offsets[i]);
-    } else {
+    else
       outIdxs.push_back((Expr)((inIdxs[idx++] * strides[i])) + offsets[i]);
-    }
   }
   st.wellDefined(op, src.isFullyInitialized());
   st.regs.add(res,
