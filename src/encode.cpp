@@ -193,6 +193,7 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
   for (int64_t i = 0; i < min(ty0rank, ty1rank); i++) {
     int64_t idx0 = ty0rank - 1 - i;
     int64_t idx1 = ty1rank - 1 - i;
+    int64_t inIdx = max(ty0rank, ty1rank) - 1 - i;
 
     auto d1 = getDimSize(ty0, idx0);
     auto d2 = getDimSize(ty1, idx1);
@@ -212,8 +213,8 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
       resDims1.insert(resDims1.begin(), Index(max(d1,d2)));
     }
 
-    outVars0.insert(outVars0.begin(), d1 == 1 ? izero : inVars0[idx0]);
-    outVars1.insert(outVars1.begin(), d2 == 1 ? izero : inVars1[idx1]);
+    outVars0.insert(outVars0.begin(), d1 == 1 ? izero : inVars0[inIdx]);
+    outVars1.insert(outVars1.begin(), d2 == 1 ? izero : inVars1[inIdx]);
   }
 
   if (ty0rank < ty1rank) {
@@ -231,7 +232,6 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
       outVars0.insert(outVars0.begin(), inVars0[i]);
     }
   }
-
   auto m0 = Tensor::mkInitializedLambda(t0.getElemType(),
       move(resDims0), move(inVars0), t0.get(outVars0).first);
 
