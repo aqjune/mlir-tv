@@ -120,7 +120,7 @@ class Tensor: public ShapedValue {
 public:
   // This should be parameterized later..
   static const unsigned MAX_TENSOR_SIZE = 10000;
-  static const unsigned MAX_DIM_SIZE = 25;
+  static const unsigned MAX_DIM_SIZE = 50;
 
   // A splat tensor.
   Tensor(mlir::Type elemType, smt::Expr &&splat_elem,
