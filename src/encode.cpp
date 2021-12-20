@@ -2,6 +2,7 @@
 #include "abstractops.h"
 #include "opts.h"
 #include "utils.h"
+#include "debug.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
@@ -1696,8 +1697,9 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
   for (unsigned i = 0; i < sizes.size(); ++i) {
     auto dim = src.getDim(i);
     Expr ofs = offsets[i];
-    st.wellDefined(op, ofs.ult(dim));
-    st.wellDefined(op, (ofs + sizes[i]).ule(dim));
+    st.wellDefined(op, ofs.ult(dim) & (ofs + sizes[i]).ule(dim));
+    verbose("ExtractSliceOp out-of-bounds check")
+      << (ofs.ult(dim) & (ofs + sizes[i]).ule(dim)) << "\n";
   }
 
   vector<Expr> inIdxs, outIdxs;
@@ -1743,6 +1745,15 @@ void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
   vector<Expr> indVars = Index::boundIndexVars(rank);
   vector<Expr> dims = tgt.getDims();
   vector<Expr> srcIdxs;
+
+    // Add out-of-bounds check
+  for (unsigned i = 0; i < sizes.size(); ++i) {
+    auto dim = tgt.getDim(i);
+    Expr ofs = offsets[i];
+    st.wellDefined(op, ofs.ult(dim) & (ofs + sizes[i]).ule(dim));
+    verbose("InsertSliceOp out-of-bounds check")
+        << (ofs.ult(dim) & (ofs + sizes[i]).ule(dim)) << "\n";
+  }
 
   Expr cond = Expr::mkBool(true);
 

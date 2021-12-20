@@ -89,8 +89,12 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::init(0), llvm::cl::value_desc("number"),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<unsigned int> max_unknown_dimsize("max-unknown-dimsize",
+  llvm::cl::desc("Maximum dimension size for unknown shaped dimension"
+                    "(default value: 50)"),
+  llvm::cl::init(50), llvm::cl::value_desc("number"),
+  llvm::cl::cat(MlirTvCategory));
 };
-
 
 static optional<string> checkFunctionSignatures(
     mlir::FuncOp src, mlir::FuncOp tgt) {
@@ -759,6 +763,9 @@ Results validate(
     vinput.isFpAddAssociative = arg_fp_add_associative.getValue();
     vinput.unrollIntSum = arg_unroll_int_sum.getValue();
     vinput.useMultisetForFpSum = arg_multiset.getValue();
+
+    Tensor::MAX_DIM_SIZE = max_unknown_dimsize.getValue();
+    MemRef::MAX_DIM_SIZE = max_unknown_dimsize.getValue();
 
     try {
       verificationResult.merge(validate(vinput));
