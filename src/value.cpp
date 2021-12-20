@@ -546,6 +546,15 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
       move(dim), move(idx), move(elem));
 }
 
+Tensor Tensor::depthwiseConv2D(const Tensor &filter,
+    const vector<Expr> &strides,
+    const vector<Expr> &dilations) const {
+
+  assert(getDims().size() == 4);
+
+  return conv(filter, strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
+}
+
 Tensor Tensor::conv(const Tensor &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,

@@ -177,6 +177,12 @@ public:
       const std::vector<smt::Expr> &dilations,
       ConvLayout layout) const;
 
+  // tensor which is depthwise convolution of this 2D tensor and filter.
+  Tensor depthwiseConv2D(const Tensor &filter,
+      const std::vector<smt::Expr> &strides,
+      const std::vector<smt::Expr> &dilations) const;
+
+
   Tensor reshape(const std::vector<smt::Expr> &ns2) const;
 
   // Return a new tensor t s.t.
