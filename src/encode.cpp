@@ -194,6 +194,7 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
   for (int64_t i = 0; i < min(ty0rank, ty1rank); i++) {
     int64_t idx0 = ty0rank - 1 - i;
     int64_t idx1 = ty1rank - 1 - i;
+    int64_t inIdx = max(ty0rank, ty1rank) - 1 - i;
 
     auto d1 = getDimSize(ty0, idx0);
     auto d2 = getDimSize(ty1, idx1);
@@ -213,8 +214,8 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
       resDims1.insert(resDims1.begin(), Index(max(d1,d2)));
     }
 
-    outVars0.insert(outVars0.begin(), d1 == 1 ? izero : inVars0[idx0]);
-    outVars1.insert(outVars1.begin(), d2 == 1 ? izero : inVars1[idx1]);
+    outVars0.insert(outVars0.begin(), d1 == 1 ? izero : inVars0[inIdx]);
+    outVars1.insert(outVars1.begin(), d2 == 1 ? izero : inVars1[inIdx]);
   }
 
   if (ty0rank < ty1rank) {
@@ -232,7 +233,6 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
       outVars0.insert(outVars0.begin(), inVars0[i]);
     }
   }
-
   auto m0 = Tensor::mkInitializedLambda(t0.getElemType(),
       move(resDims0), move(inVars0), t0.get(outVars0).first);
 
@@ -1009,12 +1009,11 @@ static Tensor getPaddedTensor2D(mlir::Type elemTy,
 static Tensor addBias2D(mlir::Type elemTy, 
                         vector<Expr> dims,
                         Tensor acc, Tensor bias) {
-  vector<Expr> outInd = Index::boundIndexVars(acc.getRank());
-  auto biasf = Float(bias.get({outInd[3]}).first, elemTy);
-  auto tf = Float(acc.get(outInd).first, elemTy);
-
+  vector<Expr> ind = Index::boundIndexVars(4);
+  auto tf = Float(acc.get(ind).first, elemTy);
+  auto biasf = Float(bias.get({ind[3]}).first, elemTy);
   return Tensor::mkInitializedLambda(
-            elemTy, move(dims), move(outInd), 
+            elemTy, move(dims), move(ind), 
             tf.add(biasf)
           );
 }
@@ -1032,11 +1031,11 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   // dilations = [dilations_y, dilations_x]
   vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
 
+  assert(strides.size() == 2 && dilations.size() == 2);
+
   auto elemTy = getElemTy(op.getResult());
 
   auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
-
-  assert(strides.size() == 2 && dilations.size() == 2);
 
   vector<Expr> outInd = Index::boundIndexVars(4);
   auto wDims = weight.getDims();
@@ -1044,6 +1043,12 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   auto N = padDims[0];
   auto C = wDims[2];
   auto M = wDims[3];
+
+  // Check whether C is identical
+  st.wellDefined(op, input.getDim(3) == C);
+  // Check whether C * M is identical
+  st.wellDefined(op, bias.getDim(0) == (C * M));
+
   auto n = outInd[0];
   auto c = outInd[3].udiv(M);
   auto m = outInd[3].urem(M);
@@ -1064,14 +1069,20 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
                   weight.get({weight2DInd[0], weight2DInd[1], c, m}).first
                 );
 
-  // t is 1xOHxOWx1
-  auto t = input2D.conv(weight2D,
+  // t2D is 1xOHxOWx1
+  auto t2D = input2D.conv(weight2D,
                       strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
-  auto tDims = t.getDims();
-  // NxOHxOWx(C*M)
-  vector<Expr> outDims = {N, tDims[1], tDims[2], C * M};
+  auto t2DDims = t2D.getDims();
 
-  auto output = addBias2D(elemTy, outDims, t, bias);
+  // NxOHxOWx(C*M)
+  vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C * M};
+
+  auto acc = Tensor::mkInitializedLambda(
+            elemTy, move(tDims), move(outInd), 
+            t2D.get({Index(0), outInd[1], outInd[2], Index(0)}).first
+          );
+  
+  auto output = addBias2D(elemTy, acc.getDims(), acc, bias);
   
   st.wellDefined(op, input.isFullyInitialized());
   st.wellDefined(op, weight.isFullyInitialized());
@@ -1094,19 +1105,25 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   // dilations = [dilations_y, dilations_x]
   vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
 
+  // Check whether C is identical
+  st.wellDefined(op, input.getDim(3) == weight.getDim(3));
+  // Check whether F is identical
+  st.wellDefined(op, weight.getDim(0) == bias.getDim(0));
+
+  assert(strides.size() == 2 && dilations.size() == 2);  
+
   auto elemTy = getElemTy(op.getResult());
   if (!elemTy.isa<mlir::FloatType>())
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
   auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
 
-  assert(strides.size() == 2 && dilations.size() == 2);
 
-  auto t = paddedTensor.conv(weight,
+  auto acc = paddedTensor.conv(weight,
                       strides, dilations, ShapedValue::ConvLayout::NHWC_FHWC);
 
-  vector<Expr> outDims = t.getDims();
-  auto output = addBias2D(elemTy, outDims, t, bias);
+  vector<Expr> outDims = acc.getDims();
+  auto output = addBias2D(elemTy, outDims, acc, bias);
 
   st.wellDefined(op, input.isFullyInitialized());
   st.wellDefined(op, weight.isFullyInitialized());
@@ -1680,9 +1697,9 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
   for (unsigned i = 0; i < sizes.size(); ++i) {
     auto dim = src.getDim(i);
     Expr ofs = offsets[i], size = sizes[i];
-    st.wellDefined(op, ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim));
-    verbose("ExtractSliceOp out-of-bounds check")
-      << (ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim)) << "\n";
+    Expr cond = ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim);
+    verbose("ExtractSliceOp out-of-bounds check") << cond << "\n";
+    st.wellDefined(op, move(cond));
   }
 
   vector<Expr> inIdxs, outIdxs;
@@ -1735,9 +1752,9 @@ void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
   for (unsigned i = 0; i < sizes.size(); ++i) {
     auto dim = tgt.getDim(i);
     Expr ofs = offsets[i], size = sizes[i];
-    st.wellDefined(op, ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim));
-    verbose("InsertSliceOp out-of-bounds check")
-      << (ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim)) << "\n";
+    Expr cond = ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim);
+    verbose("InsertSliceOp out-of-bounds check") << cond << "\n";
+    st.wellDefined(op, move(cond));
   }
 
   Expr cond = Expr::mkBool(true);
@@ -2069,14 +2086,14 @@ void encodeOp(State &st, mlir::memref::SubViewOp op, bool) {
 
 static void storeTensorTo(
     State &st, mlir::Operation *op, Tensor &&tensor, const MemRef &memref,
-    mlir::MemRefType memrefTy) {
+    mlir::MemRefType memrefTy, bool ubIfReadOnly) {
   // Accessing uninitialized elem is UB.
   st.wellDefined(op, tensor.isFullyInitialized());
 
   if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
     auto success = memref.storeArray(tensor.asArray(), Index::zero(),
-        tensor.get1DSize(), false);
+        tensor.get1DSize(), ubIfReadOnly);
     st.wellDefined(op, move(success));
 
   } else {
@@ -2108,7 +2125,7 @@ void encodeOp(State &st, mlir::bufferization::ToMemrefOp op,
 
   // Create a read-only block.
   auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, false);
-  storeTensorTo(st, op.getOperation(), move(tensor), memref, memrefTy);
+  storeTensorTo(st, op.getOperation(), move(tensor), memref, memrefTy, false);
   st.regs.add(op.memref(), move(memref));
 }
 
@@ -2128,7 +2145,7 @@ void encodeOp(State &st, mlir::bufferization::CloneOp op, bool encodeMemWrite) {
   // Create a read-only block.
   auto memref = createNewLocalBlk(st.m.get(), move(dims), srcTy, false);
   auto tensor = src.loadTensorWithoutCheck();
-  storeTensorTo(st, op.getOperation(), move(tensor), memref, srcTy);
+  storeTensorTo(st, op.getOperation(), move(tensor), memref, srcTy, false);
   // Src is not writable as well.
   st.m->setWritable(srcTy.getElementType(), src.getBID(), false);
   st.regs.add(op, move(memref));
@@ -2188,7 +2205,7 @@ void encodeOp(State &st, mlir::memref::TensorStoreOp op, bool encodeMemWrite) {
     st.wellDefined(op, (Expr)t.getDim(i) == (Expr)m.getDim(i));
 
   storeTensorTo(st, op.getOperation(), move(t), m,
-      op.memref().getType().cast<mlir::MemRefType>());
+      op.memref().getType().cast<mlir::MemRefType>(), true);
 }
 
 template<>
@@ -2216,7 +2233,7 @@ void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
   st.wellDefined(opr, mrIn.getLiveness());
 
   storeTensorTo(st, opr, mrIn.loadTensorWithoutCheck(), mrOut,
-      op.output().getType().cast<mlir::MemRefType>());
+      op.output().getType().cast<mlir::MemRefType>(), true);
 }
 
 template<>
@@ -2241,7 +2258,7 @@ void encodeOp(State &st, mlir::linalg::FillOp op, bool encodeMemWrite) {
     auto m = st.regs.get<MemRef>(op1);
     auto filled = Tensor(ety, move(elemval), m.getDims());
     storeTensorTo(st, op.getOperation(), move(filled), m,
-        op1.getType().cast<mlir::MemRefType>());
+        op1.getType().cast<mlir::MemRefType>(), true);
   }
 }
 
