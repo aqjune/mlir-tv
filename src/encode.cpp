@@ -1696,10 +1696,13 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
     bool isDimSizeOne = idx >= resType.getRank() ||
         ((((Expr)sizes[i]).isUInt(v) && v == 1) && resType.getDimSize(idx) != v);
 
-    if (isDimSizeOne)
+    if (isDimSizeOne) {
       outIdxs.push_back((Expr)offsets[i]);
-    else
+    } else {
+      // sizes operand should match with target tensor dimension
+      st.wellDefined(op,  (sizes[i] == dims[idx]));
       outIdxs.push_back((Expr)((inIdxs[idx++] * strides[i])) + offsets[i]);
+    }
   }
   st.wellDefined(op, src.isFullyInitialized());
   st.regs.add(res,
@@ -1732,12 +1735,12 @@ void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
   vector<Expr> srcIdxs;
 
     // Add out-of-bounds check
-  for (unsigned i = 0; i < sizes.size(); ++i) {
+  for (unsigned i = 0; i < rank; ++i) {
     auto dim = tgt.getDim(i);
     Expr ofs = offsets[i], size = sizes[i];
     st.wellDefined(op, ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim));
     verbose("InsertSliceOp out-of-bounds check")
-      << (ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim)) << "\n";
+       << (ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim)) << "\n";
   }
 
   Expr cond = Expr::mkBool(true);
@@ -1746,6 +1749,8 @@ void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
     srcIdxs.push_back((indVars[i] - offsets[i]).udiv(strides[i]));
     cond &= ((indVars[i] - offsets[i]).urem(strides[i])).isZero() &
             (indVars[i] - offsets[i]).ult(sizes[i] * strides[i]);
+    // sizes operand should match with source tensor dimension
+    st.wellDefined(op,  (sizes[i] == src.getDim(i)));
   }
 
   // Picking the value from src1 must not be out of bounds.
