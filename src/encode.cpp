@@ -1739,6 +1739,8 @@ void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
     auto dim = tgt.getDim(i);
     Expr ofs = offsets[i], size = sizes[i];
     st.wellDefined(op, ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim));
+    verbose("InsertSliceOp out-of-bounds check")
+       << (ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim)) << "\n";
   }
 
   Expr cond = Expr::mkBool(true);
