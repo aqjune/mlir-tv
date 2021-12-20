@@ -435,7 +435,7 @@ static Results tryValidation(
     int64_t &elapsedMillisec) {
   auto enc = encodeFinalStates(vinput, printOps);
   return checkRefinement(
-        vinput, get<0>(enc), get<1>(enc), move(get<2>(enc)), true,
+        vinput, get<0>(enc), get<1>(enc), move(get<2>(enc)), useAllLogic,
         elapsedMillisec);
 }
 
