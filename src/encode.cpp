@@ -2363,8 +2363,12 @@ vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
       continue;
 
     unsigned pos = d.getPosition();
-    if (resFilled[pos] != -1)
+    if (resFilled[pos] != -1) {
+      // If induction variable's bounds are already determined,
+      // these should be match with other tensor's dimension.
+      st.wellDefined(op, res[resFilled[pos]] == viewSizes[idx].ofs(-1));
       continue;
+    }
     // If i < N, store N - 1
     // It is to bound e.g., 'i + j <= N - 1 + M - 1'
     resFilled[pos] = res.size();
