@@ -2076,7 +2076,7 @@ static void storeTensorTo(
   if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
     auto success = memref.storeArray(tensor.asArray(), Index::zero(),
-        tensor.get1DSize(), false);
+        tensor.get1DSize(), true);
     st.wellDefined(op, move(success));
 
   } else {
