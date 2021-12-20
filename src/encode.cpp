@@ -1034,53 +1034,14 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
 
   auto elemTy = getElemTy(op.getResult());
 
+  // Check whether C is identical
+  st.wellDefined(op, input.getDim(3) == weight.getDim(2));
+  // Check whether C * M is identical
+  st.wellDefined(op, bias.getDim(0) == (weight.getDim(2) * weight.getDim(3)));
+
   auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
 
-  vector<Expr> outInd = Index::boundIndexVars(4);
-  auto wDims = weight.getDims();
-  auto padDims = paddedTensor.getDims();
-  auto N = padDims[0];
-  auto C = wDims[2];
-  auto M = wDims[3];
-
-  // Check whether C is identical
-  st.wellDefined(op, input.getDim(3) == C);
-  // Check whether C * M is identical
-  st.wellDefined(op, bias.getDim(0) == (C * M));
-
-  auto n = outInd[0];
-  auto c = outInd[3].udiv(M);
-  auto m = outInd[3].urem(M);
-
-  // change input to 1xHxWx1
-  vector<Expr> input2DDims = {Index(1), padDims[1], padDims[2], Index(1)};
-  vector<Expr> input2DInd = Index::boundIndexVars(4);
-  Tensor input2D = Tensor::mkInitializedLambda (
-                  elemTy, move(input2DDims), move(input2DInd), 
-                  paddedTensor.get({n, input2DInd[1], input2DInd[2], c}).first
-                );
-
-  // change weight to KHxKWx1x1
-  vector<Expr> weight2DDims = {wDims[0], wDims[1], Index(1), Index(1)};
-  vector<Expr> weight2DInd = Index::boundIndexVars(4);
-  Tensor weight2D = Tensor::mkInitializedLambda(
-                  elemTy, move(weight2DDims), move(weight2DInd), 
-                  weight.get({weight2DInd[0], weight2DInd[1], c, m}).first
-                );
-
-  // t2D is 1xOHxOWx1
-  auto t2D = input2D.conv(weight2D,
-                      strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
-
-  auto t2DDims = t2D.getDims();
-
-  // NxOHxOWx(C*M)
-  vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C * M};
-
-  auto acc = Tensor::mkInitializedLambda(
-            elemTy, move(tDims), move(outInd), 
-            t2D.get({Index(0), outInd[1], outInd[2], Index(0)}).first
-          );
+  auto acc = paddedTensor.depthwiseConv2D(weight, strides, dilations);
   
   auto output = addBias2D(elemTy, acc.getDims(), acc, bias);
   

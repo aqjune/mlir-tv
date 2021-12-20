@@ -552,7 +552,45 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
 
   assert(getDims().size() == 4);
 
-  return conv(filter, strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
+  vector<Expr> outInd = Index::boundIndexVars(4);
+  auto wDims = filter.getDims();
+  auto padDims = getDims();
+  auto N = padDims[0];
+  auto C = wDims[2];
+  auto M = wDims[3];
+  auto n = outInd[0];
+  auto c = outInd[3].udiv(M);
+  auto m = outInd[3].urem(M);
+
+  // change input to 1xHxWx1
+  vector<Expr> input2DDims = {Index(1), padDims[1], padDims[2], Index(1)};
+  vector<Expr> input2DInd = Index::boundIndexVars(4);
+  Tensor input2D = Tensor::mkInitializedLambda (
+                  elemType, move(input2DDims), move(input2DInd), 
+                  get({n, input2DInd[1], input2DInd[2], c}).first
+                );
+
+  // change weight to KHxKWx1x1
+  vector<Expr> weight2DDims = {wDims[0], wDims[1], Index(1), Index(1)};
+  vector<Expr> weight2DInd = Index::boundIndexVars(4);
+  Tensor weight2D = Tensor::mkInitializedLambda(
+                  elemType, move(weight2DDims), move(weight2DInd), 
+                  filter.get({weight2DInd[0], weight2DInd[1], c, m}).first
+                );
+
+  // t2D is 1xOHxOWx1
+  auto t2D = input2D.conv(weight2D,
+                      strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
+
+  auto t2DDims = t2D.getDims();
+
+  // NxOHxOWx(C*M)
+  vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C * M};
+
+  return Tensor::mkInitializedLambda(
+            elemType, move(tDims), move(outInd), 
+            t2D.get({Index(0), outInd[1], outInd[2], Index(0)}).first
+          );
 }
 
 Tensor Tensor::conv(const Tensor &filter,
