@@ -1676,12 +1676,6 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
     j++;
   }
 
-for (unsigned i = 0; i < sizes.size(); ++i) {
-  verbose("ExtractSliceOp dim") << src.getDim(i) << "\n";
-  verbose("ExtractSliceOp size") << sizes[i] << "\n";
-  verbose("ExtractSliceOp offset") << offsets[i] << "\n";
-}
-
   // Add out-of-bounds check
   for (unsigned i = 0; i < sizes.size(); ++i) {
     auto dim = src.getDim(i);
@@ -1697,11 +1691,10 @@ for (unsigned i = 0; i < sizes.size(); ++i) {
 
   // map the output tensor indices to source tensor indices
   unsigned idx = 0;
-  int rankDiff = srcType.getRank() - resType.getRank();
   for (unsigned i = 0; i < srcType.getRank(); i++) {
     uint64_t v;
-    bool isDimSizeOne = rankDiff > 0 && (idx >= resType.getRank() ||
-        ((((Expr)sizes[i]).isUInt(v) && v == 1) && resType.getDimSize(idx) != -1));
+    bool isDimSizeOne = idx >= resType.getRank() ||
+        ((((Expr)sizes[i]).isUInt(v) && v == 1) && resType.getDimSize(idx) != v);
     if (isDimSizeOne) {
       rankDiff --;
       outIdxs.push_back((Expr)offsets[i]);
