@@ -2073,14 +2073,14 @@ void encodeOp(State &st, mlir::memref::SubViewOp op, bool) {
 
 static void storeTensorTo(
     State &st, mlir::Operation *op, Tensor &&tensor, const MemRef &memref,
-    mlir::MemRefType memrefTy) {
+    mlir::MemRefType memrefTy, bool ubIfReadOnly) {
   // Accessing uninitialized elem is UB.
   st.wellDefined(op, tensor.isFullyInitialized());
 
   if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
     auto success = memref.storeArray(tensor.asArray(), Index::zero(),
-        tensor.get1DSize(), false);
+        tensor.get1DSize(), ubIfReadOnly);
     st.wellDefined(op, move(success));
 
   } else {
@@ -2112,7 +2112,7 @@ void encodeOp(State &st, mlir::bufferization::ToMemrefOp op,
 
   // Create a read-only block.
   auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, false);
-  storeTensorTo(st, op.getOperation(), move(tensor), memref, memrefTy);
+  storeTensorTo(st, op.getOperation(), move(tensor), memref, memrefTy, false);
   st.regs.add(op.memref(), move(memref));
 }
 
@@ -2132,7 +2132,7 @@ void encodeOp(State &st, mlir::bufferization::CloneOp op, bool encodeMemWrite) {
   // Create a read-only block.
   auto memref = createNewLocalBlk(st.m.get(), move(dims), srcTy, false);
   auto tensor = src.loadTensorWithoutCheck();
-  storeTensorTo(st, op.getOperation(), move(tensor), memref, srcTy);
+  storeTensorTo(st, op.getOperation(), move(tensor), memref, srcTy, false);
   // Src is not writable as well.
   st.m->setWritable(srcTy.getElementType(), src.getBID(), false);
   st.regs.add(op, move(memref));
@@ -2192,7 +2192,7 @@ void encodeOp(State &st, mlir::memref::TensorStoreOp op, bool encodeMemWrite) {
     st.wellDefined(op, (Expr)t.getDim(i) == (Expr)m.getDim(i));
 
   storeTensorTo(st, op.getOperation(), move(t), m,
-      op.memref().getType().cast<mlir::MemRefType>());
+      op.memref().getType().cast<mlir::MemRefType>(), true);
 }
 
 template<>
@@ -2220,7 +2220,7 @@ void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
   st.wellDefined(opr, mrIn.getLiveness());
 
   storeTensorTo(st, opr, mrIn.loadTensorWithoutCheck(), mrOut,
-      op.output().getType().cast<mlir::MemRefType>());
+      op.output().getType().cast<mlir::MemRefType>(), true);
 }
 
 template<>
@@ -2245,7 +2245,7 @@ void encodeOp(State &st, mlir::linalg::FillOp op, bool encodeMemWrite) {
     auto m = st.regs.get<MemRef>(op1);
     auto filled = Tensor(ety, move(elemval), m.getDims());
     storeTensorTo(st, op.getOperation(), move(filled), m,
-        op1.getType().cast<mlir::MemRefType>());
+        op1.getType().cast<mlir::MemRefType>(), true);
   }
 }
 
