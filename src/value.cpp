@@ -552,15 +552,15 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
 
   assert(getDims().size() == 4);
 
-  vector<Expr> outInd = Index::boundIndexVars(4);
+  vector<Expr> outInd = Index::boundIndexVars(5);
   auto wDims = filter.getDims();
   auto padDims = getDims();
   auto N = padDims[0];
   auto C = wDims[2];
   auto M = wDims[3];
   auto n = outInd[0];
-  auto c = outInd[3].udiv(M);
-  auto m = outInd[3].urem(M);
+  auto c = outInd[3];
+  auto m = outInd[4];
 
   // change input to 1xHxWx1
   vector<Expr> input2DDims = {Index(1), padDims[1], padDims[2], Index(1)};
@@ -584,8 +584,8 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
 
   auto t2DDims = t2D.getDims();
 
-  // NxOHxOWx(C*M)
-  vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C * M};
+  // NxOHxOWxCxM
+  vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C, M};
 
   return Tensor::mkInitializedLambda(
             elemType, move(tDims), move(outInd), 

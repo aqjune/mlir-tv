@@ -1034,14 +1034,24 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
 
   auto elemTy = getElemTy(op.getResult());
 
+  auto C = weight.getDim(2);
+  auto M = weight.getDim(3);
   // Check whether C is identical
-  st.wellDefined(op, input.getDim(3) == weight.getDim(2));
+  st.wellDefined(op, input.getDim(3) == C);
   // Check whether C * M is identical
-  st.wellDefined(op, bias.getDim(0) == (weight.getDim(2) * weight.getDim(3)));
+  st.wellDefined(op, bias.getDim(0) == (C * M));
 
   auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
 
-  auto acc = paddedTensor.depthwiseConv2D(weight, strides, dilations);
+  vector<Expr> outInd = Index::boundIndexVars(4);
+  auto t = paddedTensor.depthwiseConv2D(weight, strides, dilations);
+  vector<Expr> accDims = {t.getDim(0), t.getDim(1), t.getDim(2), C * M};
+  auto accInd = {outInd[0], outInd[1], outInd[2],
+                  outInd[3].udiv(M), outInd[3].urem(M)};
+  auto acc = Tensor::mkInitializedLambda(
+        elemTy, move(accDims), move(outInd), 
+        t.get(accInd).first
+      );
   
   auto output = addBias2D(elemTy, acc.getDims(), acc, bias);
   
