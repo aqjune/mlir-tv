@@ -1696,10 +1696,10 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
   // Add out-of-bounds check
   for (unsigned i = 0; i < sizes.size(); ++i) {
     auto dim = src.getDim(i);
-    Expr ofs = offsets[i];
-    st.wellDefined(op, ofs.ult(dim) & (ofs + sizes[i]).ule(dim));
-    verbose("ExtractSliceOp out-of-bounds check")
-      << (ofs.ult(dim) & (ofs + sizes[i]).ule(dim)) << "\n";
+    Expr ofs = offsets[i], size = sizes[i];
+    Expr cond = ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim);
+    verbose("ExtractSliceOp out-of-bounds check") << cond << "\n";
+    st.wellDefined(op, move(cond));
   }
 
   vector<Expr> inIdxs, outIdxs;
@@ -1711,10 +1711,12 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
   for (unsigned i = 0; i < srcType.getRank(); i++) {
     uint64_t v;
     bool isDimSizeOne = idx >= resType.getRank() ||
-        ((((Expr)sizes[i]).isUInt(v) && v == 1) &&
-          resType.getDimSize(idx) != -1);
-    outIdxs.push_back(isDimSizeOne ?
-        (Expr)offsets[i] : (Expr)((inIdxs[idx++] * strides[i])) + offsets[i]);
+        ((((Expr)sizes[i]).isUInt(v) && v == 1) && resType.getDimSize(idx) != v);
+
+    if (isDimSizeOne)
+      outIdxs.push_back((Expr)offsets[i]);
+    else
+      outIdxs.push_back((Expr)((inIdxs[idx++] * strides[i])) + offsets[i]);
   }
   st.wellDefined(op, src.isFullyInitialized());
   st.regs.add(res,
@@ -1749,10 +1751,10 @@ void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
     // Add out-of-bounds check
   for (unsigned i = 0; i < sizes.size(); ++i) {
     auto dim = tgt.getDim(i);
-    Expr ofs = offsets[i];
-    st.wellDefined(op, ofs.ult(dim) & (ofs + sizes[i]).ule(dim));
-    verbose("InsertSliceOp out-of-bounds check")
-        << (ofs.ult(dim) & (ofs + sizes[i]).ule(dim)) << "\n";
+    Expr ofs = offsets[i], size = sizes[i];
+    Expr cond = ofs.ult(dim) & size.ule(dim) & (ofs + sizes[i]).ule(dim);
+    verbose("InsertSliceOp out-of-bounds check") << cond << "\n";
+    st.wellDefined(op, move(cond));
   }
 
   Expr cond = Expr::mkBool(true);
