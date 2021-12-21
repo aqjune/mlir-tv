@@ -2430,10 +2430,10 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
     auto ae = encodeAffineExpr(map.getResult(idx), indVarBounds, {});
     if (!ae)
       throw UnsupportedException(op.getOperation(), "unsupported affine Expr");
-
-    Expr size = (Expr)viewSizes[idx];
-    Expr inbounds = size.isNonZero().implies(ae->ult(size));
-    st.wellDefined(op, move(inbounds));
+    // Induction variable's bounds should be matched with
+    // other tensor's dimension.
+    Expr size = (Expr)viewSizes[idx].ofs(-1);
+    st.wellDefined(op, move(*ae == size));
   }
 }
 
