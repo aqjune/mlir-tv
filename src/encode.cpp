@@ -1031,57 +1031,32 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   // dilations = [dilations_y, dilations_x]
   vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
 
-  assert(strides.size() == 2 && dilations.size() == 2);
-
   auto elemTy = getElemTy(op.getResult());
 
-  auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
-
-  vector<Expr> outInd = Index::boundIndexVars(4);
-  auto wDims = weight.getDims();
-  auto padDims = paddedTensor.getDims();
-  auto N = padDims[0];
-  auto C = wDims[2];
-  auto M = wDims[3];
+  auto C = weight.getDim(2);
+  auto M = weight.getDim(3);
 
   // Check whether C is identical
   st.wellDefined(op, input.getDim(3) == C);
   // Check whether C * M is identical
   st.wellDefined(op, bias.getDim(0) == (C * M));
 
-  auto n = outInd[0];
-  auto c = outInd[3].udiv(M);
-  auto m = outInd[3].urem(M);
+  auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
 
-  // change input to 1xHxWx1
-  vector<Expr> input2DDims = {Index(1), padDims[1], padDims[2], Index(1)};
-  vector<Expr> input2DInd = Index::boundIndexVars(4);
-  Tensor input2D = Tensor::mkInitializedLambda (
-                  elemTy, move(input2DDims), move(input2DInd), 
-                  paddedTensor.get({n, input2DInd[1], input2DInd[2], c}).first
-                );
+  // dims of t is (N, H, W, C, M)
+  auto t = paddedTensor.depthwiseConv2D(weight, strides, dilations);
 
-  // change weight to KHxKWx1x1
-  vector<Expr> weight2DDims = {wDims[0], wDims[1], Index(1), Index(1)};
-  vector<Expr> weight2DInd = Index::boundIndexVars(4);
-  Tensor weight2D = Tensor::mkInitializedLambda(
-                  elemTy, move(weight2DDims), move(weight2DInd), 
-                  weight.get({weight2DInd[0], weight2DInd[1], c, m}).first
-                );
-
-  // t2D is 1xOHxOWx1
-  auto t2D = input2D.conv(weight2D,
-                      strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
-  auto t2DDims = t2D.getDims();
-
-  // NxOHxOWx(C*M)
-  vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C * M};
-
+  // change dims to (N, H, W, C * M)
+  vector<Expr> outInd = Index::boundIndexVars(4);
+  vector<Expr> accDims = {t.getDim(0), t.getDim(1), t.getDim(2), C * M};
+  auto accInd = {outInd[0], outInd[1], outInd[2],
+                  outInd[3].udiv(M), outInd[3].urem(M)};
   auto acc = Tensor::mkInitializedLambda(
-            elemTy, move(tDims), move(outInd), 
-            t2D.get({Index(0), outInd[1], outInd[2], Index(0)}).first
-          );
-  
+        elemTy, move(accDims), move(outInd), 
+        t.get(accInd).first
+      );
+
+  // add bias
   auto output = addBias2D(elemTy, acc.getDims(), acc, bias);
   
   st.wellDefined(op, input.isFullyInitialized());

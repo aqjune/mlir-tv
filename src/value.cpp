@@ -546,6 +546,57 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
       move(dim), move(idx), move(elem));
 }
 
+Tensor Tensor::depthwiseConv2D(const Tensor &filter,
+    const vector<Expr> &strides,
+    const vector<Expr> &dilations) const {
+
+  // args should match for 2D tensors
+  assert(getDims().size() == 4);
+  assert(filter.getDims().size() == 4);
+  assert(strides.size() == 2);
+  assert(dilations.size() == 2);
+
+  vector<Expr> outInd = Index::boundIndexVars(5);
+  auto wDims = filter.getDims();
+  auto dims = getDims();
+  auto N = dims[0];
+  auto C = wDims[2];
+  auto M = wDims[3];
+  auto n = outInd[0];
+  auto c = outInd[3];
+  auto m = outInd[4];
+
+  // change input to 1xHxWx1
+  vector<Expr> input2DDims = {Index(1), dims[1], dims[2], Index(1)};
+  vector<Expr> input2DInd = Index::boundIndexVars(4);
+  Tensor input2D = Tensor::mkInitializedLambda (
+                  elemType, move(input2DDims), move(input2DInd), 
+                  get({n, input2DInd[1], input2DInd[2], c}).first
+                );
+
+  // change weight to KHxKWx1x1
+  vector<Expr> weight2DDims = {wDims[0], wDims[1], Index(1), Index(1)};
+  vector<Expr> weight2DInd = Index::boundIndexVars(4);
+  Tensor weight2D = Tensor::mkInitializedLambda(
+                  elemType, move(weight2DDims), move(weight2DInd), 
+                  filter.get({weight2DInd[0], weight2DInd[1], c, m}).first
+                );
+
+  // t2D is 1xOHxOWx1
+  auto t2D = input2D.conv(weight2D,
+                      strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
+
+  auto t2DDims = t2D.getDims();
+
+  // NxOHxOWxCxM
+  vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C, M};
+
+  return Tensor::mkInitializedLambda(
+            elemType, move(tDims), move(outInd), 
+            t2D.get({Index(0), outInd[1], outInd[2], Index(0)}).first
+          );
+}
+
 Tensor Tensor::conv(const Tensor &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,
