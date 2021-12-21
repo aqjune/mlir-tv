@@ -652,10 +652,10 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     // If both operands do not fall into any of the cases above,
     // use fp_add for abstract representation.
     // 
-    // There are two cases where we must override the sign bit of fp_add.
+    // The sign bit of fp_add should be overrided.
     // If signbit(f1) == 0 /\ signbit(f2) == 0, signbit(fpAdd(f1, f2)) = 0.
     // If signbit(f1) == 1 /\ signbit(f2) == 1, signbit(fpAdd(f1, f2)) = 1.
-    // Otherwise, we can just use the arbitrary sign yielded from fp_add.
+    // Otherwise, follow the sign of value with greater magnitude
     Expr::mkIte(getSignBit(f1) == getSignBit(f2),
       // pos + pos -> pos, neg + neg -> neg
       getSignBit(f1).concat(fp_add_value),
