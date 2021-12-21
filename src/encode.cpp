@@ -1293,30 +1293,6 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
 }
 
 template<> void
-encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op, bool encodeMemWriteOp) {
-  if (!op.hasTensorSemantics() && !encodeMemWriteOp)
-    throw UnsupportedException(op.getOperation());
-
-  vector<Expr> strides, dilations;
-
-  for (auto s: op.strides())
-    strides.push_back(Index(s.getSExtValue()));
-  for (auto d: op.dilations())
-    dilations.push_back(Index(d.getSExtValue()));
-
-  auto t_input = st.regs.get<Tensor>(op.image());
-  auto t_filter = st.regs.get<Tensor>(op.filter());
-
-  st.wellDefined(op, t_input.getDim(3) == t_input.getDim(3));
-  st.wellDefined(op, t_filter.isFullyInitialized());
-
-  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations);
-  st.regs.add(op.getResult(0), move(t_res));
-  st.wellDefined(op, t_input.isFullyInitialized());
-  st.wellDefined(op, t_filter.isFullyInitialized());
-}
-
-template<> void
 encodeOp(State &st, mlir::linalg::Conv2DNchwFchwOp op, bool encodeMemWriteOp) {
   if (!op.hasTensorSemantics() && !encodeMemWriteOp)
     throw UnsupportedException(op.getOperation());
@@ -2864,7 +2840,6 @@ static void encodeBlock(
     ENCODE(st, op, mlir::memref::SubViewOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::TensorStoreOp, encodeMemWriteOps);
 
-    ENCODE(st, op, mlir::linalg::DepthwiseConv2DNhwcHwcmOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::Conv2DNchwFchwOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::Conv2DNhwcHwcfOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::CopyOp, encodeMemWriteOps);
