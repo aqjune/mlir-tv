@@ -132,7 +132,9 @@ void setAbstraction(
 
   // + 2: reserved for +NaN, +Inf; separately counted because they cannot be
   // included in set<APFloat>
-  unsigned floatBits = log2_ceil(floatNonConstsCnt + floatConsts.size() + 2);
+  // Should not exceed 31 (limited by real-life float)
+  unsigned floatBits =
+            min(31ul, log2_ceil(floatNonConstsCnt + floatConsts.size() + 2));
   floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
   floatEnc->addConstants(floatConsts);
 

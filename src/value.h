@@ -120,7 +120,7 @@ class Tensor: public ShapedValue {
 public:
   // This should be parameterized later..
   static const unsigned MAX_TENSOR_SIZE = 10000;
-  static const unsigned MAX_DIM_SIZE = 25;
+  static inline unsigned MAX_DIM_SIZE;
 
   // A splat tensor.
   Tensor(mlir::Type elemType, smt::Expr &&splat_elem,
@@ -183,7 +183,6 @@ public:
   Tensor depthwiseConv2D(const Tensor &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations) const;
-
 
   Tensor reshape(const std::vector<smt::Expr> &ns2) const;
 
@@ -263,7 +262,7 @@ class MemRef: public ShapedValue {
 public:
   // This should be parameterized later..
   static const unsigned MAX_MEMREF_SIZE = 1000000;
-  static const unsigned MAX_DIM_SIZE = 1000;
+  static inline unsigned MAX_DIM_SIZE;
 
   class Layout {
   public:

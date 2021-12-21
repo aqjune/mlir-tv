@@ -1,8 +1,7 @@
-// VERIFY-INCORRECT
+// VERIFY
 
 // This is a test to show how our encoding calculates the loop bounds.
-// It uses the first matched tensor's dimension.
-// This is analogous to what LinalgOp::createLoopRanges does.
+// It uses the first matched tensor's dimension and this should be matched with other tensor's dimension (otherwise it's UB)
 
 #accesses = [
   affine_map<(m) -> (m)>,

@@ -1,4 +1,5 @@
 // VERIFY
+// ARGS: -max-unknown-dimsize=25
 
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 
