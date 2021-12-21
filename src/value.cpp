@@ -551,11 +551,14 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
     const vector<Expr> &dilations) const {
 
   assert(getDims().size() == 4);
+  assert(filter.getDims().size() == 4);
+  assert(strides.size() == 2);
+  assert(dilations.size() == 2);
 
   vector<Expr> outInd = Index::boundIndexVars(5);
   auto wDims = filter.getDims();
-  auto padDims = getDims();
-  auto N = padDims[0];
+  auto dims = getDims();
+  auto N = dims[0];
   auto C = wDims[2];
   auto M = wDims[3];
   auto n = outInd[0];
@@ -563,7 +566,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
   auto m = outInd[4];
 
   // change input to 1xHxWx1
-  vector<Expr> input2DDims = {Index(1), padDims[1], padDims[2], Index(1)};
+  vector<Expr> input2DDims = {Index(1), dims[1], dims[2], Index(1)};
   vector<Expr> input2DInd = Index::boundIndexVars(4);
   Tensor input2D = Tensor::mkInitializedLambda (
                   elemType, move(input2DDims), move(input2DInd), 
