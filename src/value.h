@@ -184,7 +184,6 @@ public:
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations) const;
 
-
   Tensor reshape(const std::vector<smt::Expr> &ns2) const;
 
   // Return a new tensor t s.t.

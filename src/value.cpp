@@ -550,6 +550,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations) const {
 
+  // args should match for 2D tensors
   assert(getDims().size() == 4);
   assert(filter.getDims().size() == 4);
   assert(strides.size() == 2);

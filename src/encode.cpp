@@ -1031,12 +1031,11 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   // dilations = [dilations_y, dilations_x]
   vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
 
-  assert(strides.size() == 2 && dilations.size() == 2);
-
   auto elemTy = getElemTy(op.getResult());
 
   auto C = weight.getDim(2);
   auto M = weight.getDim(3);
+
   // Check whether C is identical
   st.wellDefined(op, input.getDim(3) == C);
   // Check whether C * M is identical
@@ -1044,8 +1043,11 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
 
   auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
 
-  vector<Expr> outInd = Index::boundIndexVars(4);
+  // dims of t is (N, H, W, C, M)
   auto t = paddedTensor.depthwiseConv2D(weight, strides, dilations);
+
+  // change dims to (N, H, W, C * M)
+  vector<Expr> outInd = Index::boundIndexVars(4);
   vector<Expr> accDims = {t.getDim(0), t.getDim(1), t.getDim(2), C * M};
   auto accInd = {outInd[0], outInd[1], outInd[2],
                   outInd[3].udiv(M), outInd[3].urem(M)};
@@ -1053,7 +1055,8 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
         elemTy, move(accDims), move(outInd), 
         t.get(accInd).first
       );
-  
+
+  // add bias
   auto output = addBias2D(elemTy, acc.getDims(), acc, bias);
   
   st.wellDefined(op, input.isFullyInitialized());
