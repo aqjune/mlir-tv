@@ -685,7 +685,6 @@ void encodeOp(State &st, mlir::AffineApplyOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::ReturnOp op, bool) {
-  llvm::outs() << op.getOperand(0) << "\n";
   for (unsigned i = 0; i < op.getNumOperands(); ++i)
     st.retValues.push_back(st.regs.findOrCrash(op.getOperand(i)));
 }
