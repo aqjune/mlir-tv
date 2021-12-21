@@ -2385,12 +2385,8 @@ vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
       continue;
 
     unsigned pos = d.getPosition();
-    if (resFilled[pos] != -1) {
-      // If induction variable's bounds are already determined,
-      // these should be match with other tensor's dimension.
-      st.wellDefined(op, res[resFilled[pos]] == viewSizes[idx].ofs(-1));
+    if (resFilled[pos] != -1)
       continue;
-    }
     // If i < N, store N - 1
     // It is to bound e.g., 'i + j <= N - 1 + M - 1'
     resFilled[pos] = res.size();
@@ -2434,10 +2430,10 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
     auto ae = encodeAffineExpr(map.getResult(idx), indVarBounds, {});
     if (!ae)
       throw UnsupportedException(op.getOperation(), "unsupported affine Expr");
-
-    Expr size = (Expr)viewSizes[idx];
-    Expr inbounds = size.isNonZero().implies(ae->ult(size));
-    st.wellDefined(op, move(inbounds));
+    // Induction variable's bounds are should be matched with
+    // other tensor's dimension.
+    Expr size = (Expr)viewSizes[idx].ofs(-1);
+    st.wellDefined(op, move(*ae == size));
   }
 }
 
