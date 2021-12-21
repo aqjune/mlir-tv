@@ -665,7 +665,12 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     Expr::mkIte(getMagnitudeBits(f1) == getMagnitudeBits(f2),
       // x + -x -> 0.0
       zero(),
-      fp_add_res
+      // |f1| > |f2| -> sign(f1 + f2) == sign(f1)
+      // |f1| < |f2| -> sign(f1 + f2) == sign(f2)
+      Expr::mkIte(getMagnitudeBits(f1).ugt(getMagnitudeBits(f2)),
+        getSignBit(f1),
+        getSignBit(f2)
+      ).concat(fp_add_value)
   ))))))))));
 }
 
