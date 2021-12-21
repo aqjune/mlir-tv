@@ -2538,8 +2538,6 @@ static void encodeReductionLoopBodyAndOutput(
   mlir::Operation *the_op = block.getParentOp();
 
   auto &ops = block.getOperations();
-  int instcount = ops.size();
-  mlir::Value yieldedValue;
 
   using mlir::m_Op;
   using mlir::matchers::m_Any;
@@ -2560,32 +2558,19 @@ static void encodeReductionLoopBodyAndOutput(
   auto p4 = m_Op<mlir::linalg::YieldOp>(
       m_Op<mlir::arith::AddIOp>(m_Any(), m_Val(lastarg)));
 
-  unsigned idx;
-  if (p1.match(&ops.back()) || p3.match(&ops.back()))      idx = 1;
-  else if (p2.match(&ops.back()) || p4.match(&ops.back())) idx = 0;
-  else
+  if (!(p1.match(&ops.back()) || p2.match(&ops.back()) ||
+        p3.match(&ops.back()) || p4.match(&ops.back())))
     throw UnsupportedException(the_op, move(errmsg));
 
-  auto sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(idx);
-
+  mlir::Value yieldedValue;
   // TODO: deal with merging memories
   encodeBlock(newst, block, /*print ops*/false, /*encode mem writes*/false,
-      [&yieldedValue, instcount, &lastarg, &the_op](
-          mlir::Operation *op, int opindex) {
-        if (opindex >= instcount - 2)
-          // Don't directly encode %sum and yield
+      [&yieldedValue](mlir::Operation *op, int opindex) {
+        if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
+          assert(op2.getNumOperands() == 1); // This was checked before call
+          yieldedValue = op2.getOperand(0);
           return true;
-
-        auto op_operands = op->getOperands();
-        for (const auto &opop: op_operands) {
-          if (lastarg == opop) {
-            string msg;
-            TO_STRING(msg, "Unsupported reduction form because it contains "
-                << *op);
-            throw UnsupportedException(the_op, move(msg));
-          }
         }
-
         return false;
       },
       [&welldef, &newst](mlir::Operation *op) {
@@ -2598,10 +2583,10 @@ static void encodeReductionLoopBodyAndOutput(
 
   // Represent %v as an element of a tensor.
   Tensor t_v = Tensor::mkInitializedLambda(
-      sumvar.getType(),
+      yieldedValue.getType(),
       addOne(vector(linalgInfo.indVarUpperBounds)),
       vector(linalgInfo.indVars),
-      newst.regs.getExpr(sumvar));
+      newst.regs.getExpr(yieldedValue));
 
   if (llvm::all_of(outputMap.getResults(), [](const mlir::AffineExpr &Expr) {
     auto ac = Expr.dyn_cast<mlir::AffineConstantExpr>();
