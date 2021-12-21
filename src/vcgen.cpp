@@ -91,7 +91,7 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
 
 llvm::cl::opt<unsigned int> max_unknown_dimsize("max-unknown-dimsize",
   llvm::cl::desc("Maximum dimension size for unknown shaped dimension"
-                    "(default value: 1000)"),
+                    "(default value: 50)"),
   llvm::cl::init(50), llvm::cl::value_desc("number"),
   llvm::cl::cat(MlirTvCategory));
 };
