@@ -930,35 +930,8 @@ Expr AbsFpEncoding::exp(const Expr &x) {
       getExpFn().apply(x))));
 }
 
-Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
-  if (abstraction.fpDot == AbsLevelFpDot::FULLY_ABS) {
-    usedOps.fpDot = true;
-    auto i = (Expr)Index::var("idx", VarType::BOUND);
-
-    Expr ai = a.select(i), bi = b.select(i);
-    Expr identity = zero(true);
-    // Encode commutativity: dot(a, b) = dot(b, a)
-    Expr arr1 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity));
-    Expr arr2 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity));
-    Expr lhs = getDotFn().apply({arr1, arr2});
-    Expr rhs = getDotFn().apply({arr2, arr1});
-    // To prevent the LSB of dot(x, x) from always being 0, separately deal with
-    // the case using 'arr1 == arr2'.
-    return Expr::mkIte(arr1 == arr2, lhs, lhs + rhs);
-
-  } else if (abstraction.fpDot == AbsLevelFpDot::SUM_MUL) {
-    // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
-    auto i = (Expr)Index::var("idx", VarType::BOUND);
-    Expr ai = a.select(i), bi = b.select(i);
-    Expr arr = Expr::mkLambda(i, mul(ai, bi));
-
-    return sum(arr, n);
-  }
-  llvm_unreachable("Unknown abstraction level for fp dot");
-}
-
 Expr AbsFpEncoding::dot(const Expr &a, const Expr &b,
-    const Expr &n, const Expr &&initValue) {
+    const Expr &n, std::optional<smt::Expr> &&initValue) {
   if (abstraction.fpDot == AbsLevelFpDot::FULLY_ABS) {
     usedOps.fpDot = true;
     auto i = (Expr)Index::var("idx", VarType::BOUND);

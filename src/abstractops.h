@@ -213,8 +213,8 @@ public:
       std::optional<std::vector<smt::Expr>> &&elems = std::nullopt,
       std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr exp(const smt::Expr &x);
-  smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
-  smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n, const smt::Expr &&initValue);
+  smt::Expr dot(const smt::Expr &a, const smt::Expr &b,
+      const smt::Expr &n, std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
