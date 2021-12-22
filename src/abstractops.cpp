@@ -98,6 +98,16 @@ optional<FPCastingInfo> getCastingInfo(llvm::APFloat fp_const) {
       "Cannot analyze casting information for this type");
   }
 }
+
+
+pair<Expr, Expr> insertInitialValue(const Expr &a, const Expr &n,
+    const Expr &initValue) {
+  auto i = (Expr) Index::var("idx", VarType::BOUND);
+  auto ai = a.select(i - 1);
+  auto arr = Expr::mkLambda(i, Expr::mkIte(i.isZero(), initValue, ai));
+  auto size = (Expr) n + 1;
+  return {arr, size};
+}
 }
 
 
@@ -860,17 +870,19 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
   return result;
 }
 
-Expr AbsFpEncoding::sum(const Expr &a, const Expr &n) {
-  return sum(a, n, nullopt);
-}
-
 Expr AbsFpEncoding::sum(const Expr &a, const Expr &n,
-    optional<vector<smt::Expr>> &&elems) {
+    optional<vector<smt::Expr>> &&elems,
+    optional<smt::Expr> &&initValue) {
   if (getFpAddAssociativity() && !n.isNumeral())
     throw UnsupportedException(
         "Only an array of constant length is supported.");
 
-  auto length = n.asUInt();
+  auto [arr, size] = initValue ?
+      insertInitialValue(a, n, *initValue) : make_pair(a, n);
+  if (initValue && elems)
+      elems->insert(elems->begin(), *initValue);
+
+  auto length = size.asUInt();
   if (elems) {
     assert(length == elems->size());
   }
@@ -879,32 +891,32 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n,
   if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY
       || abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
     if (getFpAddAssociativity() && useMultiset)
-      sumExpr = multisetSum(a, n);
+      sumExpr = multisetSum(arr, size);
     else {
       if (elems)
         sumExpr = lambdaSum(*elems);
       else
-        sumExpr = lambdaSum(a, n);
+        sumExpr = lambdaSum(arr, size);
     }
   } else {
     if (!length || length > maxUnrollFpSumBound) {
       verbose("fpSum") << "ADD_ONLY applies only array length less than or"
                           " equals to " << maxUnrollFpSumBound << ".\n";
       verbose("fpSum") << "Fallback to lambdaSum...\n";
-      sumExpr = lambdaSum(a, n);
+      sumExpr = lambdaSum(arr, size);
     } else {
       verbose("fpSum") << "Sum of an array unrolled to fp_add.\n";
-      auto sum = a.select(Index(0));
+      auto sum = arr.select(Index(0));
       for (auto i = 1; i < length; i++) {
-        sum = add(sum, a.select(Index(i)));
+        sum = add(sum, arr.select(Index(i)));
         sum = sum.simplify();
       }
       sumExpr = sum;
     }
   }
   
-  auto ret = Expr::mkIte(n == Index::zero(), zero(true),
-      Expr::mkIte(n == Index::one(), a.select(Index(0)), *sumExpr));
+  auto ret = Expr::mkIte(size == Index::zero(), zero(true),
+      Expr::mkIte(size == Index::one(), arr.select(Index(0)), *sumExpr));
   return ret;
 }
 
@@ -941,6 +953,34 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
     Expr arr = Expr::mkLambda(i, mul(ai, bi));
 
     return sum(arr, n);
+  }
+  llvm_unreachable("Unknown abstraction level for fp dot");
+}
+
+Expr AbsFpEncoding::dot(const Expr &a, const Expr &b,
+    const Expr &n, const Expr &&initValue) {
+  if (abstraction.fpDot == AbsLevelFpDot::FULLY_ABS) {
+    usedOps.fpDot = true;
+    auto i = (Expr)Index::var("idx", VarType::BOUND);
+
+    Expr ai = a.select(i), bi = b.select(i);
+    Expr identity = zero(true);
+    // Encode commutativity: dot(a, b) = dot(b, a)
+    Expr arr1 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity));
+    Expr arr2 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity));
+    Expr lhs = getDotFn().apply({arr1, arr2});
+    Expr rhs = getDotFn().apply({arr2, arr1});
+    // To prevent the LSB of dot(x, x) from always being 0, separately deal with
+    // the case using 'arr1 == arr2'.
+    return Expr::mkIte(arr1 == arr2, lhs, lhs + rhs);
+
+  } else if (abstraction.fpDot == AbsLevelFpDot::SUM_MUL) {
+    // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
+    auto i = (Expr)Index::var("idx", VarType::BOUND);
+    Expr ai = a.select(i), bi = b.select(i);
+    Expr arr = Expr::mkLambda(i, mul(ai, bi));
+
+    return sum(arr, n, nullopt, move(initValue));
   }
   llvm_unreachable("Unknown abstraction level for fp dot");
 }
@@ -1317,31 +1357,36 @@ Expr getFpConstantPrecondition() {
 // ----- Integer operations ------
 
 
-Expr intSum(const Expr &a, const Expr &n) {
+Expr intSum(const Expr &a, const Expr &n,
+    std::optional<smt::Expr> &&initValue) {
+  
+  auto [arr, size] = initValue ?
+      insertInitialValue(a, n, *initValue) : make_pair(a, n);
   auto i = Index::var("idx", VarType::BOUND);
-  Expr ai = a.select(i);
+  Expr arri = arr.select(i);
 
-  uint64_t n_const;
-  if (doUnrollIntSum && n.isUInt(n_const)) {
-    verbose("intSum") << "Unrolling sum whose size is " << n_const << "\n";
-    Expr s = Expr::mkBV(0, ai.bitwidth());
-    for (uint64_t j = 0; j < n_const; ++j) {
-      s = s + a.select(Index(j));
+  uint64_t length;
+  if (doUnrollIntSum && size.isUInt(length)) {
+    verbose("intSum") << "Unrolling sum whose size is " << length << "\n";
+    Expr s = Expr::mkBV(0, arri.bitwidth());
+    for (uint64_t j = 0; j < length; ++j) {
+      s = s + arr.select(Index(j));
     }
     return s;
   }
 
   usedOps.intSum = true;
-  Expr zero = Integer(0, ai.bitwidth());
+  Expr zero = Integer(0, arri.bitwidth());
 
-  FnDecl sumfn = getIntSumFn(ai.sort().bitwidth());
+  FnDecl sumfn = getIntSumFn(arri.sort().bitwidth());
   Expr result = sumfn(
-      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero)));
+      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(size), arri, zero)));
 
   return result;
 }
 
-Expr intDot(const Expr &a, const Expr &b, const Expr &n) {
+Expr intDot(const Expr &a, const Expr &b,
+    const Expr &n, std::optional<smt::Expr> &&initValue) {
   if (abstraction.intDot == AbsLevelIntDot::FULLY_ABS) {
     usedOps.intDot = true;
 
@@ -1364,7 +1409,7 @@ Expr intDot(const Expr &a, const Expr &b, const Expr &n) {
     Expr ai = a.select(i), bi = b.select(i);
     Expr arr = Expr::mkLambda(i, ai * bi);
 
-    return intSum(arr, n);
+    return intSum(arr, n, move(initValue));
   }
   llvm_unreachable("Unknown abstraction level for int dot");
 }

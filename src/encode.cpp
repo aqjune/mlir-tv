@@ -1454,9 +1454,12 @@ void encodeOp(State &st, mlir::linalg::MatmulOp op, bool) {
 
   Tensor a = st.regs.get<Tensor>(op.getOperand(0));
   Tensor b = st.regs.get<Tensor>(op.getOperand(1));
-  Tensor result = a.matmul(b);
+  Tensor c = st.regs.get<Tensor>(op.getOperand(2));
+  Tensor result = a.matmul(b, c);
+
   st.wellDefined(op, a.isFullyInitialized());
   st.wellDefined(op, b.isFullyInitialized());
+  st.wellDefined(op, c.isFullyInitialized());
   st.regs.add(op.getResult(0), Tensor(result));
 }
 
@@ -2538,6 +2541,7 @@ static void encodeReductionLoopBodyAndOutput(
   mlir::Operation *the_op = block.getParentOp();
 
   auto &ops = block.getOperations();
+  int instcount = ops.size();
 
   using mlir::m_Op;
   using mlir::matchers::m_Any;
@@ -2558,18 +2562,30 @@ static void encodeReductionLoopBodyAndOutput(
   auto p4 = m_Op<mlir::linalg::YieldOp>(
       m_Op<mlir::arith::AddIOp>(m_Any(), m_Val(lastarg)));
 
-  if (!(p1.match(&ops.back()) || p2.match(&ops.back()) ||
-        p3.match(&ops.back()) || p4.match(&ops.back())))
+  unsigned idx;
+   if (p1.match(&ops.back()) || p3.match(&ops.back()))      idx = 1;
+   else if (p2.match(&ops.back()) || p4.match(&ops.back())) idx = 0;
+   else
     throw UnsupportedException(the_op, move(errmsg));
 
-  mlir::Value yieldedValue;
+  auto sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(idx);
+
   // TODO: deal with merging memories
   encodeBlock(newst, block, /*print ops*/false, /*encode mem writes*/false,
-      [&yieldedValue](mlir::Operation *op, int opindex) {
-        if (auto op2 = mlir::dyn_cast<mlir::linalg::YieldOp>(op)) {
-          assert(op2.getNumOperands() == 1); // This was checked before call
-          yieldedValue = op2.getOperand(0);
+      [instcount, &lastarg, &the_op](
+          mlir::Operation *op, int opindex) {
+        if (opindex >= instcount - 2)
+          // Don't directly encode %sum and yield
           return true;
+        
+        auto op_operands = op->getOperands();
+        for (const auto &opop: op_operands) {
+          if (lastarg == opop) {
+            string msg;
+            TO_STRING(msg, "Unsupported reduction form because it contains "
+                << *op);
+            throw UnsupportedException(the_op, move(msg));
+          }
         }
         return false;
       },
@@ -2583,10 +2599,10 @@ static void encodeReductionLoopBodyAndOutput(
 
   // Represent %v as an element of a tensor.
   Tensor t_v = Tensor::mkInitializedLambda(
-      yieldedValue.getType(),
+      sumvar.getType(),
       addOne(vector(linalgInfo.indVarUpperBounds)),
       vector(linalgInfo.indVars),
-      newst.regs.getExpr(yieldedValue));
+      newst.regs.getExpr(sumvar));
 
   if (llvm::all_of(outputMap.getResults(), [](const mlir::AffineExpr &Expr) {
     auto ac = Expr.dyn_cast<mlir::AffineConstantExpr>();
@@ -2598,8 +2614,13 @@ static void encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
-    t_res = Tensor(t_v.getElemType(), t_v.sum(),
+    // TODO (seongwon): Currently we cover only tensor cases..
+    // TODO: Support memref cases
+    auto outty = newst.regs.get<Tensor>(the_op->getOperands().back());
+    auto initElem = outty.get({}).first;
+    t_res = Tensor(t_v.getElemType(), t_v.sum(move(initElem)),
           makeCube(Index(1), outputType.getRank()));
+    welldef &= outty.isFullyInitialized();
   } else {
     // in:  (i, j) -> (i, j)
     // out: (i, j) -> (i)
@@ -2628,17 +2649,22 @@ static void encodeReductionLoopBodyAndOutput(
       }
     }
 
+    // TODO (seongwon): Currently we cover only tensor cases..
+    // TODO: Support memref cases
+    auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
+    auto outty = newst.regs.get<Tensor>(the_op->getOperands().back());
+    auto initElem = outty.get(outputIndVars).first;
     auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
     auto t_sum = Tensor::mkInitializedLambda(
           t_v.getElemType(),
           addOne(move(boundsForRes)),
           move(indVarsForRes),
           t_v.get(linalgInfo.indVars).first)
-        .sum();
-
-    auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
+        .sum(move(initElem));
+    
     t_res = Tensor::mkInitializedLambda(
         t_v.getElemType(), move(tensorSz), move(outputIndVars), t_sum);
+    welldef &= outty.isFullyInitialized();
   }
 }
 

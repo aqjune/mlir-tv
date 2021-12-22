@@ -82,9 +82,11 @@ smt::Expr getFpConstantPrecondition();
 
 void evalConsts(smt::Model model);
 
-smt::Expr intSum(const smt::Expr &arr, const smt::Expr &n);
+smt::Expr intSum(const smt::Expr &arr, const smt::Expr &n,
+    std::optional<smt::Expr> &&initValue = std::nullopt);
 smt::Expr intDot(const smt::Expr &arr1, const smt::Expr &arr2,
-                 const smt::Expr &n);
+                 const smt::Expr &n,
+                 std::optional<smt::Expr> &&initValue = std::nullopt);
 
 class AbsFpEncoding {
 private:
@@ -205,9 +207,14 @@ public:
   smt::Expr add(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr mul(const smt::Expr &f1, const smt::Expr &f2);
   smt::Expr div(const smt::Expr &f1, const smt::Expr &f2);
-  smt::Expr sum(const smt::Expr &a, const smt::Expr &n);
+  // If elems != nullopt, a must be
+  //    lambda i, ite(i=0, elems[0], ite(i = 1, elems[1], ...))
+  smt::Expr sum(const smt::Expr &a, const smt::Expr &n,
+      std::optional<std::vector<smt::Expr>> &&elems = std::nullopt,
+      std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr exp(const smt::Expr &x);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n);
+  smt::Expr dot(const smt::Expr &a, const smt::Expr &b, const smt::Expr &n, const smt::Expr &&initValue);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
@@ -217,10 +224,6 @@ public:
   smt::Expr getFpConstantPrecondition();
 
 private:
-  // If elems != nullopt, a must be
-  //    lambda i, ite(i=0, elems[0], ite(i = 1, elems[1], ...))
-  smt::Expr sum(const smt::Expr &a, const smt::Expr &n,
-      std::optional<std::vector<smt::Expr>> &&elems);
   smt::Expr lambdaSum(const smt::Expr &a, const smt::Expr &n);
   smt::Expr lambdaSum(const std::vector<smt::Expr> &elems);
   smt::Expr multisetSum(const smt::Expr &a, const smt::Expr &n);

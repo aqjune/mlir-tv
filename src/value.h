@@ -196,6 +196,7 @@ public:
   Tensor transpose() const;
 
   Tensor matmul(const Tensor &b) const;
+  Tensor matmul(const Tensor &b, const Tensor &init) const;
 
   // Return the result of an elementwise operation.
   // Assume that the shapes are equivalent.
@@ -209,12 +210,14 @@ public:
 
   smt::Expr dot(const Tensor &b) const;
   smt::Expr sum() const;
+  smt::Expr sum(smt::Expr &&initValue) const;
   // Equivalent to tosa.reduce_sum
   // If this is a <N1 x N2 x ...> tensor, return a new tensor whose size at
   // the axis dimension is 1 and the corresponding elements contain summations
   // of elements.
   // Note that sum does not decrement the rank.
   Tensor sum(unsigned axis) const;
+  
 
   operator smt::Expr() const { return arr; }
 

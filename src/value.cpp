@@ -694,6 +694,29 @@ Tensor Tensor::matmul(const Tensor &b) const {
       {dims[0], bt.dims[0]}, {i, j}, move(res));
 }
 
+Tensor Tensor::matmul(const Tensor &b, const Tensor &init) const {
+  assert(dims.size() == 2);
+  assert(b.dims.size() == 2);
+
+  auto bt = b.transpose();
+  auto i = Index::var("i", VarType::BOUND);
+  auto j = Index::var("j", VarType::BOUND);
+  auto a_row = to1DArrayWithOfs(
+      {i, Index::zero()}, {Index::one(), dims[1]});
+  auto bt_row = bt.to1DArrayWithOfs(
+      {j, Index::zero()}, {Index::one(), bt.dims[1]});
+  auto initVal = init.get({i, j}).first;
+
+  // TODO(seongwon): fix intDot
+  auto res = elemType.isa<mlir::FloatType>() ?
+      aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1], move(initVal)) :
+      aop::intDot(a_row, bt_row, dims[1], move(initVal));
+
+  // UB if uninitialized elem is used
+  return mkInitializedLambda(elemType,
+      {dims[0], bt.dims[0]}, {i, j}, move(res));
+}
+
 Tensor Tensor::elementwiseBinOp(
       const Tensor &b,
       mlir::Type resultElemType,
@@ -731,6 +754,13 @@ Expr Tensor::sum() const {
   return elemType.isa<mlir::FloatType>() ?
       aop::getFpEncoding(elemType).sum(arr, get1DSize()) :
       aop::intSum(arr, get1DSize());
+}
+
+Expr Tensor::sum(Expr &&initValue) const {
+  return elemType.isa<mlir::FloatType>() ?
+      aop::getFpEncoding(elemType)
+        .sum(arr, get1DSize(), nullopt, move(initValue)) :
+      aop::intSum(arr, get1DSize(), move(initValue));
 }
 
 Tensor Tensor::sum(unsigned axis) const {
@@ -839,8 +869,9 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
         os << *val;
       } else if (init.isFalse())
         os << "(uninit.)";
-      else
+      else {
         os << "(unknown)";
+      }
     }
     return os;
   }
