@@ -847,9 +847,8 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
         os << *val;
       } else if (init.isFalse())
         os << "(uninit.)";
-      else {
+      else
         os << "(unknown)";
-      }
     }
     return os;
   }

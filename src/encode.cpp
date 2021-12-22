@@ -2577,7 +2577,7 @@ static void encodeReductionLoopBodyAndOutput(
         if (opindex >= instcount - 2)
           // Don't directly encode %sum and yield
           return true;
-        
+
         auto op_operands = op->getOperands();
         for (const auto &opop: op_operands) {
           if (lastarg == opop) {
