@@ -484,7 +484,6 @@ void encodeOp(State &st, mlir::arith::CmpIOp op, bool) {
     auto b = st.regs.get<Tensor>(op.getOperand(1));
     assert(a.getElemType() == b.getElemType());
 
-    auto elemty = a.getElemType();
     auto resultElemTy = getElemTy(op.getResult());
     st.regs.add(op, a.elementwiseBinOp(b, resultElemTy, fn));
     st.wellDefined(op, listsEqual(a.getDims(), b.getDims()));
