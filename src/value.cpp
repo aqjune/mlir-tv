@@ -728,11 +728,20 @@ Tensor Tensor::elementwiseUnaryOp(
   return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);
 }
 
-Expr Tensor::dot(const Tensor &t2) const {
+Expr Tensor::dot(const Tensor &t2, std::optional<Tensor> &&init) const {
   auto len = get1DSize();
-  return elemType.isa<mlir::FloatType>() ?
+
+  if (init) {
+    // scalar output
+    auto initVal = init->get({Index(0)}).first;
+    return elemType.isa<mlir::FloatType>() ?
+      aop::getFpEncoding(elemType).dot(arr, t2.arr, len, move(initVal)) :
+      aop::intDot(arr, t2.arr, len, move(initVal));
+  } else {
+    return elemType.isa<mlir::FloatType>() ?
       aop::getFpEncoding(elemType).dot(arr, t2.arr, len) :
       aop::intDot(arr, t2.arr, len);
+  }
 }
 
 Expr Tensor::sum(Expr &&initVal) const {

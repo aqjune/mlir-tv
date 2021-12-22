@@ -2274,12 +2274,13 @@ void encodeOp(State &st, mlir::linalg::DotOp op, bool encodeMemWrite) {
     throw UnsupportedException(op.getOperation(),
         "tensor semantics is supported only");
 
-  if (op.getNumResults() != 1)
+  auto inputOps = op.getInputOperands();
+  auto outputOps = op.getOutputOperands();
+  auto outputTy = op.getType(0).dyn_cast<mlir::TensorType>();
+
+  if (op.getNumResults() != 1 || outputOps.size() != 1)
     throw UnsupportedException(op.getOperation(),
         "it has multiple results");
-
-  auto inputOps = op.getInputOperands();
-  auto outputTy = op.getType(0).dyn_cast<mlir::TensorType>();
 
   auto outputDim = ShapedValue::getDims(outputTy, false);
   if (outputDim.size() != 1)
@@ -2293,11 +2294,13 @@ void encodeOp(State &st, mlir::linalg::DotOp op, bool encodeMemWrite) {
 
   auto t1 = st.regs.get<Tensor>(inputOps[0]->get());
   auto t2 = st.regs.get<Tensor>(inputOps[1]->get());
+  auto t3 = st.regs.get<Tensor>(outputOps[0]->get());
   st.wellDefined(op, t1.isFullyInitialized());
   st.wellDefined(op, t2.isFullyInitialized());
+  st.wellDefined(op, t3.isFullyInitialized());
   st.wellDefined(op, t1.get1DSize() == t2.get1DSize());
 
-  auto res = t1.dot(t2);
+  auto res = t1.dot(t2, move(t3));
   st.regs.add(op.getResult(0),
       Tensor(t1.getElemType(), move(res), move(outputDim)));
 }
