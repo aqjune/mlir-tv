@@ -673,7 +673,7 @@ Tensor Tensor::reshape(const vector<Expr> &newdims) const {
   return { elemType, simplifyList(newdims), Expr(arr), Expr(initialized) };
 }
 
-Tensor Tensor::matmul(const Tensor &b) const {
+Tensor Tensor::matmul(const Tensor &b, std::optional<Tensor> &&init) const {
   assert(dims.size() == 2);
   assert(b.dims.size() == 2);
 
@@ -685,36 +685,21 @@ Tensor Tensor::matmul(const Tensor &b) const {
   auto bt_row = bt.to1DArrayWithOfs(
       {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
-  auto res = elemType.isa<mlir::FloatType>() ?
-      aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1]) :
-      aop::intDot(a_row, bt_row, dims[1]);
-
-  // UB if uninitialized elem is used
-  return mkInitializedLambda(elemType,
-      {dims[0], bt.dims[0]}, {i, j}, move(res));
-}
-
-Tensor Tensor::matmul(const Tensor &b, const Tensor &init) const {
-  assert(dims.size() == 2);
-  assert(b.dims.size() == 2);
-
-  auto bt = b.transpose();
-  auto i = Index::var("i", VarType::BOUND);
-  auto j = Index::var("j", VarType::BOUND);
-  auto a_row = to1DArrayWithOfs(
-      {i, Index::zero()}, {Index::one(), dims[1]});
-  auto bt_row = bt.to1DArrayWithOfs(
-      {j, Index::zero()}, {Index::one(), bt.dims[1]});
-  auto initVal = init.get({i, j}).first;
-
-  // TODO(seongwon): fix intDot
-  auto res = elemType.isa<mlir::FloatType>() ?
+  optional<Expr> res;
+  if (init) {
+    auto initVal = init->get({i, j}).first;
+    res = elemType.isa<mlir::FloatType>() ?
       aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1], move(initVal)) :
       aop::intDot(a_row, bt_row, dims[1], move(initVal));
+  } else {
+    res = elemType.isa<mlir::FloatType>() ?
+      aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1]) :
+      aop::intDot(a_row, bt_row, dims[1]);
+  }
 
   // UB if uninitialized elem is used
   return mkInitializedLambda(elemType,
-      {dims[0], bt.dims[0]}, {i, j}, move(res));
+      {dims[0], bt.dims[0]}, {i, j}, *res);
 }
 
 Tensor Tensor::elementwiseBinOp(

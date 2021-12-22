@@ -195,8 +195,8 @@ public:
 
   Tensor transpose() const;
 
-  Tensor matmul(const Tensor &b) const;
-  Tensor matmul(const Tensor &b, const Tensor &init) const;
+  Tensor matmul(const Tensor &b,
+                std::optional<Tensor> &&init = std::nullopt) const;
 
   // Return the result of an elementwise operation.
   // Assume that the shapes are equivalent.
