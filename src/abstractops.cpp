@@ -134,7 +134,7 @@ void setAbstraction(
   // included in set<APFloat>
   // Should not exceed 31 (limited by real-life float)
   unsigned floatBits =
-            min(31ul, log2_ceil(floatNonConstsCnt + floatConsts.size() + 2));
+      min((uint64_t) 31, log2_ceil(floatNonConstsCnt + floatConsts.size() + 2));
   floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
   floatEnc->addConstants(floatConsts);
 
