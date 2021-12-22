@@ -3,7 +3,9 @@
 
 func @sum(%mat: tensor<100x100xf32>) -> tensor<f32>
 {
-  %outty = linalg.init_tensor [] : tensor<f32>
+  %zero = arith.constant -0.0 : f32
+  %i = linalg.init_tensor [] : tensor<f32>
+  %outty = linalg.fill(%zero, %i) : f32, tensor<f32> -> tensor<f32>
 
   %mat_transposed = linalg.generic {
       indexing_maps = [affine_map<(d0,d1) -> (d1,d0)>,
