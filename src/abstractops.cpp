@@ -608,7 +608,7 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     auto i = Index::var("idx", VarType::BOUND);
     auto lambda = Expr::mkLambda(i, Expr::mkIte(i == Index::zero(), _f1, _f2));
     auto n = Index(2);
-    return sum(lambda, n);
+    return sum(lambda, n, {{_f1, _f2}});
   }
 
   usedOps.fpAdd = true;
