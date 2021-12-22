@@ -2563,9 +2563,9 @@ static void encodeReductionLoopBodyAndOutput(
       m_Op<mlir::arith::AddIOp>(m_Any(), m_Val(lastarg)));
 
   unsigned idx;
-   if (p1.match(&ops.back()) || p3.match(&ops.back()))      idx = 1;
-   else if (p2.match(&ops.back()) || p4.match(&ops.back())) idx = 0;
-   else
+  if (p1.match(&ops.back()) || p3.match(&ops.back()))      idx = 1;
+  else if (p2.match(&ops.back()) || p4.match(&ops.back())) idx = 0;
+  else
     throw UnsupportedException(the_op, move(errmsg));
 
   auto sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(idx);
@@ -2617,7 +2617,7 @@ static void encodeReductionLoopBodyAndOutput(
     // TODO (seongwon): Currently we cover only tensor cases..
     // TODO: Support memref cases
     auto outty = newst.regs.get<Tensor>(the_op->getOperands().back());
-    auto initElem = outty.get({}).first;
+    auto initElem = outty.get({Index(0)}).first;
     t_res = Tensor(t_v.getElemType(), t_v.sum(move(initElem)),
           makeCube(Index(1), outputType.getRank()));
     welldef &= outty.isFullyInitialized();

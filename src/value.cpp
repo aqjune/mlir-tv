@@ -463,6 +463,8 @@ Expr Tensor::isInBounds(const vector<smt::Expr> &indices) const {
 }
 
 pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
+  llvm::outs() << "DIMS: " << dims.size() << "\n";
+  llvm::outs() << "idx: " << indices.size() << "\n";
   auto elem = arr.select(to1DIdx(indices, dims));
   // Don't directly use this element!
   // Please use it with a proper wrapper (Float, Index, Integer).

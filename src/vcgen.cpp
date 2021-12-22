@@ -290,9 +290,6 @@ static Results checkRefinement(
     for (unsigned i = 0; i < numret; ++i) {
       Solver s(logic);
 
-      llvm::outs() << "Source: " << st_src.retValues[i] << "\n";
-      llvm::outs() << "Target: " << st_tgt.retValues[i] << "\n";
-
       auto [refines, params] =
           ::refines(st_tgt.retValues[i], st_src.retValues[i]);
 
