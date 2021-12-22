@@ -750,17 +750,10 @@ Expr Tensor::dot(const Tensor &t2) const {
       aop::intDot(arr, t2.arr, len);
 }
 
-Expr Tensor::sum() const {
+Expr Tensor::sum(Expr &&initVal) const {
   return elemType.isa<mlir::FloatType>() ?
-      aop::getFpEncoding(elemType).sum(arr, get1DSize()) :
-      aop::intSum(arr, get1DSize());
-}
-
-Expr Tensor::sum(Expr &&initValue) const {
-  return elemType.isa<mlir::FloatType>() ?
-      aop::getFpEncoding(elemType)
-        .sum(arr, get1DSize(), nullopt, move(initValue)) :
-      aop::intSum(arr, get1DSize(), move(initValue));
+    aop::getFpEncoding(elemType).sum(arr, get1DSize(), nullopt, move(initVal)) :
+    aop::intSum(arr, get1DSize(), move(initVal));
 }
 
 Tensor Tensor::sum(unsigned axis) const {

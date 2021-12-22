@@ -209,8 +209,7 @@ public:
       const std::function<smt::Expr(smt::Expr &&)> &op) const;
 
   smt::Expr dot(const Tensor &b) const;
-  smt::Expr sum() const;
-  smt::Expr sum(smt::Expr &&initValue) const;
+  smt::Expr sum(smt::Expr &&initVal) const;
   // Equivalent to tosa.reduce_sum
   // If this is a <N1 x N2 x ...> tensor, return a new tensor whose size at
   // the axis dimension is 1 and the corresponding elements contain summations
