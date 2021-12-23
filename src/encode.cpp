@@ -1042,10 +1042,7 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
 
   auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
 
-  auto acc = paddedTensor.depthwiseConv2D(weight, strides, dilations, true);
-
-  // add bias
-  auto output = addBias2D(elemTy, acc.getDims(), acc, bias);
+  auto output = paddedTensor.depthwiseConv2D(weight, strides, dilations, bias);
   
   st.wellDefined(op, input.isFullyInitialized());
   st.wellDefined(op, weight.isFullyInitialized());
@@ -1301,7 +1298,7 @@ encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op, bool encodeMemWr
   st.wellDefined(op, t_input.getDim(3) == t_input.getDim(3));
   st.wellDefined(op, t_filter.isFullyInitialized());
 
-  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations, false);
+  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations);
   st.regs.add(op.getResult(0), move(t_res));
   st.wellDefined(op, t_input.isFullyInitialized());
   st.wellDefined(op, t_filter.isFullyInitialized());
