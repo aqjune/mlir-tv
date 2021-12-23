@@ -612,7 +612,10 @@ Expr Expr::select(const vector<Expr> &idxs) const {
   if (ConstSplatArray(Any(elem)).match(arr)) {
     e = *elem;
   }
-  
+  if (Lambda(Any(elem)).match(arr) && idxs.size() == 1) {
+    e = elem->substituteDeBruijn({idxs[0]});
+  }
+
   return e;
 }
 
@@ -1000,6 +1003,19 @@ Expr Expr::substitute(
     return e.substitute(toCVC5TermVector(vars), toCVC5TermVector(values));
   }));
 #endif // SOLVER_CVC5
+
+  return e;
+}
+
+Expr Expr::substituteDeBruijn(const std::vector<Expr> &values) const {
+  Expr e;
+#ifdef SOLVER_Z3
+  e.setZ3(fmap(this->z3, [&values](z3::expr e) {
+    return e.substitute(toZ3ExprVector(values));
+  }));
+#endif // SOLVER_Z3
+
+  // TODO: CVC5
 
   return e;
 }
@@ -1472,6 +1488,23 @@ bool ConstSplatArray::operator()(const Expr &expr) const {
   Expr newe = newExpr();
   IF_Z3_ENABLED(setZ3(newe, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0))));
   return subMatcher(newe);
+}
+
+bool Lambda::operator()(const Expr &expr) const {
+  // FIXME: cvc5
+#ifdef SOLVER_Z3
+  auto e = expr.getZ3Expr();
+
+  if (!e.is_lambda())
+    return false;
+
+  Z3_ast body = Z3_get_quantifier_body(*sctx.z3, (Z3_ast)e);
+#endif
+
+  Expr newe = newExpr();
+  IF_Z3_ENABLED(setZ3(newe, z3::expr(*sctx.z3, body)));
+
+  return bodyMatcher(newe);
 }
 
 bool Store::operator()(const Expr &expr) const {
