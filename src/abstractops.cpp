@@ -804,10 +804,14 @@ Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
   // However, LLVM chooses to simply continue the execution without notifying
   Expr::mkIte(iszero(f2, false) | iszero(f2, true),
     Expr::mkIte(iszero(f1, false) | iszero(f1, true), fp_nan, fp_inf_pos),
-    // If both operands do not fall into any of the cases above,
-    // use fp_div for abstract representation.
-    div_abs_res
-  ))))));
+  // +-0.0 / x -> ?0.0, 
+  Expr::mkIte(iszero(f1, false) | iszero(f1, true), fp_zero_pos,
+  // x / x -> 1.0, x / -x -> -1.0 
+  Expr::mkIte(f1_nosign == f2_nosign, fp_id,
+  // If both operands do not fall into any of the cases above,
+  // use fp_div for abstract representation.
+  div_abs_res
+  ))))))));
 
   // And at last we replace the sign with signbit(f1) ^ signbit(f2)
   // pos / pos | neg / neg -> pos, pos / neg | neg / pos -> neg

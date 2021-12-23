@@ -48,6 +48,17 @@ public:
   bool operator()(const Expr &e) const;
 };
 
+class Lambda: Matcher {
+  std::function<bool(const Expr &)> bodyMatcher;
+
+public:
+  template<class T>
+  Lambda(T &&m): bodyMatcher(std::move(m)) {}
+
+  bool match(const Expr &expr) const { return (*this)(expr); }
+  bool operator()(const Expr &e) const;
+};
+
 class Store: Matcher {
   std::function<bool(const Expr &)> arrMatcher, idxMatcher, valMatcher;
 
