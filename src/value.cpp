@@ -85,8 +85,11 @@ Index Index::zero() { return Index(0); }
 Index Index::var(string &&name, VarType varty) {
   switch(varty) {
   case VarType::BOUND:
+    static unsigned varCount = 0;
+    return {Expr::mkVar(Index::sort(), move(name) + "#" + to_string(varCount++),
+            true)};
   case VarType::UNBOUND:
-    return {Expr::mkVar(Index::sort(), move(name), varty == VarType::BOUND)};
+    return {Expr::mkVar(Index::sort(), move(name), false)};
   case VarType::FRESH:
     return {Expr::mkFreshVar(Index::sort(), move(name))};
   }
@@ -94,10 +97,8 @@ Index Index::var(string &&name, VarType varty) {
 }
 vector<Expr> Index::boundIndexVars(unsigned n) {
   vector<Expr> idxs;
-  static int count = 0;
   for (unsigned i = 0; i < n; i ++) {
-    idxs.push_back(
-      Index::var("i" + std::to_string(count++), VarType::BOUND));
+    idxs.push_back(Index::var("i", VarType::BOUND));
   }
   return idxs;
 }
