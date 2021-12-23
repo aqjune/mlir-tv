@@ -321,7 +321,7 @@ FnDecl AbsFpEncoding::getSumFn() {
 FnDecl AbsFpEncoding::getDotFn() {
   auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
   if (!fp_dotfn)
-    fp_dotfn.emplace({arrs, arrs}, sort(), "fp_dot_" + fn_suffix);
+    fp_dotfn.emplace({sort(), arrs, arrs}, sort(), "fp_dot_" + fn_suffix);
   return *fp_dotfn;
 }
 
@@ -946,8 +946,8 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b,
     // Encode commutativity: dot(a, b) = dot(b, a)
     Expr arr1 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity));
     Expr arr2 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity));
-    Expr lhs = getDotFn().apply({arr1, arr2});
-    Expr rhs = getDotFn().apply({arr2, arr1});
+    Expr lhs = getDotFn().apply({initValue.value_or(identity), arr1, arr2});
+    Expr rhs = getDotFn().apply({initValue.value_or(identity), arr2, arr1});
     // To prevent the LSB of dot(x, x) from always being 0, separately deal with
     // the case using 'arr1 == arr2'.
     return Expr::mkIte(arr1 == arr2, lhs, lhs + rhs);
