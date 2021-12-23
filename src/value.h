@@ -103,7 +103,9 @@ protected:
   std::pair<std::vector<smt::Expr>, smt::Expr> conv(const ShapedValue &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
-      ConvLayout layout) const;
+      ConvLayout layout,
+      std::function<std::optional<smt::Expr>(std::vector<smt::Expr> &)>
+          &&getInitValue) const;
 };
 
 class Tensor: public ShapedValue {
@@ -178,7 +180,8 @@ public:
   Tensor conv(const Tensor &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
-      ConvLayout layout) const;
+      ConvLayout layout,
+      const std::optional<Tensor> &&output = std::nullopt) const;
 
   // Return a new tensor which is depthwise convolution of this 2D tensor and filter.
   // Callers of conv must check whether filters/inputs/.. are initialized

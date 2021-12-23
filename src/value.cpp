@@ -272,7 +272,8 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
     const ShapedValue &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,
-    ConvLayout convLayout) const {
+    ConvLayout convLayout,
+    function<optional<Expr>(vector<Expr> &)> &&getInitValue) const {
   // 1. NHWC_HWCF:
   //   input: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
   //   filter: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel x Output_channel
@@ -371,12 +372,13 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
 
   Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
   Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
+  optional<Expr> initialValue = getInitValue(outputIdxs);
 
   Expr sz = ::get1DSize(cubeSize);
-  Expr outputExpr =
-      elemType.isa<mlir::IntegerType>() ?
-        aop::intDot(inputExpr, filterExpr, sz) :
-        aop::getFpEncoding(elemType).dot(inputExpr, filterExpr, sz);
+  Expr outputExpr = elemType.isa<mlir::IntegerType>() ?
+    aop::intDot(inputExpr, filterExpr, sz, move(initialValue)) :
+    aop::getFpEncoding(elemType)
+      .dot(inputExpr, filterExpr, sz, move(initialValue));
 
   return {move(outputIdxs), move(outputExpr)};
 }
@@ -620,7 +622,8 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
 Tensor Tensor::conv(const Tensor &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,
-    ConvLayout layout) const {
+    ConvLayout layout,
+    const std::optional<Tensor> &&output) const {
   // If layout is NHWC_HWCF:
   // output[b, x[0], ..., x[N-1], k] =
   //     sum_{z[0], ..., z[N-1], q}
@@ -679,8 +682,14 @@ Tensor Tensor::conv(const Tensor &filter,
     break;
   }
   }
-
-  auto [indices, res] = ShapedValue::conv(filter, strides, dilations, layout);
+  auto getInitValue = [&](vector<Expr> &indices) -> optional<Expr> {
+    if (output)
+      return output->get(indices).first;
+    else
+      return nullopt;
+  };
+  auto [indices, res] = ShapedValue
+      ::conv(filter, strides, dilations, layout, move(getInitValue));
 
   // UB if uninitialized elem is used
   return Tensor::mkInitializedLambda(elemType,
@@ -1391,8 +1400,11 @@ Expr MemRef::conv(const MemRef &input,
     const std::vector<smt::Expr> &strides,
     const std::vector<smt::Expr> &dilations,
     ConvLayout clayout) {
-  auto [indices, expr] = input.ShapedValue::conv(filter, strides, dilations,
-      clayout);
+  auto getInitValue = [&](vector<Expr> &indices) -> optional<Expr> {
+    return this->get(indices).first;
+  };
+  auto [indices, expr] = input.ShapedValue
+      ::conv(filter, strides, dilations, clayout, move(getInitValue));
 
   // we splat results into 1D memory layout
   auto idx = Index::var("outputIdx", VarType::BOUND);
@@ -1401,6 +1413,7 @@ Expr MemRef::conv(const MemRef &input,
   auto outputArray = Expr::mkLambda(idx, outputExpr);
 
   // store output memref
+  // TODO(aqjune): Support memref cases (memref.isFullyInitialized)
   auto success = isInBounds() & getLiveness() &
       input.getLiveness() & input.isInBounds() &
       filter.getLiveness() & filter.isInBounds() &

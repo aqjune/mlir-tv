@@ -1,5 +1,6 @@
 // VERIFY-INCORRECT
 // ARGS: --smt-to=400000
+// This transformation also incorrect because target uses tensor without initialization.
 func @conv(%arg0: tensor<1x29x29x4xf32>, %arg1: tensor<3x3x4x16xf32>) -> tensor<1x14x14x16xf32> {
     %c0 = arith.constant 0.0 : f32 // This has to be -0.0
     %bias = tensor.from_elements %c0,%c0,%c0,%c0,%c0,%c0,%c0,%c0,%c0,%c0,%c0,%c0,%c0,%c0,%c0,%c0: tensor<16xf32>

@@ -1262,11 +1262,14 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
   if (op.hasTensorSemantics()) {
     auto t_input = st.regs.get<Tensor>(op.image());
     auto t_filter = st.regs.get<Tensor>(op.filter());
+    auto output = st.regs.get<Tensor>(op.outputs()[0]);
 
-    auto t_res = t_input.conv(t_filter, strides, dilations, clayout);
+    auto t_res = t_input
+      .conv(t_filter, strides, dilations, clayout, output);
     st.regs.add(op.getResult(0), move(t_res));
     st.wellDefined(op, t_input.isFullyInitialized());
     st.wellDefined(op, t_filter.isFullyInitialized());
+    st.wellDefined(op, output.isFullyInitialized());
   } else {
     auto input = st.regs.get<MemRef>(op.image());
     auto filter = st.regs.get<MemRef>(op.filter());
@@ -1275,7 +1278,9 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
     if (!output.isIdentityMap())
       throw UnsupportedException(op.getOperation(),
           "The output MemRef should have identity layout.");
-    auto success = output.conv(input, filter, strides, dilations, clayout);
+    auto success = output
+      .conv(input, filter, strides, dilations, clayout);
+    // TODO(aqjune): Support memref cases (memref.isFullyInitialized)
     st.wellDefined(op, move(success));
   }
 }
@@ -2603,8 +2608,7 @@ static void encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
-    // TODO (seongwon): Currently we cover only tensor cases..
-    // TODO: Support memref cases
+    // TODO(aqjune): Support memref cases (memref.isFullyInitialized)
     auto outTensor = newst.regs.get<Tensor>(the_op->getOperands().back());
     auto initElem = outTensor.get({Index(0)}).first;
     t_res = Tensor(t_v.getElemType(), t_v.sum(move(initElem)),
@@ -2638,8 +2642,7 @@ static void encodeReductionLoopBodyAndOutput(
       }
     }
 
-    // TODO (seongwon): Currently we cover only tensor cases..
-    // TODO: Support memref cases
+    // TODO(aqjune): Support memref cases (memref.isFullyInitialized)
     auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
     auto outTensor = newst.regs.get<Tensor>(the_op->getOperands().back());
     auto initElem = outTensor.get(outputIndVars).first;

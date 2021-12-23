@@ -1,5 +1,6 @@
-// VERIFY
+// VERIFY-INCORRECT
 // ARGS: --smt-to=20000
+// This transformation incorrect because target uses memref without initialization.
 func @conv(%input: tensor<1x3x225x225xf32>, %filter: tensor<32x3x3x3xf32>,
            %output: tensor<1x32x112x112xf32>) -> tensor<1x32x112x112xf32> {
   %0 = linalg.conv_2d_nchw_fchw 
