@@ -549,7 +549,8 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
 
 Tensor Tensor::depthwiseConv2D(const Tensor &filter,
     const vector<Expr> &strides,
-    const vector<Expr> &dilations) const {
+    const vector<Expr> &dilations,
+    const optional<Tensor> bias) const {
 
   // args should match for 2D tensors
   assert(getDims().size() == 4);
@@ -557,15 +558,18 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
   assert(strides.size() == 2);
   assert(dilations.size() == 2);
 
-  vector<Expr> outInd = Index::boundIndexVars(5);
+  vector<Expr> outInd = bias.has_value() ? 
+                          Index::boundIndexVars(4) :
+                          Index::boundIndexVars(5);
+
   auto wDims = filter.getDims();
   auto dims = getDims();
   auto N = dims[0];
   auto C = wDims[2];
   auto M = wDims[3];
   auto n = outInd[0];
-  auto c = outInd[3];
-  auto m = outInd[4];
+  auto c = bias.has_value() ? outInd[3].udiv(M) : outInd[3];
+  auto m = bias.has_value() ? outInd[3].urem(M) : outInd[4];
 
   // change input to 1xHxWx1
   vector<Expr> input2DDims = {Index(1), dims[1], dims[2], Index(1)};
@@ -589,13 +593,28 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
 
   auto t2DDims = t2D.getDims();
 
-  // NxOHxOWxCxM
-  vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C, M};
+  auto accVal = t2D.get({Index(0), outInd[1], outInd[2], Index(0)}).first;
 
-  return Tensor::mkInitializedLambda(
-            elemType, move(tDims), move(outInd), 
-            t2D.get({Index(0), outInd[1], outInd[2], Index(0)}).first
-          );
+  if(bias.has_value()) {
+    // NxOHxOWx(C*M)
+    vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C * M};
+
+    // add bias
+    auto tf = Float(accVal, elemType);
+    auto biasf = Float(bias->get({outInd[3]}).first, elemType);
+
+    return Tensor::mkInitializedLambda(
+              elemType, move(tDims), move(outInd), 
+              tf.add(biasf)
+            );
+  } else { 
+    // NxOHxOWxCxM
+    vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C, M};
+
+    return Tensor::mkInitializedLambda(
+              elemType, move(tDims), move(outInd), accVal
+            );
+  }
 }
 
 Tensor Tensor::conv(const Tensor &filter,

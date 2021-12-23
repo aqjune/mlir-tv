@@ -445,6 +445,10 @@ EXPR_BVOP_UINT64(urem)
 Expr Expr::urem(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
+  uint64_t rhsval;
+  if (rhs.isUInt(rhsval) && rhsval == 1)
+    return Expr::mkBV(0, rhs);
+
   uint64_t a, b;
   // If divisor is zero, follow the solver's behavior
   // (see also: rewriter.hi_div0 in Z3)

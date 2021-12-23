@@ -182,7 +182,8 @@ public:
   // (otherwise UB).
   Tensor depthwiseConv2D(const Tensor &filter,
       const std::vector<smt::Expr> &strides,
-      const std::vector<smt::Expr> &dilations) const;
+      const std::vector<smt::Expr> &dilations,
+      const std::optional<Tensor> bias = std::nullopt) const;
 
   Tensor reshape(const std::vector<smt::Expr> &ns2) const;
 
