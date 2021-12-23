@@ -119,12 +119,8 @@ vector<Expr> from1DIdx(
   // Start from the lowest dimension
   for (size_t ii = dims.size(); ii > 0; --ii) {
     size_t i = ii - 1;
-    uint64_t v;
-    auto isOne = dims[i].isUInt(v) && v == 1;
-
-    // how to make Expr(0)?
-    idxs.emplace_back(i == 0 ? idx1d : (isOne ? Expr::mkBV(0, 32U) : idx1d.urem(dims[i])));
-    idx1d = isOne ? idx1d : idx1d.udiv(dims[i]);
+    idxs.emplace_back(i == 0 ? idx1d : idx1d.urem(dims[i]));
+    idx1d = idx1d.udiv(dims[i]);
   }
 
   reverse(idxs.begin(), idxs.end());
@@ -448,6 +444,10 @@ Expr Expr:: NAME (uint64_t arg) const {\
 EXPR_BVOP_UINT64(urem)
 Expr Expr::urem(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
+
+  uint64_t rhsval;
+  if (rhs.isUInt(rhsval) && rhsval == 1)
+    return Expr::mkBV(0, rhs);
 
   uint64_t a, b;
   // If divisor is zero, follow the solver's behavior
