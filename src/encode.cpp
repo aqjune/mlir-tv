@@ -2605,11 +2605,11 @@ static void encodeReductionLoopBodyAndOutput(
     // Define this as a splat tensor (num. elems is 1 anyway)
     // TODO (seongwon): Currently we cover only tensor cases..
     // TODO: Support memref cases
-    auto outty = newst.regs.get<Tensor>(the_op->getOperands().back());
-    auto initElem = outty.get({Index(0)}).first;
+    auto outTensor = newst.regs.get<Tensor>(the_op->getOperands().back());
+    auto initElem = outTensor.get({Index(0)}).first;
     t_res = Tensor(t_v.getElemType(), t_v.sum(move(initElem)),
           makeCube(Index(1), outputType.getRank()));
-    welldef &= outty.isFullyInitialized();
+    welldef &= outTensor.isFullyInitialized();
   } else {
     // in:  (i, j) -> (i, j)
     // out: (i, j) -> (i)
@@ -2641,8 +2641,8 @@ static void encodeReductionLoopBodyAndOutput(
     // TODO (seongwon): Currently we cover only tensor cases..
     // TODO: Support memref cases
     auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
-    auto outty = newst.regs.get<Tensor>(the_op->getOperands().back());
-    auto initElem = outty.get(outputIndVars).first;
+    auto outTensor = newst.regs.get<Tensor>(the_op->getOperands().back());
+    auto initElem = outTensor.get(outputIndVars).first;
     auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
     auto t_sum = Tensor::mkInitializedLambda(
           t_v.getElemType(),
@@ -2653,7 +2653,7 @@ static void encodeReductionLoopBodyAndOutput(
     
     t_res = Tensor::mkInitializedLambda(
         t_v.getElemType(), move(tensorSz), move(outputIndVars), t_sum);
-    welldef &= outty.isFullyInitialized();
+    welldef &= outTensor.isFullyInitialized();
   }
 }
 
