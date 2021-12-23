@@ -724,23 +724,26 @@ Tensor Tensor::elementwiseBinOp(
       const {
   assert(getRank() == b.getRank());
   assert(elemType == b.elemType);
+  // Assumed that dimension sizes are equivalent.
 
-  auto idxvars = Index::boundIndexVars(getRank());
-  Expr elemout = f(get(idxvars).first, b.get(idxvars).first);
+  auto idxvar = Index::var("idx_binop", VarType::BOUND);
+  Expr elemout = f(getRaw(idxvar), b.getRaw(idxvar));
   assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
-  return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);
+  return mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
+      /* initialized */Expr::mkBool(true));
 }
 
 Tensor Tensor::elementwiseUnaryOp(
     mlir::Type resultElemType, const function<Expr(Expr &&)> &f) const {
-  auto idxvars = Index::boundIndexVars(getRank());
-  Expr elemout = f(get(idxvars).first);
+  auto idxvar = Index::var("idx_binop", VarType::BOUND);
+  Expr elemout = f(getRaw(idxvar));
   assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
-  return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);
+  return mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
+      /* initialized */Expr::mkBool(true));
 }
 
 Expr Tensor::dot(const Tensor &t2, optional<Expr> &&initValue) const {
@@ -974,16 +977,25 @@ Tensor Tensor::mkLambda(
     assert(newdims.size() == indexvars.size());
 
   auto idx = Index::var("idx", VarType::BOUND);
+  auto idxForInit = Index::var("idx_init", VarType::BOUND);
   auto idxExprs = from1DIdx(idx, newdims);
+  auto idxExprsForInit = from1DIdx(idxForInit, newdims);
 
   if (!indexvars.empty()) {
-    // If indexvars is empty, body represents the unique element.
     body = body.substitute(indexvars, idxExprs);
-    initialized = initialized.substitute(indexvars, idxExprs);
+    initialized = initialized.substitute(indexvars, idxExprsForInit);
   }
 
   return { elemType, move(newdims),
-      Expr::mkLambda(idx, body), Expr::mkLambda(idx, initialized) };
+      Expr::mkLambda(idx, body),
+      Expr::mkLambda(idxForInit, initialized) };
+}
+
+Tensor Tensor::mkLambdaFrom1D(
+    mlir::Type elemType,
+    vector<Expr> &&newdims, Expr &&indexvar, Expr body, Expr initialized) {
+  return { elemType, move(newdims),
+      Expr::mkLambda(indexvar, body), Expr::mkLambda(indexvar, initialized) };
 }
 
 Tensor Tensor::mkInitializedLambda(

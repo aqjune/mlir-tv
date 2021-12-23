@@ -143,6 +143,9 @@ public:
   smt::Expr isInBounds(const std::vector<smt::Expr> &indices) const;
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
       const override;
+  // Return arr[indexRaw].
+  smt::Expr getRaw(const smt::Expr &indexRaw) const
+  { return arr.select(indexRaw); }
   smt::Expr isInitialized(const std::vector<smt::Expr> &indices) const;
   smt::Expr isFullyInitialized() const;
 
@@ -237,6 +240,13 @@ public:
       std::vector<smt::Expr> &&newdims,
       std::vector<smt::Expr> &&indexvars,
       smt::Expr body);
+  // Elements:    lambda indexvar, body
+  // Initialized: lambda indexvar, isInitialized
+  static Tensor mkLambdaFrom1D(
+      mlir::Type elemType,
+      std::vector<smt::Expr> &&newdims,
+      smt::Expr &&indexvar,
+      smt::Expr body, smt::Expr initialized);
 
   // Returns (cond ? trueValue : falseValue).
   // The shapes of trueValue and falseValue must be equivalent.
