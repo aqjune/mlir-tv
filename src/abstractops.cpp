@@ -321,6 +321,7 @@ FnDecl AbsFpEncoding::getSumFn() {
 FnDecl AbsFpEncoding::getDotFn() {
   auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
   if (!fp_dotfn)
+    // (initial Value, array1, array2)
     fp_dotfn.emplace({sort(), arrs, arrs}, sort(), "fp_dot_" + fn_suffix);
   return *fp_dotfn;
 }
