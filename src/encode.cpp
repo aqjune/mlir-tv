@@ -2286,7 +2286,7 @@ void encodeOp(State &st, mlir::linalg::DotOp op, bool encodeMemWrite) {
   st.wellDefined(op, t3.isFullyInitialized());
   st.wellDefined(op, t1.get1DSize() == t2.get1DSize());
 
-  auto res = t1.dot(t2, move(t3));
+  auto res = t1.dot(t2, move(t3.get({Index(0)}).first));
   st.regs.add(op.getResult(0),
       Tensor(t1.getElemType(), move(res), move(outputDim)));
 }
