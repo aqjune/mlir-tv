@@ -705,21 +705,16 @@ Tensor Tensor::matmul(const Tensor &b, std::optional<Tensor> &&init) const {
   auto bt_row = bt.to1DArrayWithOfs(
       {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
-  optional<Expr> res;
-  if (init) {
-    auto initVal = init->get({i, j}).first;
-    res = elemType.isa<mlir::FloatType>() ?
-      aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1], move(initVal)) :
-      aop::intDot(a_row, bt_row, dims[1], move(initVal));
-  } else {
-    res = elemType.isa<mlir::FloatType>() ?
-      aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1]) :
-      aop::intDot(a_row, bt_row, dims[1]);
-  }
+  auto initVal = fmap(init, [&](auto tensor) {
+    return tensor.get({i, j}).first;
+  });
+  auto res = elemType.isa<mlir::FloatType>() ?
+    aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1], move(initVal)) :
+    aop::intDot(a_row, bt_row, dims[1], move(initVal));
 
   // UB if uninitialized elem is used
   return mkInitializedLambda(elemType,
-      {dims[0], bt.dims[0]}, {i, j}, *res);
+      {dims[0], bt.dims[0]}, {i, j}, res);
 }
 
 Tensor Tensor::elementwiseBinOp(
