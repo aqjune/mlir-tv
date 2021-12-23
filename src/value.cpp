@@ -548,7 +548,8 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
 
 Tensor Tensor::depthwiseConv2D(const Tensor &filter,
     const vector<Expr> &strides,
-    const vector<Expr> &dilations) const {
+    const vector<Expr> &dilations,
+    bool tosaOp) const {
 
   // args should match for 2D tensors
   assert(getDims().size() == 4);
@@ -556,15 +557,16 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
   assert(strides.size() == 2);
   assert(dilations.size() == 2);
 
-  vector<Expr> outInd = Index::boundIndexVars(5);
+  vector<Expr> outInd = tosaOp ? Index::boundIndexVars(4) :
+                                  Index::boundIndexVars(5);
   auto wDims = filter.getDims();
   auto dims = getDims();
   auto N = dims[0];
   auto C = wDims[2];
   auto M = wDims[3];
   auto n = outInd[0];
-  auto c = outInd[3];
-  auto m = outInd[4];
+  auto c = tosaOp ? outInd[3].udiv(M) : outInd[3];
+  auto m = tosaOp ? outInd[3].urem(M) : outInd[4];
 
   // change input to 1xHxWx1
   vector<Expr> input2DDims = {Index(1), dims[1], dims[2], Index(1)};
@@ -589,7 +591,13 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
   auto t2DDims = t2D.getDims();
 
   // NxOHxOWxCxM
-  vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C, M};
+  vector<Expr> tDims = {N, t2DDims[1], t2DDims[2]} ;
+  if(tosaOp) {
+    tDims.push_back(C * M);
+  } else {
+    tDims.push_back(C);
+    tDims.push_back(M);
+  }
 
   return Tensor::mkInitializedLambda(
             elemType, move(tDims), move(outInd), 

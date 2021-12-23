@@ -1042,18 +1042,7 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
 
   auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
 
-  // dims of t is (N, H, W, C, M)
-  auto t = paddedTensor.depthwiseConv2D(weight, strides, dilations);
-
-  // change dims to (N, H, W, C * M)
-  vector<Expr> outInd = Index::boundIndexVars(4);
-  vector<Expr> accDims = {t.getDim(0), t.getDim(1), t.getDim(2), C * M};
-  auto accInd = {outInd[0], outInd[1], outInd[2],
-                  outInd[3].udiv(M), outInd[3].urem(M)};
-  auto acc = Tensor::mkInitializedLambda(
-        elemTy, move(accDims), move(outInd), 
-        t.get(accInd).first
-      );
+  auto acc = paddedTensor.depthwiseConv2D(weight, strides, dilations, true);
 
   // add bias
   auto output = addBias2D(elemTy, acc.getDims(), acc, bias);
@@ -1312,7 +1301,7 @@ encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op, bool encodeMemWr
   st.wellDefined(op, t_input.getDim(3) == t_input.getDim(3));
   st.wellDefined(op, t_filter.isFullyInitialized());
 
-  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations);
+  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations, false);
   st.regs.add(op.getResult(0), move(t_res));
   st.wellDefined(op, t_input.isFullyInitialized());
   st.wellDefined(op, t_filter.isFullyInitialized());
