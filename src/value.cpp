@@ -734,12 +734,13 @@ Tensor Tensor::elementwiseBinOp(
 
 Tensor Tensor::elementwiseUnaryOp(
     mlir::Type resultElemType, const function<Expr(Expr &&)> &f) const {
-  auto idxvars = Index::boundIndexVars(getRank());
-  Expr elemout = f(get(idxvars).first);
+  auto idxvar = Index::var("idx_binop", VarType::BOUND);
+  Expr elemout = f(getRaw(idxvar));
   assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
-  return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);
+  return mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
+      /* initialized */Expr::mkBool(true));
 }
 
 Expr Tensor::dot(const Tensor &t2) const {
