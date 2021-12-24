@@ -143,6 +143,9 @@ public:
   smt::Expr isInBounds(const std::vector<smt::Expr> &indices) const;
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
       const override;
+  // Return arr[indexRaw].
+  smt::Expr getRaw(const smt::Expr &indexRaw) const
+  { return arr.select(indexRaw); }
   smt::Expr isInitialized(const std::vector<smt::Expr> &indices) const;
   smt::Expr isFullyInitialized() const;
 
@@ -176,6 +179,14 @@ public:
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
       ConvLayout layout) const;
+
+  // Return a new tensor which is depthwise convolution of this 2D tensor and filter.
+  // Callers of conv must check whether filters/inputs/.. are initialized
+  // (otherwise UB).
+  Tensor depthwiseConv2D(const Tensor &filter,
+      const std::vector<smt::Expr> &strides,
+      const std::vector<smt::Expr> &dilations,
+      const std::optional<Tensor> bias = std::nullopt) const;
 
   Tensor reshape(const std::vector<smt::Expr> &ns2) const;
 
@@ -226,6 +237,13 @@ public:
       std::vector<smt::Expr> &&newdims,
       std::vector<smt::Expr> &&indexvars,
       smt::Expr body);
+  // Elements:    lambda indexvar, body
+  // Initialized: lambda indexvar, isInitialized
+  static Tensor mkLambdaFrom1D(
+      mlir::Type elemType,
+      std::vector<smt::Expr> &&newdims,
+      smt::Expr &&indexvar,
+      smt::Expr body, smt::Expr initialized);
 
   // Returns (cond ? trueValue : falseValue).
   // The shapes of trueValue and falseValue must be equivalent.

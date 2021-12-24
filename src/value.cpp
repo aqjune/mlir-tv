@@ -85,8 +85,11 @@ Index Index::zero() { return Index(0); }
 Index Index::var(string &&name, VarType varty) {
   switch(varty) {
   case VarType::BOUND:
+    static unsigned varCount = 0;
+    return {Expr::mkVar(Index::sort(), move(name) + "#" + to_string(varCount++),
+            true)};
   case VarType::UNBOUND:
-    return {Expr::mkVar(Index::sort(), move(name), varty == VarType::BOUND)};
+    return {Expr::mkVar(Index::sort(), move(name), false)};
   case VarType::FRESH:
     return {Expr::mkFreshVar(Index::sort(), move(name))};
   }
@@ -94,10 +97,8 @@ Index Index::var(string &&name, VarType varty) {
 }
 vector<Expr> Index::boundIndexVars(unsigned n) {
   vector<Expr> idxs;
-  static int count = 0;
   for (unsigned i = 0; i < n; i ++) {
-    idxs.push_back(
-      Index::var("i" + std::to_string(count++), VarType::BOUND));
+    idxs.push_back(Index::var("i", VarType::BOUND));
   }
   return idxs;
 }
@@ -546,6 +547,76 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
       move(dim), move(idx), move(elem));
 }
 
+Tensor Tensor::depthwiseConv2D(const Tensor &filter,
+    const vector<Expr> &strides,
+    const vector<Expr> &dilations,
+    const optional<Tensor> bias) const {
+
+  // args should match for 2D tensors
+  assert(getDims().size() == 4);
+  assert(filter.getDims().size() == 4);
+  assert(strides.size() == 2);
+  assert(dilations.size() == 2);
+
+  vector<Expr> outInd = bias.has_value() ? 
+                          Index::boundIndexVars(4) :
+                          Index::boundIndexVars(5);
+
+  auto wDims = filter.getDims();
+  auto dims = getDims();
+  auto N = dims[0];
+  auto C = wDims[2];
+  auto M = wDims[3];
+  auto n = outInd[0];
+  auto c = bias.has_value() ? outInd[3].udiv(M) : outInd[3];
+  auto m = bias.has_value() ? outInd[3].urem(M) : outInd[4];
+
+  // change input to 1xHxWx1
+  vector<Expr> input2DDims = {Index(1), dims[1], dims[2], Index(1)};
+  vector<Expr> input2DInd = Index::boundIndexVars(4);
+  Tensor input2D = Tensor::mkInitializedLambda (
+                  elemType, move(input2DDims), move(input2DInd), 
+                  get({n, input2DInd[1], input2DInd[2], c}).first
+                );
+
+  // change weight to KHxKWx1x1
+  vector<Expr> weight2DDims = {wDims[0], wDims[1], Index(1), Index(1)};
+  vector<Expr> weight2DInd = Index::boundIndexVars(4);
+  Tensor weight2D = Tensor::mkInitializedLambda(
+                  elemType, move(weight2DDims), move(weight2DInd), 
+                  filter.get({weight2DInd[0], weight2DInd[1], c, m}).first
+                );
+
+  // t2D is 1xOHxOWx1
+  auto t2D = input2D.conv(weight2D,
+                      strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
+
+  auto t2DDims = t2D.getDims();
+
+  auto accVal = t2D.get({Index(0), outInd[1], outInd[2], Index(0)}).first;
+
+  if(bias.has_value()) {
+    // NxOHxOWx(C*M)
+    vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C * M};
+
+    // add bias
+    auto tf = Float(accVal, elemType);
+    auto biasf = Float(bias->get({outInd[3]}).first, elemType);
+
+    return Tensor::mkInitializedLambda(
+              elemType, move(tDims), move(outInd), 
+              tf.add(biasf)
+            );
+  } else { 
+    // NxOHxOWxCxM
+    vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C, M};
+
+    return Tensor::mkInitializedLambda(
+              elemType, move(tDims), move(outInd), accVal
+            );
+  }
+}
+
 Tensor Tensor::conv(const Tensor &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,
@@ -650,23 +721,26 @@ Tensor Tensor::elementwiseBinOp(
       const {
   assert(getRank() == b.getRank());
   assert(elemType == b.elemType);
+  // Assumed that dimension sizes are equivalent.
 
-  auto idxvars = Index::boundIndexVars(getRank());
-  Expr elemout = f(get(idxvars).first, b.get(idxvars).first);
+  auto idxvar = Index::var("idx_binop", VarType::BOUND);
+  Expr elemout = f(getRaw(idxvar), b.getRaw(idxvar));
   assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
-  return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);
+  return mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
+      /* initialized */Expr::mkBool(true));
 }
 
 Tensor Tensor::elementwiseUnaryOp(
     mlir::Type resultElemType, const function<Expr(Expr &&)> &f) const {
-  auto idxvars = Index::boundIndexVars(getRank());
-  Expr elemout = f(get(idxvars).first);
+  auto idxvar = Index::var("idx_binop", VarType::BOUND);
+  Expr elemout = f(getRaw(idxvar));
   assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
-  return mkInitializedLambda(resultElemType, getDims(), move(idxvars), elemout);
+  return mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
+      /* initialized */Expr::mkBool(true));
 }
 
 Expr Tensor::dot(const Tensor &t2) const {
@@ -900,16 +974,25 @@ Tensor Tensor::mkLambda(
     assert(newdims.size() == indexvars.size());
 
   auto idx = Index::var("idx", VarType::BOUND);
+  auto idxForInit = Index::var("idx_init", VarType::BOUND);
   auto idxExprs = from1DIdx(idx, newdims);
+  auto idxExprsForInit = from1DIdx(idxForInit, newdims);
 
   if (!indexvars.empty()) {
-    // If indexvars is empty, body represents the unique element.
     body = body.substitute(indexvars, idxExprs);
-    initialized = initialized.substitute(indexvars, idxExprs);
+    initialized = initialized.substitute(indexvars, idxExprsForInit);
   }
 
   return { elemType, move(newdims),
-      Expr::mkLambda(idx, body), Expr::mkLambda(idx, initialized) };
+      Expr::mkLambda(idx, body),
+      Expr::mkLambda(idxForInit, initialized) };
+}
+
+Tensor Tensor::mkLambdaFrom1D(
+    mlir::Type elemType,
+    vector<Expr> &&newdims, Expr &&indexvar, Expr body, Expr initialized) {
+  return { elemType, move(newdims),
+      Expr::mkLambda(indexvar, body), Expr::mkLambda(indexvar, initialized) };
 }
 
 Tensor Tensor::mkInitializedLambda(

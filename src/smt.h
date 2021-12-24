@@ -177,6 +177,7 @@ public:
 
   Expr substitute(const std::vector<Expr> &vars,
                   const std::vector<Expr> &values) const;
+  Expr substituteDeBruijn(const std::vector<Expr> &values) const;
 
   // Returns true if this and e2's expr are equal.
   // Note that

@@ -10,7 +10,8 @@
 #include <vector>
 
 enum class VarType {
-  BOUND, // a bound variable; see Expr::mkVar
+  BOUND, // a bound variable; see Expr::mkVar.
+         // A fresh name is given unconditionally.
   FRESH, // a fresh, unbound variable
   UNBOUND
 };

@@ -134,7 +134,7 @@ void setAbstraction(
   // included in set<APFloat>
   // Should not exceed 31 (limited by real-life float)
   unsigned floatBits =
-            min(31ul, log2_ceil(floatNonConstsCnt + floatConsts.size() + 2));
+      min((uint64_t) 31, log2_ceil(floatNonConstsCnt + floatConsts.size() + 2));
   floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
   floatEnc->addConstants(floatConsts);
 
@@ -608,7 +608,7 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     auto i = Index::var("idx", VarType::BOUND);
     auto lambda = Expr::mkLambda(i, Expr::mkIte(i == Index::zero(), _f1, _f2));
     auto n = Index(2);
-    return sum(lambda, n);
+    return sum(lambda, n, {{_f1, _f2}});
   }
 
   usedOps.fpAdd = true;
@@ -795,10 +795,14 @@ Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
   // However, LLVM chooses to simply continue the execution without notifying
   Expr::mkIte(iszero(f2, false) | iszero(f2, true),
     Expr::mkIte(iszero(f1, false) | iszero(f1, true), fp_nan, fp_inf_pos),
-    // If both operands do not fall into any of the cases above,
-    // use fp_div for abstract representation.
-    div_abs_res
-  ))))));
+  // +-0.0 / x -> ?0.0, 
+  Expr::mkIte(iszero(f1, false) | iszero(f1, true), fp_zero_pos,
+  // x / x -> 1.0, x / -x -> -1.0 
+  Expr::mkIte(f1_nosign == f2_nosign, fp_id,
+  // If both operands do not fall into any of the cases above,
+  // use fp_div for abstract representation.
+  div_abs_res
+  ))))))));
 
   // And at last we replace the sign with signbit(f1) ^ signbit(f2)
   // pos / pos | neg / neg -> pos, pos / neg | neg / pos -> neg
