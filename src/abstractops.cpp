@@ -278,8 +278,7 @@ FnDecl AbsFpEncoding::getAddFn() {
 FnDecl AbsFpEncoding::getMulFn() {
   if (!fp_mulfn) {
     auto fty = Sort::bvSort(value_bitwidth);
-    auto fty2 = Sort::bvSort(value_bitwidth);
-    fp_mulfn.emplace({fty, fty}, fty2, "fp_mul_" + fn_suffix);
+    fp_mulfn.emplace({fty, fty}, fty, "fp_mul_" + fn_suffix);
   }
   return *fp_mulfn;
 }
@@ -287,8 +286,7 @@ FnDecl AbsFpEncoding::getMulFn() {
 FnDecl AbsFpEncoding::getDivFn() {
   if (!fp_mulfn) {
     auto fty = Sort::bvSort(value_bitwidth);
-    auto fty2 = Sort::bvSort(value_bitwidth);
-    fp_mulfn.emplace({fty, fty}, fty2, "fp_div_" + fn_suffix);
+    fp_mulfn.emplace({fty, fty}, fty, "fp_div_" + fn_suffix);
   }
   return *fp_mulfn;
 }

@@ -163,15 +163,8 @@ public:
   }
 
 private:
-  // Returns a fully abstract add fn fp_add(fty, fty) -> fty2
-  // where fty is BV(fp_bv_bits) and fty2 is BV(fp_bv_bits - TYPE_BITS).
-  // It is the user of this function that fills in TYPE_BITS.
   smt::FnDecl getAddFn();
-  // Returns a fully abstract mul fn fp_mul(value_bv_bits-1, value_bv_bits-1)
-  // -> BV(value_bv_bits)
   smt::FnDecl getMulFn();
-  // Returns a fully abstract div fn fp_mul(value_bv_bits-1, value_bv_bits-1)
-  // -> BV(value_bv_bits)
   smt::FnDecl getDivFn();
   smt::FnDecl getAssocSumFn();
   smt::FnDecl getSumFn();
