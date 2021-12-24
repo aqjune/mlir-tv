@@ -198,7 +198,9 @@ public:
 
   Tensor transpose() const;
 
-  Tensor matmul(const Tensor &b) const;
+  // Given two 2-dim tensors this and b, return their matrix multiplication
+  // bTransposed is true, don't transpose b internally
+  Tensor matmul(const Tensor &b, bool bTransposed = false) const;
 
   // Return the result of an elementwise operation.
   // Assume that the shapes are equivalent.

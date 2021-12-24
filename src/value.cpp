@@ -701,11 +701,11 @@ Tensor Tensor::reshape(const vector<Expr> &newdims) const {
   return { elemType, simplifyList(newdims), Expr(arr), Expr(initialized) };
 }
 
-Tensor Tensor::matmul(const Tensor &b) const {
+Tensor Tensor::matmul(const Tensor &b, bool bTransposed) const {
   assert(dims.size() == 2);
   assert(b.dims.size() == 2);
 
-  auto bt = b.transpose();
+  auto bt = bTransposed ? b : b.transpose();
   auto i = Index::var("i", VarType::BOUND);
   auto j = Index::var("j", VarType::BOUND);
   auto a_row = to1DArrayWithOfs(

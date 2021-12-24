@@ -1892,7 +1892,7 @@ void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
   st.wellDefined(op, weightTensor.isFullyInitialized());
   st.wellDefined(op, biasTensor.isFullyInitialized());
 
-  auto mul = inputTensor.matmul(weightTensor.transpose());
+  auto mul = inputTensor.matmul(weightTensor, /*transposed*/true);
 
   // Output: [N, OC]
   auto idxVars = Index::boundIndexVars(2);
