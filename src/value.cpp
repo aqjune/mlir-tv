@@ -471,6 +471,14 @@ pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
   return {elem, isInBounds(indices)};
 }
 
+Expr Tensor::getRaw(const Expr &indexRaw) const {
+  auto e = arr.select(indexRaw);
+  // Don't directly use this element!
+  // Please use it with a proper wrapper (Float, Index, Integer).
+  e.lockOps();
+  return e;
+}
+
 Expr Tensor::isInitialized(const vector<Expr> &indices) const {
   return initialized.select(to1DIdx(indices, dims));
 }
