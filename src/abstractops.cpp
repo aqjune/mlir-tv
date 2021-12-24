@@ -625,11 +625,7 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
 
   // Encode commutativity without loss of generality
-  // To avoid that the LSB of add(x, x) is always 0, encode separately.
-  auto fp_add_res = Expr::mkIte(f1 == f2,
-    getAddFn().apply({f1, f1}),
-    getAddFn().apply({f1, f2}) + getAddFn().apply({f2, f1})
-  );
+  auto fp_add_res = getAddFn().apply({f1, f2}) & getAddFn().apply({f2, f1});
   // The result of addition cannot be NaN if inputs aren't.
   // This NaN case is specially treated below.
   // Simply redirect the result to zero.
@@ -687,12 +683,8 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   const auto f2_nosign = getMagnitudeBits(f2);
 
   // Encode commutativity of mul.
-  // To avoid that the LSB of mul(x, x) is always 0, encode separately.
-  auto mul_abs = Expr::mkIte(f1_nosign == f2_nosign,
-    getMulFn().apply({f1_nosign, f1_nosign}),
-    getMulFn().apply({f1_nosign, f2_nosign}) +
-        getMulFn().apply({f2_nosign, f1_nosign})
-  );
+  auto mul_abs = getMulFn().apply({f1_nosign, f2_nosign}) &
+                 getMulFn().apply({f2_nosign, f1_nosign});
   // getMulFn()'s range is BV[VALUE_BITS] because it encodes absolute size of mul.
   // We zero-extend 1 bit (SIGN-BIT) which is actually a dummy bit.
   auto mul_abs_res = mul_abs.zext(1);
@@ -932,11 +924,7 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b, const Expr &n) {
     // Encode commutativity: dot(a, b) = dot(b, a)
     Expr arr1 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity));
     Expr arr2 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity));
-    Expr lhs = getDotFn().apply({arr1, arr2});
-    Expr rhs = getDotFn().apply({arr2, arr1});
-    // To prevent the LSB of dot(x, x) from always being 0, separately deal with
-    // the case using 'arr1 == arr2'.
-    return Expr::mkIte(arr1 == arr2, lhs, lhs + rhs);
+    return getDotFn().apply({arr1, arr2}) & getDotFn().apply({arr2, arr1});
 
   } else if (abstraction.fpDot == AbsLevelFpDot::SUM_MUL) {
     // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below

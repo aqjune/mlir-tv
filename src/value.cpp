@@ -464,11 +464,7 @@ Expr Tensor::isInBounds(const vector<smt::Expr> &indices) const {
 }
 
 pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
-  auto elem = arr.select(to1DIdx(indices, dims));
-  // Don't directly use this element!
-  // Please use it with a proper wrapper (Float, Index, Integer).
-  elem.lockOps();
-  return {elem, isInBounds(indices)};
+  return {getRaw(to1DIdx(indices, dims)), isInBounds(indices)};
 }
 
 Expr Tensor::getRaw(const Expr &indexRaw) const {
