@@ -77,6 +77,11 @@ llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
   llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<bool> arg_smt_use_all_logic("smt-use-all-logic",
+  llvm::cl::desc("Use ALL Logic for SMT"),
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
+
 llvm::cl::opt<unsigned> fp_bits("fp-bits",
   llvm::cl::desc("The number of bits for the abstract representation of "
                  "non-constant float and double values."),
@@ -533,7 +538,7 @@ static Results validate(ValidationInput vinput) {
       AbsLevelIntDot::FULLY_ABS,
       vinput.isFpAddAssociative ? AbsFpAddSumEncoding::USE_SUM_ONLY :
                   AbsFpAddSumEncoding::DEFAULT},
-      /* useAllLogic */false });
+      /* useAllLogic */arg_smt_use_all_logic.getValue() });
 
   unsigned itrCount = 0;
   setEncodingOptions(vinput.useMultisetForFpSum);
