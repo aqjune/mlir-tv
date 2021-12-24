@@ -819,8 +819,17 @@ Expr Expr::operator*(const Expr &rhs) const {
   uint64_t a, b;
   if (isUInt(a) && rhs.isUInt(b))
     return mkBV(a * b, rhs.bitwidth());
-  else if (rhs.isUInt(b) && b == 1)
-    return *this;
+  else if (rhs.isUInt(b)) {
+    if (b == 1)
+      return *this;
+    else if (b == 0)
+      return rhs;
+  } else if (isUInt(a)) {
+    if (a == 1)
+      return rhs;
+    else if (a == 0)
+      return *this;
+  }
 
   Expr e;
   SET_Z3_USEOP(e, rhs, operator*);
