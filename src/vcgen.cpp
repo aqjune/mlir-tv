@@ -744,8 +744,9 @@ Results validate(
           1u << fp_bits.getValue();
     } else {
       // Count non-constant floating points whose absolute values are distinct.
-      auto countNonConstFps = [](const auto& src_res, const auto& tgt_res, const auto& ew) {
-        if (ew) {
+      auto countNonConstFps = [](const auto& src_res, const auto& tgt_res,
+          bool elemwise) {
+        if (elemwise) {
           return src_res.argCount + // # of variables in argument lists
             src_res.varCount + tgt_res.varCount; // # of variables in registers
         } else {

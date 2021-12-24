@@ -16,11 +16,13 @@
 
 using namespace std;
 
-static void analyzeBlock(mlir::Block &block, AnalysisResult &res);
+namespace {
 
-template<class T> static void analyzeOp(T op, AnalysisResult &res);
+void analyzeBlock(mlir::Block &block, AnalysisResult &res);
 
-static void analyzeAPFloat(
+template<class T> void analyzeOp(T op, AnalysisResult &res);
+
+void analyzeAPFloat(
     const mlir::Type ty, const llvm::APFloat val, AnalysisResult &res) {
   if (val.isNaN() || val.isInfinity())
     // They cannot be inserted into set<APFloat>.
@@ -84,7 +86,7 @@ static void analyzeAPFloat(
   res.F64.constSet.insert(val_f64);
 }
 
-static void analyzeAttr(const mlir::Attribute &a, AnalysisResult &res) {
+void analyzeAttr(const mlir::Attribute &a, AnalysisResult &res) {
   assert(!a.isa<mlir::ElementsAttr>());
 
   auto ty = a.getType();
@@ -95,7 +97,7 @@ static void analyzeAttr(const mlir::Attribute &a, AnalysisResult &res) {
   analyzeAPFloat(ty, val, res);
 }
 
-static void analyzeElemAttr(
+void analyzeElemAttr(
     const mlir::ElementsAttr &attr, AnalysisResult &res) {
   if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
     if (denseAttr.isSplat()) {
@@ -113,25 +115,47 @@ static void analyzeElemAttr(
   }
 }
 
-static void analyzeVariable(
-    const mlir::Value &var, AnalysisResult &res, bool isArg = false) {
+struct VarAnalysisConfig {
+  bool isArg;
+  bool createsNewFpVal;
+
+public:
+  static VarAnalysisConfig arg() {
+    return { .isArg = true, .createsNewFpVal = false};
+  }
+  static VarAnalysisConfig op(bool createsNewFpVal) {
+    return { .isArg = false, .createsNewFpVal = createsNewFpVal};
+  }
+};
+
+void analyzeVariable(
+    const mlir::Value &var, AnalysisResult &res, VarAnalysisConfig config) {
   auto ty = var.getType();
-  size_t &f32Count = isArg ? res.F32.argCount : res.F32.varCount;
-  size_t &f64Count = isArg ? res.F64.argCount : res.F64.varCount;
+  size_t &f32Count = config.isArg ? res.F32.argCount : res.F32.varCount;
+  size_t &f64Count = config.isArg ? res.F64.argCount : res.F64.varCount;
   size_t &f32ElemCounts = res.F32.elemCounts;
   size_t &f64ElemCounts = res.F64.elemCounts;
   decltype(res.memref.argCount) &memrefCnt =
-      isArg ? res.memref.argCount : res.memref.varCount;
+      config.isArg ? res.memref.argCount : res.memref.varCount;
+  bool doCount = config.createsNewFpVal || config.isArg;
 
   if (ty.isF32()) {
-    f32Count++;
+    if (doCount)
+      f32Count++;
 
+    return;
   } else if (ty.isF64()) {
-    f64Count++;
+    if (doCount)
+      f64Count++;
 
-  } else if (ty.isa<mlir::TensorType>() || ty.isa<mlir::MemRefType>()) {
-    auto tensorty = ty.cast<mlir::ShapedType>();
-    auto elemty = tensorty.getElementType();
+    return;
+  } else if (!ty.isa<mlir::TensorType>() && !ty.isa<mlir::MemRefType>())
+    return;
+
+  auto tensorty = ty.cast<mlir::ShapedType>();
+  auto elemty = tensorty.getElementType();
+
+  if (doCount) {
     int64_t cnt;
 
     if (tensorty.hasStaticShape()) 
@@ -146,10 +170,10 @@ static void analyzeVariable(
       f64Count ++;
       f64ElemCounts += cnt - 1;
     }
-
-    if (ty.isa<mlir::MemRefType>())
-      memrefCnt[elemty]++;
   }
+
+  if (ty.isa<mlir::MemRefType>())
+    memrefCnt[elemty]++;
 }
 
 void analyzeRegion(mlir::Region &region, AnalysisResult &res) {
@@ -226,7 +250,7 @@ void analyzeOp(mlir::tensor::GenerateOp op, AnalysisResult &res) {
   analyzeRegion(op.body(), res);
 }
 
-static void analyzeBlock(
+void analyzeBlock(
     mlir::Block &block, AnalysisResult &res) {
   for (auto &op: block) {
     // Analyze constant operations
@@ -238,7 +262,19 @@ static void analyzeBlock(
     // Non-constant operations; increase varCount if return type matches
     // For constant globals: conservatively assume that they increase varCount
     for (const auto &result: op.getResults()) {
-      analyzeVariable(result, res);
+      bool canCreateNewFp =
+          !mlir::isa<mlir::tosa::ConcatOp>(op) &&
+          !mlir::isa<mlir::tosa::GatherOp>(op) &&
+          !mlir::isa<mlir::tosa::ReshapeOp>(op) &&
+          !mlir::isa<mlir::tosa::ReverseOp>(op) &&
+          !mlir::isa<mlir::tosa::TransposeOp>(op) &&
+          !mlir::isa<mlir::tensor::CollapseShapeOp>(op) &&
+          !mlir::isa<mlir::tensor::ExpandShapeOp>(op) &&
+          !mlir::isa<mlir::tensor::ExtractOp>(op) &&
+          !mlir::isa<mlir::tensor::ExtractSliceOp>(op) &&
+          !mlir::isa<mlir::tensor::InsertOp>(op) &&
+          !mlir::isa<mlir::tensor::InsertSliceOp>(op);
+      analyzeVariable(result, res, VarAnalysisConfig::op(canCreateNewFp));
     }
 
     // Check whether op has reductions such as summation, etc
@@ -265,6 +301,7 @@ static void analyzeBlock(
     ANALYZE(op, mlir::tensor::GenerateOp, res);
   }
 }
+}
 
 AnalysisResult analyze(mlir::FuncOp &fn) {
   AnalysisResult res;
@@ -276,7 +313,7 @@ AnalysisResult analyze(mlir::FuncOp &fn) {
 
   // Step1. analyze arguments
   for (const auto& arg: fn.getArguments()){
-    analyzeVariable(arg, res, /*isArg*/true);
+    analyzeVariable(arg, res, VarAnalysisConfig::arg());
   }
 
   // Step2. analyze the block
