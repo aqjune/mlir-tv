@@ -4,7 +4,6 @@
 #include "smt.h"
 #include "utils.h"
 #include "value.h"
-#include <algorithm>
 #include <map>
 
 using namespace smt;
@@ -98,27 +97,6 @@ optional<FPCastingInfo> getCastingInfo(llvm::APFloat fp_const) {
     throw UnsupportedException(
       "Cannot analyze casting information for this type");
   }
-}
-
-
-static string prefixForFpConst = "fp_const_sval_";
-
-bool isVarForFPConst(const Expr &e) {
-  if (!e.isVar())
-    return false;
-
-  auto vname = e.getVarName();
-  if (vname.length() < prefixForFpConst.size())
-    return false;
-
-  if (vname.substr(0, prefixForFpConst.size()) != prefixForFpConst)
-    return false;
-
-  auto num = vname.substr(prefixForFpConst.size());
-  if (!all_of(num.begin(), num.end(), ::isdigit))
-    return false;
-
-  return true;
 }
 }
 
@@ -426,7 +404,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
       // This naming convention is used by getFpTruncatePrecondition to relate
       // float and double constants
       e_value = Expr::mkVar(Sort::bvSort(value_bitwidth),
-                            prefixForFpConst + to_string(value_id));
+                            "fp_const_sval_" + to_string(value_id) + "_");
     } else {
       auto casting_info = getCastingInfo(fp_const);
       assert(casting_info.has_value() &&
@@ -461,7 +439,8 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         auto prec_bits = mkNonzero(Expr::mkFreshVar(
             Sort::bvSort(value_bit_info.prec_bitwidth),
             "fp_const_prec_bits"));
-        sv_bits = Expr::mkVar(sv_bits, prefixForFpConst + to_string(value_id));
+        sv_bits = Expr::mkVar(sv_bits, 
+                              "fp_const_sval_" + to_string(value_id) + "_");
         e_value = limit_bits.concat(sv_bits).concat(prec_bits);
         // Increase the next precision bit.
         itr->second++;
@@ -472,7 +451,8 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         // e.g. fp_const is 3.0 (it was 2.2 in the prev. iter)
         // Assign different smaller_value
         value_id += 1;
-        sv_bits = Expr::mkVar(sv_bits, prefixForFpConst + to_string(value_id));
+        sv_bits = Expr::mkVar(sv_bits, 
+                              "fp_const_sval_" + to_string(value_id) + "_");
         e_value = limit_bits.concat(sv_bits);
         // this encoding may not have prec bits
         if (value_bit_info.prec_bitwidth > 0) {
@@ -599,25 +579,15 @@ Expr AbsFpEncoding::nan() const {
 }
 
 Expr AbsFpEncoding::isnan(const Expr &f) {
-  auto magbits = getMagnitudeBits(f);
-  if (isVarForFPConst(magbits))
-    return Expr::mkBool(false);
-
   // Modulo the sign bit, there is only one NaN representation in abs encoding.
-  return magbits == getMagnitudeBits(nan());
+  return getMagnitudeBits(f) == getMagnitudeBits(nan());
 }
 
 Expr AbsFpEncoding::isinf(const Expr &f, bool isNegative) {
-  if (isVarForFPConst(getMagnitudeBits(f)))
-    return Expr::mkBool(false);
-
   return f == infinity(isNegative);
 }
 
 Expr AbsFpEncoding::iszero(const Expr &f, bool isNegative) {
-  if (isVarForFPConst(getMagnitudeBits(f)))
-    return Expr::mkBool(false);
-
   return f == zero(isNegative);
 }
 
@@ -631,12 +601,12 @@ Expr AbsFpEncoding::neg(const Expr &f) {
   return sign_negated.concat(getMagnitudeBits(f));
 }
 
-Expr AbsFpEncoding::add(const Expr &f1, const Expr &f2) {
+Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
   if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY) {
     auto i = Index::var("idx", VarType::BOUND);
-    auto lambda = Expr::mkLambda(i, Expr::mkIte(i == Index::zero(), f1, f2));
+    auto lambda = Expr::mkLambda(i, Expr::mkIte(i == Index::zero(), _f1, _f2));
     auto n = Index(2);
-    return sum(lambda, n, {{f1, f2}});
+    return sum(lambda, n, {{_f1, _f2}});
   }
 
   usedOps.fpAdd = true;
@@ -647,6 +617,10 @@ Expr AbsFpEncoding::add(const Expr &f1, const Expr &f2) {
   const auto fp_nan = nan();
   const auto bv_true = Expr::mkBV(1, 1);
   const auto bv_false = Expr::mkBV(0, 1);
+
+  // Handle non-canonical NaNs (can have two different signs)
+  const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
+  const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
 
   // Encode commutativity without loss of generality
   auto fp_add_res = getAddFn().apply({f1, f2}) & getAddFn().apply({f2, f1});
@@ -659,8 +633,8 @@ Expr AbsFpEncoding::add(const Expr &f1, const Expr &f2) {
 
   return Expr::mkIte(f1 == fp_id, f2,         // -0.0 + x -> x
     Expr::mkIte(f2 == fp_id, f1,              // x + -0.0 -> x
-      Expr::mkIte(isnan(f1), f1,           // NaN + x -> NaN
-        Expr::mkIte(isnan(f2), f2,         // x + NaN -> NaN
+      Expr::mkIte(f1 == fp_nan, f1,           // NaN + x -> NaN
+        Expr::mkIte(f2 == fp_nan, f2,         // x + NaN -> NaN
     // inf + -inf -> NaN, -inf + inf -> NaN
     // IEEE 754-2019 section 7.2 'Invalid operation'
     Expr::mkIte((isinf(f1, false) & isinf(f2, true)) |
@@ -689,7 +663,7 @@ Expr AbsFpEncoding::add(const Expr &f1, const Expr &f2) {
   ))))))))));
 }
 
-Expr AbsFpEncoding::mul(const Expr &f1, const Expr &f2) {
+Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   usedOps.fpMul = true;
 
   auto fp_id = one();
@@ -700,6 +674,9 @@ Expr AbsFpEncoding::mul(const Expr &f1, const Expr &f2) {
   auto bv_true = Expr::mkBV(1, 1);
   auto bv_false = Expr::mkBV(0, 1);
 
+  // Handle non-canonical NaNs
+  const auto f1 = Expr::mkIte(isnan(_f1), fp_nan, _f1);
+  const auto f2 = Expr::mkIte(isnan(_f2), fp_nan, _f2);
   const auto f1_nosign = getMagnitudeBits(f1);
   const auto f2_nosign = getMagnitudeBits(f2);
 
@@ -723,9 +700,9 @@ Expr AbsFpEncoding::mul(const Expr &f1, const Expr &f2) {
   // x * 1.0 -> x, x * -1.0 -> -x
   Expr::mkIte((f2 == fp_id) | (f2 == fp_minusone), f1,
   // NaN * x -> NaN
-  Expr::mkIte(isnan(f1), f1,
+  Expr::mkIte(f1 == fp_nan, f1,
   // x * NaN -> NaN
-  Expr::mkIte(isnan(f2), f2,
+  Expr::mkIte(f2 == fp_nan, f2,
   // +-Inf * +-0.0 -> NaN , +-Inf * x -> ?Inf (if x != 0.0)
   // IEEE 754-2019 section 7.2 'Invalid operation'
   Expr::mkIte(isinf(f1, false) | isinf(f1, true),
@@ -1190,9 +1167,9 @@ Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
         // remove the gap between two adjacent values
         const auto sv_bitwidth = value_bit_info.truncated_bitwidth;
         const auto prev_var = Expr::mkVar(Sort::bvSort(sv_bitwidth),
-                                prefixForFpConst + to_string(value_id));
+                                "fp_const_sval_" + to_string(value_id) + "_");
         const auto var = Expr::mkVar(Sort::bvSort(sv_bitwidth), 
-                          prefixForFpConst + to_string(value_id + 1));
+                          "fp_const_sval_" + to_string(value_id + 1) + "_");
         precond &= var == (prev_var + 1);
 
         verbose("getFpTruncatePrecondition") << "("
