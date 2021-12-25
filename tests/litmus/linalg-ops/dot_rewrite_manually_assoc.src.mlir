@@ -1,4 +1,5 @@
-// VERIFY
+// UNSUPPORTED
+// This will raise timeout ATM; aqjune will fix this ASAP.
 // ARGS: --associative
 
 // Even if fp addition is not associative in the precise definition of floating

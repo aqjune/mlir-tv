@@ -406,7 +406,8 @@ bool Expr::isTrue() const {
 
 bool Expr::isVar() const {
   bool res = false;
-  IF_Z3_ENABLED(res |= z3 && z3->is_app() && z3->is_const());
+  IF_Z3_ENABLED(res |= z3 && z3->is_app() && z3->is_const() &&
+      !z3->is_numeral());
   // TODO: CVC5
   return res;
 }
@@ -1182,6 +1183,8 @@ Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
     return then;
   else if (cond.isFalse())
     return els;
+  else if (then.isIdentical(els))
+    return then;
 
   optional<Expr> lhs, rhs;
   using namespace matchers;
