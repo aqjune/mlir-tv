@@ -99,6 +99,23 @@ llvm::cl::opt<unsigned int> max_unknown_dimsize("max-unknown-dimsize",
                     "(default value: 50)"),
   llvm::cl::init(50), llvm::cl::value_desc("number"),
   llvm::cl::cat(MlirTvCategory));
+
+llvm::cl::opt<unsigned int> max_tensor_size("max-tensor-size",
+  llvm::cl::desc("Specify the maximum number of elements of a dynamically"
+      " sized tensor tensor."),
+  llvm::cl::init(10000),
+  llvm::cl::cat(MlirTvCategory));
+
+llvm::cl::opt<int> max_const_tensor_size("max-const-tensor-size",
+  llvm::cl::desc("Specify the maximum number of elements of a constant tensor"
+      " that mlir-tv is going to encode precisely."
+      "Any non-splat constant tensor having more elements than this will be"
+      " encoded as a fully unknown array, possibly introducing validation"
+      " failures."
+      " If set to -1, there is no such limit."),
+  llvm::cl::init(-1),
+  llvm::cl::cat(MlirTvCategory));
+
 };
 
 static optional<string> checkFunctionSignatures(
@@ -150,7 +167,7 @@ static State createInputState(
 
       // Create fresh variables for unknown dimension sizes
       auto dims = ShapedValue::getDims(ty);
-      auto tensor = Tensor(ty.getElementType(),
+      auto tensor = Tensor::var(ty.getElementType(),
           "arg" + to_string(arg.getArgNumber()),
           dims);
 
@@ -702,6 +719,11 @@ Results validate(
     AnalysisResult src_res, tgt_res;
     vector<mlir::memref::GlobalOp> globals;
 
+    Tensor::MAX_TENSOR_SIZE = max_tensor_size.getValue();
+    Tensor::MAX_CONST_SIZE = max_const_tensor_size.getValue();
+    Tensor::MAX_DIM_SIZE = max_unknown_dimsize.getValue();
+    MemRef::MAX_DIM_SIZE = max_unknown_dimsize.getValue();
+
     try {
       src_res = analyze(srcfn);
       tgt_res = analyze(tgtfn);
@@ -769,9 +791,6 @@ Results validate(
     vinput.isFpAddAssociative = arg_fp_add_associative.getValue();
     vinput.unrollIntSum = arg_unroll_int_sum.getValue();
     vinput.useMultisetForFpSum = arg_multiset.getValue();
-
-    Tensor::MAX_DIM_SIZE = max_unknown_dimsize.getValue();
-    MemRef::MAX_DIM_SIZE = max_unknown_dimsize.getValue();
 
     try {
       verificationResult.merge(validate(vinput));

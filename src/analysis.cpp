@@ -10,8 +10,8 @@
 
 #define ANALYZE(op, ty, res) \
   if (auto op2 = mlir::dyn_cast<ty>(op)) { \
-    analyzeOp(op2, res); \
-    continue; \
+    if (analyzeOp(op2, res)) \
+      continue; \
   }
 
 using namespace std;
@@ -20,7 +20,8 @@ namespace {
 
 void analyzeBlock(mlir::Block &block, AnalysisResult &res);
 
-template<class T> void analyzeOp(T op, AnalysisResult &res);
+// Return false if op is not processed
+template<class T> bool analyzeOp(T op, AnalysisResult &res);
 
 void analyzeAPFloat(
     const mlir::Type ty, const llvm::APFloat val, AnalysisResult &res) {
@@ -97,22 +98,29 @@ void analyzeAttr(const mlir::Attribute &a, AnalysisResult &res) {
   analyzeAPFloat(ty, val, res);
 }
 
-void analyzeElemAttr(
+bool analyzeElemAttr(
     const mlir::ElementsAttr &attr, AnalysisResult &res) {
   if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
     if (denseAttr.isSplat()) {
       analyzeAttr(denseAttr.getSplatValue<mlir::Attribute>(), res);
     } else {
+      if (denseAttr.getNumElements() > Tensor::MAX_CONST_SIZE)
+        return false;
+
       for (const auto& attr: denseAttr.getValues<mlir::Attribute>()) {
         analyzeAttr(attr, res);
       }
     }
   } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
+    if (sparseAttr.getNumElements() > Tensor::MAX_CONST_SIZE)
+      return false;
+
     auto denseAttr = sparseAttr.getValues();
     for (const auto& attr: denseAttr.getValues<mlir::Attribute>()) {
       analyzeAttr(attr, res);
     }
   }
+  return true;
 }
 
 struct VarAnalysisConfig {
@@ -185,7 +193,7 @@ void analyzeRegion(mlir::Region &region, AnalysisResult &res) {
 }
 
 template<>
-void analyzeOp(mlir::memref::GetGlobalOp op, AnalysisResult &res) {
+bool analyzeOp(mlir::memref::GetGlobalOp op, AnalysisResult &res) {
   llvm::StringRef glbName = op.name();
   auto mop = op.getOperation()->getParentOfType<mlir::ModuleOp>();
   auto glb = mlir::cast<mlir::memref::GlobalOp>(mop.lookupSymbol(glbName));
@@ -194,42 +202,59 @@ void analyzeOp(mlir::memref::GetGlobalOp op, AnalysisResult &res) {
   if (glb.constant() && glb.initial_value()) {
     analyzeElemAttr(*glb.initial_value(), res);
   }
+  return true;
 }
 
 template<>
-void analyzeOp(mlir::arith::ConstantFloatOp op, AnalysisResult &res) {
+bool analyzeOp(mlir::arith::ConstantFloatOp op, AnalysisResult &res) {
   auto ty = op.getType();
   const auto val = op.value();
   analyzeAPFloat(ty, val, res);
+  return true;
 }
 
 template<>
-void analyzeOp(mlir::arith::ConstantOp op, AnalysisResult &res) {
+bool analyzeOp(mlir::arith::ConstantOp op, AnalysisResult &res) {
   auto tensorty = op.getType().dyn_cast<mlir::RankedTensorType>();
   auto eattr = op.getValue().dyn_cast<mlir::ElementsAttr>();
-  if (!tensorty || !eattr) return;
+  if (!tensorty || !eattr) return true;
 
-  analyzeElemAttr(eattr, res);
+  bool processed = analyzeElemAttr(eattr, res);
+  if (!processed) {
+    auto &ros = verbose("analyzeOp(mlir::arith::ConstantOp)");
+    ros << "skipped: ";
+    op.print(ros, mlir::OpPrintingFlags().elideLargeElementsAttrs());
+    ros << "\n";
+  }
+  return processed;
 }
 
 template<>
-void analyzeOp(mlir::tosa::ConstOp op, AnalysisResult &res) {
+bool analyzeOp(mlir::tosa::ConstOp op, AnalysisResult &res) {
   auto tensorty = op.getType().dyn_cast<mlir::RankedTensorType>();
   auto eattr = op.value().dyn_cast<mlir::ElementsAttr>();
-  if (!tensorty || !eattr) return;
+  if (!tensorty || !eattr) return true;
 
-  analyzeElemAttr(eattr, res);
+  bool processed = analyzeElemAttr(eattr, res);
+  if (!processed) {
+    auto &ros = verbose("analyzeOp(mlir::arith::ConstantOp)");
+    ros << "skipped: ";
+    op.print(ros, mlir::OpPrintingFlags().elideLargeElementsAttrs());
+    ros << "\n";
+  }
+  return processed;
 }
 
 template<>
-void analyzeOp(mlir::tosa::ClampOp op, AnalysisResult &res) {
+bool analyzeOp(mlir::tosa::ClampOp op, AnalysisResult &res) {
   auto ty = mlir::Float32Type::get(op.getContext());
   analyzeAPFloat(ty, op.min_fp(), res);
   analyzeAPFloat(ty, op.max_fp(), res);
+  return true;
 }
 
 template<>
-void analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
+bool analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
   // If generic loop has reduction loops, then result is not elementwise
   auto indexingMaps = op.indexing_maps().getValue();
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
@@ -238,16 +263,19 @@ void analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
     res.isElementwiseFPOps = false;
 
   analyzeRegion(op.region(), res);
+  return true;
 }
 
 template<>
-void analyzeOp(mlir::linalg::PadTensorOp op, AnalysisResult &res) {
+bool analyzeOp(mlir::linalg::PadTensorOp op, AnalysisResult &res) {
   analyzeRegion(op.region(), res);
+  return true;
 }
 
 template<>
-void analyzeOp(mlir::tensor::GenerateOp op, AnalysisResult &res) {
+bool analyzeOp(mlir::tensor::GenerateOp op, AnalysisResult &res) {
   analyzeRegion(op.body(), res);
+  return true;
 }
 
 void analyzeBlock(
@@ -255,6 +283,8 @@ void analyzeBlock(
   for (auto &op: block) {
     // Analyze constant operations
     // These operations do not increase varCount
+    // If it is a constant tensor that is too large (> Tensor::MAX_CONST_SIZE),
+    // ANALYZE falls through and increases varCount.
     ANALYZE(op, mlir::arith::ConstantFloatOp, res);
     ANALYZE(op, mlir::arith::ConstantOp, res);
     ANALYZE(op, mlir::tosa::ConstOp, res);
