@@ -104,7 +104,8 @@ bool analyzeElemAttr(
     if (denseAttr.isSplat()) {
       analyzeAttr(denseAttr.getSplatValue<mlir::Attribute>(), res);
     } else {
-      if (denseAttr.getNumElements() > Tensor::MAX_CONST_SIZE)
+      if (Tensor::MAX_CONST_SIZE >= 0 &&
+          denseAttr.getNumElements() > Tensor::MAX_CONST_SIZE)
         return false;
 
       for (const auto& attr: denseAttr.getValues<mlir::Attribute>()) {
@@ -112,7 +113,8 @@ bool analyzeElemAttr(
       }
     }
   } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
-    if (sparseAttr.getNumElements() > Tensor::MAX_CONST_SIZE)
+    if (Tensor::MAX_CONST_SIZE >= 0 &&
+        sparseAttr.getNumElements() > Tensor::MAX_CONST_SIZE)
       return false;
 
     auto denseAttr = sparseAttr.getValues();
