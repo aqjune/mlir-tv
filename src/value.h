@@ -120,9 +120,9 @@ class Tensor: public ShapedValue {
       initialized(std::move(initialized)) {}
 
 public:
-  // This should be parameterized later..
-  static const unsigned MAX_TENSOR_SIZE = 10000;
+  static inline unsigned MAX_TENSOR_SIZE;
   static inline unsigned MAX_DIM_SIZE;
+  static inline unsigned MAX_CONST_SIZE; // -1 if unbounded
 
   // A splat tensor.
   Tensor(mlir::Type elemType, smt::Expr &&splat_elem,
@@ -134,9 +134,6 @@ public:
          const std::vector<uint64_t> &dims, const smt::Expr &zero);
   // A dense tensor (1 dimensional).
   Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems);
-  // A fresh tensor.
-  Tensor(mlir::Type elemType, std::string &&name,
-         const std::vector<smt::Expr> &dims, bool initialized = true);
 
 
   smt::Expr asArray() const { return arr; }
@@ -263,6 +260,12 @@ public:
   // A constant tensor from mlir::ElementsAttr and a static shape.
   static Tensor fromElemsAttr(mlir::RankedTensorType tensorTy,
       mlir::ElementsAttr attr);
+
+  // A fresh tensor.
+  static Tensor var(mlir::Type elemType, std::string &&name,
+         const std::vector<uint64_t> &dims, bool initialized = true);
+  static Tensor var(mlir::Type elemType, std::string &&name,
+         const std::vector<smt::Expr> &dims, bool initialized = true);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
   // Returns (arr[idx] == src.arr[idx], unbound idx vars)

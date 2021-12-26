@@ -10,17 +10,6 @@ using namespace smt;
 using namespace std;
 
 namespace {
-llvm::cl::opt<int> arg_max_const_tensor_size("max-const-tensor-size",
-  llvm::cl::desc("Specify the maximum number of elements of a constant tensor"
-      " that mlir-tv is going to encode precisely."
-      "Any non-splat constant tensor having more elements than this will be"
-      " encoded as a fully unknown array, possibly introducing validation"
-      " failures."
-      " If set to -1, there is no such limit."),
-  llvm::cl::init(-1),
-  llvm::cl::cat(MlirTvCategory));
-
-
 string freshName(string prefix) {
   static int count = 0;
   return prefix + to_string(count ++);
@@ -423,14 +412,23 @@ Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d):
 }
 
 // A fresh tensor
-Tensor::Tensor(
+Tensor Tensor::var(
+    mlir::Type elemType, string &&name, const vector<uint64_t> &dimvec,
+    bool initialized) {
+  vector<Expr> e;
+  for (auto i: dimvec)
+    e.push_back(Index(i));
+  return var(elemType, move(name), e, initialized);
+}
+
+Tensor Tensor::var(
     mlir::Type elemType, string &&name, const vector<Expr> &dimvec,
-    bool initialized):
-  ShapedValue(elemType),
-  dims(dimvec),
-  arr(Expr::mkVar(arraySortForTensor(*convertPrimitiveTypeToSort(elemType)),
-      move(name))),
-  initialized(splatArrayForTensor(Expr::mkBool(initialized))) {}
+    bool initialized) {
+  Expr arr = Expr::mkVar(
+      arraySortForTensor(*convertPrimitiveTypeToSort(elemType)), move(name));
+  Expr init = splatArrayForTensor(Expr::mkBool(initialized));
+  return Tensor(elemType, vector(dimvec), move(arr), move(init));
+}
 
 // A sparse tensor.
 Tensor::Tensor(
@@ -1103,10 +1101,9 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
         totalSize *= dsize;
       }
 
-      if (arg_max_const_tensor_size.getValue() >= 0 &&
-          totalSize > arg_max_const_tensor_size.getValue()) {
+      if (MAX_CONST_SIZE >= 0 && totalSize > MAX_CONST_SIZE) {
         verbose("Tensor::fromElemsAttr") << "Too many elements: " <<
-            totalSize << " > " << arg_max_const_tensor_size.getValue() << "\n";
+            totalSize << " > " << MAX_CONST_SIZE << "\n";
 
         for (auto &[a, t]: abstractlyEncodedAttrs) {
           if (a == attr) {
@@ -1116,7 +1113,7 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
         }
 
         static int count = 0;
-        Tensor newt(elemType, "unknown_const#" + to_string(count++),
+        auto newt = Tensor::var(elemType, "unknown_const#" + to_string(count++),
             dimExprs);
         abstractlyEncodedAttrs.emplace_back(attr, newt);
         verbose("Tensor::fromElemsAttr") << "Creating a new tensor "
@@ -1150,12 +1147,33 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
     }
 
   } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
+    int64_t totalSize = sparseAttr.getNumElements();
     auto sparseIndexValues = sparseAttr.getIndices().getValues<uint64_t>();
     auto elemTy = tensorty.getElementType();
     auto rank = tensorty.getRank();
     vector<uint64_t> dims;
     for (unsigned i = 0; i < rank; ++i)
       dims.push_back(tensorty.getDimSize(i));
+
+    if (MAX_CONST_SIZE >= 0 && totalSize > MAX_CONST_SIZE) {
+      verbose("Tensor::fromElemsAttr") << "Too many sparse elements: " <<
+          totalSize << " > " << MAX_CONST_SIZE << "\n";
+
+      for (auto &[a, t]: abstractlyEncodedAttrs) {
+        if (a == attr) {
+          verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t << "\n";
+          return t;
+        }
+      }
+
+      static int count = 0;
+      Tensor newt = Tensor::var(elemType, "unknown_const#" + to_string(count++),
+          dims);
+      abstractlyEncodedAttrs.emplace_back(attr, newt);
+      verbose("Tensor::fromElemsAttr") << "Creating a new tensor "
+          << (Expr)newt << "\n";
+      return newt;
+    }
 
     // Unspecified locations are filled with zero.
     auto zero = getZero(elemTy);

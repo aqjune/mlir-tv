@@ -1359,8 +1359,8 @@ void encodeOp(State &st, mlir::linalg::InitTensorOp op, bool) {
   // FIXME: can we use res's name?
   static int new_var_idx = 0;
   st.regs.add(res,
-      Tensor(ty.getElementType(), ("init_tensor_") + to_string(new_var_idx++),
-             sizes, false));
+      Tensor::var(ty.getElementType(),
+          ("init_tensor#") + to_string(new_var_idx++), sizes, false));
 }
 
 template<>
