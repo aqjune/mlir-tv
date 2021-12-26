@@ -571,7 +571,8 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
 Tensor Tensor::depthwiseConv2D(const Tensor &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,
-    const optional<Tensor> bias) const {
+    const optional<Tensor> &&bias,
+    const optional<Tensor> &&output) const {
 
   // args should match for 2D tensors
   assert(getDims().size() == 4);
@@ -608,9 +609,27 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
                   filter.get({weight2DInd[0], weight2DInd[1], c, m}).first
                 );
 
+  // change output to 1xOHxOWx1
+  auto output2D = fmap(output, [&](auto tensor) {
+    vector<Expr> output2DDims =
+      {Index(1), outInd[1], outInd[2], Index(1)};
+    vector<Expr> output2DInd = Index::boundIndexVars(4);
+    if (outInd.size() == 4)
+      return Tensor::mkInitializedLambda(
+        elemType, move(output2DDims), move(output2DInd),
+        tensor.get({n, output2DInd[1], output2DInd[2], c * m}).first
+      );
+    else
+      return Tensor::mkInitializedLambda(
+        elemType, move(output2DDims), move(output2DInd),
+        tensor.get({n, output2DInd[1], output2DInd[2], c, m}).first
+      );
+  });
+
   // t2D is 1xOHxOWx1
-  auto t2D = input2D.conv(weight2D,
-                      strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
+  auto t2D = input2D.conv(weight2D, strides, dilations,
+      ShapedValue::ConvLayout::NHWC_HWCF,
+      move(output2D));
 
   auto t2DDims = t2D.getDims();
 

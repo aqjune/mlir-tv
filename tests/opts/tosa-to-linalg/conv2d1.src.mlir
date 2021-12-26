@@ -1,4 +1,7 @@
-// VERIFY
+// VERIFY-INCORRECT
+
+// Interestingly, this transformation FAILS to verify because filling
+// non-identity value (+0.0) to output tensor.
 
 func @conv(%img: tensor<1x2x2x2xf32>, %filter: tensor<1x2x2x2xf32>) -> tensor<1x1x1x1xf32> {
     %c0 = arith.constant 0.0 : f32

@@ -1311,14 +1311,14 @@ encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op, bool encodeMemWr
 
   auto t_input = st.regs.get<Tensor>(op.image());
   auto t_filter = st.regs.get<Tensor>(op.filter());
+  auto t_output = st.regs.get<Tensor>(op.outputs()[0]);
 
-  st.wellDefined(op, t_input.getDim(3) == t_input.getDim(3));
-  st.wellDefined(op, t_filter.isFullyInitialized());
-
-  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations);
+  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations,
+      /* bias */ nullopt, /* output */ t_output);
   st.regs.add(op.getResult(0), move(t_res));
   st.wellDefined(op, t_input.isFullyInitialized());
   st.wellDefined(op, t_filter.isFullyInitialized());
+  st.wellDefined(op, t_output.isFullyInitialized());
 }
 
 template<> void
