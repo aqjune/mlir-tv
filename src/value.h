@@ -145,9 +145,8 @@ public:
   smt::Expr isInBounds(const std::vector<smt::Expr> &indices) const;
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
       const override;
-  // Return arr[indexRaw].
-  smt::Expr getRaw(const smt::Expr &indexRaw) const
-  { return arr.select(indexRaw); }
+  // Return arr[indexRaw]. The returned expr is locked.
+  smt::Expr getRaw(const smt::Expr &indexRaw) const;
   smt::Expr isInitialized(const std::vector<smt::Expr> &indices) const;
   smt::Expr isFullyInitialized() const;
 
@@ -202,7 +201,9 @@ public:
 
   Tensor transpose() const;
 
-  Tensor matmul(const Tensor &b,
+  // Given two 2-dim tensors this and b, return their matrix multiplication
+  // bTransposed is true, don't transpose b internally
+  Tensor matmul(const Tensor &b, bool bTransposed = false,
                 std::optional<Tensor> &&init = std::nullopt) const;
 
   // Return the result of an elementwise operation.

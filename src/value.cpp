@@ -1,4 +1,6 @@
+#include "debug.h"
 #include "memory.h"
+#include "opts.h"
 #include "smt.h"
 #include "smtmatchers.h"
 #include "utils.h"
@@ -7,9 +9,27 @@
 using namespace smt;
 using namespace std;
 
-static string freshName(string prefix) {
+namespace {
+llvm::cl::opt<int> arg_max_const_tensor_size("max-const-tensor-size",
+  llvm::cl::desc("Specify the maximum number of elements of a constant tensor"
+      " that mlir-tv is going to encode precisely."
+      "Any non-splat constant tensor having more elements than this will be"
+      " encoded as a fully unknown array, possibly introducing validation"
+      " failures."
+      " If set to -1, there is no such limit."),
+  llvm::cl::init(-1),
+  llvm::cl::cat(MlirTvCategory));
+
+
+string freshName(string prefix) {
   static int count = 0;
   return prefix + to_string(count ++);
+}
+
+Expr getConstOrFreshVar(int64_t val, string &&name) {
+  return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
+      Index::var(move(name), VarType::FRESH) : Index(val);
+}
 }
 
 optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type elemty) {
@@ -67,11 +87,6 @@ vector<Expr> ShapedValue::getDims(
   }
 
   return dims;
-}
-
-static Expr getConstOrFreshVar(int64_t val, string &&name) {
-  return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
-      Index::var(move(name), VarType::FRESH) : Index(val);
 }
 
 Index::Index(unsigned i): e(Expr::mkBV(i, BITS)) {}
@@ -466,11 +481,15 @@ Expr Tensor::isInBounds(const vector<smt::Expr> &indices) const {
 }
 
 pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
-  auto elem = arr.select(to1DIdx(indices, dims));
+  return {getRaw(to1DIdx(indices, dims)), isInBounds(indices)};
+}
+
+Expr Tensor::getRaw(const Expr &indexRaw) const {
+  auto e = arr.select(indexRaw);
   // Don't directly use this element!
   // Please use it with a proper wrapper (Float, Index, Integer).
-  elem.lockOps();
-  return {elem, isInBounds(indices)};
+  e.lockOps();
+  return e;
 }
 
 Expr Tensor::isInitialized(const vector<Expr> &indices) const {
@@ -702,11 +721,12 @@ Tensor Tensor::reshape(const vector<Expr> &newdims) const {
   return { elemType, simplifyList(newdims), Expr(arr), Expr(initialized) };
 }
 
-Tensor Tensor::matmul(const Tensor &b, std::optional<Tensor> &&init) const {
+Tensor Tensor::matmul(const Tensor &b, bool bTransposed,
+                      std::optional<Tensor> &&init) const {
   assert(dims.size() == 2);
   assert(b.dims.size() == 2);
 
-  auto bt = b.transpose();
+  auto bt = bTransposed ? b : b.transpose();
   auto i = Index::var("i", VarType::BOUND);
   auto j = Index::var("j", VarType::BOUND);
   auto a_row = to1DArrayWithOfs(
@@ -1037,6 +1057,8 @@ Tensor Tensor::mkIte(
       move(retExpr), move(retInit));
 }
 
+static vector<pair<mlir::ElementsAttr, Tensor>> abstractlyEncodedAttrs;
+
 Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
       mlir::ElementsAttr attr) {
   mlir::Type elemType = tensorty.getElementType();
@@ -1053,11 +1075,34 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
       int64_t rank = tensorty.getRank();
       vector<int64_t> dims;
       vector<Expr> dimExprs;
+      int64_t totalSize = 1;
       for (int i = 0; i < rank; ++i) {
         auto dsize = tensorty.getDimSize(i);
         assert(dsize != mlir::ShapedType::kDynamicSize);
         dims.push_back(dsize);
         dimExprs.push_back(Index(dsize));
+        totalSize *= dsize;
+      }
+
+      if (arg_max_const_tensor_size.getValue() >= 0 &&
+          totalSize > arg_max_const_tensor_size.getValue()) {
+        verbose("Tensor::fromElemsAttr") << "Too many elements: " <<
+            totalSize << " > " << arg_max_const_tensor_size.getValue() << "\n";
+
+        for (auto &[a, t]: abstractlyEncodedAttrs) {
+          if (a == attr) {
+            verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t << "\n";
+            return t;
+          }
+        }
+
+        static int count = 0;
+        Tensor newt(elemType, "unknown_const#" + to_string(count++),
+            dimExprs);
+        abstractlyEncodedAttrs.emplace_back(attr, newt);
+        verbose("Tensor::fromElemsAttr") << "Creating a new tensor "
+            << (Expr)newt << "\n";
+        return newt;
       }
 
       // [i1, i2, ..., iN]

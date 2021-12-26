@@ -1115,14 +1115,23 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
   vector<Expr> indVars = Index::boundIndexVars(input.getRank());
   vector<Expr> dims, outVars;
   vector<uint64_t> idxs;
+  bool isIdentity = true;
 
   for (unsigned i = 0; i < input.getRank(); i++) {
     uint64_t v;
     // We expect simplify() to succeed since perms is a small Tensor
     if(!perms.get({Index(i)}).first.simplify().isUInt(v))
-      throw UnsupportedException(op.getOperation(), "Unsupported perms element type");
+      throw UnsupportedException(op.getOperation(),
+          "Unsupported perms element type");
     idxs.push_back(v);
     dims.push_back(input.getDim(v));
+    isIdentity &= v == i;
+  }
+
+  st.wellDefined(op, input.isFullyInitialized());
+  if (isIdentity) {
+    st.regs.add(op, input);
+    return;
   }
 
   // check the validity of perms
@@ -1137,12 +1146,15 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
   }
 
   for (unsigned i = 0; i < input.getRank(); i++) {
+    bool pushed = false;
     for(unsigned idx = 0; idx < input.getRank(); idx++) {
       if(idxs[idx] == i) {
         outVars.push_back(indVars[idx]);
+        pushed = true;
         break;
       }
     }
+    assert(pushed && "transpose's perms is not permutation!");
   }  
 
   auto output = input.get(outVars).first;
@@ -1446,7 +1458,7 @@ void encodeOp(State &st, mlir::linalg::MatmulOp op, bool) {
   Tensor a = st.regs.get<Tensor>(op.getOperand(0));
   Tensor b = st.regs.get<Tensor>(op.getOperand(1));
   Tensor c = st.regs.get<Tensor>(op.getOperand(2));
-  Tensor result = a.matmul(b, c);
+  Tensor result = a.matmul(b, /*transposed*/false, c);
 
   st.wellDefined(op, a.isFullyInitialized());
   st.wellDefined(op, b.isFullyInitialized());
@@ -1888,7 +1900,7 @@ void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
   st.wellDefined(op, weightTensor.isFullyInitialized());
   st.wellDefined(op, biasTensor.isFullyInitialized());
 
-  auto mul = inputTensor.matmul(weightTensor.transpose());
+  auto mul = inputTensor.matmul(weightTensor, /*transposed*/true);
 
   // Output: [N, OC]
   auto idxVars = Index::boundIndexVars(2);
