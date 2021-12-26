@@ -608,19 +608,19 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
                 );
 
   // change output to 1xOHxOWx1
-  auto output2D = fmap(output, [&](auto tensor) {
+  auto output2D = fmap(output, [&](auto unwrapped) {
     vector<Expr> output2DDims =
-      {Index(1), outInd[1], outInd[2], Index(1)};
+      {Index(1), unwrapped.getDim(1), unwrapped.getDim(2), Index(1)};
     vector<Expr> output2DInd = Index::boundIndexVars(4);
     if (outInd.size() == 4)
       return Tensor::mkInitializedLambda(
         elemType, move(output2DDims), move(output2DInd),
-        tensor.get({n, output2DInd[1], output2DInd[2], c * m}).first
+        unwrapped.get({n, output2DInd[1], output2DInd[2], c * m}).first
       );
     else
       return Tensor::mkInitializedLambda(
         elemType, move(output2DDims), move(output2DInd),
-        tensor.get({n, output2DInd[1], output2DInd[2], c, m}).first
+        unwrapped.get({n, output2DInd[1], output2DInd[2], c, m}).first
       );
   });
 
