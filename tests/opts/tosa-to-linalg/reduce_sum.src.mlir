@@ -1,4 +1,4 @@
-// VERIFY-INCORREECT
+// VERIFY-INCORRECT
 
 // Interestingly, this transformation FAILS to verify because filling
 // non-identity value (+0.0) to output tensor.
