@@ -16,7 +16,7 @@ string freshName(string prefix) {
 }
 }
 
-optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type elemty) {
+optional<Sort> convertPrimitiveTypeToSort(mlir::Type elemty) {
   if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
     return Integer::sort(ielemty.getWidth());
   } else if (auto felemty = elemty.dyn_cast<mlir::FloatType>()) {
@@ -280,7 +280,7 @@ Integer Integer::eval(Model m) const {
   return Integer(m.eval(e, true).simplify());
 }
 
-pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
+pair<vector<Expr>, Expr> ShapedValue::conv(
     const ShapedValue &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,
@@ -475,7 +475,7 @@ Expr Tensor::getWellDefined() const {
   return e.simplify();
 }
 
-Expr Tensor::isInBounds(const vector<smt::Expr> &indices) const {
+Expr Tensor::isInBounds(const vector<Expr> &indices) const {
   assert(indices.size() == dims.size());
 
   auto inbounds = Expr::mkBool(true);
@@ -505,8 +505,8 @@ Expr Tensor::isFullyInitialized() const {
   return Expr::mkForall(vars, isInitialized(vars));
 }
 
-pair<Tensor, Expr> Tensor::insert(const smt::Expr &value,
-    const vector<smt::Expr> &indices) const {
+pair<Tensor, Expr> Tensor::insert(const Expr &value,
+    const vector<Expr> &indices) const {
   auto idxvar = Index::var("idx", VarType::BOUND);
   auto cond = (Expr)idxvar == to1DIdx(indices, dims);
   auto originValue = get(from1DIdx(idxvar, dims)).first;
@@ -851,7 +851,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
     os << ", " << or_omit(t.dims[i]);
   os << ") ";
 
-  using namespace smt::matchers;
+  using namespace matchers;
   if (ConstSplatArray(ConstBool(false)).match(t.initialized)) {
     os << "(uninitialized)";
     return os;
@@ -859,11 +859,11 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 
   const int64_t maxSizeToPrint = 16;
   int64_t dimSize;
-  if (smt::get1DSize(t.dims).simplify().isInt(dimSize) &&
+  if (get1DSize(t.dims).simplify().isInt(dimSize) &&
       dimSize <= maxSizeToPrint) {
     // Print individual elements.
     for (int64_t i = 0; i < dimSize; ++i) {
-      auto idx1d = smt::simplifyList(smt::from1DIdx(Index(i), t.dims));
+      auto idx1d = simplifyList(from1DIdx(Index(i), t.dims));
       vector<int64_t> idxconsts;
       for (auto &e: idx1d) {
         int64_t ii;
@@ -939,7 +939,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 };
 
 Tensor Tensor::eval(Model m) const {
-  vector<Expr> dims_ev = smt::simplifyList(m.eval(dims));
+  vector<Expr> dims_ev = simplifyList(m.eval(dims));
   return { elemType, move(dims_ev),
       m.eval(arr, true).simplify(),
       m.eval(initialized, true).simplify() };
@@ -1022,15 +1022,15 @@ Tensor Tensor::mkLambdaFrom1D(
 
 Tensor Tensor::mkInitializedLambda(
     mlir::Type elemType,
-    std::vector<smt::Expr> &&newdims,
-    std::vector<smt::Expr> &&indexvars,
-    smt::Expr body) {
+    vector<Expr> &&newdims,
+    vector<Expr> &&indexvars,
+    Expr body) {
   return mkLambda(elemType, move(newdims), move(indexvars),
       move(body), Expr::mkBool(true));
 }
 
 Tensor Tensor::mkIte(
-    function<smt::Expr(const vector<smt::Expr> &)> condFn,
+    function<Expr(const vector<Expr> &)> condFn,
     const Tensor &trueValue, const Tensor &falseValue) {
   auto trueDims = trueValue.getDims();
   auto falseDims = falseValue.getDims();
@@ -1205,7 +1205,7 @@ MemRef::Layout::Layout(const vector<Expr> &dims):
   this->inverseMappings = [dims](auto &index) { return from1DIdx(index, dims);};
 }
 
-MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
+MemRef::Layout::Layout(const vector<Expr> &indVars,
     const Fn &layout,
     const Fn &inbounds,
     bool useUF): indVars(indVars), inbounds(inbounds),
@@ -1213,7 +1213,7 @@ MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
     {
 
   if (useUF) {
-    vector<smt::Sort> domains(indVars.size(), Index::sort());
+    vector<Sort> domains(indVars.size(), Index::sort());
     FnDecl layoutFn(domains, Index::sort(), freshName("layoutFn"));
     auto layoutFnExpr = layoutFn.apply(indVars);
     Expr condition = (layoutFnExpr == layout(indVars));
@@ -1264,17 +1264,17 @@ MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
 
 MemRef::MemRef(Memory *m,
   const mlir::Type &elemTy,
-  const smt::Expr &bid,
-  const smt::Expr &offset,
-  const std::vector<smt::Expr> &dims,
+  const Expr &bid,
+  const Expr &offset,
+  const vector<Expr> &dims,
   const Layout &layout,
-  const smt::Expr &isViewRef) : ShapedValue(elemTy), m(m), bid(bid),
+  const Expr &isViewRef) : ShapedValue(elemTy), m(m), bid(bid),
     offset(offset), dims(dims), layout(layout), isViewRef(isViewRef) {}
 
 MemRef::MemRef(Memory *m,
   const mlir::Type &elemty,
-  const std::string &name,
-  const std::vector<Expr> &dims,
+  const string &name,
+  const vector<Expr> &dims,
   const Layout &layout):
     ShapedValue(elemty),
     m(m),
@@ -1286,7 +1286,7 @@ MemRef::MemRef(Memory *m,
 
 MemRef::MemRef(Memory *m,
     const mlir::Type &elemty,
-    const std::vector<Expr> &dims,
+    const vector<Expr> &dims,
     const Layout &layout) :
     MemRef(m, elemty, freshName("memref"), dims, layout) {}
 
@@ -1357,7 +1357,7 @@ pair<Expr, Expr> MemRef::get(
   return {loaded, (success & inbounds).simplify()};
 }
 
-Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) const {
+Expr MemRef::store(const Expr &value, const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto success = m->store(elemType, value, bid, (Expr)offset + idx);
 
@@ -1399,7 +1399,7 @@ Expr MemRef::getLiveness() const {
   return m->getLiveness(elemType, bid);
 }
 
-smt::Expr MemRef::noalias(const MemRef &other) const {
+Expr MemRef::noalias(const MemRef &other) const {
   if (!isIdentityMap() || !other.isIdentityMap())
     throw UnsupportedException("Noalias check with arbitrary layout memref is"
         " not supported yet");
@@ -1453,8 +1453,8 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
 
 Expr MemRef::conv(const MemRef &input,
     const MemRef &filter,
-    const std::vector<smt::Expr> &strides,
-    const std::vector<smt::Expr> &dilations,
+    const vector<Expr> &strides,
+    const vector<Expr> &dilations,
     ConvLayout clayout) {
   auto [indices, expr] = input.ShapedValue::conv(filter, strides, dilations,
       clayout);
@@ -1475,7 +1475,7 @@ Expr MemRef::conv(const MemRef &input,
   return success;
 }
 
-MemRef MemRef::mkIte(smt::Expr cond,
+MemRef MemRef::mkIte(Expr cond,
     const MemRef &trueValue, const MemRef &falseValue) {
   auto trueDims = trueValue.getDims();
   auto falseDims = trueValue.getDims();
@@ -1504,7 +1504,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const MemRef &m) {
   return os;
 };
 
-std::pair<Expr, vector<Expr>> MemRef::refines(const MemRef &other) const {
+pair<Expr, vector<Expr>> MemRef::refines(const MemRef &other) const {
   return {(Expr) other == (Expr) *this, {}};
 }
 
@@ -1605,7 +1605,7 @@ Expr getExpr(const ValueTy &v) {
   return move(*e);
 }
 
-ValueTy eval(const ValueTy &v, smt::Model m) {
+ValueTy eval(const ValueTy &v, Model m) {
   optional<ValueTy> e;
   visit([&](auto &&itm) {
     e = itm.eval(m);

@@ -527,10 +527,8 @@ Expr Expr::ult(const Expr& rhs) const {
       return rrhs->ugt(a ^ (b << rrhs->bitwidth()));
   }
 
-  Expr e;
-  SET_Z3_USEOP(e, rhs, ult);
-  SET_CVC5_USEOP(e, rhs, BITVECTOR_ULT);
-  return e;
+  // a < b <-> !(b <= a)
+  return !rhs.ule(*this);
 }
 
 EXPR_BVOP_UINT64(slt)
