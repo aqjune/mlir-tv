@@ -285,12 +285,13 @@ public:
     // Induction variables; they are bound (Expr::mkVar's flag is true)
     // ex) {d0, d1..}
     std::vector<smt::Expr> indVars;
-    // Inbounds condition for induction variables
+    // Inbounds condition generator
     // ex) (d0, d1) -> 0 <= d0 < 3 && 0 <= d1 < 4 && ...
-    smt::Expr inbounds;
-    // Layout mapping of indVars (indVars -> 1D Index)
+    using Fn = std::function<smt::Expr(const std::vector<smt::Expr> &args)>;
+    Fn inbounds;
+    // Layout mapping generator (ind vars -> 1D Index)
     // ex) mapping := (d0, d1) -> (4 * d0 + d1)
-    smt::Expr mapping;
+    Fn mapping;
     // Inverse layout mapping of indVars (1D Index -> indVars)
     // If we can not give exact definition of inverseMappings, then encode it
     // with uninterpreted function.
@@ -299,7 +300,8 @@ public:
     //    inverseMappings := (idx) -> {(idx / 4), (idx % 4)}
     // - If we cannot give exact definition
     //    inverseMappings := (idx) -> {inverse0(idx), inverse1(idx)}
-    std::vector<smt::Expr> inverseMappings;
+    using Fn2 = std::function<std::vector<smt::Expr>(const smt::Expr &)>;
+    Fn2 inverseMappings;
     // Precondition for inverse mapping function.
     // If we cannot give exact definition of inverseMappings, then give its
     // meaning with forall quantifier.
@@ -313,8 +315,8 @@ public:
     Layout(const std::vector<smt::Expr> &dims);
 
     Layout(const std::vector<smt::Expr> &indVars,
-        const smt::Expr &layout,
-        const smt::Expr &inbounds,
+        const Fn &layout,
+        const Fn &inbounds,
         bool useUF = false); // encode "mapping" using uninterpreted function
 
     // MARK(makesource)
