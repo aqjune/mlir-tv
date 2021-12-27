@@ -1195,22 +1195,9 @@ Expr Tensor::to1DArrayWithOfs(
 MemRef::Layout::Layout(const vector<Expr> &dims):
     precondition(Expr::mkBool(true)) {
   this->indVars = Index::boundIndexVars(dims.size());
-
-  this->inbounds = [dims](auto &indices) {
-    Expr e = Expr::mkBool(true);
-    for (size_t i = 0; i < dims.size(); i ++) {
-      e &= indices[i].ult(dims[i]);
-    }
-    return e;
-  };
-
-  this->mapping = [dims](auto &indices) {
-    return to1DIdx(indices, dims);
-  };
-
-  this->inverseMappings = [dims](auto &index) {
-    return from1DIdx(index, dims);
-  };
+  this->inbounds = [dims](auto &indices) { return fitsInDims(indices, dims); };
+  this->mapping = [dims](auto &indices) { return to1DIdx(indices, dims); };
+  this->inverseMappings = [dims](auto &index) { return from1DIdx(index, dims);};
 }
 
 MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
