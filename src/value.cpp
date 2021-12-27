@@ -14,11 +14,6 @@ string freshName(string prefix) {
   static int count = 0;
   return prefix + to_string(count ++);
 }
-
-Expr getConstOrFreshVar(int64_t val, string &&name) {
-  return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
-      Index::var(move(name), VarType::FRESH) : Index(val);
-}
 }
 
 optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type elemty) {
@@ -1203,71 +1198,67 @@ Expr Tensor::to1DArrayWithOfs(
 }
 
 MemRef::Layout::Layout(const vector<Expr> &dims):
-    inbounds(Expr::mkBool(true)),
-    mapping(Expr::mkBool(true)), // Filled with a new lambda expr later
     precondition(Expr::mkBool(true)) {
-  vector<Expr> indVars, inverseMappings;
-
-  for (size_t i = 0; i < dims.size(); i ++) {
-    indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
-    inbounds = inbounds & indVars[i].ult(dims[i]);
-  }
-
-  Expr idx = Index::var("1DIdx", VarType::BOUND);
-  vector<Expr> inverseIdxs = from1DIdx(idx, dims);
-  for (auto inverse : inverseIdxs)
-    inverseMappings.push_back(Expr::mkLambda(idx, inverse));
-
-  this->indVars = indVars;
-  this->inbounds = Expr::mkLambda(indVars, inbounds);
-  this->mapping = Expr::mkLambda(indVars, to1DIdx(indVars, dims));
-  this->inverseMappings = inverseMappings;
+  this->indVars = Index::boundIndexVars(dims.size());
+  this->inbounds = [dims](auto &indices) { return fitsInDims(indices, dims); };
+  this->mapping = [dims](auto &indices) { return to1DIdx(indices, dims); };
+  this->inverseMappings = [dims](auto &index) { return from1DIdx(index, dims);};
 }
 
 MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
-    const smt::Expr &layout,
-    const smt::Expr &inbounds,
-    bool useUF):
-    indVars(indVars),
-    inbounds(Expr::mkBool(true)),  // Filled with a new lambda expr later
-    mapping(Expr::mkBool(true)), // Filled with a new lambda expr later
-    precondition(Expr::mkBool(true)) // Filled with a new lambda expr later
+    const Fn &layout,
+    const Fn &inbounds,
+    bool useUF): indVars(indVars), inbounds(inbounds),
+    precondition(Expr::mkBool(true)) // Will be replaced later
     {
+
   if (useUF) {
     vector<smt::Sort> domains(indVars.size(), Index::sort());
     FnDecl layoutFn(domains, Index::sort(), freshName("layoutFn"));
     auto layoutFnExpr = layoutFn.apply(indVars);
-    Expr condition = (layoutFnExpr == layout);
-    vector<Expr> inverseMappings;
+    Expr condition = (layoutFnExpr == layout(indVars));
 
+    vector<FnDecl> inverseFns;
     for (unsigned i = 0; i < indVars.size(); i ++) {
       auto inverseName = freshName("inverse" + to_string(i));
-      FnDecl inverseFn(Index::sort(), Index::sort(), move(inverseName));
-      auto inverse = Expr::mkLambda(indVars[i], inverseFn(indVars[i]));
-      inverseMappings.push_back(inverse);
+      inverseFns.emplace_back(Index::sort(), Index::sort(), move(inverseName));
 
-      condition = condition & (inverse.select(layoutFnExpr) == indVars[i]);
+      condition = condition & (inverseFns.back()(layoutFnExpr) == indVars[i]);
     }
-    this->inbounds = Expr::mkLambda(indVars, inbounds);
-    this->mapping = Expr::mkLambda(indVars, layoutFnExpr);
-    this->inverseMappings = inverseMappings;
+    this->inverseMappings = [inverseFns](const Expr &idx) {
+      vector<Expr> ret;
+      for (auto &fn: inverseFns)
+        ret.push_back(fn(idx));
+      return ret;
+    };
+
+    this->mapping = [layoutFn](auto &indices) {
+      return layoutFn.apply(indices);
+    };
+
     this->precondition = Expr::mkForall(
-        indVars, inbounds.implies(condition));
+        indVars, inbounds(indVars).implies(condition));
+
   } else {
     Expr condition = Expr::mkBool(true);
-    vector<Expr> inverseMappings;
+    vector<FnDecl> inverseFns;
     for (unsigned i = 0; i < indVars.size(); i ++) {
       auto inverseName = freshName("inverse" + to_string(i));
-      FnDecl inverseFn(Index::sort(), Index::sort(), move(inverseName));
-      auto inverse = Expr::mkLambda(indVars[i], inverseFn(indVars[i]));
-      inverseMappings.push_back(inverse);
+      inverseFns.emplace_back(Index::sort(), Index::sort(), move(inverseName));
 
-      condition = condition & (inverse.select(layout) == indVars[i]);
+      condition = condition &
+          (inverseFns.back()(layout(indVars)) == indVars[i]);
     }
-    this->inbounds = Expr::mkLambda(indVars, inbounds);
-    this->mapping = Expr::mkLambda(indVars, layout);
-    this->inverseMappings = inverseMappings;
-    this->precondition = Expr::mkForall(indVars, inbounds.implies(condition));
+    this->inverseMappings = [inverseFns](const Expr &idx) {
+      vector<Expr> ret;
+      for (auto &fn: inverseFns)
+        ret.push_back(fn(idx));
+      return ret;
+    };
+
+    this->mapping = layout;
+    this->precondition = Expr::mkForall(indVars,
+        inbounds(indVars).implies(condition));
   }
 }
 
@@ -1331,22 +1322,25 @@ MemRef::Layout MemRef::getLayout(
   if (memRefTy.getLayout().isIdentity())
     return MemRef::Layout(dims);
 
+  auto getConstOrFreshVar = [](int64_t val, string &&name) -> Expr {
+    return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
+        Index::var(move(name), VarType::FRESH) : Index(val);
+  };
+
   int64_t offset;
   llvm::SmallVector<int64_t, 4> strides;
   [[maybe_unused]] auto success =
       mlir::getStridesAndOffset(memRefTy, strides, offset);
   assert(succeeded(success) && "unexpected non-strided memref");
-  Expr layout = getConstOrFreshVar(offset, "offset");
-  vector<Expr> indVars;
 
-  Expr inbounds = Expr::mkBool(true);
-  for (size_t i = 0; i < strides.size(); i ++) {
-    indVars.push_back(Index::var("idx" + to_string(i), VarType::BOUND));
-    layout = layout + getConstOrFreshVar(strides[i], "strides") * indVars[i];
-    inbounds = inbounds & indVars[i].ult(dims[i]);
-  }
-
-  return MemRef::Layout(indVars, layout, inbounds);
+  auto layoutFn = [strides, offset, getConstOrFreshVar](auto &indices) {
+    Expr layout = getConstOrFreshVar(offset, "offset");
+    for (size_t i = 0; i < strides.size(); i ++)
+      layout = layout + getConstOrFreshVar(strides[i], "strides") * indices[i];
+    return layout;
+  };
+  return MemRef::Layout(Index::boundIndexVars(strides.size()),
+    layoutFn, [dims](auto &indices) { return fitsInDims(indices, dims); });
 }
 
 pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
@@ -1519,43 +1513,74 @@ MemRef MemRef::eval(Model mdl) const {
 }
 
 pair<Expr, Expr> MemRef::to1DIdxWithLayout(const vector<Expr> &idxs) const {
-  auto Expr = layout.mapping.select(idxs);
-  auto inbounds = layout.inbounds.select(idxs);
+  auto Expr = layout.mapping(idxs);
+  auto inbounds = layout.inbounds(idxs);
   return {Expr, inbounds};
 }
 
 MemRef::Layout MemRef::createSubViewLayout(
-    const vector<Expr> &indVars,
+    const vector<Expr> &indVarsOrZero,
     const vector<Expr> &offsets,
     const vector<Expr> &strides,
     const vector<Expr> &sizes) {
   // Before : <(d0, d1) -> (d0 * s0 + d1)>,
-  // After: <(d0, d1) -> ((indVars[0] * strides[0] + offsets[0]) * s0 + indVars[1] * strides[1] + offsets[1])>
-  // indVars[i] can be Index::zero() if reducing the dimension.
-  assert(layout.indVars.size() == indVars.size());
+  // After: <(d0, d1) ->
+  //    ((indVars[0] * strides[0] + offsets[0]) * s0 +
+  //      indVars[1] * strides[1] + offsets[1])>
+  // indVars[i] can be Index::zero() if the dimension is reduced.
+  assert(layout.indVars.size() == indVarsOrZero.size());
   assert(layout.indVars.size() == offsets.size());
   assert(layout.indVars.size() == strides.size());
   assert(layout.indVars.size() == sizes.size());
+  unsigned numVarsBefore = indVarsOrZero.size();
 
-  vector<Expr> idxs, transformedIndVars;
-  Expr inbounds = Expr::mkBool(true);
-  for (unsigned i = 0; i < layout.indVars.size(); i ++) {
-    idxs.push_back(indVars[i] * strides[i] + offsets[i]);
-    inbounds = inbounds & indVars[i].ult(sizes[i]);
-
-    if (!indVars[i].isNumeral()) transformedIndVars.push_back(indVars[i]);
+  vector<Expr> indVars;
+  vector<unsigned> zeroOffsets;
+  for (unsigned i = 0; i < numVarsBefore; ++i) {
+    if (!indVarsOrZero[i].isVar()) {
+      uint64_t u;
+      assert(indVarsOrZero[i].isUInt(u) && u == 0);
+      zeroOffsets.push_back(i);
+    } else {
+      indVars.push_back(indVarsOrZero[i]);
+    }
   }
-  auto transformedLayout = layout.mapping.select(idxs);
-  auto transformedInbounds = layout.inbounds.select(idxs) & inbounds;
-  return Layout(transformedIndVars, transformedLayout, transformedInbounds);
+
+  auto insertZeros = [zeroOffsets, numVarsBefore](
+      const vector<Expr> &indVars) -> vector<Expr> {
+    assert(indVars.size() + zeroOffsets.size() == numVarsBefore);
+
+    vector<Expr> indVarsOrZero = indVars;
+    for (auto ofs: zeroOffsets)
+      indVarsOrZero.insert(indVarsOrZero.begin() + ofs, Index(0));
+    return indVarsOrZero;
+  };
+  auto transformIndices = [strides, offsets](const vector<Expr> &indices)
+      -> vector<Expr> {
+    vector<Expr> indices2;
+    for (unsigned i = 0; i < strides.size(); ++i)
+      indices2.push_back(indices[i] * strides[i] + offsets[i]);
+    return indices2;
+  };
+
+  auto oldLayout = this->layout;
+  auto transformedInbounds = [=](const vector<Expr> &idxs) {
+    auto idxsOrZero = insertZeros(idxs);
+    auto originalIndices = transformIndices(idxsOrZero);
+    return oldLayout.inbounds(originalIndices) & fitsInDims(idxsOrZero, sizes);
+  };
+
+  auto transformedLayout = [=](const vector<Expr> &idxs) -> Expr {
+    auto idxsOrZero = insertZeros(idxs);
+    auto originalIndices = transformIndices(idxsOrZero);
+    return oldLayout.mapping(originalIndices);
+  };
+
+  return Layout(indVars, transformedLayout, transformedInbounds);
 }
 
 vector<Expr> MemRef::Layout::getInverseIndices(const Expr &idx) const {
-  vector<Expr> indices;
-  for (auto inverse: inverseMappings)
-    indices.push_back(inverse.select(idx));
-
-  return indices;
+  return inverseMappings(idx);
 }
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream &os, const ValueTy &v) {

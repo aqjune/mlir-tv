@@ -407,7 +407,8 @@ bool Expr::isTrue() const {
 
 bool Expr::isVar() const {
   bool res = false;
-  IF_Z3_ENABLED(res |= z3 && z3->is_app() && z3->is_const());
+  IF_Z3_ENABLED(res |= z3 && z3->is_app() && z3->is_const() &&
+                       !z3->is_numeral());
   // TODO: CVC5
   return res;
 }
@@ -1131,6 +1132,10 @@ Expr Expr::mkBool(const bool val) {
 }
 
 Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
+  for (auto &v: vars) {
+    assert(v.isVar());
+  }
+
   uint64_t v;
   if (body.isUInt(v)) {
     // forall idx, constant == constant (because we don't have 'False' sort)
