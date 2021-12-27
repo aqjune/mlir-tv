@@ -1191,6 +1191,10 @@ Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
     return then;
   else if (cond.isFalse())
     return els;
+  else if (then.isTrue())
+    return cond | els;
+  else if (els.isFalse())
+    return cond & then;
 
   optional<Expr> lhs, rhs;
   using namespace matchers;
