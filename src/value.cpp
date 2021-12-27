@@ -1527,7 +1527,7 @@ pair<Expr, Expr> MemRef::to1DIdxWithLayout(const vector<Expr> &idxs) const {
 }
 
 MemRef::Layout MemRef::createSubViewLayout(
-    const vector<Expr> &indVars,
+    const vector<Expr> &indVarsOrZero,
     const vector<Expr> &offsets,
     const vector<Expr> &strides,
     const vector<Expr> &sizes) {
@@ -1536,26 +1536,55 @@ MemRef::Layout MemRef::createSubViewLayout(
   //    ((indVars[0] * strides[0] + offsets[0]) * s0 +
   //      indVars[1] * strides[1] + offsets[1])>
   // indVars[i] can be Index::zero() if the dimension is reduced.
-  assert(layout.indVars.size() == indVars.size());
+  assert(layout.indVars.size() == indVarsOrZero.size());
   assert(layout.indVars.size() == offsets.size());
   assert(layout.indVars.size() == strides.size());
   assert(layout.indVars.size() == sizes.size());
+  unsigned numVarsBefore = indVarsOrZero.size();
 
-  auto oldLayout = this->layout;
-  auto transformedInbounds = [oldLayout, sizes](auto &idxs) {
-    return layout.inbounds(idx) & fitsInDims(idxs, sizes);
+  vector<Expr> indVars;
+  vector<unsigned> zeroOffsets;
+  for (unsigned i = 0; i < numVarsBefore; ++i) {
+    if (!indVarsOrZero[i].isVar()) {
+      uint64_t u;
+      assert(indVarsOrZero[i].isUInt(u) && u == 0);
+      zeroOffsets.push_back(i);
+    } else {
+      indVars.push_back(indVarsOrZero[i]);
+    }
+  }
+
+  auto insertZeros = [zeroOffsets, numVarsBefore](
+      const vector<Expr> &indVars) -> vector<Expr> {
+    assert(indVars.size() + zeroOffsets.size() == numVarsBefore);
+
+    vector<Expr> indVarsOrZero = indVars;
+    for (auto ofs: zeroOffsets)
+      indVarsOrZero.insert(indVarsOrZero.begin() + ofs, Index(0));
+    return indVarsOrZero;
+  };
+  auto transformIndices = [strides, offsets](const vector<Expr> &indices)
+      -> vector<Expr> {
+    vector<Expr> indices2;
+    for (unsigned i = 0; i < strides.size(); ++i)
+      indices2.push_back(indices[i] * strides[i] + offsets[i]);
+    return indices2;
   };
 
-  vector<Expr> idxs, transformedIndVars;
+  auto oldLayout = this->layout;
+  auto transformedInbounds = [=](const vector<Expr> &idxs) {
+    auto idxsOrZero = insertZeros(idxs);
+    auto originalIndices = transformIndices(idxsOrZero);
+    return oldLayout.inbounds(originalIndices) & fitsInDims(idxsOrZero, sizes);
+  };
 
-  for (unsigned i = 0; i < layout.indVars.size(); i ++) {
-    idxs.push_back(indVars[i] * strides[i] + offsets[i]);
+  auto transformedLayout = [=](const vector<Expr> &idxs) -> Expr {
+    auto idxsOrZero = insertZeros(idxs);
+    auto originalIndices = transformIndices(idxsOrZero);
+    return oldLayout.mapping(originalIndices);
+  };
 
-    if (!indVars[i].isNumeral())
-      transformedIndVars.push_back(indVars[i]);
-  }
-  auto transformedLayout = layout.mapping(idxs);
-  return Layout(transformedIndVars, transformedLayout, transformedInbounds);
+  return Layout(indVars, transformedLayout, transformedInbounds);
 }
 
 vector<Expr> MemRef::Layout::getInverseIndices(const Expr &idx) const {
