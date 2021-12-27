@@ -251,8 +251,8 @@ static pair<CheckResult, int64_t> solve(
   return {result, elapsedMillisec};
 }
 
-static const char *SMT_LOGIC_QF  = "QF_UFBV";
-static const char *SMT_LOGIC     = "UFBV";
+static const char *SMT_LOGIC_QF  = "QF_AUFBV";
+static const char *SMT_LOGIC     = "AUFBV";
 static const char *SMT_LOGIC_ALL = "ALL";
 
 static Results checkRefinement(

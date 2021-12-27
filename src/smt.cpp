@@ -167,6 +167,7 @@ Expr to1DIdx(
     // TODO: migrate constant foldings
     idx = idx * dims[i] + idxs[i];
   }
+  idx = idx.simplify();
   return idx;
 }
 
