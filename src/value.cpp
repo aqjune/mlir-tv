@@ -1185,8 +1185,8 @@ Expr Tensor::to1DArrayWithOfs(
     absidxs.push_back(std::move(absidx));
   }
   auto elem = get(absidxs).first;
-  auto zero = elemType.isa<mlir::FloatType>() ?
-      aop::getFpEncoding(elemType).zero() :
+  auto identity = elemType.isa<mlir::FloatType>() ?
+      aop::getFpEncoding(elemType).zero(true) :
       (Expr)Integer(0, elem.bitwidth());
 
   return Expr::mkLambda(
@@ -1194,7 +1194,7 @@ Expr Tensor::to1DArrayWithOfs(
       Expr::mkIte(
         ((Expr)idxvar).ult(::get1DSize(sizes)),
         elem,
-        zero));
+        identity));
 }
 
 MemRef::Layout::Layout(const vector<Expr> &dims):
