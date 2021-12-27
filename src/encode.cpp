@@ -2164,6 +2164,7 @@ void encodeOp(State &st, mlir::bufferization::ToTensorOp op,
   auto [tensor, loadSuccess] = m.loadTensor();
   st.regs.add(op.getResult(), tensor);
   st.wellDefined(op, move(loadSuccess));
+  st.hasQuantifier |= true;
 }
 
 template<>

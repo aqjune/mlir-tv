@@ -758,6 +758,15 @@ Expr Expr::sext(unsigned bits) const {
 Expr Expr::implies(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
+  if (rhs.isTrue())
+    return rhs;
+  else if (rhs.isFalse())
+    return this->operator!();
+  else if (this->isTrue())
+    return rhs;
+  else if (this->isFalse())
+    return Expr::mkBool(true);
+
   Expr e;
   SET_Z3_USEOP(e, rhs, implies);
   SET_CVC5_USEOP(e, rhs, IMPLIES);
