@@ -994,7 +994,8 @@ static Tensor getPaddedTensor2D(mlir::Type elemTy,
     auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
                   padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
 
-    Float zero = Float::constant(llvm::APFloat(0.0), elemTy);
+    // TOSA pad operands fill padded area as +0.0
+    auto zero = *getZero(elemTy);
     Expr padVal = Expr::mkIte(cond, input.get(srcInd).first, zero);
 
     return Tensor::mkInitializedLambda(
@@ -2795,13 +2796,12 @@ static void assignRandomValue(State &st, mlir::Operation *op, bool printOp) {
       st.regs.add(r, move(i));
 
     } else if (auto fty = ty.dyn_cast<mlir::FloatType>()) {
-      Float f = Float::constant(llvm::APFloat(0.0), fty);
-      st.regs.add(r, move(f));
+      st.regs.add(r, *getIdentity(fty), fty);
 
     } else if (auto tty = ty.dyn_cast<mlir::RankedTensorType>()) {
       auto dims = ShapedValue::getDims(tty);
       auto elemTy = tty.getElementType();
-      Tensor t(elemTy, *getZero(elemTy), move(dims));
+      Tensor t(elemTy, *getIdentity(elemTy), move(dims));
       st.regs.add(r, move(t));
 
     } else {
