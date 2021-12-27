@@ -34,7 +34,7 @@ auto fupdate2(std::optional<T1> &x, const std::optional<T2> &x2, Fn fn) {
 
 inline uint64_t log2_ceil(uint64_t count) {
   uint64_t bits = 0;
-  while (count > (1 << bits)) {
+  while (bits < 64 && count > (1 << bits)) {
     bits += 1;
   }
   return bits;

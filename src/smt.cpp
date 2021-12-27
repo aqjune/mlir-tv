@@ -167,6 +167,7 @@ Expr to1DIdx(
     // TODO: migrate constant foldings
     idx = idx * dims[i] + idxs[i];
   }
+  idx = idx.simplify();
   return idx;
 }
 
@@ -446,8 +447,14 @@ Expr Expr::urem(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
   uint64_t rhsval;
-  if (rhs.isUInt(rhsval) && rhsval == 1)
-    return Expr::mkBV(0, rhs);
+  if (rhs.isUInt(rhsval)) {
+    if (rhsval == 1)
+      return Expr::mkBV(0, rhs);
+    else if (rhsval > 0 && (rhsval & (rhsval - 1)) == 0) {
+      uint64_t l = log2_ceil(rhsval);
+      return Expr::mkBV(0, bitwidth() - l).concat(extract(l - 1, 0));
+    }
+  }
 
   uint64_t a, b;
   // If divisor is zero, follow the solver's behavior
@@ -466,8 +473,14 @@ Expr Expr::udiv(const Expr& rhs) const {
   CHECK_LOCK2(rhs);
 
   uint64_t rhsval;
-  if (rhs.isUInt(rhsval) && rhsval == 1)
-    return *this;
+  if (rhs.isUInt(rhsval)) {
+    if (rhsval == 1)
+      return *this;
+    else if (rhsval > 0 && (rhsval & (rhsval - 1)) == 0) {
+      uint64_t l = log2_ceil(rhsval);
+      return Expr::mkBV(0, l).concat(extract(bitwidth() - 1, l));
+    }
+  }
 
   uint64_t a, b;
   // If divisor is zero, follow the solver's behavior

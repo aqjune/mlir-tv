@@ -38,7 +38,20 @@ optional<Expr> getZero(mlir::Type eltType) {
     return nullopt;
 
   if (eltType.isa<mlir::FloatType>())
-    return Float::constant(llvm::APFloat(0.0), eltType);
+    return aop::getFpEncoding(eltType).zero();
+  else if (eltType.isa<mlir::IntegerType>())
+    return Integer(0, eltType.getIntOrFloatBitWidth());
+  else if (eltType.isIndex())
+    return Index(0);
+  return {};
+}
+
+optional<Expr> getIdentity(mlir::Type eltType) {
+  if (convertPrimitiveTypeToSort(eltType) == nullopt)
+    return nullopt;
+
+  if (eltType.isa<mlir::FloatType>())
+    return aop::getFpEncoding(eltType).zero(true);
   else if (eltType.isa<mlir::IntegerType>())
     return Integer(0, eltType.getIntOrFloatBitWidth());
   else if (eltType.isIndex())
@@ -525,11 +538,11 @@ Tensor Tensor::affine(
     for (size_t j = 0; j < newidxvars.size(); ++j) {
       newv = newv.substitute({ newidxvars[j] }, { indices[j] });
     }
-    srcidxs[i] = newv;
+    srcidxs[i] = newv.simplify();
   }
   auto elem = get(srcidxs).first;
   auto init = isInitialized(srcidxs);
-  auto zero = *getZero(elemType);
+  auto identity = *getIdentity(elemType);
 
   return {
     elemType,
@@ -539,7 +552,7 @@ Tensor Tensor::affine(
       Expr::mkIte(
         ((Expr)idxvar).ult(::get1DSize(newsizes)), // TODO: is this chk needed?
         elem,
-        zero
+        identity
       )),
     Expr::mkLambda(idxvar, init) // Initialized
   };
@@ -1143,7 +1156,8 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
       return newt;
     }
 
-    // Unspecified locations are filled with zero.
+    // Unspecified locations are filled with positive zero.
+    // (MLIR behaves like this)
     auto zero = getZero(elemTy);
     if (!zero)
       throw UnsupportedException("unsupported element type");
@@ -1182,19 +1196,10 @@ Expr Tensor::to1DArrayWithOfs(
   absidxs.reserve(relidxs.size());
   for (size_t i = 0; i < relidxs.size(); ++i) {
     auto absidx = relidxs[i] + offbegins[i];
-    absidxs.push_back(std::move(absidx));
+    absidxs.push_back(absidx.simplify());
   }
   auto elem = get(absidxs).first;
-  auto identity = elemType.isa<mlir::FloatType>() ?
-      aop::getFpEncoding(elemType).zero(true) :
-      (Expr)Integer(0, elem.bitwidth());
-
-  return Expr::mkLambda(
-      idxvar,
-      Expr::mkIte(
-        ((Expr)idxvar).ult(::get1DSize(sizes)),
-        elem,
-        identity));
+  return Expr::mkLambda(idxvar, elem);
 }
 
 MemRef::Layout::Layout(const vector<Expr> &dims):
