@@ -542,18 +542,11 @@ Tensor Tensor::affine(
   }
   auto elem = get(srcidxs).first;
   auto init = isInitialized(srcidxs);
-  auto identity = *getIdentity(elemType);
 
   return {
     elemType,
     move(newsizes),
-    Expr::mkLambda( // Value
-      idxvar,
-      Expr::mkIte(
-        ((Expr)idxvar).ult(::get1DSize(newsizes)), // TODO: is this chk needed?
-        elem,
-        identity
-      )),
+    Expr::mkLambda(idxvar, elem),
     Expr::mkLambda(idxvar, init) // Initialized
   };
 }
@@ -1196,17 +1189,10 @@ Expr Tensor::to1DArrayWithOfs(
   absidxs.reserve(relidxs.size());
   for (size_t i = 0; i < relidxs.size(); ++i) {
     auto absidx = relidxs[i] + offbegins[i];
-    absidxs.push_back(std::move(absidx));
+    absidxs.push_back(std::move(absidx.simplify()));
   }
   auto elem = get(absidxs).first;
-  auto identity = *getIdentity(elemType);
-
-  return Expr::mkLambda(
-      idxvar,
-      Expr::mkIte(
-        ((Expr)idxvar).ult(::get1DSize(sizes)),
-        elem,
-        identity));
+  return Expr::mkLambda(idxvar, elem);
 }
 
 MemRef::Layout::Layout(const vector<Expr> &dims):
