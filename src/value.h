@@ -365,12 +365,15 @@ public:
   // (value, success?)
   std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
       const override;
+  std::pair<smt::Expr, smt::Expr> get(
+      const std::vector<smt::Expr> &indices, bool checkInitialized) const;
   smt::Expr store(const smt::Expr &value, const std::vector<smt::Expr> &indices)
       const;
   smt::Expr storeArray(const smt::Expr &array, const smt::Expr &startOffset,
       const smt::Expr &size, bool ubIfReadonly = true) const;
 
-  Tensor loadTensorWithoutCheck() const;
+  // (value, success?)
+  std::pair<Tensor, smt::Expr> loadTensor() const;
 
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;

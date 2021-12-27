@@ -20,6 +20,8 @@ class Memory {
 
   // element type -> vector<(Index::sort() -> The element's SMT type)>
   TypeMap<std::vector<smt::Expr>> arrays;
+  // element type -> vector<(Index::sort() -> bool)>
+  TypeMap<std::vector<smt::Expr>> initialized;
   // element type -> vector<Bool::sort()>
   TypeMap<std::vector<smt::Expr>> writables;
   // element type -> vector<Index::sort>
@@ -87,6 +89,14 @@ public:
     return liveness.find(elemTy)->second[ubid];
   }
 
+  smt::Expr isInitialized(mlir::Type elemTy,
+      const smt::Expr &bid, const smt::Expr &ofs) const;
+  smt::Expr isInitialized(mlir::Type elemTy,
+      unsigned ubid, const smt::Expr &ofs) const {
+    assert(ubid < getNumBlocks(elemTy));
+    return initialized.find(elemTy)->second[ubid].select(ofs);
+  }
+
   // Returns: store successful?
   smt::Expr store(
       mlir::Type elemTy, const smt::Expr &val, const smt::Expr &bid,
@@ -99,9 +109,10 @@ public:
 
   // Returns: (loaded value, load successful?)
   std::pair<smt::Expr, smt::Expr> load(
-      mlir::Type elemTy, const smt::Expr &bid, const smt::Expr &idx) const;
+      mlir::Type elemTy, const smt::Expr &bid, const smt::Expr &idx,
+      bool checkInitialized = true) const;
   std::pair<smt::Expr, smt::Expr> load(mlir::Type elemTy, unsigned bid,
-      const smt::Expr &idx) const;
+      const smt::Expr &idx, bool checkInitialized = true) const;
 
   // Encode the refinement relation between src (other) and tgt (this) memory
   // for each element type.

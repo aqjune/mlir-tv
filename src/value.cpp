@@ -1345,8 +1345,14 @@ MemRef::Layout MemRef::getLayout(
 }
 
 pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
+  return this->get(indices, true);
+}
+
+pair<Expr, Expr> MemRef::get(
+    const vector<Expr> &indices, bool checkInitialized) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto [loaded, success] = m->load(elemType, bid, (Expr)offset + idx);
+  auto [loaded, success] = m->load(elemType, bid, (Expr)offset + idx,
+      checkInitialized);
   loaded.lockOps();
 
   return {loaded, (success & inbounds).simplify()};
@@ -1366,13 +1372,14 @@ Expr MemRef::storeArray(
       ubIfReadonly);
 }
 
-Tensor MemRef::loadTensorWithoutCheck() const {
+pair<Tensor, Expr> MemRef::loadTensor() const {
   auto dims = getDims();
   vector<Expr> idxs = Index::boundIndexVars(dims.size());
-  auto expr = get(idxs).first;
-  // TODO: MemRef blocks must have initialized bits
-  return Tensor::mkInitializedLambda(getElemType(),
+  auto [expr, success0] = get(idxs);
+  auto success = Expr::mkForall(idxs, fitsInDims(idxs, dims).implies(success0));
+  auto load = Tensor::mkInitializedLambda(getElemType(),
       move(dims), move(idxs), expr);
+  return {move(load), move(success)};
 }
 
 Expr MemRef::isInBounds() const {

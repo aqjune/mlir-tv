@@ -1119,7 +1119,7 @@ Expr Expr::mkBool(const bool val) {
 
 Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
   uint64_t v;
-  if (body.isUInt(v)) {
+  if (body.isUInt(v) || body.isTrue() || body.isFalse()) {
     // forall idx, constant == constant (because we don't have 'False' sort)
     return body;
   }

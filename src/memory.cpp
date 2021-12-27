@@ -95,7 +95,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
     if (!elemSMTTy)
       throw UnsupportedException(elemTy);
 
-    vector<Expr> newArrs, newWrit, newNumElems, newLiveness;
+    vector<Expr> newArrs, newInits, newWrit, newNumElems, newLiveness;
     vector<mlir::memref::GlobalOp> globalsForTy;
 
     for (auto glb: globals) {
@@ -107,6 +107,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
     addedGlobalVars += globalsForTy.size();
 
     auto arrSort = Sort::arraySort(Index::sort(), *elemSMTTy);
+    auto initSort = Sort::arraySort(Index::sort(), Sort::boolSort());
 
     for (unsigned i = 0; i < globalsForTy.size(); ++i) {
       auto glb = globalsForTy[i];
@@ -125,6 +126,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
         string name = "#" + glb.getName().str() + "_array";
         newArrs.push_back(Expr::mkFreshVar(arrSort, name));
       }
+      newInits.push_back(Expr::mkSplatArray(Index::sort(), Expr::mkBool(true)));
       newWrit.push_back(Expr::mkBool(!glb.constant()));
       newNumElems.push_back(Index(glb.type().getNumElements()));
       newLiveness.push_back(Expr::mkBool(true));
@@ -137,6 +139,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
 
       auto boolSort = Sort::boolSort();
       auto idxSort = Index::sort();
+      newInits.push_back(Expr::mkFreshVar(initSort, suffix2("initialized")));
       newArrs.push_back(Expr::mkFreshVar(arrSort, suffix2("array")));
       newWrit.push_back(Expr::mkFreshVar(boolSort, suffix2("writable")));
       newNumElems.push_back(Expr::mkFreshVar(idxSort, suffix2("numelems")));
@@ -148,6 +151,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
     }
 
     arrays.insert({elemTy, move(newArrs)});
+    initialized.insert({elemTy, move(newInits)});
     writables.insert({elemTy, move(newWrit)});
     numelems.insert({elemTy, move(newNumElems)});
     liveness.insert({elemTy, move(newLiveness)});
@@ -202,12 +206,14 @@ Expr Memory::addLocalBlock(
     throw UnsupportedException("Too many local blocks");
 
   auto suffix = [&](const string &s) {
-    return s + to_string(bid) + (isSrc ? "_src" : "_tgt");
+    return s + "#local-" + to_string(bid) + (isSrc ? "_src" : "_tgt");
   };
 
   arrays[elemTy].push_back(Expr::mkVar(
       Sort::arraySort(Index::sort(), *convertPrimitiveTypeToSort(elemTy)),
       suffix("array").c_str()));
+  initialized[elemTy].push_back(
+      Expr::mkSplatArray(Index::sort(), Expr::mkBool(false)));
   writables[elemTy].push_back(writable);
   numelems[elemTy].push_back(numelem);
   liveness[elemTy].push_back(Expr::mkBool(true));
@@ -260,12 +266,23 @@ Expr Memory::getLiveness(mlir::Type elemTy, const Expr &bid) const {
       return liveness.find(elemTy)->second[ubid]; });
 }
 
+Expr Memory::isInitialized(mlir::Type elemTy,
+    const Expr &bid, const Expr &ofs) const {
+  return itebid(elemTy, bid, [&](auto ubid) {
+      return initialized.find(elemTy)->second[ubid].select(ofs); });
+}
+
 Expr Memory::store(mlir::Type elemTy, const Expr &val,
     const Expr &bid, const Expr &idx) {
   update(elemTy, bid, [&](auto ubid) {
         return &arrays.find(elemTy)->second[ubid]; },
       [&](auto ubid) {
         return arrays.find(elemTy)->second[ubid].store(idx, val); });
+  update(elemTy, bid, [&](auto ubid) {
+        return &initialized.find(elemTy)->second[ubid]; },
+      [&](auto ubid) {
+        return initialized.find(elemTy)->second[ubid]
+          .store(idx, Expr::mkBool(true)); });
 
   return idx.ult(getNumElementsOfMemBlock(elemTy, bid)) &
       getWritable(elemTy, bid) & getLiveness(elemTy, bid);
@@ -286,26 +303,36 @@ Expr Memory::storeArray(
       Expr cond = low.ule(idx) & ((Expr)idx).ule(high);
       return Expr::mkLambda(idx, Expr::mkIte(cond, arrayVal, currentVal));
     });
+  update(elemTy, bid, [&](auto ubid) {
+      return &initialized.find(elemTy)->second[ubid]; },
+    [&](auto ubid) {
+      auto currentVal = initialized.find(elemTy)->second[ubid].select(idx);
+      Expr cond = low.ule(idx) & ((Expr)idx).ule(high);
+      Expr trueVal = Expr::mkBool(true);
+      return Expr::mkLambda(idx, Expr::mkIte(cond, trueVal, currentVal));
+    });
 
   return isSafeToWrite(offset, size, getNumElementsOfMemBlock(elemTy, bid),
       getWritable(elemTy, bid), ubIfReadonly) & getLiveness(elemTy, bid);
 }
 
 pair<Expr, Expr> Memory::load(
-    mlir::Type elemTy, unsigned ubid, const Expr &idx) const {
+    mlir::Type elemTy, unsigned ubid, const Expr &idx, bool checkInit) const {
   assert(ubid < getNumBlocks(elemTy));
 
+  // Reading an uninitialized element is UB.
+  Expr init = checkInit ? isInitialized(elemTy, ubid, idx) : Expr::mkBool(true);
   Expr success = idx.ult(getNumElementsOfMemBlock(elemTy, ubid)) &
-      getLiveness(elemTy, ubid);
+      getLiveness(elemTy, ubid) & init;
   return {arrays.find(elemTy)->second[ubid].select(idx), success};
 }
 
 pair<Expr, Expr> Memory::load(
-    mlir::Type elemTy, const Expr &bid, const Expr &idx) const {
+    mlir::Type elemTy, const Expr &bid, const Expr &idx, bool checkInit) const {
   Expr value = itebid(elemTy, bid,
-      [&](unsigned ubid) { return load(elemTy, ubid, idx).first; });
+      [&](unsigned ubid) { return load(elemTy, ubid, idx, checkInit).first; });
   Expr success = itebid(elemTy, bid,
-      [&](unsigned ubid) { return load(elemTy, ubid, idx).second; });
+      [&](unsigned ubid) { return load(elemTy, ubid, idx, checkInit).second; });
   return {value, success};
 }
 
