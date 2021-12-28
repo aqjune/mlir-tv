@@ -41,8 +41,36 @@ static size_t calcBidBW(
 }
 
 
+AccessInfo AccessInfo::mkIte(const Expr &cond,
+    const AccessInfo &lhs, const AccessInfo &rhs) {
+  return {
+    .inbounds = Expr::mkIte(cond, lhs.inbounds, rhs.inbounds),
+    .liveness = Expr::mkIte(cond, lhs.liveness, rhs.liveness),
+    .writable = Expr::mkIte(cond, lhs.writable, rhs.writable)
+  };
+}
+
+Expr AccessInfo::conj(bool ignoreWritable) const {
+  return inbounds & liveness &
+      (ignoreWritable ? Expr::mkBool(true) : writable);
+}
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const AccessInfo &ai) {
+  os << "(inbounds: " << ai.inbounds << ", liveness: " << ai.liveness
+     << ", writable: " << ai.writable << ")\n";
+  return os;
+}
+
+
 unsigned int Memory::getTotalNumBlocks() const {
   return sumSizes(arrays);
+}
+
+vector<mlir::Type> Memory::getBlockTypes() const {
+  vector<mlir::Type> v;
+  for (auto &[t, _]: numelems)
+    v.push_back(t);
+  return v;
 }
 
 Expr Memory::isGlobalBlock(mlir::Type elemTy, const Expr &bid) const {
@@ -58,17 +86,13 @@ Expr Memory::isLocalBlock(mlir::Type elemTy, const Expr &bid) const {
 }
 
 
-// Liveness of the block must be checked by callers
-static Expr isSafeToWrite(
-    const Expr &offset, const Expr &size, const Expr &block_numelem,
-    const Expr &block_writable, bool ubIfReadonly) {
+static Expr checkInBounds(
+    const Expr &offset, const Expr &size, const Expr &block_numelem) {
   return size.isZero() | // If size = 0, it does not touch the block
       // 1. If size != 0, no offset overflow
       (Expr::mkAddNoOverflow(offset, size - 1, false) &
       // 2. high < block.numelem
-       (offset + size - 1).ult(block_numelem) &
-      // 3. Can write
-      (block_writable | !ubIfReadonly));
+      (offset + size - 1).ult(block_numelem));
 }
 
 Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
@@ -156,8 +180,9 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
   assert(addedGlobalVars == globals.size());
 }
 
-Expr Memory::itebid(
-    mlir::Type elemTy, const Expr &bid, function<Expr(unsigned)> fn) const {
+template<class T>
+T Memory::itebid(mlir::Type elemTy, const Expr &bid, function<T(unsigned)> fn)
+    const {
   assert(getNumBlocks(elemTy) > 0);
   assert(bid.sort().isBV() && bid.sort().bitwidth() == getBIDBits());
 
@@ -167,9 +192,9 @@ Expr Memory::itebid(
 
   const unsigned bits = bid.sort().bitwidth();
 
-  Expr expr = fn(0);
+  T expr = fn(0);
   for (unsigned i = 1; i < getNumBlocks(elemTy); i ++)
-    expr = Expr::mkIte(bid == Expr::mkBV(i, bits), fn(i), expr);
+    expr = T::mkIte(bid == Expr::mkBV(i, bits), fn(i), expr);
 
   return expr;
 }
@@ -216,7 +241,7 @@ Expr Memory::addLocalBlock(
 
 Expr Memory::getNumElementsOfMemBlock(
     mlir::Type elemTy, const Expr &bid) const {
-  return itebid(elemTy, bid, [&](auto ubid) {
+  return itebid<Expr>(elemTy, bid, [&](auto ubid) {
     return numelems.find(elemTy)->second[ubid];
   });
 }
@@ -245,7 +270,7 @@ void Memory::setWritable(mlir::Type elemTy, const Expr &bid, bool writable) {
 }
 
 Expr Memory::getWritable(mlir::Type elemTy, const Expr &bid) const {
-  return itebid(elemTy, bid, [&](auto ubid) {
+  return itebid<Expr>(elemTy, bid, [&](auto ubid) {
       return writables.find(elemTy)->second[ubid]; });
 }
 
@@ -256,24 +281,50 @@ void Memory::setLivenessToFalse(mlir::Type elemTy, const Expr &bid) {
 }
 
 Expr Memory::getLiveness(mlir::Type elemTy, const Expr &bid) const {
-  return itebid(elemTy, bid, [&](auto ubid) {
+  return itebid<Expr>(elemTy, bid, [&](auto ubid) {
       return liveness.find(elemTy)->second[ubid]; });
 }
 
-Expr Memory::store(mlir::Type elemTy, const Expr &val,
+AccessInfo Memory::getInfo(
+    mlir::Type elemTy, const Expr &bid, const Expr &idx) const {
+  return {
+    .inbounds = idx.ult(getNumElementsOfMemBlock(elemTy, bid)),
+    .liveness = getLiveness(elemTy, bid),
+    .writable = getWritable(elemTy, bid)
+  };
+}
+
+AccessInfo Memory::getInfo(
+    mlir::Type elemTy, unsigned bid, const Expr &idx) const {
+  return {
+    .inbounds = idx.ult(getNumElementsOfMemBlock(elemTy, bid)),
+    .liveness = getLiveness(elemTy, bid),
+    .writable = getWritable(elemTy, bid)
+  };
+}
+
+AccessInfo Memory::getInfoWithInBounds(
+    mlir::Type elemTy, const Expr &bid, const Expr &inbounds) const {
+  return {
+    .inbounds = inbounds,
+    .liveness = getLiveness(elemTy, bid),
+    .writable = getWritable(elemTy, bid)
+  };
+}
+
+AccessInfo Memory::store(mlir::Type elemTy, const Expr &val,
     const Expr &bid, const Expr &idx) {
   update(elemTy, bid, [&](auto ubid) {
         return &arrays.find(elemTy)->second[ubid]; },
       [&](auto ubid) {
         return arrays.find(elemTy)->second[ubid].store(idx, val); });
 
-  return idx.ult(getNumElementsOfMemBlock(elemTy, bid)) &
-      getWritable(elemTy, bid) & getLiveness(elemTy, bid);
+  return getInfo(elemTy, bid, idx);
 }
 
-Expr Memory::storeArray(
+AccessInfo Memory::storeArray(
     mlir::Type elemTy, const Expr &arr, const Expr &bid, const Expr &offset,
-    const Expr &size, bool ubIfReadonly) {
+    const Expr &size) {
   auto low = offset;
   auto high = offset + size - 1;
   auto idx = Index::var("idx", VarType::BOUND);
@@ -287,26 +338,26 @@ Expr Memory::storeArray(
       return Expr::mkLambda(idx, Expr::mkIte(cond, arrayVal, currentVal));
     });
 
-  return isSafeToWrite(offset, size, getNumElementsOfMemBlock(elemTy, bid),
-      getWritable(elemTy, bid), ubIfReadonly) & getLiveness(elemTy, bid);
+  auto numelems = getNumElementsOfMemBlock(elemTy, bid);
+  return getInfoWithInBounds(elemTy, bid,
+      checkInBounds(offset, size, numelems));
 }
 
-pair<Expr, Expr> Memory::load(
+pair<Expr, AccessInfo> Memory::load(
     mlir::Type elemTy, unsigned ubid, const Expr &idx) const {
   assert(ubid < getNumBlocks(elemTy));
 
-  Expr success = idx.ult(getNumElementsOfMemBlock(elemTy, ubid)) &
-      getLiveness(elemTy, ubid);
-  return {arrays.find(elemTy)->second[ubid].select(idx), success};
+  return {arrays.find(elemTy)->second[ubid].select(idx),
+      getInfo(elemTy, ubid, idx)};
 }
 
-pair<Expr, Expr> Memory::load(
+pair<Expr, AccessInfo> Memory::load(
     mlir::Type elemTy, const Expr &bid, const Expr &idx) const {
-  Expr value = itebid(elemTy, bid,
+  Expr value = itebid<Expr>(elemTy, bid,
       [&](unsigned ubid) { return load(elemTy, ubid, idx).first; });
-  Expr success = itebid(elemTy, bid,
+  auto checks = itebid<AccessInfo>(elemTy, bid,
       [&](unsigned ubid) { return load(elemTy, ubid, idx).second; });
-  return {value, success};
+  return {value, checks};
 }
 
 TypeMap<pair<Expr, vector<Expr>>>
@@ -316,14 +367,15 @@ Memory::refines(const Memory &other) const {
   // Create fresh, unbound variables
   auto refinesBlk = [this, &other](
       mlir::Type elemTy, unsigned ubid, Index offset) {
-    auto [srcValue, srcSuccess] = other.load(elemTy, ubid, offset);
-    auto srcWritable = other.getWritable(elemTy, ubid);
-    auto [tgtValue, tgtSuccess] = load(elemTy, ubid, offset);
-    auto tgtWritable = getWritable(elemTy, ubid);
+    auto [srcValue, srcInfo] = other.load(elemTy, ubid, offset);
+    auto srcWritable = srcInfo.writable;
+    auto [tgtValue, tgtInfo] = load(elemTy, ubid, offset);
+    auto tgtWritable = tgtInfo.writable;
 
     auto wRefinement = srcWritable.implies(tgtWritable);
     auto vRefinement = (tgtValue == srcValue);
-    return srcSuccess.implies(tgtSuccess & wRefinement & vRefinement);
+    return (srcInfo.inbounds & srcInfo.liveness).implies(
+        tgtInfo.inbounds & tgtInfo.liveness & wRefinement & vRefinement);
   };
 
   using ElemTy = pair<Expr, vector<Expr>>;
