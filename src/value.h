@@ -12,6 +12,7 @@ class AccessInfo;
 std::optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type ty);
 std::optional<smt::Expr> getZero(mlir::Type eltType);
 std::optional<smt::Expr> getIdentity(mlir::Type eltType);
+void resetAbstractlyEncodedAttrs();
 
 class Float {
   smt::Expr e;
