@@ -9,6 +9,7 @@
 using namespace smt;
 using namespace std;
 
+
 namespace {
 string freshName(string prefix) {
   static int count = 0;
@@ -52,6 +53,12 @@ optional<Expr> getIdentity(mlir::Type eltType) {
   else if (eltType.isIndex())
     return Index(0);
   return {};
+}
+
+static vector<pair<mlir::ElementsAttr, Tensor>> abstractlyEncodedAttrs;
+
+void resetAbstractlyEncodedAttrs() {
+  abstractlyEncodedAttrs.clear();
 }
 
 
@@ -1049,8 +1056,6 @@ Tensor Tensor::mkIte(
       trueValue.elemType, move(trueDims), move(indVars),
       move(retExpr), move(retInit));
 }
-
-static vector<pair<mlir::ElementsAttr, Tensor>> abstractlyEncodedAttrs;
 
 Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
       mlir::ElementsAttr attr) {
