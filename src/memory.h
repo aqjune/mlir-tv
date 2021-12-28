@@ -7,6 +7,19 @@
 #include <algorithm>
 #include <vector>
 
+struct AccessInfo {
+  smt::Expr inbounds; // is the index inbounds?
+  smt::Expr liveness; // is block alive?
+  smt::Expr writable; // Is the block writable?
+
+  static AccessInfo mkIte(const smt::Expr &cond,
+      const AccessInfo &lhs, const AccessInfo &rhs);
+
+  smt::Expr conj(bool ignoreWritable = false) const;
+};
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream&, const AccessInfo &);
+
 // A class that implements the memory model described in CAV'21 (An SMT
 // Encoding of LLVM's Memory Model for Bounded Translation Validation)
 // In addition, blocks of different types don't alias. This is for abstractly
@@ -45,6 +58,7 @@ public:
     assert(itr != arrays.end());
     return itr->second.size();
   }
+  std::vector<mlir::Type> getBlockTypes() const;
 
   // Bids smaller than numGlobalBlocks are global (0 ~ numGlobalBlocks - 1)
   smt::Expr isGlobalBlock(mlir::Type elemType, const smt::Expr &bid) const;
@@ -88,20 +102,19 @@ public:
   }
 
   // Returns: store successful?
-  smt::Expr store(
+  AccessInfo store(
       mlir::Type elemTy, const smt::Expr &val, const smt::Expr &bid,
       const smt::Expr &idx);
   // Returns: store successful?
-  smt::Expr storeArray(
+  AccessInfo storeArray(
       mlir::Type elemTy, const smt::Expr &arr, const smt::Expr &bid,
-      const smt::Expr &offset, const smt::Expr &size,
-      bool ubIfReadonly = true);
+      const smt::Expr &offset, const smt::Expr &size);
 
   // Returns: (loaded value, load successful?)
-  std::pair<smt::Expr, smt::Expr> load(
+  std::pair<smt::Expr, AccessInfo> load(
       mlir::Type elemTy, const smt::Expr &bid, const smt::Expr &idx) const;
-  std::pair<smt::Expr, smt::Expr> load(mlir::Type elemTy, unsigned bid,
-      const smt::Expr &idx) const;
+  std::pair<smt::Expr, AccessInfo> load(
+      mlir::Type elemTy, unsigned bid, const smt::Expr &idx) const;
 
   // Encode the refinement relation between src (other) and tgt (this) memory
   // for each element type.
@@ -112,13 +125,22 @@ public:
   Memory *clone() const { return new Memory(*this); }
 
 private:
-  smt::Expr itebid(
+  template<class T>
+  T itebid(
       mlir::Type elemTy, const smt::Expr &bid,
-      std::function<smt::Expr(unsigned)> fn) const;
+      std::function<T(unsigned)> fn) const;
   void update(
       mlir::Type elemTy, const smt::Expr &bid,
       std::function<smt::Expr*(unsigned)> exprToUpdate, // bid -> ptr to expr
       std::function<smt::Expr(unsigned)> updatedValue) const; // bid -> updated
+
+  AccessInfo getInfo(mlir::Type elemTy, const smt::Expr &bid,
+      const smt::Expr &ofs) const;
+  AccessInfo getInfo(mlir::Type elemTy, unsigned bid,
+      const smt::Expr &ofs) const;
+  AccessInfo getInfoWithInBounds(mlir::Type elemTy, const smt::Expr &bid,
+      const smt::Expr &inbounds) const;
+
 
   size_t getMaxNumLocalBlocks(mlir::Type ty) const {
     auto itr = maxLocalBlocksCnt.find(ty);

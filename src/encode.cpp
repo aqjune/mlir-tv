@@ -234,10 +234,10 @@ broadcastTensors(State &st, mlir::Value arg0, mlir::Value arg1) {
     }
   }
   auto m0 = Tensor::mkInitializedLambda(t0.getElemType(),
-      move(resDims0), move(inVars0), t0.get(outVars0).first);
+      move(resDims0), move(inVars0), t0.get(outVars0));
 
   auto m1 = Tensor::mkInitializedLambda(t1.getElemType(),
-      move(resDims1), move(inVars1), t1.get(outVars1).first);
+      move(resDims1), move(inVars1), t1.get(outVars1));
 
   return {{m0, m1}};
 }
@@ -714,7 +714,7 @@ void encodeOp(State &st, mlir::SelectOp op, bool) {
       auto condValue = st.regs.get<Tensor>(op.getCondition());
       // Copy condValue
       condFn = [condValue](const vector<Expr> &indices) -> Expr {
-        return condValue.get(indices).first;
+        return condValue.get(indices);
       };
       welldef &= listsEqual(trueValue.getDims(), condValue.getDims());
     }
@@ -996,7 +996,7 @@ static Tensor getPaddedTensor2D(mlir::Type elemTy,
 
     // TOSA pad operands fill padded area as +0.0
     auto zero = *getZero(elemTy);
-    Expr padVal = Expr::mkIte(cond, input.get(srcInd).first, zero);
+    Expr padVal = Expr::mkIte(cond, input.get(srcInd), zero);
 
     return Tensor::mkInitializedLambda(
                     elemTy, move(padDims), move(padInd), padVal);
@@ -1010,8 +1010,8 @@ static Tensor addBias2D(mlir::Type elemTy,
                         vector<Expr> dims,
                         Tensor acc, Tensor bias) {
   vector<Expr> ind = Index::boundIndexVars(4);
-  auto tf = Float(acc.get(ind).first, elemTy);
-  auto biasf = Float(bias.get({ind[3]}).first, elemTy);
+  auto tf = Float(acc.get(ind), elemTy);
+  auto biasf = Float(bias.get({ind[3]}), elemTy);
   return Tensor::mkInitializedLambda(
             elemTy, move(dims), move(ind), 
             tf.add(biasf)
@@ -1121,7 +1121,7 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
   for (unsigned i = 0; i < input.getRank(); i++) {
     uint64_t v;
     // We expect simplify() to succeed since perms is a small Tensor
-    if(!perms.get({Index(i)}).first.simplify().isUInt(v))
+    if(!perms.get({Index(i)}).simplify().isUInt(v))
       throw UnsupportedException(op.getOperation(),
           "Unsupported perms element type");
     idxs.push_back(v);
@@ -1158,7 +1158,7 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
     assert(pushed && "transpose's perms is not permutation!");
   }  
 
-  auto output = input.get(outVars).first;
+  auto output = input.get(outVars);
 
   st.regs.add(op, Tensor::mkLambda(input.getElemType(),
                     move(dims), move(indVars), output, Expr::mkBool(true)));
@@ -1179,15 +1179,19 @@ void encodeOp(State &st, mlir::tosa::GatherOp op, bool) {
   vector<Expr> outputDims =
       {values.getDim(0), indices.getDim(1), values.getDim(2)};
   vector<Expr> indVars = Index::boundIndexVars(outputDims.size());
-  auto [idx0, idxInbounds] = indices.get({indVars[0], indVars[1]});
+
+  auto idx0 = indices.get({indVars[0], indVars[1]});
+  auto idxInBounds = indices.isInBounds({indVars[0], indVars[1]});
   Index idx(idx0); // unlock ops
-  auto [outputValue, inputInbounds] = values.get({indVars[0], idx, indVars[2]});
+
+  auto outputValue = values.get({indVars[0], idx, indVars[2]});
+  auto outputInBounds = values.isInBounds({indVars[0], idx, indVars[2]});
   auto isInitialized = values.isInitialized({indVars[0], idx, indVars[2]});
 
   // Touched elements must have been initialized.
   st.wellDefined(op, Expr::mkForall(indVars,
       fitsInDims(indVars, outputDims).implies(
-          move(idxInbounds) & move(inputInbounds) & move(isInitialized))));
+          move(idxInBounds) & move(outputInBounds) & move(isInitialized))));
   st.wellDefined(op, indices.isFullyInitialized());
 
   st.regs.add(op, Tensor::mkInitializedLambda(
@@ -1209,13 +1213,13 @@ void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
     // Deal with the zero-rank tensor case
     indices.push_back(Index(0));
 
-  auto [elem, inbounds] = t.get(indices);
+  auto elem = t.get(indices);
   if (auto v = fromExpr(move(elem), op.getType()))
     st.regs.add(op, move(*v));
   else
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  st.wellDefined(op, move(inbounds));
+  st.wellDefined(op, t.isInBounds(indices));
   st.wellDefined(op, t.isInitialized(indices));
 }
 
@@ -1500,7 +1504,7 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
       isSource &= l.ule(indvars[i]) & indvars[i].ult(h);
       sourceIndices.push_back(indvars[i] - l);
     }
-    return Expr::mkIte(isSource, sourceTensor.get(sourceIndices).first, pad);
+    return Expr::mkIte(isSource, sourceTensor.get(sourceIndices), pad);
   };
 
   optional<vector<Tensor>> tvec_res;
@@ -1721,7 +1725,7 @@ void encodeOp(State &st, mlir::tensor::ExtractSliceOp op, bool) {
   st.wellDefined(op, src.isFullyInitialized());
   st.regs.add(res,
       Tensor::mkInitializedLambda(src.getElemType(), move(dims), move(inIdxs),
-                       src.get(outIdxs).first));
+                       src.get(outIdxs)));
 }
 
 template<>
@@ -1768,8 +1772,10 @@ void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
   }
 
   // Picking the value from src1 must not be out of bounds.
-  auto [srcelem, srcwb] = src.get(srcIdxs);
-  auto [tgtelem, tgtwb] = tgt.get(indVars);
+  auto srcelem = src.get(srcIdxs);
+  auto srcwb   = src.isInBounds(srcIdxs);
+  auto tgtelem = tgt.get(indVars);
+  auto tgtwb   = tgt.isInBounds(indVars);
   Expr output = Expr::mkIte(cond, move(srcelem), move(tgtelem));
   Expr init = Expr::mkIte(cond, Expr::mkBool(true), tgt.isInitialized(indVars));
 
@@ -1999,10 +2005,10 @@ void encodeOp(State &st, mlir::memref::LoadOp op, bool) {
   for (auto idx0: op.indices())
     indices.emplace_back(st.regs.get<Index>(idx0));
 
-  auto [Expr, success] = m.get(indices);
-  if (auto vt = fromExpr(move(Expr), op.getType())) {
+  auto [val, info] = m.getWithAccessInfo(indices);
+  if (auto vt = fromExpr(move(val), op.getType())) {
     st.regs.add(op, move(*vt));
-    st.wellDefined(op, move(success));
+    st.wellDefined(op, info.conj(true));
   } else
     throw UnsupportedException(op.getOperation(), "unsupported type");
 }
@@ -2041,7 +2047,7 @@ void encodeOp(State &st, mlir::memref::StoreOp op, bool encodeMemWriteOp) {
 
   auto valExpr = st.regs.getExpr(value);
   auto success = m.store(valExpr, indices);
-  st.wellDefined(op, move(success));
+  st.wellDefined(op, success.conj());
 }
 
 template<>
@@ -2095,8 +2101,8 @@ static void storeTensorTo(
   if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
     auto success = memref.storeArray(tensor.asArray(), Index::zero(),
-        tensor.get1DSize(), ubIfReadOnly);
-    st.wellDefined(op, move(success));
+        tensor.get1DSize());
+    st.wellDefined(op, success.conj(!ubIfReadOnly));
 
   } else {
     // TODO: can we further optimize this if we know that memref is a
@@ -2104,12 +2110,23 @@ static void storeTensorTo(
     // We may not need to preserve the 'previous' bytes.
 
     vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
-    auto [tVal, tSuccess] = tensor.get(idxs);
-    auto [mVal, mSuccess] = memref.get(idxs);
-    auto success = tSuccess & mSuccess;
+    auto tVal = tensor.get(idxs);
+    auto tInBounds = tensor.isInBounds(idxs);
+    auto tInit = tensor.isInitialized(idxs);
+    auto [mVal, mInfo] = memref.getWithAccessInfo(idxs);
 
-    // TODO: clarify whether this is precondition or UB.
-    st.wellDefined(op, Expr::mkForall(idxs, success.implies(mVal == tVal)));
+    st.wellDefined(op, Expr::mkForall(idxs, tInBounds.implies(tInit)));
+    st.wellDefined(op, Expr::mkForall(idxs, tInBounds.implies(mInfo.conj())));
+
+    // NOTE: this will be always false if mVal and tVal store unequal constants.
+    // Therefore, we can't encode this condition as UB because
+    // (1) If they are in src: src always becomes UB (false negative)
+    // (2) If they are in tgt: tgt always becomes UB (false positive)
+    // Therefore, encode this as precondition; precondition does not introduce
+    // false negative, if properly handled (not implemented yet; see how Alive2
+    // does it).
+    st.addPrecondition(Expr::mkForall(idxs,
+        tInBounds.implies(mVal == tVal)));
     st.hasQuantifier = true;
   }
 }
@@ -2373,7 +2390,7 @@ vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
 
   vector<Index> res;
   vector<int> resFilled(numDims);
-  fill(resFilled.begin(), resFilled.end(), -1);
+  std::fill(resFilled.begin(), resFilled.end(), -1);
 
   for (unsigned idx = 0; idx < numRes; ++idx) {
     auto result = map.getResult(idx);
@@ -2470,7 +2487,7 @@ static void initInputStateForLoopBody(
       if (indexMap.getNumResults() == 0) {
         // A tensor with a single element; e.g. tensor<f32>.
         st.regs.add(block.getArgument(arg_i),
-            t_input.get({Index::zero()}).first, elemty);
+            t_input.get({Index::zero()}), elemty);
       } else {
         vector<Expr> affine_Exprs;
         for (unsigned i = 0; i < indexMap.getNumResults(); ++i) {
@@ -2486,7 +2503,7 @@ static void initInputStateForLoopBody(
         }
 
         // The out-of-bounds checking is done when encoding loop bounds.
-        auto t_elem = t_input.get(affine_Exprs).first;
+        auto t_elem = t_input.get(affine_Exprs);
         st.regs.add(block.getArgument(arg_i), t_elem, elemty);
       }
       // Reading uninitialized tensor is UB.
@@ -2513,8 +2530,8 @@ static void initInputStateForLoopBody(
         affine_Exprs.emplace_back(move(*ae_res));
       }
 
-      auto [m_elem, m_welldef] = m_input.get(affine_Exprs);
-      welldef &= m_welldef;
+      auto [m_elem, m_welldef] = m_input.getWithAccessInfo(affine_Exprs);
+      welldef &= m_welldef.conj(true);
       mlir::Type elemTy = memrefty.getElementType();
       st.regs.add(block.getArgument(arg_i), m_elem, elemTy);
     } else {
@@ -2647,7 +2664,7 @@ static void encodeReductionLoopBodyAndOutput(
           t_v.getElemType(),
           addOne(move(boundsForRes)),
           move(indVarsForRes),
-          t_v.get(linalgInfo.indVars).first)
+          t_v.get(linalgInfo.indVars))
         .sum();
 
     auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
@@ -2754,11 +2771,11 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
     for(unsigned i = 0; i < tvec_res->size(); i++) {
       auto m_res = st.regs.get<MemRef>(op.getOutputOperand(i)->get());
       success &= m_res.storeArray(tvec_res->at(i).asArray(), Index::zero(),
-          tvec_res->at(i).get1DSize());
+          tvec_res->at(i).get1DSize()).conj();
     }
     st.wellDefined(op, move(success));
   } else {
-    llvm_unreachable("Unknown linalg::genric semantics");
+    llvm_unreachable("Unknown linalg::generic semantics");
   }
 }
 

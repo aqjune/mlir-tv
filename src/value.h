@@ -7,6 +7,7 @@
 #include <variant>
 
 class Memory;
+class AccessInfo;
 
 std::optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type ty);
 std::optional<smt::Expr> getZero(mlir::Type eltType);
@@ -77,15 +78,14 @@ public:
       vec.emplace_back(d);
     return vec;
   }
-  // Returns (element value, inbounds?)
+  // Returns the element value.
   //   auto [v, inbounds] = shaped_value.get(indices)
   //   useAsInt(Integer(v)) // valid only if shaped_value has integer elems
   //   useAsFloat(Float(v)) // valid only if shaped_value has float elems
   // NOTE: Don't directly use the returned element (v)!
   // Please use it with a proper wrapper (Float, Index, Integer).
   // Using it without wrapper will raise an assertion failure 
-  virtual std::pair<smt::Expr, smt::Expr> get(
-      const std::vector<smt::Expr> &indices) const = 0;
+  virtual smt::Expr get(const std::vector<smt::Expr> &indices) const = 0;
 
   // Basic dimension operation
   Index getDim(uint64_t idx) const { return Index(getDims()[idx]); }
@@ -100,7 +100,7 @@ public:
 protected:
   // Linalg convolution operation.
   // returns: (indices, expr)
-  // Caller must check validity (e.g. inbounds, initializedness of filter)
+  // Caller must check the validity of inputs (e.g. inbounds, initializedness)
   std::pair<std::vector<smt::Expr>, smt::Expr> conv(const ShapedValue &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
@@ -139,8 +139,7 @@ public:
   smt::Expr getWellDefined() const;
 
   smt::Expr isInBounds(const std::vector<smt::Expr> &indices) const;
-  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
-      const override;
+  smt::Expr get(const std::vector<smt::Expr> &indices) const override;
   // Return arr[indexRaw]. The returned expr is locked.
   smt::Expr getRaw(const smt::Expr &indexRaw) const;
   smt::Expr isInitialized(const std::vector<smt::Expr> &indices) const;
@@ -365,13 +364,16 @@ public:
   std::vector<smt::Expr> getDims() const override { return dims; }
   smt::Expr isViewReference() const { return isViewRef; }
 
-  // (value, success?)
-  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
-      const override;
-  smt::Expr store(const smt::Expr &value, const std::vector<smt::Expr> &indices)
-      const;
-  smt::Expr storeArray(const smt::Expr &array, const smt::Expr &startOffset,
-      const smt::Expr &size, bool ubIfReadonly = true) const;
+  // Returns the value
+  smt::Expr get(const std::vector<smt::Expr> &indices) const override;
+
+  std::pair<smt::Expr, AccessInfo> getWithAccessInfo(
+      const std::vector<smt::Expr> &indices) const;
+
+  AccessInfo store(const smt::Expr &value,
+      const std::vector<smt::Expr> &indices) const;
+  AccessInfo storeArray(const smt::Expr &array,
+      const smt::Expr &startOffset, const smt::Expr &size) const;
 
   Tensor loadTensorWithoutCheck() const;
 

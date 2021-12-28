@@ -381,8 +381,8 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
   }
   }
 
-  Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs).first);
-  Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs).first);
+  Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs));
+  Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs));
 
   Expr sz = ::get1DSize(cubeSize);
   Expr outputExpr =
@@ -484,8 +484,8 @@ Expr Tensor::isInBounds(const vector<smt::Expr> &indices) const {
   return inbounds.simplify();
 }
 
-pair<Expr, Expr> Tensor::get(const vector<Expr> &indices) const {
-  return {getRaw(to1DIdx(indices, dims)), isInBounds(indices)};
+Expr Tensor::get(const vector<Expr> &indices) const {
+  return getRaw(to1DIdx(indices, dims));
 }
 
 Expr Tensor::getRaw(const Expr &indexRaw) const {
@@ -509,7 +509,7 @@ pair<Tensor, Expr> Tensor::insert(const smt::Expr &value,
     const vector<smt::Expr> &indices) const {
   auto idxvar = Index::var("idx", VarType::BOUND);
   auto cond = (Expr)idxvar == to1DIdx(indices, dims);
-  auto originValue = get(from1DIdx(idxvar, dims)).first;
+  auto originValue = get(from1DIdx(idxvar, dims));
   auto orgInit = isInitialized(from1DIdx(idxvar, dims));
 
   auto newdims = dims;
@@ -535,7 +535,7 @@ Tensor Tensor::affine(
     }
     srcidxs[i] = newv.simplify();
   }
-  auto elem = get(srcidxs).first;
+  auto elem = get(srcidxs);
   auto init = isInitialized(srcidxs);
   auto identity = *getIdentity(elemType);
 
@@ -565,7 +565,7 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
   dim[axis] = dim[axis] + t2.getDim(axis);
 
   auto elem = Expr::mkIte(idx[axis].ult(getDim(axis)),
-        get(idx).first, t2.get(idxForT2).first);
+        get(idx), t2.get(idxForT2));
 
   // UB if uninitialized elem is used
   return Tensor::mkInitializedLambda(getElemType(),
@@ -601,7 +601,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
   vector<Expr> input2DInd = Index::boundIndexVars(4);
   Tensor input2D = Tensor::mkInitializedLambda (
                   elemType, move(input2DDims), move(input2DInd), 
-                  get({n, input2DInd[1], input2DInd[2], c}).first
+                  get({n, input2DInd[1], input2DInd[2], c})
                 );
 
   // change weight to KHxKWx1x1
@@ -609,7 +609,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
   vector<Expr> weight2DInd = Index::boundIndexVars(4);
   Tensor weight2D = Tensor::mkInitializedLambda(
                   elemType, move(weight2DDims), move(weight2DInd), 
-                  filter.get({weight2DInd[0], weight2DInd[1], c, m}).first
+                  filter.get({weight2DInd[0], weight2DInd[1], c, m})
                 );
 
   // t2D is 1xOHxOWx1
@@ -618,7 +618,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
 
   auto t2DDims = t2D.getDims();
 
-  auto accVal = t2D.get({Index(0), outInd[1], outInd[2], Index(0)}).first;
+  auto accVal = t2D.get({Index(0), outInd[1], outInd[2], Index(0)});
 
   if(bias.has_value()) {
     // NxOHxOWx(C*M)
@@ -626,7 +626,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
 
     // add bias
     auto tf = Float(accVal, elemType);
-    auto biasf = Float(bias->get({outInd[3]}).first, elemType);
+    auto biasf = Float(bias->get({outInd[3]}), elemType);
 
     return Tensor::mkInitializedLambda(
               elemType, move(tDims), move(outInd), 
@@ -872,7 +872,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
         (void)isint;
         idxconsts.push_back(ii);
       }
-      auto elem = t.get(idx1d).first;
+      auto elem = t.get(idx1d);
       auto init = t.isInitialized(idx1d);
 
       if (i != 0)
@@ -953,7 +953,7 @@ Tensor Tensor::reverse(unsigned axis) const {
 
   // UB if uninitialized
   return Tensor::mkInitializedLambda(elemType, vector(dims), move(indVars),
-      get(accessIdx).first);
+      get(accessIdx));
 }
 
 Tensor Tensor::tile(const vector<unsigned> &repeat) const {
@@ -969,7 +969,7 @@ Tensor Tensor::tile(const vector<unsigned> &repeat) const {
 
   // UB if uninitialized
   return Tensor::mkInitializedLambda(elemType, vector(newDims), move(indVars),
-      get(accessIdx).first);
+      get(accessIdx));
 }
 
 Tensor Tensor::transpose() const {
@@ -979,7 +979,7 @@ Tensor Tensor::transpose() const {
 
   // UB if uninitialized
   return Tensor::mkInitializedLambda(
-      elemType, {dims[1], dims[0]}, {j, i}, get({i, j}).first);
+      elemType, {dims[1], dims[0]}, {j, i}, get({i, j}));
 }
 
 Tensor Tensor::mkLambda(
@@ -1041,7 +1041,7 @@ Tensor Tensor::mkIte(
   auto isTrue = condFn(indVars) == Integer::boolTrue();
 
   auto retExpr = Expr::mkIte(
-      isTrue, trueValue.get(indVars).first, falseValue.get(indVars).first);
+      isTrue, trueValue.get(indVars), falseValue.get(indVars));
   auto retInit = Expr::mkIte(
       isTrue, trueValue.isInitialized(indVars),
       falseValue.isInitialized(indVars));
@@ -1193,7 +1193,7 @@ Expr Tensor::to1DArrayWithOfs(
     auto absidx = relidxs[i] + offbegins[i];
     absidxs.push_back(absidx.simplify());
   }
-  auto elem = get(absidxs).first;
+  auto elem = get(absidxs);
   return Expr::mkLambda(idxvar, elem);
 }
 
@@ -1343,32 +1343,43 @@ MemRef::Layout MemRef::getLayout(
     layoutFn, [dims](auto &indices) { return fitsInDims(indices, dims); });
 }
 
-pair<Expr, Expr> MemRef::get(const vector<Expr> &indices) const {
+Expr MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto [loaded, success] = m->load(elemType, bid, (Expr)offset + idx);
   loaded.lockOps();
 
-  return {loaded, (success & inbounds).simplify()};
+  return loaded;
 }
 
-Expr MemRef::store(const Expr &value, const std::vector<Expr> &indices) const {
+pair<Expr, AccessInfo> MemRef::getWithAccessInfo(
+    const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto success = m->store(elemType, value, bid, (Expr)offset + idx);
+  auto [loaded, info] = m->load(elemType, bid, (Expr)offset + idx);
+  loaded.lockOps();
 
-  return (success & inbounds).simplify();
+  info.inbounds &= move(inbounds);
+
+  return {move(loaded), move(info)};
 }
 
-Expr MemRef::storeArray(
-    const Expr &array, const Expr &startOffset, const Expr &size,
-    bool ubIfReadonly) const {
-  return m->storeArray(elemType, array, bid, (Expr)offset + startOffset, size,
-      ubIfReadonly);
+AccessInfo MemRef::store(const Expr &value,
+    const std::vector<Expr> &indices) const {
+  auto [idx, inbounds] = to1DIdxWithLayout(indices);
+  auto info = m->store(elemType, value, bid, (Expr)offset + idx);
+
+  info.inbounds &= move(inbounds);
+  return info;
+}
+
+AccessInfo MemRef::storeArray(
+    const Expr &array, const Expr &startOffset, const Expr &size) const {
+  return m->storeArray(elemType, array, bid, (Expr)offset + startOffset, size);
 }
 
 Tensor MemRef::loadTensorWithoutCheck() const {
   auto dims = getDims();
   vector<Expr> idxs = Index::boundIndexVars(dims.size());
-  auto expr = get(idxs).first;
+  auto expr = get(idxs);
   // TODO: MemRef blocks must have initialized bits
   return Tensor::mkInitializedLambda(getElemType(),
       move(dims), move(idxs), expr);
@@ -1459,11 +1470,11 @@ Expr MemRef::conv(const MemRef &input,
   auto outputArray = Expr::mkLambda(idx, outputExpr);
 
   // store output memref
-  auto success = isInBounds() & getLiveness() &
+  auto info = storeArray(outputArray, Index::zero(), get1DSize());
+  auto success = info.inbounds & info.liveness & info.writable &
       input.getLiveness() & input.isInBounds() &
       filter.getLiveness() & filter.isInBounds() &
-      noalias(input) & noalias(filter) &
-      storeArray(outputArray, Index::zero(), get1DSize());
+      noalias(input) & noalias(filter);
 
   return success;
 }
