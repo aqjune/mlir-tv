@@ -1179,19 +1179,21 @@ void encodeOp(State &st, mlir::tosa::GatherOp op, bool) {
   vector<Expr> outputDims =
       {values.getDim(0), indices.getDim(1), values.getDim(2)};
   vector<Expr> indVars = Index::boundIndexVars(outputDims.size());
+  auto inBounds = fitsInDims(indVars, outputDims);
 
   auto idx0 = indices.get({indVars[0], indVars[1]});
   auto idxInBounds = indices.isInBounds({indVars[0], indVars[1]});
   Index idx(idx0); // unlock ops
 
   auto outputValue = values.get({indVars[0], idx, indVars[2]});
-  auto outputInBounds = values.isInBounds({indVars[0], idx, indVars[2]});
+  auto inputInBounds = values.isInBounds({indVars[0], idx, indVars[2]});
   auto isInitialized = values.isInitialized({indVars[0], idx, indVars[2]});
 
-  // Touched elements must have been initialized.
+  // Touched elements must be in bounds & have been initialized.
   st.wellDefined(op, Expr::mkForall(indVars,
-      fitsInDims(indVars, outputDims).implies(
-          move(idxInBounds) & move(outputInBounds) & move(isInitialized))));
+      inBounds.implies(move(idxInBounds) & move(inputInBounds))));
+  st.wellDefined(op, Expr::mkForall(indVars,
+      inBounds.implies(move(isInitialized))));
   st.wellDefined(op, indices.isFullyInitialized());
 
   st.regs.add(op, Tensor::mkInitializedLambda(
@@ -1777,14 +1779,19 @@ void encodeOp(State &st, mlir::tensor::InsertSliceOp op, bool) {
   auto tgtelem = tgt.get(indVars);
   auto tgtwb   = tgt.isInBounds(indVars);
   Expr output = Expr::mkIte(cond, move(srcelem), move(tgtelem));
-  Expr init = Expr::mkIte(cond, Expr::mkBool(true), tgt.isInitialized(indVars));
 
   // If tgt[indVars] is inbounds and the src[indVars] is to be chosen,
   // src[indVars] must be inbounds as well.
   st.wellDefined(op,
       Expr::mkForall(indVars, (tgtwb & cond).implies(srcwb)));
-  st.regs.add(res, Tensor::mkLambda(
-      src.getElemType(), move(dims), move(indVars), output, init));
+  // Since we are copying tgt into a new SSA register, tgt must be
+  // initialized as well.
+  st.wellDefined(op,
+      Expr::mkForall(indVars, (tgtwb & !cond).implies(
+        tgt.isInitialized(indVars))));
+
+  st.regs.add(res, Tensor::mkInitializedLambda(
+      src.getElemType(), move(dims), move(indVars), output));
   st.wellDefined(op, src.isFullyInitialized());
 }
 
