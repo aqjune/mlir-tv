@@ -328,11 +328,13 @@ AccessInfo Memory::getInfo(
     mlir::Type elemTy, const Expr &bid, const Expr &idx, const Expr &size)
     const {
   auto numelems = getNumElementsOfMemBlock(elemTy, bid);
+  Expr j = Index::var("j", VarType::BOUND);
   return {
     .inbounds = checkInBounds(idx, size, numelems),
     .liveness = getLiveness(elemTy, bid),
     .writable = getWritable(elemTy, bid),
-    .initialized = isInitialized(elemTy, bid, idx)
+    .initialized = Expr::mkForall({j}, j.ult(size).implies(
+        isInitialized(elemTy, bid, j + idx)))
   };
 }
 
@@ -340,11 +342,13 @@ AccessInfo Memory::getInfo(
     mlir::Type elemTy, unsigned bid, const Expr &idx, const Expr &size)
     const {
   auto numelems = getNumElementsOfMemBlock(elemTy, bid);
+  Expr j = Index::var("j", VarType::BOUND);
   return {
     .inbounds = checkInBounds(idx, size, numelems),
     .liveness = getLiveness(elemTy, bid),
     .writable = getWritable(elemTy, bid),
-    .initialized = isInitialized(elemTy, bid, idx)
+    .initialized = Expr::mkForall({j}, j.ult(size).implies(
+        isInitialized(elemTy, bid, j + idx)))
   };
 }
 
