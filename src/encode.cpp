@@ -1305,7 +1305,7 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
     auto outputIndices = output.getLayout().getInverseIndices(idx);
     auto outputExpr = expr.substitute(indices, outputIndices);
     auto outputTensor = Tensor::mkInitializedLambda(elemTy,
-        {input.get1DSize()}, {idx}, outputExpr);
+        {output.get1DSize()}, {idx}, outputExpr);
 
     // store the result to the output reference
     storeTensorTo(st, op, move(outputTensor), output, outputTy, true);
