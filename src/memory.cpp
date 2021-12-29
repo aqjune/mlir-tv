@@ -373,7 +373,10 @@ Memory::refines(const Memory &other) const {
     auto tgtWritable = tgtInfo.writable;
 
     auto wRefinement = srcWritable.implies(tgtWritable);
-    auto vRefinement = (tgtValue == srcValue);
+    auto [vRefinement, vRefParam] = ::refines(
+        *fromExpr(move(tgtValue), elemTy), *fromExpr(move(srcValue), elemTy));
+    assert(vRefParam.empty() && "Values stored in memory must be simple");
+
     return (srcInfo.inbounds & srcInfo.liveness).implies(
         tgtInfo.inbounds & tgtInfo.liveness & wRefinement & vRefinement);
   };
