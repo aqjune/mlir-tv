@@ -115,9 +115,7 @@ void printCounterEx(
     auto elemTy = *memElemTy;
 
     auto [srcValue, srcInfo] = st_src.m->load(elemTy, bid, offset);
-    Expr srcSuccess = srcInfo.conj();
     auto [tgtValue, tgtInfo] = st_tgt.m->load(elemTy, bid, offset);
-    Expr tgtSuccess = tgtInfo.conj();
     auto srcWritable = st_src.m->getWritable(elemTy, bid);
     auto srcNumElems = st_src.m->getNumElementsOfMemBlock(elemTy, bid);
     auto srcLiveness = st_src.m->getLiveness(elemTy, bid);
@@ -128,9 +126,7 @@ void printCounterEx(
     optional<unsigned> bid_int = bid.asUInt();
     offset = m.eval(offset);
     srcValue = m.eval(srcValue, true);
-    srcSuccess = m.eval(srcSuccess);
     tgtValue = m.eval(tgtValue, true);
-    tgtSuccess = m.eval(tgtSuccess);
     srcWritable = m.eval(srcWritable);
     tgtWritable = m.eval(tgtWritable);
     srcNumElems = m.eval(srcNumElems);

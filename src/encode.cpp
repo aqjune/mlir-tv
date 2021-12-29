@@ -2167,7 +2167,7 @@ void encodeOp(State &st, mlir::bufferization::CloneOp op, bool encodeMemWrite) {
   auto dims = src.getDims();
 
   auto [tensor, loadSuccess] = src.loadTensor();
-  st.wellDefined(op, move(loadSuccess));
+  st.wellDefined(op, loadSuccess.checkRead());
 
   // Create a read-only block.
   auto memref = createNewLocalBlk(st.m.get(), move(dims), srcTy, false);
@@ -2189,7 +2189,7 @@ void encodeOp(State &st, mlir::bufferization::ToTensorOp op,
 
   auto [tensor, loadSuccess] = m.loadTensor();
   st.regs.add(op.getResult(), tensor);
-  st.wellDefined(op, move(loadSuccess));
+  st.wellDefined(op, loadSuccess.checkRead());
   st.hasQuantifier |= true;
 }
 
@@ -2258,8 +2258,8 @@ void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
   // https://mlir.llvm.org/docs/Dialects/Linalg/#linalgcopy-mlirlinalgcopyop
   st.wellDefined(opr, mrIn.noalias(mrOut));
 
-  auto [loadedTensor, loadSuccess] = mrIn.loadTensor();
-  st.wellDefined(opr, move(loadSuccess));
+  auto [loadedTensor, loadInfo] = mrIn.loadTensor();
+  st.wellDefined(opr, loadInfo.checkRead());
 
   storeTensorTo(st, opr, move(loadedTensor), mrOut,
       op.output().getType().cast<mlir::MemRefType>(), true);
@@ -2557,7 +2557,6 @@ static void initInputStateForLoopBody(
       // uses.
       // This is a workaround (overapproximation) for not introducing a
       // 'poison' value.
-      bool checkInitialized = isInput || isOutputAndHasUse;
       auto [m_elem, m_welldef] = m_input.getWithAccessInfo(indices);
       if (isInput)
         welldef &= m_welldef.checkRead();

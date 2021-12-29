@@ -1345,8 +1345,7 @@ MemRef::Layout MemRef::getLayout(
 
 Expr MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto [loaded, success] = m->load(elemType, bid, (Expr)offset + idx,
-      checkInitialized);
+  auto loaded = m->load(elemType, bid, (Expr)offset + idx).first;
   loaded.lockOps();
 
   return loaded;
