@@ -98,7 +98,6 @@ public:
     NHWC_FHWC  // image: nhwc, filter: fhwc, output: nhwf
   };
 
-protected:
   // Linalg convolution operation.
   // returns: (indices, expr)
   // Caller must check the validity of inputs (e.g. inbounds, initializedness)
@@ -177,7 +176,8 @@ public:
       const std::vector<smt::Expr> &dilations,
       ConvLayout layout) const;
 
-  // Return a new tensor which is depthwise convolution of this 2D tensor and filter.
+  // Return a new tensor which is depthwise convolution of this 2D tensor and
+  // filter.
   // Callers of conv must check whether filters/inputs/.. are initialized
   // (otherwise UB).
   Tensor depthwiseConv2D(const Tensor &filter,
@@ -373,8 +373,6 @@ public:
 
   AccessInfo store(const smt::Expr &value,
       const std::vector<smt::Expr> &indices) const;
-  AccessInfo storeArray(const smt::Expr &array,
-      const smt::Expr &startOffset, const smt::Expr &size) const;
 
   Tensor loadTensorWithoutCheck() const;
 
@@ -394,13 +392,6 @@ public:
       const llvm::SmallDenseSet<unsigned> &unusedDims,
       int rankDiff = 0);
 
-  // Store results which is convolution of input, filter and return wellDefined.
-  smt::Expr conv(const MemRef &input,
-      const MemRef &filter,
-      const std::vector<smt::Expr> &strides,
-      const std::vector<smt::Expr> &dilations,
-      ConvLayout convLayout);
-
   // Returns (cond ? trueValue : falseValue).
   // It is assumed that trueValue.layout is equivalent to falseValue.layout.
   // Also trueValue.dims == falseValue.dims is assumed, to be consistent with
@@ -413,6 +404,8 @@ public:
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const MemRef &other) const;
   MemRef eval(smt::Model m) const;
+
+  const Layout &getLayout() const { return layout; }
 
 private:
   Memory *m;
