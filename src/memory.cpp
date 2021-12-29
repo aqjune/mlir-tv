@@ -336,6 +336,18 @@ AccessInfo Memory::getInfo(
   };
 }
 
+AccessInfo Memory::getInfo(
+    mlir::Type elemTy, unsigned bid, const Expr &idx, const Expr &size)
+    const {
+  auto numelems = getNumElementsOfMemBlock(elemTy, bid);
+  return {
+    .inbounds = checkInBounds(idx, size, numelems),
+    .liveness = getLiveness(elemTy, bid),
+    .writable = getWritable(elemTy, bid),
+    .initialized = isInitialized(elemTy, bid, idx)
+  };
+}
+
 AccessInfo Memory::store(mlir::Type elemTy, const Expr &val,
     const Expr &bid, const Expr &idx) {
   update(elemTy, bid, [&](auto ubid) {
@@ -400,6 +412,25 @@ pair<Expr, AccessInfo> Memory::load(
       [&](unsigned ubid) { return load(elemTy, ubid, idx).first; });
   auto checks = itebid<AccessInfo>(elemTy, bid,
       [&](unsigned ubid) { return load(elemTy, ubid, idx).second; });
+  return {value, checks};
+}
+
+pair<Expr, AccessInfo> Memory::loadArray(
+    mlir::Type elemTy, unsigned ubid, const Expr &ofs, const Expr &size) {
+  assert(ubid < getNumBlocks(elemTy));
+
+  Expr idx0 = Index::var("arridx", VarType::BOUND);
+  Expr arr = arrays.find(elemTy)->second[ubid];
+  auto l = Expr::mkLambda({idx0}, arr.select(idx0 - ofs));
+  return {l, getInfo(elemTy, ubid, ofs, size)};
+}
+
+pair<Expr, AccessInfo> Memory::loadArray(
+    mlir::Type elemTy, const Expr &bid, const Expr &ofs, const Expr &size) {
+  Expr value = itebid<Expr>(elemTy, bid,
+      [&](unsigned ubid) { return loadArray(elemTy, ubid, ofs, size).first; });
+  auto checks = itebid<AccessInfo>(elemTy, bid,
+      [&](unsigned ubid) { return loadArray(elemTy, ubid, ofs, size).second; });
   return {value, checks};
 }
 

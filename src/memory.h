@@ -128,6 +128,13 @@ public:
       mlir::Type elemTy, const smt::Expr &bid, const smt::Expr &idx) const;
   std::pair<smt::Expr, AccessInfo> load(
       mlir::Type elemTy, unsigned bid, const smt::Expr &idx) const;
+  // Returns: store successful?
+  std::pair<smt::Expr, AccessInfo> loadArray(
+      mlir::Type elemTy, const smt::Expr &bid, const smt::Expr &idx,
+      const smt::Expr &size);
+  std::pair<smt::Expr, AccessInfo> loadArray(
+      mlir::Type elemTy, unsigned bid, const smt::Expr &idx,
+      const smt::Expr &size);
 
   // Encode the refinement relation between src (other) and tgt (this) memory
   // for each element type.
@@ -152,6 +159,8 @@ private:
   AccessInfo getInfo(mlir::Type elemTy, unsigned bid,
       const smt::Expr &ofs) const;
   AccessInfo getInfo(mlir::Type elemTy, const smt::Expr &bid,
+      const smt::Expr &ofs, const smt::Expr &accessSize) const;
+  AccessInfo getInfo(mlir::Type elemTy, unsigned bid,
       const smt::Expr &ofs, const smt::Expr &accessSize) const;
 
 

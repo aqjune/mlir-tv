@@ -2161,6 +2161,32 @@ static void storeTensorTo(
   }
 }
 
+static Tensor loadTensor(
+    State &st, mlir::Operation *op, const MemRef &memref,
+    mlir::MemRefType memrefTy) {
+  mlir::Type elemTy = memrefTy.getElementType();
+  if (memrefTy.getLayout().isIdentity()) {
+    // memref with identity map
+    auto [arr, info] = st.m->loadArray(elemTy,
+        memref.getBID(), memref.getOffset(), memref.get1DSize());
+    st.wellDefined(op, info.checkRead());
+
+    auto idx = Index::var("loadidx", VarType::BOUND);
+    return Tensor::mkLambdaFrom1D(elemTy, memref.getDims(),
+        move(idx), arr.select(idx), Expr::mkBool(true));
+
+  } else {
+    vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
+    auto [val, info] = memref.getWithAccessInfo(idxs);
+
+    st.wellDefined(op, Expr::mkForall(idxs,
+        fitsInDims(idxs, memref.getDims()).implies(info.checkRead())));
+    st.hasQuantifier = true;
+
+    return Tensor::mkInitializedLambda(elemTy, memref.getDims(),
+        move(idxs), move(val));
+  }
+}
 template<>
 void encodeOp(State &st, mlir::bufferization::ToMemrefOp op,
     bool encodeMemWrite) {
@@ -2188,8 +2214,7 @@ void encodeOp(State &st, mlir::bufferization::CloneOp op, bool encodeMemWrite) {
   auto srcTy = op.getOperand().getType().cast<mlir::MemRefType>();
   auto dims = src.getDims();
 
-  auto [tensor, loadSuccess] = src.loadTensor();
-  st.wellDefined(op, loadSuccess.checkRead());
+  auto tensor = loadTensor(st, op, src, srcTy);
 
   // Create a read-only block.
   auto memref = createNewLocalBlk(st.m.get(), move(dims), srcTy, false);
@@ -2209,10 +2234,9 @@ void encodeOp(State &st, mlir::bufferization::ToTensorOp op,
   auto &memory = *(st.m);
   memory.setWritable(memrefTy.getElementType(), m.getBID(), false);
 
-  auto [tensor, loadSuccess] = m.loadTensor();
+  auto tensor = loadTensor(st, op, m, memrefTy);
+
   st.regs.add(op.getResult(), tensor);
-  st.wellDefined(op, loadSuccess.checkRead());
-  st.hasQuantifier |= true;
 }
 
 template<>
@@ -2280,8 +2304,8 @@ void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
   // https://mlir.llvm.org/docs/Dialects/Linalg/#linalgcopy-mlirlinalgcopyop
   st.wellDefined(opr, mrIn.noalias(mrOut));
 
-  auto [loadedTensor, loadInfo] = mrIn.loadTensor();
-  st.wellDefined(opr, loadInfo.checkRead());
+  auto loadedTensor = loadTensor(st, op, mrIn,
+      op.input().getType().cast<mlir::MemRefType>());
 
   storeTensorTo(st, opr, move(loadedTensor), mrOut,
       op.output().getType().cast<mlir::MemRefType>(), true);

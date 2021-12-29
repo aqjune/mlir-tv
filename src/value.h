@@ -374,9 +374,6 @@ public:
   AccessInfo store(const smt::Expr &value,
       const std::vector<smt::Expr> &indices) const;
 
-  // (value, success?)
-  std::pair<Tensor, AccessInfo> loadTensor() const;
-
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;
   smt::Expr isLocalBlock() const;

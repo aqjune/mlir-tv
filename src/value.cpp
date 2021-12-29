@@ -1376,15 +1376,6 @@ AccessInfo MemRef::store(const Expr &value,
   return info;
 }
 
-pair<Tensor, AccessInfo> MemRef::loadTensor() const {
-  auto dims = getDims();
-  vector<Expr> idxs = Index::boundIndexVars(dims.size());
-  auto expr = get(idxs);
-  // TODO: MemRef blocks must have initialized bits
-  return Tensor::mkInitializedLambda(getElemType(),
-      move(dims), move(idxs), expr);
-}
-
 Expr MemRef::isInBounds() const {
   auto numelem = m->getNumElementsOfMemBlock(elemType, bid);
   auto memrefSize = get1DSize();
