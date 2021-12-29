@@ -1287,6 +1287,8 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
     st.wellDefined(op, t_input.isFullyInitialized());
     st.wellDefined(op, t_filter.isFullyInitialized());
   } else {
+    auto outputTy = op.outputs()[0].getType().template cast<mlir::MemRefType>();
+    auto elemTy = outputTy.getElementType();
     auto input = st.regs.get<MemRef>(op.image());
     auto filter = st.regs.get<MemRef>(op.filter());
     auto output = st.regs.get<MemRef>(op.outputs()[0]);
@@ -1294,13 +1296,32 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
     if (!output.isIdentityMap())
       throw UnsupportedException(op.getOperation(),
           "The output MemRef should have identity layout.");
-    auto success = output.conv(input, filter, strides, dilations, clayout);
-    st.wellDefined(op, move(success));
+
+    auto [indices, expr] = input.ShapedValue::conv(filter, strides, dilations,
+        clayout);
+
+    // we splat results into 1D memory layout
+    auto idx = Index::var("outputIdx", VarType::BOUND);
+    auto outputIndices = output.getLayout().getInverseIndices(idx);
+    auto outputExpr = expr.substitute(indices, outputIndices);
+    auto outputTensor = Tensor::mkInitializedLambda(elemTy,
+        {input.get1DSize()}, {idx}, outputExpr);
+
+    // store the result to the output reference
+    storeTensorTo(st, op, move(outputTensor), output, outputTy, true);
+
+    // Input & filter read check
+    st.wellDefined(op,
+        input.getLiveness() & input.isInBounds() & filter.getLiveness() &
+        filter.isInBounds());
+    // No alias checks between output and input/filter
+    st.wellDefined(op, output.noalias(input) & output.noalias(filter));
   }
 }
 
 template<> void
-encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op, bool encodeMemWriteOp) {
+encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op,
+         bool encodeMemWriteOp) {
   if (!op.hasTensorSemantics() && !encodeMemWriteOp)
     throw UnsupportedException(op.getOperation());
 
@@ -2107,7 +2128,8 @@ static void storeTensorTo(
 
   if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
-    auto success = memref.storeArray(tensor.asArray(), Index::zero(),
+    auto success = st.m->storeArray(memrefTy.getElementType(),
+        tensor.asArray(), memref.getBID(), memref.getOffset(),
         tensor.get1DSize());
     st.wellDefined(op, success.conj(!ubIfReadOnly));
 
@@ -2774,13 +2796,12 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
       st.regs.add(op.getResult(i), move(tvec_res->at(i)));
     }
   } else if (op.hasBufferSemantics()) {
-    auto success = Expr::mkBool(true);
     for(unsigned i = 0; i < tvec_res->size(); i++) {
-      auto m_res = st.regs.get<MemRef>(op.getOutputOperand(i)->get());
-      success &= m_res.storeArray(tvec_res->at(i).asArray(), Index::zero(),
-          tvec_res->at(i).get1DSize()).conj();
+      auto opi = op.getOutputOperand(i)->get();
+      auto m_res = st.regs.get<MemRef>(opi);
+      storeTensorTo(st, op, move(tvec_res->at(i)), m_res,
+          opi.getType().cast<mlir::MemRefType>(), true);
     }
-    st.wellDefined(op, move(success));
   } else {
     llvm_unreachable("Unknown linalg::generic semantics");
   }
