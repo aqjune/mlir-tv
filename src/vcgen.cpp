@@ -557,8 +557,11 @@ static Results validate(ValidationInput vinput) {
                   AbsFpAddSumEncoding::DEFAULT},
       /* useAllLogic */arg_smt_use_all_logic.getValue() });
 
-  unsigned itrCount = 0;
+
   setEncodingOptions(vinput.useMultisetForFpSum);
+  resetAbstractlyEncodedAttrs();
+
+  unsigned itrCount = 0;
   const string dumpSMTPath = vinput.dumpSMTPath;
 
   while (!queue.empty()) {

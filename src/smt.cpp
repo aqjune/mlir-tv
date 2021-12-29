@@ -746,6 +746,10 @@ Expr Expr::concat(const Expr &lowbits) const {
 Expr Expr::zext(unsigned bits) const {
   CHECK_LOCK();
 
+  uint64_t i;
+  if (isUInt(i))
+    return mkBV(i, bitwidth() + bits);
+
   Expr e;
   SET_Z3_USEOP_CONST(e, bits, zext);
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,

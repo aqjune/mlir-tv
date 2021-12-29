@@ -362,6 +362,13 @@ AccessInfo Memory::storeArray(
   update(elemTy, bid, [&](auto ubid) {
       return &arrays.find(elemTy)->second[ubid]; },
     [&](auto ubid) {
+      uint64_t offset_const;
+      const Expr &size_bid = this->numelems.find(elemTy)->second[ubid];
+      if (offset.isUInt(offset_const) && offset_const == 0 &&
+          (size == size_bid).isTrue())
+        // Simply replace the previous value
+        return arr;
+
       auto currentVal = arrays.find(elemTy)->second[ubid].select(idx);
       Expr cond = low.ule(idx) & ((Expr)idx).ule(high);
       return Expr::mkLambda(idx, Expr::mkIte(cond, arrayVal, currentVal));
@@ -409,7 +416,10 @@ Memory::refines(const Memory &other) const {
     auto tgtWritable = tgtInfo.writable;
 
     auto wRefinement = srcWritable.implies(tgtWritable);
-    auto vRefinement = (tgtValue == srcValue);
+    auto [vRefinement, vRefParam] = ::refines(
+        *fromExpr(move(tgtValue), elemTy), *fromExpr(move(srcValue), elemTy));
+    assert(vRefParam.empty() && "Values stored in memory must be simple");
+
     return (srcInfo.inbounds & srcInfo.liveness).implies(
         tgtInfo.inbounds & tgtInfo.liveness & wRefinement & vRefinement);
   };

@@ -9,6 +9,7 @@
 using namespace smt;
 using namespace std;
 
+
 namespace {
 string freshName(string prefix) {
   static int count = 0;
@@ -52,6 +53,12 @@ optional<Expr> getIdentity(mlir::Type eltType) {
   else if (eltType.isIndex())
     return Index(0);
   return {};
+}
+
+static vector<pair<mlir::ElementsAttr, Tensor>> abstractlyEncodedAttrs;
+
+void resetAbstractlyEncodedAttrs() {
+  abstractlyEncodedAttrs.clear();
 }
 
 
@@ -1050,8 +1057,6 @@ Tensor Tensor::mkIte(
       move(retExpr), move(retInit));
 }
 
-static vector<pair<mlir::ElementsAttr, Tensor>> abstractlyEncodedAttrs;
-
 Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
       mlir::ElementsAttr attr) {
   mlir::Type elemType = tensorty.getElementType();
@@ -1371,11 +1376,6 @@ AccessInfo MemRef::store(const Expr &value,
   return info;
 }
 
-AccessInfo MemRef::storeArray(
-    const Expr &array, const Expr &startOffset, const Expr &size) const {
-  return m->storeArray(elemType, array, bid, (Expr)offset + startOffset, size);
-}
-
 pair<Tensor, AccessInfo> MemRef::loadTensor() const {
   auto dims = getDims();
   vector<Expr> idxs = Index::boundIndexVars(dims.size());
@@ -1453,30 +1453,6 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
     return MemRef(m, elemType, bid, offset, sizes, subviewLayout,
         Expr::mkBool(true));
   }
-}
-
-Expr MemRef::conv(const MemRef &input,
-    const MemRef &filter,
-    const std::vector<smt::Expr> &strides,
-    const std::vector<smt::Expr> &dilations,
-    ConvLayout clayout) {
-  auto [indices, expr] = input.ShapedValue::conv(filter, strides, dilations,
-      clayout);
-
-  // we splat results into 1D memory layout
-  auto idx = Index::var("outputIdx", VarType::BOUND);
-  auto outputIndices = layout.getInverseIndices(idx);
-  auto outputExpr = expr.substitute(indices, outputIndices);
-  auto outputArray = Expr::mkLambda(idx, outputExpr);
-
-  // store output memref
-  auto info = storeArray(outputArray, Index::zero(), get1DSize());
-  auto success = info.inbounds & info.liveness & info.writable &
-      input.getLiveness() & input.isInBounds() &
-      filter.getLiveness() & filter.isInBounds() &
-      noalias(input) & noalias(filter);
-
-  return success;
 }
 
 MemRef MemRef::mkIte(smt::Expr cond,
