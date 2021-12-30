@@ -25,14 +25,15 @@ static void printInputs(Model m, mlir::FuncOp src, const State &st_src) {
   }
 
   llvm::outs() << "  Input memory:\n";
-  auto btys = st_src.m->getBlockTypes();
+  auto &mem = *st_src.m;
+  auto btys = mem.getBlockTypes();
   for (auto &bty: btys) {
     llvm::outs() << "\tType " << bty << ":\n";
-    unsigned num = st_src.m->getNumBlocks(bty);
+    unsigned num = mem.getNumBlocks(bty);
 
     for (unsigned i = 0; i < num; ++i) {
-      auto numelem = st_src.m->getNumElementsOfMemBlock(bty, i);
-      auto liveness = st_src.m->getLiveness(bty, i);
+      auto numelem = m.eval(mem.getNumElementsOfMemBlock(bty, mem.mkBID(i)));
+      auto liveness = m.eval(mem.getLiveness(bty, mem.mkBID(i)));
       llvm::outs() << "\t  Block " << i << ": # elems: "
           << intToStr(m.eval(numelem))
           << "\n";

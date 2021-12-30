@@ -57,6 +57,9 @@ public:
   void setIsSrc(bool flag) { isSrc = flag; }
 
   unsigned int getBIDBits() const { return bidBits; }
+  smt::Expr mkBID(unsigned ubid) const
+  { return smt::Expr::mkBV(ubid, bidBits); }
+
   unsigned int getTotalNumBlocks() const;
   unsigned int getNumBlocks(mlir::Type elemTy) const {
     auto itr = arrays.find(elemTy);
@@ -77,10 +80,6 @@ public:
 
   smt::Expr getNumElementsOfMemBlock(mlir::Type elemTy, const smt::Expr &bid)
       const;
-  smt::Expr getNumElementsOfMemBlock(mlir::Type elemTy, unsigned ubid) const {
-    assert(ubid < getNumBlocks(elemTy));
-    return numelems.find(elemTy)->second[ubid];
-  }
 
   // Return the block id for the global variable having name.
   unsigned getBidForGlobalVar(const std::string &name) const;
@@ -92,33 +91,18 @@ public:
   void setWritable(mlir::Type elemTy, const smt::Expr &bid, bool writable);
   // get memblocks' writable flag
   smt::Expr getWritable(mlir::Type elemTy, const smt::Expr &bid) const;
-  smt::Expr getWritable(mlir::Type elemTy, unsigned ubid) const {
-    assert(ubid < getNumBlocks(elemTy));
-    return writables.find(elemTy)->second[ubid];
-  }
 
   // Mark memblock's liveness to false.
   void setLivenessToFalse(mlir::Type elemTy, const smt::Expr &bid);
   // get memblocks' writable flag
   smt::Expr getLiveness(mlir::Type elemTy, const smt::Expr &bid) const;
-  smt::Expr getLiveness(mlir::Type elemTy, unsigned ubid) const {
-    assert(ubid < getNumBlocks(elemTy));
-    return liveness.find(elemTy)->second[ubid];
-  }
 
   smt::Expr isInitialized(mlir::Type elemTy,
       const smt::Expr &bid, const smt::Expr &ofs) const;
-  smt::Expr isInitialized(mlir::Type elemTy,
-      unsigned ubid, const smt::Expr &ofs) const {
-    assert(ubid < getNumBlocks(elemTy));
-    return initialized.find(elemTy)->second[ubid].select(ofs);
-  }
 
-  // Returns: store successful?
   AccessInfo store(
       mlir::Type elemTy, const smt::Expr &val, const smt::Expr &bid,
       const smt::Expr &idx);
-  // Returns: store successful?
   AccessInfo storeArray(
       mlir::Type elemTy, const smt::Expr &arr, const smt::Expr &bid,
       const smt::Expr &offset, const smt::Expr &size);
@@ -126,14 +110,8 @@ public:
   // Returns: (loaded value, load successful?)
   std::pair<smt::Expr, AccessInfo> load(
       mlir::Type elemTy, const smt::Expr &bid, const smt::Expr &idx) const;
-  std::pair<smt::Expr, AccessInfo> load(
-      mlir::Type elemTy, unsigned bid, const smt::Expr &idx) const;
-  // Returns: store successful?
   std::pair<smt::Expr, AccessInfo> loadArray(
       mlir::Type elemTy, const smt::Expr &bid, const smt::Expr &idx,
-      const smt::Expr &size);
-  std::pair<smt::Expr, AccessInfo> loadArray(
-      mlir::Type elemTy, unsigned bid, const smt::Expr &idx,
       const smt::Expr &size);
 
   // Encode the refinement relation between src (other) and tgt (this) memory
@@ -156,13 +134,8 @@ private:
 
   AccessInfo getInfo(mlir::Type elemTy, const smt::Expr &bid,
       const smt::Expr &ofs) const;
-  AccessInfo getInfo(mlir::Type elemTy, unsigned bid,
-      const smt::Expr &ofs) const;
   AccessInfo getInfo(mlir::Type elemTy, const smt::Expr &bid,
       const smt::Expr &ofs, const smt::Expr &accessSize) const;
-  AccessInfo getInfo(mlir::Type elemTy, unsigned bid,
-      const smt::Expr &ofs, const smt::Expr &accessSize) const;
-
 
   size_t getMaxNumLocalBlocks(mlir::Type ty) const {
     auto itr = maxLocalBlocksCnt.find(ty);

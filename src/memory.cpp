@@ -211,6 +211,16 @@ T Memory::itebid(mlir::Type elemTy, const Expr &bid, function<T(unsigned)> fn)
   return expr;
 }
 
+template<>
+pair<Expr, AccessInfo> Memory::itebid<pair<Expr, AccessInfo>>(
+    mlir::Type elemTy, const Expr &bid,
+    function<pair<Expr, AccessInfo>(unsigned)> fn) const {
+  auto fn1 = [&](unsigned bid) { return fn(bid).first; };
+  auto fn2 = [&](unsigned bid) { return fn(bid).second; };
+
+  return {itebid<Expr>(elemTy, bid, fn1), itebid<AccessInfo>(elemTy, bid, fn2)};
+}
+
 void Memory::update(
     mlir::Type elemTy, const Expr &bid,
     function<Expr*(unsigned)> getExprToUpdate,
@@ -315,31 +325,7 @@ AccessInfo Memory::getInfo(
 }
 
 AccessInfo Memory::getInfo(
-    mlir::Type elemTy, unsigned bid, const Expr &idx) const {
-  return {
-    .inbounds = idx.ult(getNumElementsOfMemBlock(elemTy, bid)),
-    .liveness = getLiveness(elemTy, bid),
-    .writable = getWritable(elemTy, bid),
-    .initialized = isInitialized(elemTy, bid, idx)
-  };
-}
-
-AccessInfo Memory::getInfo(
     mlir::Type elemTy, const Expr &bid, const Expr &idx, const Expr &size)
-    const {
-  auto numelems = getNumElementsOfMemBlock(elemTy, bid);
-  Expr j = Index::var("j", VarType::BOUND);
-  return {
-    .inbounds = checkInBounds(idx, size, numelems),
-    .liveness = getLiveness(elemTy, bid),
-    .writable = getWritable(elemTy, bid),
-    .initialized = Expr::mkForall({j}, j.ult(size).implies(
-        isInitialized(elemTy, bid, j + idx)))
-  };
-}
-
-AccessInfo Memory::getInfo(
-    mlir::Type elemTy, unsigned bid, const Expr &idx, const Expr &size)
     const {
   auto numelems = getNumElementsOfMemBlock(elemTy, bid);
   Expr j = Index::var("j", VarType::BOUND);
@@ -403,39 +389,23 @@ AccessInfo Memory::storeArray(
 
 
 pair<Expr, AccessInfo> Memory::load(
-    mlir::Type elemTy, unsigned ubid, const Expr &idx) const {
-  assert(ubid < getNumBlocks(elemTy));
-
-  return {arrays.find(elemTy)->second[ubid].select(idx),
-      getInfo(elemTy, ubid, idx)};
-}
-
-pair<Expr, AccessInfo> Memory::load(
     mlir::Type elemTy, const Expr &bid, const Expr &idx) const {
-  Expr value = itebid<Expr>(elemTy, bid,
-      [&](unsigned ubid) { return load(elemTy, ubid, idx).first; });
-  auto checks = itebid<AccessInfo>(elemTy, bid,
-      [&](unsigned ubid) { return load(elemTy, ubid, idx).second; });
-  return {value, checks};
-}
-
-pair<Expr, AccessInfo> Memory::loadArray(
-    mlir::Type elemTy, unsigned ubid, const Expr &ofs, const Expr &size) {
-  assert(ubid < getNumBlocks(elemTy));
-
-  Expr idx0 = Index::var("arridx", VarType::BOUND);
-  Expr arr = arrays.find(elemTy)->second[ubid];
-  auto l = Expr::mkLambda({idx0}, arr.select(idx0 + ofs));
-  return {l, getInfo(elemTy, ubid, ofs, size)};
+  return itebid<pair<Expr, AccessInfo>>(elemTy, bid,
+      [&](unsigned ubid) -> pair<Expr, AccessInfo> {
+    return {arrays.find(elemTy)->second[ubid].select(idx),
+      getInfo(elemTy, mkBID(ubid), idx)};
+  });
 }
 
 pair<Expr, AccessInfo> Memory::loadArray(
     mlir::Type elemTy, const Expr &bid, const Expr &ofs, const Expr &size) {
-  Expr value = itebid<Expr>(elemTy, bid,
-      [&](unsigned ubid) { return loadArray(elemTy, ubid, ofs, size).first; });
-  auto checks = itebid<AccessInfo>(elemTy, bid,
-      [&](unsigned ubid) { return loadArray(elemTy, ubid, ofs, size).second; });
-  return {value, checks};
+  return itebid<pair<Expr, AccessInfo>>(elemTy, bid,
+      [&](unsigned ubid) -> pair<Expr, AccessInfo>{
+    Expr idx0 = Index::var("arridx", VarType::BOUND);
+    Expr arr = arrays.find(elemTy)->second[ubid];
+    auto l = Expr::mkLambda({idx0}, arr.select(idx0 + ofs));
+    return {l, getInfo(elemTy, mkBID(ubid), ofs, size)};
+  });
 }
 
 TypeMap<pair<Expr, vector<Expr>>>
@@ -445,9 +415,9 @@ Memory::refines(const Memory &other) const {
   // Create fresh, unbound variables
   auto refinesBlk = [this, &other](
       mlir::Type elemTy, unsigned ubid, Index offset) {
-    auto [srcValue, srcInfo] = other.load(elemTy, ubid, offset);
+    auto [srcValue, srcInfo] = other.load(elemTy, mkBID(ubid), offset);
     auto srcWritable = srcInfo.writable;
-    auto [tgtValue, tgtInfo] = load(elemTy, ubid, offset);
+    auto [tgtValue, tgtInfo] = load(elemTy, mkBID(ubid), offset);
     auto tgtWritable = tgtInfo.writable;
 
     auto wRefinement = srcWritable.implies(tgtWritable);
