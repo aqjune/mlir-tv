@@ -98,13 +98,17 @@ public:
     NHWC_FHWC  // image: nhwc, filter: fhwc, output: nhwf
   };
 
-  // Linalg convolution operation.
+  // The convolution operation.
   // returns: (indices, expr)
+  // The ranges of indices are the sizes of the outputs.
   // Caller must check the validity of inputs (e.g. inbounds, initializedness)
+  // The result is accumulated to getInitValue(index).
   std::pair<std::vector<smt::Expr>, smt::Expr> conv(const ShapedValue &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
-      ConvLayout layout) const;
+      ConvLayout layout,
+      std::function<std::optional<smt::Expr>(std::vector<smt::Expr> &)>
+          &&getInitValue) const;
 };
 
 class Tensor: public ShapedValue {
@@ -174,7 +178,8 @@ public:
   Tensor conv(const Tensor &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
-      ConvLayout layout) const;
+      ConvLayout layout,
+      const std::optional<Tensor> &&output = std::nullopt) const;
 
   // Return a new tensor which is depthwise convolution of this 2D tensor and
   // filter.
@@ -183,7 +188,8 @@ public:
   Tensor depthwiseConv2D(const Tensor &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
-      const std::optional<Tensor> bias = std::nullopt) const;
+      const std::optional<Tensor> &&bias = std::nullopt,
+      const std::optional<Tensor> &&output = std::nullopt) const;
 
   Tensor reshape(const std::vector<smt::Expr> &ns2) const;
 
@@ -198,7 +204,8 @@ public:
 
   // Given two 2-dim tensors this and b, return their matrix multiplication
   // bTransposed is true, don't transpose b internally
-  Tensor matmul(const Tensor &b, bool bTransposed = false) const;
+  Tensor matmul(const Tensor &b, bool bTransposed = false,
+                std::optional<Tensor> &&init = std::nullopt) const;
 
   // Return the result of an elementwise operation.
   // Assume that the shapes are equivalent.
@@ -210,14 +217,16 @@ public:
       mlir::Type resultElemType,
       const std::function<smt::Expr(smt::Expr &&)> &op) const;
 
-  smt::Expr dot(const Tensor &b) const;
-  smt::Expr sum() const;
+  smt::Expr dot(const Tensor &b,
+                std::optional<smt::Expr> &&initValue = std::nullopt) const;
+  smt::Expr sum(smt::Expr &&initVal) const;
   // Equivalent to tosa.reduce_sum
   // If this is a <N1 x N2 x ...> tensor, return a new tensor whose size at
   // the axis dimension is 1 and the corresponding elements contain summations
   // of elements.
   // Note that sum does not decrement the rank.
   Tensor sum(unsigned axis) const;
+  
 
   operator smt::Expr() const { return arr; }
 

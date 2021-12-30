@@ -1282,24 +1282,35 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
   if (op.hasTensorSemantics()) {
     auto t_input = st.regs.get<Tensor>(op.image());
     auto t_filter = st.regs.get<Tensor>(op.filter());
+    auto output = st.regs.get<Tensor>(op.outputs()[0]);
 
-    auto t_res = t_input.conv(t_filter, strides, dilations, clayout);
+    auto t_res = t_input
+      .conv(t_filter, strides, dilations, clayout, output);
     st.regs.add(op.getResult(0), move(t_res));
     st.wellDefined(op, t_input.isFullyInitialized());
     st.wellDefined(op, t_filter.isFullyInitialized());
+    st.wellDefined(op, output.isFullyInitialized());
   } else {
     auto outputTy = op.outputs()[0].getType().template cast<mlir::MemRefType>();
     auto elemTy = outputTy.getElementType();
     auto input = st.regs.get<MemRef>(op.image());
     auto filter = st.regs.get<MemRef>(op.filter());
-    auto output = st.regs.get<MemRef>(op.outputs()[0]);
+    MemRef output = st.regs.get<MemRef>(op.outputs()[0]);
 
     if (!output.isIdentityMap())
       throw UnsupportedException(op.getOperation(),
           "The output MemRef should have identity layout.");
 
-    auto [indices, expr] = input.ShapedValue::conv(filter, strides, dilations,
-        clayout);
+    auto getInitValue = [&](vector<Expr> &indices) -> optional<Expr> {
+      return output.get(indices);
+    };
+    auto [indices, expr] = input.ShapedValue::conv(
+        filter, strides, dilations, clayout, move(getInitValue));
+
+    // Check that the output memref is storing initialized values.
+    auto outputAccInfo = output.getWithAccessInfo(indices).second;
+    st.wellDefined(op, Expr::mkForall(indices,
+        outputAccInfo.inbounds.implies(outputAccInfo.initialized)));
 
     // we splat results into 1D memory layout
     auto idx = Index::var("outputIdx", VarType::BOUND);
@@ -1335,14 +1346,14 @@ encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op,
 
   auto t_input = st.regs.get<Tensor>(op.image());
   auto t_filter = st.regs.get<Tensor>(op.filter());
+  auto t_output = st.regs.get<Tensor>(op.outputs()[0]);
 
-  st.wellDefined(op, t_input.getDim(3) == t_input.getDim(3));
-  st.wellDefined(op, t_filter.isFullyInitialized());
-
-  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations);
+  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations,
+      /* bias */ nullopt, /* output */ t_output);
   st.regs.add(op.getResult(0), move(t_res));
   st.wellDefined(op, t_input.isFullyInitialized());
   st.wellDefined(op, t_filter.isFullyInitialized());
+  st.wellDefined(op, t_output.isFullyInitialized());
 }
 
 template<> void
@@ -1481,9 +1492,12 @@ void encodeOp(State &st, mlir::linalg::MatmulOp op, bool) {
 
   Tensor a = st.regs.get<Tensor>(op.getOperand(0));
   Tensor b = st.regs.get<Tensor>(op.getOperand(1));
-  Tensor result = a.matmul(b);
+  Tensor c = st.regs.get<Tensor>(op.getOperand(2));
+  Tensor result = a.matmul(b, /*transposed*/false, c);
+
   st.wellDefined(op, a.isFullyInitialized());
   st.wellDefined(op, b.isFullyInitialized());
+  st.wellDefined(op, c.isFullyInitialized());
   st.regs.add(op.getResult(0), Tensor(result));
 }
 
@@ -2345,12 +2359,16 @@ void encodeOp(State &st, mlir::linalg::DotOp op, bool encodeMemWrite) {
     throw UnsupportedException(op.getOperation(),
         "tensor semantics is supported only");
 
+  auto inputOps = op.getInputOperands();
+  auto outputOps = op.getOutputOperands();
+  auto outputTy = op.getType(0).dyn_cast<mlir::TensorType>();
+
+  // This must be same.
+  assert(op.getNumResults() == outputOps.size());
+
   if (op.getNumResults() != 1)
     throw UnsupportedException(op.getOperation(),
         "it has multiple results");
-
-  auto inputOps = op.getInputOperands();
-  auto outputTy = op.getType(0).dyn_cast<mlir::TensorType>();
 
   auto outputDim = ShapedValue::getDims(outputTy, false);
   if (outputDim.size() != 1)
@@ -2364,11 +2382,13 @@ void encodeOp(State &st, mlir::linalg::DotOp op, bool encodeMemWrite) {
 
   auto t1 = st.regs.get<Tensor>(inputOps[0]->get());
   auto t2 = st.regs.get<Tensor>(inputOps[1]->get());
+  auto t3 = st.regs.get<Tensor>(outputOps[0]->get());
   st.wellDefined(op, t1.isFullyInitialized());
   st.wellDefined(op, t2.isFullyInitialized());
+  st.wellDefined(op, t3.isFullyInitialized());
   st.wellDefined(op, t1.get1DSize() == t2.get1DSize());
 
-  auto res = t1.dot(t2);
+  auto res = t1.dot(t2, move(t3.get({Index(0)})));
   st.regs.add(op.getResult(0),
       Tensor(t1.getElemType(), move(res), move(outputDim)));
 }
@@ -2635,7 +2655,6 @@ static void encodeReductionLoopBodyAndOutput(
 
   auto &ops = block.getOperations();
   int instcount = ops.size();
-  mlir::Value yieldedValue;
 
   using mlir::m_Op;
   using mlir::matchers::m_Any;
@@ -2666,7 +2685,7 @@ static void encodeReductionLoopBodyAndOutput(
 
   // TODO: deal with merging memories
   encodeBlock(newst, block, /*print ops*/false, /*encode mem writes*/false,
-      [&yieldedValue, instcount, &lastarg, &the_op](
+      [instcount, &lastarg, &the_op](
           mlir::Operation *op, int opindex) {
         if (opindex >= instcount - 2)
           // Don't directly encode %sum and yield
@@ -2681,7 +2700,6 @@ static void encodeReductionLoopBodyAndOutput(
             throw UnsupportedException(the_op, move(msg));
           }
         }
-
         return false;
       },
       [&welldef, &newst](mlir::Operation *op) {
@@ -2709,8 +2727,12 @@ static void encodeReductionLoopBodyAndOutput(
     // t_res[0] = sum(\i. t_input[i / n][i % n] , i < m * n)
 
     // Define this as a splat tensor (num. elems is 1 anyway)
-    t_res = Tensor(t_v.getElemType(), t_v.sum(),
+    // TODO(aqjune): Support memref cases (memref.isFullyInitialized)
+    auto outTensor = newst.regs.get<Tensor>(the_op->getOperands().back());
+    auto initElem = outTensor.get({Index(0)});
+    t_res = Tensor(t_v.getElemType(), t_v.sum(move(initElem)),
           makeCube(Index(1), outputType.getRank()));
+    welldef &= outTensor.isFullyInitialized();
   } else {
     // in:  (i, j) -> (i, j)
     // out: (i, j) -> (i)
@@ -2739,17 +2761,21 @@ static void encodeReductionLoopBodyAndOutput(
       }
     }
 
+    // TODO(aqjune): Support memref cases (memref.isFullyInitialized)
+    auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
+    auto outTensor = newst.regs.get<Tensor>(the_op->getOperands().back());
+    auto initElem = outTensor.get(outputIndVars);
     auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
     auto t_sum = Tensor::mkInitializedLambda(
           t_v.getElemType(),
           addOne(move(boundsForRes)),
           move(indVarsForRes),
           t_v.get(linalgInfo.indVars))
-        .sum();
+        .sum(move(initElem));
 
-    auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
     t_res = Tensor::mkInitializedLambda(
         t_v.getElemType(), move(tensorSz), move(outputIndVars), t_sum);
+    welldef &= outTensor.isFullyInitialized();
   }
 }
 

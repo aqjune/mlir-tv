@@ -291,7 +291,8 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
     const ShapedValue &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,
-    ConvLayout convLayout) const {
+    ConvLayout convLayout,
+    function<optional<Expr>(vector<Expr> &)> &&getInitValue) const {
   // 1. NHWC_HWCF:
   //   input: Batch_size x Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel
   //   filter: Dim_0 x Dim_1 .. x Dim_{n-1} x Input_channel x Output_channel
@@ -390,12 +391,13 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
 
   Expr inputExpr = Expr::mkLambda(cubeIdx, get(inputIdxs));
   Expr filterExpr = Expr::mkLambda(cubeIdx, filter.get(filterIdxs));
+  optional<Expr> initialValue = getInitValue(outputIdxs);
 
   Expr sz = ::get1DSize(cubeSize);
-  Expr outputExpr =
-      elemType.isa<mlir::IntegerType>() ?
-        aop::intDot(inputExpr, filterExpr, sz) :
-        aop::getFpEncoding(elemType).dot(inputExpr, filterExpr, sz);
+  Expr outputExpr = elemType.isa<mlir::IntegerType>() ?
+    aop::intDot(inputExpr, filterExpr, sz, move(initialValue)) :
+    aop::getFpEncoding(elemType)
+      .dot(inputExpr, filterExpr, sz, move(initialValue));
 
   return {move(outputIdxs), move(outputExpr)};
 }
@@ -582,7 +584,8 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
 Tensor Tensor::depthwiseConv2D(const Tensor &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,
-    const optional<Tensor> bias) const {
+    const optional<Tensor> &&bias,
+    const optional<Tensor> &&output) const {
 
   // args should match for 2D tensors
   assert(getDims().size() == 4);
@@ -619,9 +622,27 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
                   filter.get({weight2DInd[0], weight2DInd[1], c, m})
                 );
 
+  // change output to 1xOHxOWx1
+  auto output2D = fmap(output, [&](auto unwrapped) {
+    vector<Expr> output2DDims =
+      {Index(1), unwrapped.getDim(1), unwrapped.getDim(2), Index(1)};
+    vector<Expr> output2DInd = Index::boundIndexVars(4);
+    if (outInd.size() == 4)
+      return Tensor::mkInitializedLambda(
+        elemType, move(output2DDims), move(output2DInd),
+        unwrapped.get({n, output2DInd[1], output2DInd[2], c * m})
+      );
+    else
+      return Tensor::mkInitializedLambda(
+        elemType, move(output2DDims), move(output2DInd),
+        unwrapped.get({n, output2DInd[1], output2DInd[2], c, m})
+      );
+  });
+
   // t2D is 1xOHxOWx1
-  auto t2D = input2D.conv(weight2D,
-                      strides, dilations, ShapedValue::ConvLayout::NHWC_HWCF);
+  auto t2D = input2D.conv(weight2D, strides, dilations,
+      ShapedValue::ConvLayout::NHWC_HWCF,
+      move(output2D));
 
   auto t2DDims = t2D.getDims();
 
@@ -652,7 +673,8 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
 Tensor Tensor::conv(const Tensor &filter,
     const vector<Expr> &strides,
     const vector<Expr> &dilations,
-    ConvLayout layout) const {
+    ConvLayout layout,
+    const std::optional<Tensor> &&output) const {
   // If layout is NHWC_HWCF:
   // output[b, x[0], ..., x[N-1], k] =
   //     sum_{z[0], ..., z[N-1], q}
@@ -711,8 +733,14 @@ Tensor Tensor::conv(const Tensor &filter,
     break;
   }
   }
-
-  auto [indices, res] = ShapedValue::conv(filter, strides, dilations, layout);
+  auto getInitValue = [&](vector<Expr> &indices) -> optional<Expr> {
+    if (output)
+      return output->get(indices);
+    else
+      return nullopt;
+  };
+  auto [indices, res] = ShapedValue
+      ::conv(filter, strides, dilations, layout, move(getInitValue));
 
   // UB if uninitialized elem is used
   return Tensor::mkInitializedLambda(elemType,
@@ -725,7 +753,8 @@ Tensor Tensor::reshape(const vector<Expr> &newdims) const {
   return { elemType, simplifyList(newdims), Expr(arr), Expr(initialized) };
 }
 
-Tensor Tensor::matmul(const Tensor &b, bool bTransposed) const {
+Tensor Tensor::matmul(const Tensor &b, bool bTransposed,
+                      std::optional<Tensor> &&init) const {
   assert(dims.size() == 2);
   assert(b.dims.size() == 2);
 
@@ -737,13 +766,16 @@ Tensor Tensor::matmul(const Tensor &b, bool bTransposed) const {
   auto bt_row = bt.to1DArrayWithOfs(
       {j, Index::zero()}, {Index::one(), bt.dims[1]});
 
+  auto initVal = fmap(init, [&](auto tensor) {
+    return tensor.get({i, j});
+  });
   auto res = elemType.isa<mlir::FloatType>() ?
-      aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1]) :
-      aop::intDot(a_row, bt_row, dims[1]);
+    aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1], move(initVal)) :
+    aop::intDot(a_row, bt_row, dims[1], move(initVal));
 
   // UB if uninitialized elem is used
   return mkInitializedLambda(elemType,
-      {dims[0], bt.dims[0]}, {i, j}, move(res));
+      {dims[0], bt.dims[0]}, {i, j}, res);
 }
 
 Tensor Tensor::elementwiseBinOp(
@@ -775,17 +807,17 @@ Tensor Tensor::elementwiseUnaryOp(
       /* initialized */Expr::mkBool(true));
 }
 
-Expr Tensor::dot(const Tensor &t2) const {
+Expr Tensor::dot(const Tensor &t2, optional<Expr> &&initValue) const {
   auto len = get1DSize();
   return elemType.isa<mlir::FloatType>() ?
-      aop::getFpEncoding(elemType).dot(arr, t2.arr, len) :
-      aop::intDot(arr, t2.arr, len);
+    aop::getFpEncoding(elemType).dot(arr, t2.arr, len, move(initValue)) :
+    aop::intDot(arr, t2.arr, len, move(initValue));
 }
 
-Expr Tensor::sum() const {
+Expr Tensor::sum(Expr &&initVal) const {
   return elemType.isa<mlir::FloatType>() ?
-      aop::getFpEncoding(elemType).sum(arr, get1DSize()) :
-      aop::intSum(arr, get1DSize());
+    aop::getFpEncoding(elemType).sum(arr, get1DSize(), nullopt, move(initVal)) :
+    aop::intSum(arr, get1DSize(), move(initVal));
 }
 
 Tensor Tensor::sum(unsigned axis) const {
