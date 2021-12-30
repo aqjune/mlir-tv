@@ -618,7 +618,7 @@ static Results validate(ValidationInput vinput) {
     }
     /* 3. int dot abstraction level */
     if (abs.intDot == AbsLevelIntDot::FULLY_ABS) {
-      if (usedOps.intDot && usedOps.intSum || vinput.unrollIntSum) {
+      if (usedOps.intDot && usedOps.intSum) {
         nextAbs.intDot = AbsLevelIntDot::SUM_MUL;
         isChanged = true;
       }
