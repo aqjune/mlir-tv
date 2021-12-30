@@ -1294,20 +1294,22 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
     auto elemTy = outputTy.getElementType();
     auto input = st.regs.get<MemRef>(op.image());
     auto filter = st.regs.get<MemRef>(op.filter());
-    auto output = st.regs.get<MemRef>(op.outputs()[0]);
+    MemRef output = st.regs.get<MemRef>(op.outputs()[0]);
 
     if (!output.isIdentityMap())
       throw UnsupportedException(op.getOperation(),
           "The output MemRef should have identity layout.");
 
     auto getInitValue = [&](vector<Expr> &indices) -> optional<Expr> {
-      auto [value, accessInfo] = output.getWithAccessInfo(indices);
-      // Check output is initialized?
-      st.wellDefined(op, move(accessInfo.initialized));
-      return value;
+      return output.get(indices);
     };
     auto [indices, expr] = input.ShapedValue::conv(
-      filter, strides, dilations, clayout, move(getInitValue));
+        filter, strides, dilations, clayout, move(getInitValue));
+
+    // Check that the output memref is storing initialized values.
+    auto outputAccInfo = output.getWithAccessInfo(indices).second;
+    st.wellDefined(op, Expr::mkForall(indices,
+        outputAccInfo.inbounds.implies(outputAccInfo.initialized)));
 
     // we splat results into 1D memory layout
     auto idx = Index::var("outputIdx", VarType::BOUND);
@@ -1325,8 +1327,6 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
         filter.isInBounds());
     // No alias checks between output and input/filter
     st.wellDefined(op, output.noalias(input) & output.noalias(filter));
-
-
   }
 }
 

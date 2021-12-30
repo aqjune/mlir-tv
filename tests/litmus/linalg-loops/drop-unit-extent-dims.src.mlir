@@ -2,7 +2,6 @@
 
 func @unit_dim_for_both_reduction(%arg0: tensor<1x?x1x1xf32>) -> tensor<1x1xf32> {
   %cst = arith.constant 1.000000e+00 : f32
-  %c3 = arith.constant 3 : index
   %1 = linalg.init_tensor [1, 1] : tensor<1x1xf32>
   %2 = linalg.fill(%cst, %1) : f32, tensor<1x1xf32> -> tensor<1x1xf32>
   %3 = linalg.generic {

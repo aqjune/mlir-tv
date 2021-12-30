@@ -98,9 +98,11 @@ public:
     NHWC_FHWC  // image: nhwc, filter: fhwc, output: nhwf
   };
 
-  // Linalg convolution operation.
+  // The convolution operation.
   // returns: (indices, expr)
+  // The ranges of indices are the sizes of the outputs.
   // Caller must check the validity of inputs (e.g. inbounds, initializedness)
+  // The result is accumulated to getInitValue(index).
   std::pair<std::vector<smt::Expr>, smt::Expr> conv(const ShapedValue &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
