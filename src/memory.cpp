@@ -425,7 +425,7 @@ pair<Expr, AccessInfo> Memory::loadArray(
 
   Expr idx0 = Index::var("arridx", VarType::BOUND);
   Expr arr = arrays.find(elemTy)->second[ubid];
-  auto l = Expr::mkLambda({idx0}, arr.select(idx0 - ofs));
+  auto l = Expr::mkLambda({idx0}, arr.select(idx0 + ofs));
   return {l, getInfo(elemTy, ubid, ofs, size)};
 }
 

@@ -1005,6 +1005,9 @@ Tensor Tensor::mkLambda(
   } else
     assert(newdims.size() == indexvars.size());
 
+  for (auto &iv: indexvars)
+    assert(iv.isVar());
+
   auto idx = Index::var("idx", VarType::BOUND);
   auto idxForInit = Index::var("idx_init", VarType::BOUND);
   auto idxExprs = from1DIdx(idx, newdims);

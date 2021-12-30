@@ -2126,8 +2126,7 @@ static void storeTensorTo(
   // Accessing uninitialized elem is UB.
   st.wellDefined(op, tensor.isFullyInitialized());
 
-  if (memrefTy.getLayout().isIdentity() &&
-      ((Expr)memref.getOffset()).isZero().isTrue()) {
+  if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
     auto success = st.m->storeArray(memrefTy.getElementType(),
         tensor.asArray(), memref.getBID(), memref.getOffset(),
@@ -2166,9 +2165,8 @@ static Tensor loadTensor(
     State &st, mlir::Operation *op, const MemRef &memref,
     mlir::MemRefType memrefTy) {
   mlir::Type elemTy = memrefTy.getElementType();
-  uint64_t ofs;
-  if (memrefTy.getLayout().isIdentity() &&
-      ((Expr)memref.getOffset()).isZero().isTrue()) {
+
+  if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
     auto [arr, info] = st.m->loadArray(elemTy,
         memref.getBID(), memref.getOffset(), memref.get1DSize());
