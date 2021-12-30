@@ -11,6 +11,9 @@ protected:
   Expr newExpr() const { return Expr(); }
 #ifdef SOLVER_Z3
   void setZ3(Expr &e, std::optional<z3::expr> &&ze) const;
+  bool matchBinaryOp(const Expr &expr, Z3_decl_kind z3Kind,
+      std::function<bool(const Expr&)> lhsMatcher,
+      std::function<bool(const Expr&)> rhsMatcher) const;
 #endif
 };
 
@@ -101,6 +104,30 @@ class URem: Matcher {
 public:
   template<class T1, class T2>
   URem(T1 &&lhs, T2 &&rhs):
+      lhsMatcher(std::move(lhs)), rhsMatcher(std::move(rhs)) {}
+
+  bool match(const Expr &expr) const { return (*this)(expr); }
+  bool operator()(const Expr &e) const;
+};
+
+class Mul: Matcher {
+  std::function<bool(const Expr &)> lhsMatcher, rhsMatcher;
+
+public:
+  template<class T1, class T2>
+  Mul(T1 &&lhs, T2 &&rhs):
+      lhsMatcher(std::move(lhs)), rhsMatcher(std::move(rhs)) {}
+
+  bool match(const Expr &expr) const { return (*this)(expr); }
+  bool operator()(const Expr &e) const;
+};
+
+class UDiv: Matcher {
+  std::function<bool(const Expr &)> lhsMatcher, rhsMatcher;
+
+public:
+  template<class T1, class T2>
+  UDiv(T1 &&lhs, T2 &&rhs):
       lhsMatcher(std::move(lhs)), rhsMatcher(std::move(rhs)) {}
 
   bool match(const Expr &expr) const { return (*this)(expr); }
