@@ -817,6 +817,21 @@ Expr Expr::operator+(const Expr &rhs) const {
   else if (rhs.isUInt(b) && b == 0)
     return *this;
 
+  using namespace matchers;
+  {
+    optional<Expr> a, b, b2, a2, b3;
+    // ((a / b) * b) + (a % b) -> a
+    if ((Mul(UDiv(Any(a), Any(b)), Any(b2)).match(*this) ||
+         Mul(Any(b2), UDiv(Any(a), Any(b))).match(*this)) &&
+         b->isIdentical(*b2) && b->isNonZero().isTrue()) {
+      // check (a % b)
+      if (URem(Any(a2), Any(b3)).match(rhs) &&
+          a->isIdentical(*a2) && b->isIdentical(*b3)) {
+        return *a;
+      }
+    }
+  }
+
   Expr e;
   SET_Z3_USEOP(e, rhs, operator+);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_ADD);
@@ -1514,7 +1529,26 @@ namespace matchers {
 void Matcher::setZ3(Expr &e, optional<z3::expr> &&opt) const {
   e.setZ3(move(opt));
 }
+
+bool Matcher::matchBinaryOp(const Expr &expr, Z3_decl_kind z3Kind,
+    function<bool(const Expr&)> lhsMatcher,
+    function<bool(const Expr&)> rhsMatcher) const {
+  auto e = expr.getZ3Expr();
+  if (!e.is_app())
+    return false;
+
+  Z3_app a = e;
+  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+  if (Z3_get_decl_kind(*sctx.z3, decl) != z3Kind)
+    return false;
+
+  Expr lhs = newExpr(), rhs = newExpr();
+  setZ3(lhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+  setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
+  return lhsMatcher(lhs) && rhsMatcher(rhs);
+}
 #endif // SOLVER_Z3
+
 
 bool ConstBool::operator()(const Expr &expr) const {
   return (val && expr.isTrue()) || (!val && expr.isFalse());
@@ -1599,24 +1633,27 @@ bool Concat::operator()(const Expr &expr) const {
 }
 
 bool URem::operator()(const Expr &expr) const {
-  // FIXME: cvc5
 #ifdef SOLVER_Z3
-  auto e = expr.getZ3Expr();
-  if (!e.is_app())
-    return false;
-
-  Z3_app a = e;
-  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
-  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_BUREM)
-    return false;
+  return matchBinaryOp(expr, Z3_OP_BUREM, lhsMatcher, rhsMatcher);
 #endif // SOLVER_Z3
 
-  Expr lhs = newExpr(), rhs = newExpr();
+  assert("Not implemented");
+}
+
+bool UDiv::operator()(const Expr &expr) const {
 #ifdef SOLVER_Z3
-  setZ3(lhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
-  setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
+  return matchBinaryOp(expr, Z3_OP_BUDIV, lhsMatcher, rhsMatcher);
 #endif // SOLVER_Z3
-  return lhsMatcher(lhs) && rhsMatcher(rhs);
+
+  assert("Not implemented");
+}
+
+bool Mul::operator()(const Expr &expr) const {
+#ifdef SOLVER_Z3
+  return matchBinaryOp(expr, Z3_OP_BMUL, lhsMatcher, rhsMatcher);
+#endif // SOLVER_Z3
+
+  assert("Not implemented");
 }
 
 bool ZeroExt::operator()(const Expr &expr) const {
@@ -1640,24 +1677,11 @@ bool ZeroExt::operator()(const Expr &expr) const {
 }
 
 bool Equals::operator()(const Expr &expr) const {
-  // FIXME: cvc5
 #ifdef SOLVER_Z3
-  auto e = expr.getZ3Expr();
-  if (!e.is_app())
-    return false;
-
-  Z3_app a = e;
-  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
-  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_EQ)
-    return false;
+  return matchBinaryOp(expr, Z3_OP_EQ, lhsMatcher, rhsMatcher);
 #endif // SOLVER_Z3
 
-  Expr lhs = newExpr(), rhs = newExpr();
-#ifdef SOLVER_Z3
-  setZ3(lhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
-  setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
-#endif // SOLVER_Z3
-  return lhsMatcher(lhs) && rhsMatcher(rhs);
+  assert("Not implemented");
 }
 
 }

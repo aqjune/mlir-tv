@@ -1264,8 +1264,9 @@ static void encodeParallelLoopBodyAndOutputs(
     if (outputValMap)
       resExpr = (*outputValMap)(resExpr, outputIndVars);
 
-    tvec_res->push_back(Tensor::mkInitializedLambda(yieldedValues[i].getType(),
-        vector(tensorSz), vector(outputIndVars), resExpr));
+    auto il = Tensor::mkInitializedLambda(yieldedValues[i].getType(),
+        vector(tensorSz), vector(outputIndVars), resExpr);
+    tvec_res->push_back(il);
   }
 }
 
