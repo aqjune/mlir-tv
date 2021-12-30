@@ -2362,7 +2362,10 @@ void encodeOp(State &st, mlir::linalg::DotOp op, bool encodeMemWrite) {
   auto outputOps = op.getOutputOperands();
   auto outputTy = op.getType(0).dyn_cast<mlir::TensorType>();
 
-  if (op.getNumResults() != 1 || outputOps.size() != 1)
+  // This must be same.
+  assert(op.getNumResults() == outputOps.size());
+
+  if (op.getNumResults() != 1)
     throw UnsupportedException(op.getOperation(),
         "it has multiple results");
 
