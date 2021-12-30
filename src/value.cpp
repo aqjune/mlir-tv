@@ -1005,6 +1005,9 @@ Tensor Tensor::mkLambda(
   } else
     assert(newdims.size() == indexvars.size());
 
+  for (auto &iv: indexvars)
+    assert(iv.isVar());
+
   auto idx = Index::var("idx", VarType::BOUND);
   auto idxForInit = Index::var("idx_init", VarType::BOUND);
   auto idxExprs = from1DIdx(idx, newdims);
@@ -1350,7 +1353,7 @@ MemRef::Layout MemRef::getLayout(
 
 Expr MemRef::get(const vector<Expr> &indices) const {
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
-  auto [loaded, success] = m->load(elemType, bid, (Expr)offset + idx);
+  auto loaded = m->load(elemType, bid, (Expr)offset + idx).first;
   loaded.lockOps();
 
   return loaded;
@@ -1374,15 +1377,6 @@ AccessInfo MemRef::store(const Expr &value,
 
   info.inbounds &= move(inbounds);
   return info;
-}
-
-Tensor MemRef::loadTensorWithoutCheck() const {
-  auto dims = getDims();
-  vector<Expr> idxs = Index::boundIndexVars(dims.size());
-  auto expr = get(idxs);
-  // TODO: MemRef blocks must have initialized bits
-  return Tensor::mkInitializedLambda(getElemType(),
-      move(dims), move(idxs), expr);
 }
 
 Expr MemRef::isInBounds() const {

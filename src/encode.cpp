@@ -2036,7 +2036,7 @@ void encodeOp(State &st, mlir::memref::LoadOp op, bool) {
   auto [val, info] = m.getWithAccessInfo(indices);
   if (auto vt = fromExpr(move(val), op.getType())) {
     st.regs.add(op, move(*vt));
-    st.wellDefined(op, info.conj(true));
+    st.wellDefined(op, info.checkRead());
   } else
     throw UnsupportedException(op.getOperation(), "unsupported type");
 }
@@ -2075,7 +2075,7 @@ void encodeOp(State &st, mlir::memref::StoreOp op, bool encodeMemWriteOp) {
 
   auto valExpr = st.regs.getExpr(value);
   auto success = m.store(valExpr, indices);
-  st.wellDefined(op, success.conj());
+  st.wellDefined(op, success.checkWrite());
 }
 
 template<>
@@ -2131,7 +2131,7 @@ static void storeTensorTo(
     auto success = st.m->storeArray(memrefTy.getElementType(),
         tensor.asArray(), memref.getBID(), memref.getOffset(),
         tensor.get1DSize());
-    st.wellDefined(op, success.conj(!ubIfReadOnly));
+    st.wellDefined(op, success.checkWrite(!ubIfReadOnly));
 
   } else {
     // TODO: can we further optimize this if we know that memref is a
@@ -2145,7 +2145,8 @@ static void storeTensorTo(
     auto [mVal, mInfo] = memref.getWithAccessInfo(idxs);
 
     st.wellDefined(op, Expr::mkForall(idxs, tInBounds.implies(tInit)));
-    st.wellDefined(op, Expr::mkForall(idxs, tInBounds.implies(mInfo.conj())));
+    st.wellDefined(op, Expr::mkForall(idxs,
+        tInBounds.implies(mInfo.checkWrite())));
 
     // NOTE: this will be always false if mVal and tVal store unequal constants.
     // Therefore, we can't encode this condition as UB because
@@ -2160,6 +2161,33 @@ static void storeTensorTo(
   }
 }
 
+static Tensor loadTensor(
+    State &st, mlir::Operation *op, const MemRef &memref,
+    mlir::MemRefType memrefTy) {
+  mlir::Type elemTy = memrefTy.getElementType();
+
+  if (memrefTy.getLayout().isIdentity()) {
+    // memref with identity map
+    auto [arr, info] = st.m->loadArray(elemTy,
+        memref.getBID(), memref.getOffset(), memref.get1DSize());
+    st.wellDefined(op, info.checkRead());
+
+    auto idx = Index::var("loadidx", VarType::BOUND);
+    return Tensor::mkLambdaFrom1D(elemTy, memref.getDims(),
+        move(idx), arr.select(idx), Expr::mkBool(true));
+
+  } else {
+    vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
+    auto [val, info] = memref.getWithAccessInfo(idxs);
+
+    st.wellDefined(op, Expr::mkForall(idxs,
+        fitsInDims(idxs, memref.getDims()).implies(info.checkRead())));
+    st.hasQuantifier = true;
+
+    return Tensor::mkInitializedLambda(elemTy, memref.getDims(),
+        move(idxs), move(val));
+  }
+}
 template<>
 void encodeOp(State &st, mlir::bufferization::ToMemrefOp op,
     bool encodeMemWrite) {
@@ -2187,12 +2215,10 @@ void encodeOp(State &st, mlir::bufferization::CloneOp op, bool encodeMemWrite) {
   auto srcTy = op.getOperand().getType().cast<mlir::MemRefType>();
   auto dims = src.getDims();
 
-  // A dead block cannot be cloned.
-  st.wellDefined(op, src.getLiveness());
+  auto tensor = loadTensor(st, op, src, srcTy);
 
   // Create a read-only block.
   auto memref = createNewLocalBlk(st.m.get(), move(dims), srcTy, false);
-  auto tensor = src.loadTensorWithoutCheck();
   storeTensorTo(st, op.getOperation(), move(tensor), memref, srcTy, false);
   // Src is not writable as well.
   st.m->setWritable(srcTy.getElementType(), src.getBID(), false);
@@ -2209,8 +2235,9 @@ void encodeOp(State &st, mlir::bufferization::ToTensorOp op,
   auto &memory = *(st.m);
   memory.setWritable(memrefTy.getElementType(), m.getBID(), false);
 
-  st.regs.add(op.getResult(), m.loadTensorWithoutCheck());
-  st.wellDefined(op, m.isInBounds() & m.getLiveness());
+  auto tensor = loadTensor(st, op, m, memrefTy);
+
+  st.regs.add(op.getResult(), tensor);
 }
 
 template<>
@@ -2277,10 +2304,11 @@ void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
   // They must not overlap, according to
   // https://mlir.llvm.org/docs/Dialects/Linalg/#linalgcopy-mlirlinalgcopyop
   st.wellDefined(opr, mrIn.noalias(mrOut));
-  // The memory block must be alive.
-  st.wellDefined(opr, mrIn.getLiveness());
 
-  storeTensorTo(st, opr, mrIn.loadTensorWithoutCheck(), mrOut,
+  auto loadedTensor = loadTensor(st, op, mrIn,
+      op.input().getType().cast<mlir::MemRefType>());
+
+  storeTensorTo(st, opr, move(loadedTensor), mrOut,
       op.output().getType().cast<mlir::MemRefType>(), true);
 }
 
@@ -2497,11 +2525,14 @@ static void initInputStateForLoopBody(
   // For parallel loops: whole iterations contain the initial value
   // For reduction loops: only the first iteration contains the value
   size_t upperbound = op.getNumInputs() + op.getNumOutputs();
+
   for (size_t arg_i = 0; arg_i < upperbound; ++arg_i) {
     auto indexMap = indexingMaps[arg_i].cast<mlir::AffineMapAttr>().getValue();
     mlir::Value op_i = arg_i >= op.getNumInputs() ?
         op.getOutputOperand(arg_i - op.getNumInputs())->get() :
         op.getInputOperand(arg_i)->get();
+    bool isInput = arg_i < op.getNumInputs();
+    bool isOutputAndHasUse = !isInput && !block.getArgument(arg_i).use_empty();
 
     if (op_i.getType().isa<mlir::FloatType>()) {
       // A scalar value.
@@ -2517,8 +2548,15 @@ static void initInputStateForLoopBody(
         // A tensor with a single element; e.g. tensor<f32>.
         st.regs.add(block.getArgument(arg_i),
             t_input.get({Index::zero()}), elemty);
+        // Reading uninitialized elements is UB.
+        // For output variables, encode uninitialized if it syntactically has
+        // uses.
+        // This is a workaround (overapproximation) for not introducing a
+        // 'poison' value.
+        if (isInput || isOutputAndHasUse)
+          welldef &= t_input.isFullyInitialized();
       } else {
-        vector<Expr> affine_Exprs;
+        vector<Expr> indices;
         for (unsigned i = 0; i < indexMap.getNumResults(); ++i) {
           auto ae_res =
               encodeAffineExpr(indexMap.getResult(i), inductionVars, {});
@@ -2528,25 +2566,27 @@ static void initInputStateForLoopBody(
             throw UnsupportedException(op.getOperation(), move(msg));
           }
 
-          affine_Exprs.emplace_back(move(*ae_res));
+          indices.emplace_back(move(*ae_res));
         }
 
         // The out-of-bounds checking is done when encoding loop bounds.
-        auto t_elem = t_input.get(affine_Exprs);
+        auto t_elem = t_input.get(indices);
         st.regs.add(block.getArgument(arg_i), t_elem, elemty);
+
+        // Reading uninitialized elements is UB.
+        // For output variables, encode uninitialized if it syntactically has
+        // uses.
+        // This is a workaround (overapproximation) for not introducing a
+        // 'poison' value.
+        if (isInput || isOutputAndHasUse)
+          welldef &= t_input.isInitialized(indices);
       }
-      // Reading uninitialized tensor is UB.
-      // Even if an input tensor's uninitialized elem may not be read in the
-      // loop bounds, conservatively treat it as UB because it could be possibly
-      // touched.
-      if (arg_i < op.getNumInputs())
-        welldef &= t_input.isFullyInitialized();
 
     } else if (auto memrefty = op_i.getType().dyn_cast<mlir::MemRefType>()) {
       // A MemRef value.
       MemRef m_input = st.regs.get<MemRef>(op_i);
 
-      vector<Expr> affine_Exprs;
+      vector<Expr> indices;
       for (unsigned i = 0; i < indexMap.getNumResults(); ++i) {
         auto ae_res =
             encodeAffineExpr(indexMap.getResult(i), inductionVars, {});
@@ -2556,13 +2596,23 @@ static void initInputStateForLoopBody(
           throw UnsupportedException(op.getOperation(), move(msg));
         }
 
-        affine_Exprs.emplace_back(move(*ae_res));
+        indices.emplace_back(move(*ae_res));
       }
 
-      auto [m_elem, m_welldef] = m_input.getWithAccessInfo(affine_Exprs);
-      welldef &= m_welldef.conj(true);
+      // Reading uninitialized elements is UB.
+      // For output variables, encode uninitialized if it syntactically has
+      // uses.
+      // This is a workaround (overapproximation) for not introducing a
+      // 'poison' value.
+      auto [m_elem, m_welldef] = m_input.getWithAccessInfo(indices);
+      if (isInput)
+        welldef &= m_welldef.checkRead();
+      else
+        welldef &= isOutputAndHasUse ?
+            m_welldef.checkReadWrite() : m_welldef.checkWrite();
       mlir::Type elemTy = memrefty.getElementType();
       st.regs.add(block.getArgument(arg_i), m_elem, elemTy);
+
     } else {
       throw UnsupportedException(op.getOperation(),
           "unsupported block argument type");

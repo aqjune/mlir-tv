@@ -776,6 +776,15 @@ Expr Expr::sext(unsigned bits) const {
 Expr Expr::implies(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
+  if (rhs.isTrue())
+    return rhs;
+  else if (rhs.isFalse())
+    return this->operator!();
+  else if (this->isTrue())
+    return rhs;
+  else if (this->isFalse())
+    return Expr::mkBool(true);
+
   Expr e;
   SET_Z3_USEOP(e, rhs, implies);
   SET_CVC5_USEOP(e, rhs, IMPLIES);
@@ -1141,7 +1150,7 @@ Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
   }
 
   uint64_t v;
-  if (body.isUInt(v)) {
+  if (body.isUInt(v) || body.isTrue() || body.isFalse()) {
     // forall idx, constant == constant (because we don't have 'False' sort)
     return body;
   }
@@ -1204,6 +1213,10 @@ Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
     return then;
   else if (cond.isFalse())
     return els;
+  else if (then.isTrue())
+    return cond | els;
+  else if (els.isFalse())
+    return cond & then;
 
   optional<Expr> lhs, rhs;
   using namespace matchers;
