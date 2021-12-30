@@ -167,6 +167,7 @@ Expr to1DIdx(
     // TODO: migrate constant foldings
     idx = idx * dims[i] + idxs[i];
   }
+  idx = idx.simplify();
   return idx;
 }
 
@@ -406,7 +407,8 @@ bool Expr::isTrue() const {
 
 bool Expr::isVar() const {
   bool res = false;
-  IF_Z3_ENABLED(res |= z3 && z3->is_app() && z3->is_const());
+  IF_Z3_ENABLED(res |= z3 && z3->is_app() && z3->is_const() &&
+                       !z3->is_numeral());
   // TODO: CVC5
   return res;
 }
@@ -446,8 +448,14 @@ Expr Expr::urem(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
   uint64_t rhsval;
-  if (rhs.isUInt(rhsval) && rhsval == 1)
-    return Expr::mkBV(0, rhs);
+  if (rhs.isUInt(rhsval)) {
+    if (rhsval == 1)
+      return Expr::mkBV(0, rhs);
+    else if (rhsval > 0 && (rhsval & (rhsval - 1)) == 0) {
+      uint64_t l = log2_ceil(rhsval);
+      return Expr::mkBV(0, bitwidth() - l).concat(extract(l - 1, 0));
+    }
+  }
 
   uint64_t a, b;
   // If divisor is zero, follow the solver's behavior
@@ -466,8 +474,14 @@ Expr Expr::udiv(const Expr& rhs) const {
   CHECK_LOCK2(rhs);
 
   uint64_t rhsval;
-  if (rhs.isUInt(rhsval) && rhsval == 1)
-    return *this;
+  if (rhs.isUInt(rhsval)) {
+    if (rhsval == 1)
+      return *this;
+    else if (rhsval > 0 && (rhsval & (rhsval - 1)) == 0) {
+      uint64_t l = log2_ceil(rhsval);
+      return Expr::mkBV(0, l).concat(extract(bitwidth() - 1, l));
+    }
+  }
 
   uint64_t a, b;
   // If divisor is zero, follow the solver's behavior
@@ -732,6 +746,10 @@ Expr Expr::concat(const Expr &lowbits) const {
 Expr Expr::zext(unsigned bits) const {
   CHECK_LOCK();
 
+  uint64_t i;
+  if (isUInt(i))
+    return mkBV(i, bitwidth() + bits);
+
   Expr e;
   SET_Z3_USEOP_CONST(e, bits, zext);
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
@@ -757,6 +775,15 @@ Expr Expr::sext(unsigned bits) const {
 
 Expr Expr::implies(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
+
+  if (rhs.isTrue())
+    return rhs;
+  else if (rhs.isFalse())
+    return this->operator!();
+  else if (this->isTrue())
+    return rhs;
+  else if (this->isFalse())
+    return Expr::mkBool(true);
 
   Expr e;
   SET_Z3_USEOP(e, rhs, implies);
@@ -1118,8 +1145,12 @@ Expr Expr::mkBool(const bool val) {
 }
 
 Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
+  for (auto &v: vars) {
+    assert(v.isVar());
+  }
+
   uint64_t v;
-  if (body.isUInt(v)) {
+  if (body.isUInt(v) || body.isTrue() || body.isFalse()) {
     // forall idx, constant == constant (because we don't have 'False' sort)
     return body;
   }
@@ -1182,6 +1213,10 @@ Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
     return then;
   else if (cond.isFalse())
     return els;
+  else if (then.isTrue())
+    return cond | els;
+  else if (els.isFalse())
+    return cond & then;
 
   optional<Expr> lhs, rhs;
   using namespace matchers;

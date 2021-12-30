@@ -19,10 +19,27 @@ static void printInputs(Model m, mlir::FuncOp src, const State &st_src) {
   unsigned n = src.getNumArguments();
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
-    llvm::outs() << "\targ" << argsrc.getArgNumber() << ": "
-                 << eval(st_src.regs.findOrCrash(argsrc), m)
-                 << "\n";
+    llvm::outs() << "\targ" << argsrc.getArgNumber() << " ("
+        << argsrc.getType () << "): "
+        << eval(st_src.regs.findOrCrash(argsrc), m) << "\n";
   }
+
+  llvm::outs() << "  Input memory:\n";
+  auto &mem = *st_src.m;
+  auto btys = mem.getBlockTypes();
+  for (auto &bty: btys) {
+    llvm::outs() << "\tType " << bty << ":\n";
+    unsigned num = mem.getNumBlocks(bty);
+
+    for (unsigned i = 0; i < num; ++i) {
+      auto numelem = m.eval(mem.getNumElementsOfMemBlock(bty, mem.mkBID(i)));
+      auto liveness = m.eval(mem.getLiveness(bty, mem.mkBID(i)));
+      llvm::outs() << "\t  Block " << i << ": # elems: "
+          << intToStr(m.eval(numelem))
+          << "\n";
+    }
+  }
+
 }
 
 void printOperations(Model m, mlir::FuncOp fn, const State &st) {
@@ -75,8 +92,8 @@ void printCounterEx(
         auto indices = simplifyList(from1DIdx(param, t_src.getDims()));
         llvm::outs() << "Index: " << or_omit(indices) << '\n';
 
-        auto srcElem = fromExpr(t_src.get(indices).first.simplify(), elemTy);
-        auto tgtElem = fromExpr(t_tgt.get(indices).first.simplify(), elemTy);
+        auto srcElem = fromExpr(t_src.get(indices).simplify(), elemTy);
+        auto tgtElem = fromExpr(t_tgt.get(indices).simplify(), elemTy);
         llvm::outs() << "Element (src): " << *srcElem << '\n';
         llvm::outs() << "Element (tgt): " << *tgtElem << '\n';
       }
@@ -98,8 +115,8 @@ void printCounterEx(
     auto offset = params[1];
     auto elemTy = *memElemTy;
 
-    auto [srcValue, srcSuccess] = st_src.m->load(elemTy, bid, offset);
-    auto [tgtValue, tgtSuccess] = st_tgt.m->load(elemTy, bid, offset);
+    auto [srcValue, srcInfo] = st_src.m->load(elemTy, bid, offset);
+    auto [tgtValue, tgtInfo] = st_tgt.m->load(elemTy, bid, offset);
     auto srcWritable = st_src.m->getWritable(elemTy, bid);
     auto srcNumElems = st_src.m->getNumElementsOfMemBlock(elemTy, bid);
     auto srcLiveness = st_src.m->getLiveness(elemTy, bid);
@@ -110,9 +127,7 @@ void printCounterEx(
     optional<unsigned> bid_int = bid.asUInt();
     offset = m.eval(offset);
     srcValue = m.eval(srcValue, true);
-    srcSuccess = m.eval(srcSuccess);
     tgtValue = m.eval(tgtValue, true);
-    tgtSuccess = m.eval(tgtSuccess);
     srcWritable = m.eval(srcWritable);
     tgtWritable = m.eval(tgtWritable);
     srcNumElems = m.eval(srcNumElems);

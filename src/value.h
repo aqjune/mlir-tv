@@ -7,9 +7,12 @@
 #include <variant>
 
 class Memory;
+class AccessInfo;
 
 std::optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type ty);
 std::optional<smt::Expr> getZero(mlir::Type eltType);
+std::optional<smt::Expr> getIdentity(mlir::Type eltType);
+void resetAbstractlyEncodedAttrs();
 
 class Float {
   smt::Expr e;
@@ -76,15 +79,14 @@ public:
       vec.emplace_back(d);
     return vec;
   }
-  // Returns (element value, inbounds?)
+  // Returns the element value.
   //   auto [v, inbounds] = shaped_value.get(indices)
   //   useAsInt(Integer(v)) // valid only if shaped_value has integer elems
   //   useAsFloat(Float(v)) // valid only if shaped_value has float elems
   // NOTE: Don't directly use the returned element (v)!
   // Please use it with a proper wrapper (Float, Index, Integer).
   // Using it without wrapper will raise an assertion failure 
-  virtual std::pair<smt::Expr, smt::Expr> get(
-      const std::vector<smt::Expr> &indices) const = 0;
+  virtual smt::Expr get(const std::vector<smt::Expr> &indices) const = 0;
 
   // Basic dimension operation
   Index getDim(uint64_t idx) const { return Index(getDims()[idx]); }
@@ -96,10 +98,9 @@ public:
     NHWC_FHWC  // image: nhwc, filter: fhwc, output: nhwf
   };
 
-protected:
   // Linalg convolution operation.
   // returns: (indices, expr)
-  // Caller must check validity (e.g. inbounds, initializedness of filter)
+  // Caller must check the validity of inputs (e.g. inbounds, initializedness)
   std::pair<std::vector<smt::Expr>, smt::Expr> conv(const ShapedValue &filter,
       const std::vector<smt::Expr> &strides,
       const std::vector<smt::Expr> &dilations,
@@ -140,8 +141,7 @@ public:
   smt::Expr getWellDefined() const;
 
   smt::Expr isInBounds(const std::vector<smt::Expr> &indices) const;
-  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
-      const override;
+  smt::Expr get(const std::vector<smt::Expr> &indices) const override;
   // Return arr[indexRaw]. The returned expr is locked.
   smt::Expr getRaw(const smt::Expr &indexRaw) const;
   smt::Expr isInitialized(const std::vector<smt::Expr> &indices) const;
@@ -179,7 +179,8 @@ public:
       ConvLayout layout,
       const std::optional<Tensor> &&output = std::nullopt) const;
 
-  // Return a new tensor which is depthwise convolution of this 2D tensor and filter.
+  // Return a new tensor which is depthwise convolution of this 2D tensor and
+  // filter.
   // Callers of conv must check whether filters/inputs/.. are initialized
   // (otherwise UB).
   Tensor depthwiseConv2D(const Tensor &filter,
@@ -291,12 +292,13 @@ public:
     // Induction variables; they are bound (Expr::mkVar's flag is true)
     // ex) {d0, d1..}
     std::vector<smt::Expr> indVars;
-    // Inbounds condition for induction variables
+    // Inbounds condition generator
     // ex) (d0, d1) -> 0 <= d0 < 3 && 0 <= d1 < 4 && ...
-    smt::Expr inbounds;
-    // Layout mapping of indVars (indVars -> 1D Index)
+    using Fn = std::function<smt::Expr(const std::vector<smt::Expr> &args)>;
+    Fn inbounds;
+    // Layout mapping generator (ind vars -> 1D Index)
     // ex) mapping := (d0, d1) -> (4 * d0 + d1)
-    smt::Expr mapping;
+    Fn mapping;
     // Inverse layout mapping of indVars (1D Index -> indVars)
     // If we can not give exact definition of inverseMappings, then encode it
     // with uninterpreted function.
@@ -305,7 +307,8 @@ public:
     //    inverseMappings := (idx) -> {(idx / 4), (idx % 4)}
     // - If we cannot give exact definition
     //    inverseMappings := (idx) -> {inverse0(idx), inverse1(idx)}
-    std::vector<smt::Expr> inverseMappings;
+    using Fn2 = std::function<std::vector<smt::Expr>(const smt::Expr &)>;
+    Fn2 inverseMappings;
     // Precondition for inverse mapping function.
     // If we cannot give exact definition of inverseMappings, then give its
     // meaning with forall quantifier.
@@ -319,8 +322,8 @@ public:
     Layout(const std::vector<smt::Expr> &dims);
 
     Layout(const std::vector<smt::Expr> &indVars,
-        const smt::Expr &layout,
-        const smt::Expr &inbounds,
+        const Fn &layout,
+        const Fn &inbounds,
         bool useUF = false); // encode "mapping" using uninterpreted function
 
     // MARK(makesource)
@@ -369,15 +372,14 @@ public:
   std::vector<smt::Expr> getDims() const override { return dims; }
   smt::Expr isViewReference() const { return isViewRef; }
 
-  // (value, success?)
-  std::pair<smt::Expr, smt::Expr> get(const std::vector<smt::Expr> &indices)
-      const override;
-  smt::Expr store(const smt::Expr &value, const std::vector<smt::Expr> &indices)
-      const;
-  smt::Expr storeArray(const smt::Expr &array, const smt::Expr &startOffset,
-      const smt::Expr &size, bool ubIfReadonly = true) const;
+  // Returns the value
+  smt::Expr get(const std::vector<smt::Expr> &indices) const override;
 
-  Tensor loadTensorWithoutCheck() const;
+  std::pair<smt::Expr, AccessInfo> getWithAccessInfo(
+      const std::vector<smt::Expr> &indices) const;
+
+  AccessInfo store(const smt::Expr &value,
+      const std::vector<smt::Expr> &indices) const;
 
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;
@@ -395,13 +397,6 @@ public:
       const llvm::SmallDenseSet<unsigned> &unusedDims,
       int rankDiff = 0);
 
-  // Store results which is convolution of input, filter and return wellDefined.
-  smt::Expr conv(const MemRef &input,
-      const MemRef &filter,
-      const std::vector<smt::Expr> &strides,
-      const std::vector<smt::Expr> &dilations,
-      ConvLayout convLayout);
-
   // Returns (cond ? trueValue : falseValue).
   // It is assumed that trueValue.layout is equivalent to falseValue.layout.
   // Also trueValue.dims == falseValue.dims is assumed, to be consistent with
@@ -414,6 +409,8 @@ public:
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(
       const MemRef &other) const;
   MemRef eval(smt::Model m) const;
+
+  const Layout &getLayout() const { return layout; }
 
 private:
   Memory *m;

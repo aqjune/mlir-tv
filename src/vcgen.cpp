@@ -251,8 +251,8 @@ static pair<CheckResult, int64_t> solve(
   return {result, elapsedMillisec};
 }
 
-static const char *SMT_LOGIC_QF  = "QF_UFBV";
-static const char *SMT_LOGIC     = "UFBV";
+static const char *SMT_LOGIC_QF  = "QF_AUFBV";
+static const char *SMT_LOGIC     = "AUFBV";
 static const char *SMT_LOGIC_ALL = "ALL";
 
 static Results checkRefinement(
@@ -557,8 +557,11 @@ static Results validate(ValidationInput vinput) {
                   AbsFpAddSumEncoding::DEFAULT},
       /* useAllLogic */arg_smt_use_all_logic.getValue() });
 
-  unsigned itrCount = 0;
+
   setEncodingOptions(vinput.useMultisetForFpSum);
+  resetAbstractlyEncodedAttrs();
+
+  unsigned itrCount = 0;
   const string dumpSMTPath = vinput.dumpSMTPath;
 
   while (!queue.empty()) {

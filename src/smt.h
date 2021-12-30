@@ -53,7 +53,7 @@ Expr fitsInDims(const std::vector<Expr> &idxs,
 Expr listsEqual(const std::vector<Expr> &v1, const std::vector<Expr> &v2);
 std::string or_omit(const Expr &e);
 std::string or_omit(const std::vector<Expr> &evec);
-std::string newName(std::string &prefix);
+
 
 class Solver;
 
