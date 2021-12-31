@@ -2761,21 +2761,32 @@ static void encodeReductionLoopBodyAndOutput(
       }
     }
 
-    // TODO(aqjune): Support memref cases (memref.isFullyInitialized)
     auto outputIndVars = doMap(linalgInfo.indVars, outputMap);
-    auto outTensor = newst.regs.get<Tensor>(the_op->getOperands().back());
-    auto initElem = outTensor.get(outputIndVars);
+
+    optional<Expr> initElem;
+    mlir::Value outOp = the_op->getOperands().back();
+    if (outOp.getType().isa<mlir::TensorType>()) {
+      Tensor outTensor = newst.regs.get<Tensor>(outOp);
+      initElem = outTensor.get(outputIndVars);
+      welldef &= outTensor.isFullyInitialized();
+    } else {
+      MemRef outMemRef = newst.regs.get<MemRef>(outOp);
+      auto [v, ainfo] = outMemRef.getWithAccessInfo(outputIndVars);
+      initElem.emplace(move(v));
+      welldef &= Expr::mkForall(outputIndVars,
+          ainfo.inbounds.implies(ainfo.initialized));
+    }
+
     auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
     auto t_sum = Tensor::mkInitializedLambda(
           t_v.getElemType(),
           addOne(move(boundsForRes)),
           move(indVarsForRes),
           t_v.get(linalgInfo.indVars))
-        .sum(move(initElem));
+        .sum(move(*initElem));
 
     t_res = Tensor::mkInitializedLambda(
         t_v.getElemType(), move(tensorSz), move(outputIndVars), t_sum);
-    welldef &= outTensor.isFullyInitialized();
   }
 }
 
