@@ -113,12 +113,13 @@ public:
 
 class Tensor: public ShapedValue {
   std::vector<smt::Expr> dims;
-  smt::Expr arr;
+  std::function<smt::Expr(const smt::Expr &idx)> arr;
   // Index -> bool; Getting an uninitialized element is UB.
-  smt::Expr initialized;
+  std::function<smt::Expr(const smt::Expr &idx)> initialized;
 
-  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&dims, smt::Expr &&arr,
-         smt::Expr &&initialized):
+  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&dims,
+         std::function<smt::Expr(const smt::Expr &idx)> &&arr,
+         std::function<smt::Expr(const smt::Expr &idx)> &&initialized):
       ShapedValue(elemType), dims(std::move(dims)), arr(std::move(arr)),
       initialized(std::move(initialized)) {}
 
@@ -139,7 +140,7 @@ public:
   Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems);
 
 
-  smt::Expr asArray() const { return arr; }
+  smt::Expr asArray() const;
   smt::Expr getWellDefined() const;
 
   smt::Expr isInBounds(const std::vector<smt::Expr> &indices) const;

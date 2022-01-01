@@ -413,17 +413,19 @@ static Expr splatArrayForTensor(const Expr &elem) {
 Tensor::Tensor(mlir::Type elemType, Expr &&splat_elem, vector<Expr> &&dimvec):
     ShapedValue(elemType),
     dims(move(dimvec)),
-    arr(splatArrayForTensor(move(splat_elem))),
-    initialized(splatArrayForTensor(Expr::mkBool(true))) {}
+    arr([splat_elem](auto &) { return splat_elem; }),
+    initialized([](auto &) { return Expr::mkBool(true); }) {}
 
 // A dense tensor (1dim)
 Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d):
     ShapedValue(elemType),
     dims({ (Expr)Index(elems1d.size()) }),
-    arr(Expr::mkFreshVar(arraySortForTensor(elems1d[0].sort()), "tensor_val")),
-    initialized(splatArrayForTensor(Expr::mkBool(true))) {
+    initialized([](auto &) { return Expr::mkBool(true); }) {
+  Expr smtarr = Expr::mkFreshVar(
+      arraySortForTensor(elems1d[0].sort()), "tensor_val");
   for (unsigned i = 0; i < elems1d.size(); ++i)
-    arr = arr.store(i, elems1d[i]);
+    smtarr = smtarr.store(i, elems1d[i]);
+  arr = [smtarr](const Expr &idx) { return smtarr.select(idx); };
 }
 
 // A fresh tensor
@@ -439,10 +441,11 @@ Tensor Tensor::var(
 Tensor Tensor::var(
     mlir::Type elemType, string &&name, const vector<Expr> &dimvec,
     bool initialized) {
-  Expr arr = Expr::mkVar(
+  Expr smtarr = Expr::mkVar(
       arraySortForTensor(*convertPrimitiveTypeToSort(elemType)), move(name));
-  Expr init = splatArrayForTensor(Expr::mkBool(initialized));
-  return Tensor(elemType, vector(dimvec), move(arr), move(init));
+  return Tensor(elemType, vector(dimvec),
+      [smtarr](const Expr &idx) { return smtarr.select(idx); },
+      [initialized](const Expr &) { return Expr::mkBool(initialized); });
 }
 
 // A sparse tensor.
@@ -451,15 +454,16 @@ Tensor::Tensor(
     const vector<vector<uint64_t>> &indices,
     const vector<Expr> &elems,
     const vector<uint64_t> &dims, const Expr &zero):
-  ShapedValue(elemType), arr(splatArrayForTensor(zero)),
+  ShapedValue(elemType),
   // All elements are initialized to elems or zero.
-  initialized(splatArrayForTensor(Expr::mkBool(true))) {
+  initialized([](auto &){ return Expr::mkBool(true); }) {
 
   assert(indices.size() == elems.size());
 
   for (auto d: dims)
     this->dims.push_back(Index(d));
 
+  Expr smtarr = splatArrayForTensor(zero);
   for (unsigned i = 0; i < indices.size(); ++i) {
     assert(indices[i].size() == dims.size());
 
@@ -467,8 +471,14 @@ Tensor::Tensor(
     for (unsigned j = 1; j < dims.size(); ++j)
       ofs = ofs * dims[j] + indices[i][j];
 
-    arr = arr.store(ofs, elems[i]);
+    smtarr = smtarr.store(ofs, elems[i]);
   }
+  arr = [smtarr](const Expr &idx) { return smtarr.select(idx); };
+}
+
+Expr Tensor::asArray() const {
+  Expr idx = Index::var("i", VarType::BOUND);
+  return Expr::mkLambda({idx}, arr(idx));
 }
 
 Expr Tensor::getWellDefined() const {
@@ -498,7 +508,7 @@ Expr Tensor::get(const vector<Expr> &indices) const {
 }
 
 Expr Tensor::getRaw(const Expr &indexRaw) const {
-  auto e = arr.select(indexRaw);
+  auto e = arr(indexRaw);
   // Don't directly use this element!
   // Please use it with a proper wrapper (Float, Index, Integer).
   e.lockOps();
