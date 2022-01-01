@@ -183,6 +183,8 @@ public:
 
   // Return a new tensor which is depthwise convolution of this 2D tensor and
   // filter.
+  // If bias != nullopt: output tensor's shape is NxOHxOWx(C*M)
+  // Otherwise:          output tensor's shape is NxOHxOWxCxM.
   // Callers of conv must check whether filters/inputs/.. are initialized
   // (otherwise UB).
   Tensor depthwiseConv2D(const Tensor &filter,
