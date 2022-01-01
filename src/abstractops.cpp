@@ -873,10 +873,16 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n,
     throw UnsupportedException(
         "Only an array of constant length is supported.");
 
-  auto [arr, size] = initValue ?
+  // If initValue is a non-identity value, add it to the beginning of the array.
+  bool insertInitVal = initValue.has_value();
+  if (insertInitVal)
+    insertInitVal &= !((*initValue == zero(true)).isTrue());
+
+  auto [arr, size] = insertInitVal ?
       insertInitialValue(a, n, *initValue) : make_pair(a, n);
-  if (initValue && elems)
-      elems->insert(elems->begin(), *initValue);
+  if (insertInitVal && elems.has_value()) {
+    elems->insert(elems->begin(), *initValue);
+  }
 
   auto length = size.asUInt();
   if (elems) {
