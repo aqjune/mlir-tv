@@ -737,6 +737,13 @@ Expr Expr::extract(unsigned hbit, unsigned lbit) const {
 Expr Expr::concat(const Expr &lowbits) const {
   CHECK_LOCK();
 
+  uint64_t c1, c2;
+  if (isUInt(c1) && lowbits.isUInt(c2) &&
+      bitwidth() + lowbits.bitwidth() < 64) {
+    return mkBV((c1 << lowbits.bitwidth()) | c2,
+        bitwidth() + lowbits.bitwidth());
+  }
+
   Expr e;
   SET_Z3_USEOP(e, lowbits, concat);
   SET_CVC5_USEOP(e, lowbits, BITVECTOR_CONCAT);
