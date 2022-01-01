@@ -627,16 +627,19 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
     vector<Expr> output2DDims =
       {Index(1), unwrapped.getDim(1), unwrapped.getDim(2), Index(1)};
     vector<Expr> output2DInd = Index::boundIndexVars(4);
-    if (outInd.size() == 4)
+    // output2DInd[0] and output2DInd[3] are not used because the output's size
+    // is 1xOHxOWx1.
+    if (!bias.has_value()) {
       return Tensor::mkInitializedLambda(
         elemType, move(output2DDims), move(output2DInd),
-        unwrapped.get({n, output2DInd[1], output2DInd[2], c * m})
+        unwrapped.get({n, output2DInd[1], output2DInd[2], outInd[3]})
       );
-    else
+    } else {
       return Tensor::mkInitializedLambda(
         elemType, move(output2DDims), move(output2DInd),
         unwrapped.get({n, output2DInd[1], output2DInd[2], c, m})
       );
+    }
   });
 
   // t2D is 1xOHxOWx1

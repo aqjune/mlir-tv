@@ -1,5 +1,5 @@
 // VERIFY-INCORRECT
-// ARGS: --unroll-fp-sum-bound 36
+// ARGS: --unroll-fp-sum-bound 36 --succinct
 
 // This transformation is incorrect because it is filling
 // a non-identity value (+0.0) to the output tensor.
