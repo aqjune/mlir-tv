@@ -49,10 +49,9 @@ public:
   // welldef[i]: is instruction i well-defined?
   // The negated form of UB is tracked because the neg. of value refinement is:
   // 'src.no-ub /\ tgt.no-ub /\ src.retvalue != tgt.retvalue'.
-  // We'll need to implement our own version of peephole optimizations on Z3
-  // expr some day (or simply use Alive2's one), and this form will be helpful
-  // then.
-  llvm::DenseMap<mlir::Operation *, smt::Expr> welldef;
+  // op -> (desc -> cond)
+  llvm::DenseMap<mlir::Operation *,
+      std::map<std::string, smt::Expr>> welldef;
 
 public:
   class LinalgGenericScope {
@@ -77,10 +76,12 @@ public:
   State(std::unique_ptr<Memory> &&initMem);
 
   void addPrecondition(smt::Expr &&e);
-  void wellDefined(mlir::Operation *op, smt::Expr &&e);
+  void wellDefined(mlir::Operation *op, smt::Expr &&e, std::string &&desc = "");
   smt::Expr precondition() const;
   smt::Expr isWellDefined() const;
   smt::Expr isOpWellDefined(mlir::Operation *op) const;
+  std::map<std::string, smt::Expr> getOpWellDefinedness(mlir::Operation *op)
+      const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, State &);
 };

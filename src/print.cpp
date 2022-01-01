@@ -39,35 +39,47 @@ static void printInputs(Model m, mlir::FuncOp src, const State &st_src) {
           << "\n";
     }
   }
+}
 
+static Expr evalFromModel(Model m, Expr e) {
+  auto wb = m.eval(e, true);
+  if (!wb.isTrue() && !wb.isFalse()) {
+    // This can happen if wb is a quantified formula
+    auto oldto = smt::getTimeout();
+    smt::setTimeout(300);
+    Solver s("ALL");
+    s.add(wb);
+    auto res = s.check();
+    if (res.hasSat())
+      wb = Expr::mkBool(true);
+    else if (res.hasUnsat())
+      wb = Expr::mkBool(false);
+    else {
+      llvm::outs() << "\t\t(This operation's UB condition could not be "
+          "evaluated for printing.\n";
+      llvm::outs() << "\t\t It does not affect the validaton result "
+          "however.)\n";
+    }
+    smt::setTimeout(oldto);
+  }
+  return wb;
 }
 
 void printOperations(Model m, mlir::FuncOp fn, const State &st) {
   for (auto &op: fn.getRegion().front()) {
     llvm::outs() << "\t" << op << "\n";
 
-    auto wb = m.eval(st.isOpWellDefined(&op), true);
-    if (!wb.isTrue() && !wb.isFalse()) {
-      // This can happen if wb is a quantified formula
-      auto oldto = smt::getTimeout();
-      smt::setTimeout(300);
-      Solver s("ALL");
-      s.add(wb);
-      auto res = s.check();
-      if (res.hasSat())
-        wb = Expr::mkBool(true);
-      else if (res.hasUnsat())
-        wb = Expr::mkBool(false);
-      else {
-        llvm::outs() << "\t\t(This operation's UB condition could not be "
-            "evaluated for printing.\n";
-        llvm::outs() << "\t\t It does not affect the validaton result "
-            "however.)\n";
-      }
-      smt::setTimeout(oldto);
-    }
+    auto wb = evalFromModel(m, st.isOpWellDefined(&op));
     if (wb.isFalse()) {
       llvm::outs() << "\t\t[This operation has undefined behavior!]\n";
+      auto ubmap = st.getOpWellDefinedness(&op);
+      if (ubmap.size() > 1) {
+        for (auto &[desc, eachwb]: ubmap) {
+          Expr eachwb2 = evalFromModel(m, eachwb);
+          string res = eachwb2.isFalse() ? "UB" : "okay";
+          llvm::outs() << "\t\t- " << desc << ": " << res << "\n";
+        }
+      }
       break;
     }
 

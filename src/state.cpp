@@ -72,12 +72,18 @@ void State::addPrecondition(smt::Expr &&e) {
   precond = precond & e;
 }
 
-void State::wellDefined(mlir::Operation *val, Expr &&e) {
+void State::wellDefined(mlir::Operation *val, Expr &&e, string &&desc) {
   auto itr = welldef.find(val);
   if (itr == welldef.end()) {
-    welldef.insert({val, move(e)});
+    itr = welldef.insert({val, {}}).first;
+  }
+
+  auto &ubmap = itr->second;
+  auto itr2 = ubmap.find(desc);
+  if (itr2 == ubmap.end()) {
+    ubmap.insert({move(desc), move(e)});
   } else {
-    itr->second = itr->second & move(e);
+    itr2->second = itr2->second & move(e);
   }
 }
 
@@ -87,14 +93,27 @@ Expr State::precondition() const {
 
 Expr State::isWellDefined() const {
   Expr e = Expr::mkBool(true);
-  for (auto &itm: welldef) {
-    e = e & itm.second;
+  for (auto &ubmap: welldef) {
+    for (auto &itm: ubmap.second)
+      e = e & itm.second;
   }
   return e;
 }
 
 Expr State::isOpWellDefined(mlir::Operation *op) const {
-  if (!welldef.count(op))
+  auto ubmap = welldef.find(op);
+  if (ubmap == welldef.end())
     return Expr::mkBool(true);
-  return welldef.find(op)->second;
+
+  Expr e = Expr::mkBool(true);
+  for (auto &itm: ubmap->second)
+    e &= itm.second;
+  return e;
+}
+
+map<string, Expr> State::getOpWellDefinedness(mlir::Operation *op) const {
+  auto ubmap = welldef.find(op);
+  if (ubmap == welldef.end())
+    return {};
+  return ubmap->second;
 }
