@@ -1520,6 +1520,7 @@ Model Solver::getModel() const {
 
 void useZ3() { IF_Z3_ENABLED(sctx.useZ3()); }
 void useCVC5() { IF_CVC5_ENABLED(sctx.useCVC5()); }
+uint64_t getTimeout() { return sctx.timeout_ms; }
 void setTimeout(const uint64_t ms) { sctx.timeout_ms = ms; }
 
 

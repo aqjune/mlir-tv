@@ -317,6 +317,7 @@ public:
 
 void useZ3();
 void useCVC5();
+uint64_t getTimeout();
 void setTimeout(const uint64_t ms);
 } // namespace smt
 
