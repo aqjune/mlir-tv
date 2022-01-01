@@ -934,30 +934,30 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 
   Expr arr = t.arr;
   bool hasStore = false;
+  set<uint64_t> idx1dVisited;
 
   while (true) {
     optional<Expr> arr2, idx, valExpr;
 
     if (Store(Any(arr2), Any(idx), Any(valExpr)).match(arr)) {
-      auto idxnd = from1DIdx(*idx, t.dims);
-      vector<int64_t> idxconsts;
+      uint64_t idxConst;
+      bool duplicated = false;
+      if (idx->isUInt(idxConst)) {
+        duplicated = idx1dVisited.count(idxConst);
 
-      bool constIdxs = all_of(idxnd.begin(), idxnd.end(), [&](const Expr &e) {
-        int64_t i;
-        if (e.simplify().isInt(i)) {
-          idxconsts.push_back(i);
-          return true;
+        if (!duplicated) {
+          idx1dVisited.insert(idxConst);
+          auto idxnd = from1DIdx(*idx, t.dims);
+          os << "(" << *idxnd[0].simplify().asUInt();
+          for (size_t i = 1; i < idxnd.size(); ++i)
+            os << ", " << *idxnd[i].simplify().asUInt();
+          os << ")";
         }
-        return false;
-      });
-      if (constIdxs) {
-        os << "(" << idxconsts[0];
-        for (size_t i = 1; i < idxconsts.size(); ++i)
-          os << ", " << idxconsts[i];
-        os << ")";
       } else
         os << or_omit(*idx);
-      os << " -> " << *fromExpr(move(*valExpr), t.elemType) << ", ";
+
+      if (!duplicated)
+        os << " -> " << *fromExpr(move(*valExpr), t.elemType) << ", ";
 
       arr = move(*arr2);
       hasStore = true;
