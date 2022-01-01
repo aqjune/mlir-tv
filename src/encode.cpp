@@ -97,8 +97,17 @@ static Expr evalIndexCastOp(mlir::Type src, mlir::Type tgt, Index &&idx) {
   return casted;
 }
 
+static void addToBoolMap(map<string, Expr> &m, std::string &&key, Expr &&b) {
+  auto itr = m.find(key);
+  if (itr == m.end()) {
+    m.emplace(move(key), move(b));
+  } else {
+    itr->second = itr->second & move(b);
+  }
+}
+
 template<class ValTy>
-vector<ValTy> getFromMixedOps(
+static vector<ValTy> getFromMixedOps(
     const State &st, const llvm::SmallVector<mlir::OpFoldResult> &mixedOps) {
   vector<ValTy> vec;
   for (auto s: mixedOps) {
@@ -111,7 +120,7 @@ vector<ValTy> getFromMixedOps(
 
 
 template<class ValTy>
-vector<Expr> getFromArrayAttr(const mlir::ArrayAttr &attr) {
+static vector<Expr> getFromArrayAttr(const mlir::ArrayAttr &attr) {
   vector<Expr> vec;
   for (auto s: attr) {
     vec.push_back(ValTy(s.dyn_cast<mlir::IntegerAttr>().getInt()));
@@ -121,7 +130,7 @@ vector<Expr> getFromArrayAttr(const mlir::ArrayAttr &attr) {
 
 
 template<class T>
-optional<Expr> encodeAffineExpr(
+static optional<Expr> encodeAffineExpr(
     mlir::AffineExpr ae, const vector<T> &dimvars, const vector<T> &symbolvars
 ) {
   switch (ae.getKind()) {
@@ -2530,7 +2539,8 @@ encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
 }
 
 static void initInputStateForLoopBody(
-    State &st, mlir::linalg::GenericOp op, Expr &welldef,
+    State &st, mlir::linalg::GenericOp op,
+    map<string, Expr> &welldefs,
     bool isParallelLoop) {
   auto indexingMaps = op.indexing_maps().getValue();
   auto &block = *op.region().begin();
@@ -2574,8 +2584,11 @@ static void initInputStateForLoopBody(
         // uses.
         // This is a workaround (overapproximation) for not introducing a
         // 'poison' value.
-        if (isInput || isOutputAndHasUse)
-          welldef &= t_input.isFullyInitialized();
+        if (isInput || isOutputAndHasUse) {
+          addToBoolMap(welldefs,
+              "op " + to_string(arg_i) + "'s initializedness",
+              t_input.isFullyInitialized());
+        }
       } else {
         vector<Expr> indices;
         for (unsigned i = 0; i < indexMap.getNumResults(); ++i) {
@@ -2599,8 +2612,11 @@ static void initInputStateForLoopBody(
         // uses.
         // This is a workaround (overapproximation) for not introducing a
         // 'poison' value.
-        if (isInput || isOutputAndHasUse)
-          welldef &= t_input.isInitialized(indices);
+        if (isInput || isOutputAndHasUse) {
+          addToBoolMap(welldefs,
+              "op " + to_string(arg_i) + "'s initializedness",
+              t_input.isInitialized(indices));
+        }
       }
 
     } else if (auto memrefty = op_i.getType().dyn_cast<mlir::MemRefType>()) {
@@ -2626,11 +2642,20 @@ static void initInputStateForLoopBody(
       // This is a workaround (overapproximation) for not introducing a
       // 'poison' value.
       auto [m_elem, m_welldef] = m_input.getWithAccessInfo(indices);
-      if (isInput)
-        welldef &= m_welldef.checkRead();
-      else
-        welldef &= isOutputAndHasUse ?
-            m_welldef.checkReadWrite() : m_welldef.checkWrite();
+      if (isInput) {
+        addToBoolMap(welldefs, "reading op " + to_string(arg_i) + "'s safety",
+            m_welldef.checkRead());
+      } else {
+        if (isOutputAndHasUse) {
+          addToBoolMap(welldefs,
+              "reading and writing to op " + to_string(arg_i) + "'s safety",
+              m_welldef.checkReadWrite());
+        } else {
+          addToBoolMap(welldefs,
+              "writing to op " + to_string(arg_i) + "'s safety",
+              m_welldef.checkWrite());
+        }
+      }
       mlir::Type elemTy = memrefty.getElementType();
       st.regs.add(block.getArgument(arg_i), m_elem, elemTy);
 
@@ -2646,7 +2671,7 @@ static void encodeReductionLoopBodyAndOutput(
     const mlir::ArrayRef<mlir::Attribute> &indexingMaps,
     const mlir::ShapedType &outputType,
     optional<Tensor> &t_res,
-    Expr &welldef) {
+    map<string, Expr> &welldefs) {
   // Deal with simple reduction loops.
   // TODO: support more kinds of reduction loops!
   string errmsg = "permutated output map or simple reduction form is"
@@ -2684,6 +2709,7 @@ static void encodeReductionLoopBodyAndOutput(
   auto sumvar = ops.back().getOperand(0).getDefiningOp()->getOperand(idx);
 
   // TODO: deal with merging memories
+  Expr opsWelldef = Expr::mkBool(true);
   encodeBlock(newst, block, /*print ops*/false, /*encode mem writes*/false,
       [instcount, &lastarg, &the_op](
           mlir::Operation *op, int opindex) {
@@ -2702,9 +2728,10 @@ static void encodeReductionLoopBodyAndOutput(
         }
         return false;
       },
-      [&welldef, &newst](mlir::Operation *op) {
-        welldef &= newst.isOpWellDefined(op);
+      [&opsWelldef, &newst](mlir::Operation *op) {
+        opsWelldef &= newst.isOpWellDefined(op);
       });
+  addToBoolMap(welldefs, "loop body", move(opsWelldef));
 
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
 
@@ -2732,7 +2759,8 @@ static void encodeReductionLoopBodyAndOutput(
     auto initElem = outTensor.get({Index(0)});
     t_res = Tensor(t_v.getElemType(), t_v.sum(move(initElem)),
           makeCube(Index(1), outputType.getRank()));
-    welldef &= outTensor.isFullyInitialized();
+    addToBoolMap(welldefs, "output tensor is initialized",
+        outTensor.isFullyInitialized());
   } else {
     // in:  (i, j) -> (i, j)
     // out: (i, j) -> (i)
@@ -2768,13 +2796,15 @@ static void encodeReductionLoopBodyAndOutput(
     if (outOp.getType().isa<mlir::TensorType>()) {
       Tensor outTensor = newst.regs.get<Tensor>(outOp);
       initElem = outTensor.get(outputIndVars);
-      welldef &= outTensor.isFullyInitialized();
+      addToBoolMap(welldefs, "output tensor is initialized",
+          outTensor.isFullyInitialized());
     } else {
       MemRef outMemRef = newst.regs.get<MemRef>(outOp);
       auto [v, ainfo] = outMemRef.getWithAccessInfo(outputIndVars);
       initElem.emplace(move(v));
-      welldef &= Expr::mkForall(outputIndVars,
-          ainfo.inbounds.implies(ainfo.initialized));
+      addToBoolMap(welldefs, "output tensor is initialized",
+          Expr::mkForall(outputIndVars,
+            ainfo.inbounds.implies(ainfo.initialized)));
     }
 
     auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
@@ -2827,9 +2857,9 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
 
   // Start from newst
   optional<vector<Tensor>> tvec_res;
-  optional<Expr> t_welldef;
+  // reason -> WB (= !UB)
+  map<string, Expr> welldefs;
   {
-    Expr welldef = Expr::mkBool(true);
     State newst = st;
     newst.linalgGenericScopes.push(State::LinalgGenericScope{loopBounds});
 
@@ -2837,13 +2867,15 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
     auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
     bool isParallelLoop = outputMap.isPermutation();
 
-    initInputStateForLoopBody(newst, op, welldef, isParallelLoop);
+    initInputStateForLoopBody(newst, op, welldefs, isParallelLoop);
 
     auto &indVars = newst.linalgGenericScopes.top().indVars;
 
     if (isParallelLoop) {
+      Expr welldef = Expr::mkBool(true);
       encodeParallelLoopBodyAndOutputs(newst, block, outputMap,
           tvec_res, welldef);
+      addToBoolMap(welldefs, "loop body", move(welldef));
 
     } else {
       // Reduction loops returning multiple values is not supported by MLIR-TV
@@ -2856,7 +2888,7 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
       auto outputType = op.getOutputOperand(0)->get().getType()
           .cast<mlir::ShapedType>();
       encodeReductionLoopBodyAndOutput(newst, block,
-            indexingMaps, outputType, t_res, welldef);
+            indexingMaps, outputType, t_res, welldefs);
       tvec_res = {*t_res};
     }
 
@@ -2870,11 +2902,13 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
     for (int i = 0; i < indVars.size(); ++i) {
       inbounds &= indVars[i].ult(loopBounds[i] + 1);
     }
-    t_welldef = Expr::mkForall(indVars, inbounds.implies(welldef));
+
+    // Encode well-definedness.
+    for (auto &[itm, wdef]: welldefs) {
+      st.wellDefined(op, Expr::mkForall(indVars, inbounds.implies(wdef)),
+          string(itm));
+    }
   }
-
-
-  st.wellDefined(op, move(*t_welldef));
 
   if (op.hasTensorSemantics()) {
     for(unsigned i = 0; i < tvec_res->size(); i++) {

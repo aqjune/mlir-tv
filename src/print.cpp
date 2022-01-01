@@ -77,7 +77,9 @@ void printOperations(Model m, mlir::FuncOp fn, const State &st) {
         for (auto &[desc, eachwb]: ubmap) {
           Expr eachwb2 = evalFromModel(m, eachwb);
           string res = eachwb2.isFalse() ? "UB" : "okay";
-          llvm::outs() << "\t\t- " << desc << ": " << res << "\n";
+          llvm::outs() << "\t\t- "
+              << (desc.empty() ? "all other reasons" : desc)
+              << ": " << res << "\n";
         }
       }
       break;
