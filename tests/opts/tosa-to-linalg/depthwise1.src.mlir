@@ -1,6 +1,7 @@
-// VERIFY-INCORRECT
+// VERIFY
+// ARGS: --use-neg-zero
 
-// This transformation is incorrect because tgt is filling
+// Without --use-neg-zero, this transformation is incorrect because tgt is filling
 // a non-identity value (+0.0) to the output tensor.
 
 func @depthwise1(%arg0: tensor<2x5x5x2xf32>, %arg1: tensor<2x2x2x3xf32>, %arg2: tensor<6xf32>) -> tensor<2x4x4x6xf32> {
