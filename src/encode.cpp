@@ -1296,9 +1296,9 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
     auto t_res = t_input
       .conv(t_filter, strides, dilations, clayout, output);
     st.regs.add(op.getResult(0), move(t_res));
-    st.wellDefined(op, t_input.isFullyInitialized());
-    st.wellDefined(op, t_filter.isFullyInitialized());
-    st.wellDefined(op, output.isFullyInitialized());
+    st.wellDefined(op, t_input.isFullyInitialized(), "input is initialized");
+    st.wellDefined(op, t_filter.isFullyInitialized(), "filter is initialized");
+    st.wellDefined(op, output.isFullyInitialized(), "output is initialized");
   } else {
     auto outputTy = op.outputs()[0].getType().template cast<mlir::MemRefType>();
     auto elemTy = outputTy.getElementType();
@@ -1317,9 +1317,7 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
         filter, strides, dilations, clayout, move(getInitValue));
 
     // Check that the output memref is storing initialized values.
-    auto outputAccInfo = output.getWithAccessInfo(indices).second;
-    st.wellDefined(op, Expr::mkForall(indices,
-        outputAccInfo.inbounds.implies(outputAccInfo.initialized)));
+    st.wellDefined(op, output.isFullyInitialized(), "output is initialized");
 
     // we splat results into 1D memory layout
     auto idx = Index::var("outputIdx", VarType::BOUND);
@@ -1333,10 +1331,17 @@ static void encodeConv(State &st, T op, ShapedValue::ConvLayout clayout) {
 
     // Input & filter read check
     st.wellDefined(op,
-        input.getLiveness() & input.isInBounds() & filter.getLiveness() &
-        filter.isInBounds());
+        input.getLiveness() & input.isInBounds(),
+        "input read safety (without init check)");
+    st.wellDefined(op, input.isFullyInitialized(), "input is initialized");
+    st.wellDefined(op,
+        filter.getLiveness() & filter.isInBounds(),
+        "filter read safety (without init check)");
+    st.wellDefined(op,
+        filter.isFullyInitialized(), "filter is initialized");
     // No alias checks between output and input/filter
-    st.wellDefined(op, output.noalias(input) & output.noalias(filter));
+    st.wellDefined(op, output.noalias(input) & output.noalias(filter),
+        "output does not alias input and filter");
   }
 }
 
@@ -2155,7 +2160,8 @@ static void storeTensorTo(
     auto success = st.m->storeArray(memrefTy.getElementType(),
         tensor.asArray(), memref.getBID(), memref.getOffset(),
         tensor.get1DSize());
-    st.wellDefined(op, success.checkWrite(!ubIfReadOnly));
+    st.wellDefined(op, success.checkWrite(!ubIfReadOnly),
+        "storing to dest");
 
   } else {
     // TODO: can we further optimize this if we know that memref is a

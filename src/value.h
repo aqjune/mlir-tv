@@ -388,6 +388,7 @@ public:
   smt::Expr isLocalBlock() const;
   smt::Expr getLiveness() const;
   smt::Expr noalias(const MemRef &other) const;
+  smt::Expr isFullyInitialized() const;
   void setWritable(bool writable);
   void setMemory(Memory *m) { this->m = m; }
   bool isIdentityMap() const;

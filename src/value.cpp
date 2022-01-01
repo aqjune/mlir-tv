@@ -1429,6 +1429,12 @@ Expr MemRef::getLiveness() const {
   return m->getLiveness(elemType, bid);
 }
 
+Expr MemRef::isFullyInitialized() const {
+  auto idxs = Index::boundIndexVars(getRank());
+  auto icc = getWithAccessInfo(idxs).second;
+  return Expr::mkForall(idxs, icc.inbounds.implies(icc.initialized));
+}
+
 smt::Expr MemRef::noalias(const MemRef &other) const {
   if (!isIdentityMap() || !other.isIdentityMap())
     throw UnsupportedException("Noalias check with arbitrary layout memref is"
