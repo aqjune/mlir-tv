@@ -1,4 +1,5 @@
 #include "abstractops.h"
+#include "opts.h"
 #include "print.h"
 
 using namespace std;

@@ -116,6 +116,11 @@ llvm::cl::opt<int> max_const_tensor_size("max-const-tensor-size",
   llvm::cl::init(-1),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<bool> be_succinct("succinct",
+  llvm::cl::desc("Do not print input programs and counter examples."),
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
+
 };
 
 static optional<string> checkFunctionSignatures(
@@ -271,10 +276,13 @@ static Results checkRefinement(
       llvm::outs() << "== Result: timeout ==\n";
     } else if (res.hasSat()) {
       llvm::outs() << "== Result: " << msg << "\n";
-      aop::evalConsts(s.getModel());
-      printCounterEx(
-          s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx,
-          memElemType);
+
+      if (!be_succinct.getValue()) {
+        aop::evalConsts(s.getModel());
+        printCounterEx(
+            s.getModel(), params, src, tgt, st_src, st_tgt, step, retidx,
+            memElemType);
+      }
     } else {
       llvm_unreachable("unexpected result");
     }
@@ -523,12 +531,14 @@ static void checkIsSrcAlwaysUB(
 }
 
 static Results validate(ValidationInput vinput) {
-  llvm::outs() << "Function " << vinput.src.getName() << "\n\n";
+  llvm::outs() << "=========== Function "
+      << vinput.src.getName() << " ===========\n\n";
   assert(vinput.src.getNumArguments() == vinput.tgt.getNumArguments());
 
   int64_t elapsedMillisec = 0;
   Defer timePrinter([&]() {
-    llvm::outs() << "solver's running time: " << elapsedMillisec << " msec.\n";
+    llvm::outs() << "solver's running time: " << elapsedMillisec
+        << " msec.\n\n";
   });
   using namespace aop;
   auto printSematics = [](Abstraction &abs, Results &result) {
@@ -536,14 +546,14 @@ static Results validate(ValidationInput vinput) {
         << magic_enum::enum_name(result.code) << "\n";
 
     llvm::outs()
-      << "\n===============================================================\n"
+      << "\n--------------------------------------------------------------\n"
       << "  Abstractions used for the validation:\n"
       << "  - dot ops (fp): " << magic_enum::enum_name(abs.fpDot) << "\n"
       << "  - cast ops (fp): " << magic_enum::enum_name(abs.fpCast) << "\n"
       << "  - add/sum ops (fp): "
       << magic_enum::enum_name(abs.fpAddSumEncoding) << "\n"
       << "  - dot ops (int): " << magic_enum::enum_name(abs.intDot) << "\n"
-      << "===============================================================\n\n";
+      << "--------------------------------------------------------------\n\n";
   };
 
   Results result(Results::Code::TIMEOUT);
@@ -585,7 +595,7 @@ static Results validate(ValidationInput vinput) {
         vinput.dumpSMTPath += "_refined_" + to_string(itrCount);
     }
 
-    bool printOps = itrCount == 0;
+    bool printOps = itrCount == 0 && !be_succinct.getValue();
     auto res = tryValidation(vinput, printOps, useAllLogic, elapsedMillisec);
     printSematics(abs, res);
     if (res.code == Results::INCONSISTENT) {
