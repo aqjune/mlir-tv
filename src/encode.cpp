@@ -35,6 +35,14 @@ llvm::cl::opt<bool> arg_assign_random_to_unsupported_ops(
   llvm::cl::init(false),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<bool> arg_use_neg_zero(
+      "use-neg-zero",
+  llvm::cl::desc("For linalg.fill operations filling positive zero or "
+      "linalg.yield with positive zero operand, use negative zero instead. "
+      "This is a workaround to check signed zero issue when lowering tosa"
+      " to linalg."),
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
 
 // map := (i, j, k) -> (j, k, i)
 // input := [a, b, c]
@@ -1008,8 +1016,10 @@ static Tensor getPaddedTensor2D(mlir::Type elemTy,
     auto cond = padInd[1].uge(pad[0]) & padInd[1].ult(pad[0] + srcDims[1]) &
                   padInd[2].uge(pad[2]) & padInd[2].ult(pad[2] + srcDims[2]);
 
-    // TOSA pad operands fill padded area as +0.0
-    auto zero = *getZero(elemTy);
+    // TOSA pad operands fill padded area as +0.0.
+    // If --use-neg-zero is given, use -0.0 instead.
+    auto zero = arg_use_neg_zero.getValue() ?
+        *getIdentity(elemTy) : *getZero(elemTy);
     Expr padVal = Expr::mkIte(cond, input.get(srcInd), zero);
 
     return Tensor::mkInitializedLambda(
@@ -1245,6 +1255,18 @@ void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
   st.wellDefined(op, t.isInitialized(indices), "initialized");
 }
 
+static Expr getValueOrNegZero(State &st, mlir::Value v) {
+  if (arg_use_neg_zero) {
+    auto fty = v.getType().dyn_cast<mlir::FloatType>();
+    auto iop = mlir::dyn_cast<mlir::arith::ConstantFloatOp>(
+        *v.getDefiningOp());
+    if (fty && iop && iop.value().isPosZero()) {
+      verbose("getValueOrNegZero") << "Using negative zero instead\n";
+      return aop::getFpEncoding(fty).zero(true);
+    }
+  }
+  return st.regs.getExpr(v);
+}
 
 static void encodeParallelLoopBodyAndOutputs(
     State &newst, mlir::Block &block, const mlir::AffineMap &outputMap,
@@ -1280,7 +1302,8 @@ static void encodeParallelLoopBodyAndOutputs(
 
   tvec_res.emplace();
   for (unsigned i = 0; i < yieldedValues.size(); i++) {
-    Expr resExpr = newst.regs.getExpr(yieldedValues[i]);
+    // If arg_use_neg_zero is set, convert pos zero to neg zero.
+    Expr resExpr = getValueOrNegZero(newst, yieldedValues[i]);
     if (outputValMap)
       resExpr = (*outputValMap)(resExpr, outputIndVars);
 
@@ -2366,7 +2389,8 @@ void encodeOp(State &st, mlir::linalg::FillOp op, bool encodeMemWrite) {
     throw UnsupportedException(op.getOperation(),
         "it has multiple results");
 
-  auto elemval = st.regs.getExpr(op.getOperand(0));
+  Expr elemval = getValueOrNegZero(st, op.getOperand(0));
+
   auto op1 = op.getOperand(1);
   auto ety = getElemTy(op1);
 

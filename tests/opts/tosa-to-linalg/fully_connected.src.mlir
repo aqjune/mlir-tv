@@ -1,6 +1,7 @@
-// VERIFY-INCORRECT
+// VERIFY
+// ARGS: --use-neg-zero
 
-// This transformation is incorrect because tgt is filling
+// Without --use-neg-zero, this transformation is incorrect because tgt is filling
 // a non-identity value (+0.0) to the output tensor.
 
 func @f(%img: tensor<5x3xf32>, %weights: tensor<6x3xf32>, %bias: tensor<6xf32>) -> tensor<5x6xf32> {
