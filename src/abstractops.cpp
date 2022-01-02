@@ -23,6 +23,7 @@ aop::Abstraction abstraction;
 
 bool isFpAddAssociative;
 bool doUnrollIntSum;
+bool doCheckShapeOnly;
 unsigned maxUnrollFpSumBound;
 
 optional<aop::AbsFpEncoding> floatEnc;
@@ -120,12 +121,14 @@ void setAbstraction(
     Abstraction abs,
     bool addAssoc,
     bool unrollIntSum,
+    bool checkShapeOnly,
     unsigned unrollFpSumBound,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
     unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
   abstraction = abs;
   doUnrollIntSum = unrollIntSum;
   maxUnrollFpSumBound = unrollFpSumBound;
+  doCheckShapeOnly = checkShapeOnly;
   isFpAddAssociative = addAssoc;
 
   assert(!addAssoc ||
@@ -288,7 +291,7 @@ FnDecl AbsFpEncoding::getAddFn() {
 
 FnDecl AbsFpEncoding::getMulFn() {
   if (!fp_mulfn) {
-    auto fty = Sort::bvSort(value_bitwidth);
+    auto fty = doCheckShapeOnly ? sort() : Sort::bvSort(value_bitwidth);
     fp_mulfn.emplace({fty, fty}, fty, "fp_mul_" + fn_suffix);
   }
   return *fp_mulfn;
@@ -296,7 +299,7 @@ FnDecl AbsFpEncoding::getMulFn() {
 
 FnDecl AbsFpEncoding::getDivFn() {
   if (!fp_mulfn) {
-    auto fty = Sort::bvSort(value_bitwidth);
+    auto fty = doCheckShapeOnly ? sort() : Sort::bvSort(value_bitwidth);
     fp_mulfn.emplace({fty, fty}, fty, "fp_div_" + fn_suffix);
   }
   return *fp_mulfn;
@@ -623,6 +626,9 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
 
   usedOps.fpAdd = true;
 
+  if (doCheckShapeOnly)
+    return getAddFn().apply({_f1, _f2});
+
   const auto fp_id = zero(true);
   const auto fp_inf_pos = infinity();
   const auto fp_inf_neg = infinity(true);
@@ -677,6 +683,9 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
 
 Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   usedOps.fpMul = true;
+
+  if (doCheckShapeOnly)
+    return getMulFn().apply({_f1, _f2});
 
   auto fp_id = one();
   auto fp_minusone = one(true);
@@ -743,6 +752,9 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
 
 Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
   usedOps.fpDiv = true;
+
+  if (doCheckShapeOnly)
+    return getDivFn().apply({_f1, _f2});
 
   auto fp_zero_pos = zero();
   auto fp_zero_neg = zero(true);
