@@ -64,6 +64,7 @@ struct Abstraction {
 void setAbstraction(Abstraction abs,
                     bool isFpAddAssociative,
                     bool unrollIntSum,
+                    bool noArithProperties,
                     unsigned unrollFpSumBound,
                     unsigned floatNonConstsCnt,
                     std::set<llvm::APFloat> floatConsts,

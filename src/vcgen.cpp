@@ -121,6 +121,11 @@ llvm::cl::opt<bool> be_succinct("succinct",
   llvm::cl::init(false),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<bool> no_arith_properties("no-arith-properties",
+  llvm::cl::desc("Encode addf, mulf, divf, expf without arithmetic properties."
+      "(check only shape transformation)"),
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
 };
 
 static optional<string> checkFunctionSignatures(
@@ -493,6 +498,7 @@ static void checkIsSrcAlwaysUB(
   aop::setAbstraction(concreteAbs,
       vinput.isFpAddAssociative,
       vinput.unrollIntSum,
+      no_arith_properties.getValue(),
       arg_unroll_fp_sum_bound.getValue(),
       vinput.f32NonConstsCount, vinput.f32Consts,
       vinput.f64NonConstsCount, vinput.f64Consts);
@@ -585,6 +591,7 @@ static Results validate(ValidationInput vinput) {
     setAbstraction(abs,
         vinput.isFpAddAssociative,
         vinput.unrollIntSum,
+        no_arith_properties.getValue(),
         arg_unroll_fp_sum_bound.getValue(),
         vinput.f32NonConstsCount, vinput.f32Consts,
         vinput.f64NonConstsCount, vinput.f64Consts);
