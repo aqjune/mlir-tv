@@ -1100,7 +1100,8 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   return Expr::mkIte(isnan(f), tgt.nan(),
           Expr::mkIte(f == infinity(), tgt.infinity(),
           Expr::mkIte(f == infinity(true), tgt.infinity(true),
-          Expr::mkIte(limit_bits != limit_zero,
+          Expr::mkIte(limit_bits != limit_zero |
+                      floored_value.uge(tgt.getMagnitudeBits(tgt.infinity())),
             Expr::mkIte(sign_bit == sign_pos,
               tgt.infinity(), tgt.infinity(true)),
             Expr::mkIte(is_prec_zero, floored_float,
