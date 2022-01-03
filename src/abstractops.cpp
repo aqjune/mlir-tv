@@ -438,8 +438,12 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         auto sv_prec_bits = Expr::mkFreshVar(Sort::bvSort(sv_prec_bitwidth),
                             "fp_const_sval_prec_bits_");
 
-        limit_bits = mkNonzero(
-            Expr::mkFreshVar(limit_bits, "fp_const_limit_bits_"));
+        auto inf_sv_value = (1 << sv_prec_bitwidth) -
+                            (1 << value_bit_info.prec_bitwidth);
+        auto limit_var = Expr::mkFreshVar(limit_bits, "fp_const_limit_bits_");
+        limit_bits = Expr::mkIte(sv_prec_bits.uge(inf_sv_value), 
+          limit_var,
+          mkNonzero(move(limit_var)));
         e_value = limit_bits.concat(sv_prec_bits);
 
       } else if (!casting_info->zero_prec_bits) {
