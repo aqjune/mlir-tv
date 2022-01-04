@@ -1101,11 +1101,13 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
   assert(floored_float.bitwidth() == tgt.sort().bitwidth());
   const auto is_prec_zero = prec_bits ? *prec_bits == 0 : Expr::mkBool(true);
 
+  const auto is_truncated_value_inf_or_nan =
+              floored_value.uge(tgt.getMagnitudeBits(tgt.infinity()));
   return Expr::mkIte(isnan(f), tgt.nan(),
           Expr::mkIte(f == infinity(), tgt.infinity(),
           Expr::mkIte(f == infinity(true), tgt.infinity(true),
           Expr::mkIte(limit_bits != limit_zero |
-                      floored_value.uge(tgt.getMagnitudeBits(tgt.infinity())),
+                      is_truncated_value_inf_or_nan,
             Expr::mkIte(sign_bit == sign_pos,
               tgt.infinity(), tgt.infinity(true)),
             Expr::mkIte(is_prec_zero, floored_float,
