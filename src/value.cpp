@@ -1095,6 +1095,28 @@ Tensor Tensor::mkIte(
       move(retExpr), move(retInit));
 }
 
+static bool isTranspose(mlir::ElementsAttr attr1, mlir::ElementsAttr attr2) {
+  auto attr1ty = attr1.getType().dyn_cast<mlir::RankedTensorType>();
+  auto attr2ty = attr2.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!attr1ty || !attr2ty)
+    return false;
+  else if (attr1ty.getRank() != 2 || attr2ty.getRank() != 2)
+    return false;
+  else if (attr1ty.getDimSize(0) != attr2ty.getDimSize(1) ||
+           attr1ty.getDimSize(1) != attr2ty.getDimSize(0))
+    return false;
+
+  auto attr1Values = attr1.getValues<mlir::Attribute>();
+  auto attr2Values = attr2.getValues<mlir::Attribute>();
+  for (uint64_t i = 0; i < attr1ty.getDimSize(0); ++i) {
+    for (uint64_t j = 0; j < attr1ty.getDimSize(1); ++j) {
+      if (attr1Values[{i, j}] != attr2Values[{j, i}])
+        return false;
+    }
+  }
+  return true;
+}
+
 Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
       mlir::ElementsAttr attr) {
   mlir::Type elemType = tensorty.getElementType();
@@ -1128,6 +1150,12 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
           if (a == attr) {
             verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t << "\n";
             return t;
+
+          } else if (isTranspose(a, attr)) {
+            // Transposing a constant tensor happens frequently.
+            verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t
+                << ".transpose()\n";
+            return t.transpose();
           }
         }
 
