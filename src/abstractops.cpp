@@ -869,7 +869,6 @@ Expr AbsFpEncoding::multisetSum(const Expr &a, const Expr &n) {
   for (unsigned i = 0; i < length; i ++) {
     auto ai = a.select(Index(i));
     bag = bag.insert(Expr::mkIte(isnan(ai), nan(), ai));
-    bag = bag.simplify();
   }
 
   Expr result = getAssocSumFn()(bag);
@@ -923,7 +922,6 @@ Expr AbsFpEncoding::sum(const Expr &a, const Expr &n,
       auto sum = arr.select(Index(0));
       for (auto i = 1; i < length; i++) {
         sum = add(sum, arr.select(Index(i)));
-        sum = sum.simplify();
       }
       sumExpr = sum;
     }
@@ -1175,7 +1173,6 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
   auto hashIdentity = Expr::mkBV(0, getHashRangeBits());
   precond = precond & (hashfn.apply(fpAddIdentity) == hashIdentity);
 
-  precond = precond.simplify();
   return precond;
 }
 
@@ -1265,7 +1262,7 @@ Expr AbsFpEncoding::getFpConstantPrecondition() {
         << " < -0.0: " << zero(true) << " < " << prev_absrepr << "\n";
   }
 
-  return precond.simplify();
+  return precond;
 }
 
 Expr getFpAssociativePrecondition() {
@@ -1336,7 +1333,7 @@ Expr getFpConstantPrecondition() {
     cond &= doubleEnc->getFpConstantPrecondition();
   }
 
-  return cond.simplify();
+  return cond;
 }
 
 // ----- Integer operations ------

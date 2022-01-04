@@ -303,7 +303,7 @@ static Results checkRefinement(
     verbose("checkRefinement") << "1. Check UB\n";
     Solver s(logic);
     auto not_refines =
-        (st_src.isWellDefined() & !st_tgt.isWellDefined()).simplify();
+        (st_src.isWellDefined() & !st_tgt.isWellDefined());
     auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                      fnname + ".1.ub");
     elapsedMillisec += res.second;
@@ -329,8 +329,7 @@ static Results checkRefinement(
           ::refines(st_tgt.retValues[i], st_src.retValues[i]);
 
       auto not_refines =
-        (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines)
-        .simplify();
+        (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines);
       auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                       fnname + ".2.retval." + to_string(i));
       elapsedMillisec += res.second;
@@ -362,7 +361,7 @@ static Results checkRefinement(
       auto &params = refinement.second;
 
       auto not_refines =
-        (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines).simplify();
+        (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines);
       auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                       fnname + ".3.memory." + to_string(elementType));
       elapsedMillisec += res.second;
@@ -464,7 +463,6 @@ static tuple<State, State, Expr> encodeFinalStates(
 
   Expr precond =
       exprAnd(preconds) & st_src.precondition() & st_tgt.precondition();
-  precond = precond.simplify();
 
   return {move(st_src), move(st_tgt), move(precond)};
 }
@@ -521,7 +519,7 @@ static void checkIsSrcAlwaysUB(
   verbose("checkIsSrcAlwaysUB") << "use logic: " << logic << "\n";
 
   Solver s(logic);
-  auto not_ub = st.isWellDefined().simplify();
+  auto not_ub = st.isWellDefined();
   auto smtres = solve(s, exprAnd(preconds) & not_ub, vinput.dumpSMTPath,
                       fnname + ".notub");
   elapsedMillisec += smtres.second;

@@ -481,7 +481,7 @@ Expr Tensor::getWellDefined() const {
     if (dim.isNumeral()) continue;
     e = e & dim.ule(MAX_DIM_SIZE);
   }
-  return e.simplify();
+  return e;
 }
 
 Expr Tensor::isInBounds(const vector<smt::Expr> &indices) const {
@@ -490,7 +490,7 @@ Expr Tensor::isInBounds(const vector<smt::Expr> &indices) const {
   auto inbounds = Expr::mkBool(true);
   for (unsigned i = 0; i < indices.size(); ++i)
     inbounds = inbounds & indices[i].ult(dims[i]);
-  return inbounds.simplify();
+  return inbounds;
 }
 
 Expr Tensor::get(const vector<Expr> &indices) const {
@@ -542,7 +542,7 @@ Tensor Tensor::affine(
     for (size_t j = 0; j < newidxvars.size(); ++j) {
       newv = newv.substitute({ newidxvars[j] }, { indices[j] });
     }
-    srcidxs[i] = newv.simplify();
+    srcidxs[i] = newv;
   }
   auto elem = get(srcidxs);
   auto init = isInitialized(srcidxs);
@@ -859,7 +859,6 @@ pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
   Expr size_match = Expr::mkBool(true);
   for (size_t i = 0; i < sz; ++i)
     size_match = size_match & ((Expr)other.getDim(i) == (Expr)getDim(i));
-  size_match = size_match.simplify();
   if (size_match.isFalse())
     return {size_match, {}};
 
@@ -1234,7 +1233,7 @@ Expr Tensor::to1DArrayWithOfs(
   absidxs.reserve(relidxs.size());
   for (size_t i = 0; i < relidxs.size(); ++i) {
     auto absidx = relidxs[i] + offbegins[i];
-    absidxs.push_back(absidx.simplify());
+    absidxs.push_back(absidx);
   }
   auto elem = get(absidxs);
   return Expr::mkLambda(idxvar, elem);
@@ -1347,7 +1346,7 @@ Expr MemRef::getWellDefined() const {
     if (dim.isNumeral()) continue;
     e = e & dim.ule(MAX_DIM_SIZE);
   }
-  return e.simplify();
+  return e;
 }
 
 bool MemRef::isTypeSupported(mlir::MemRefType memRefTy) {
@@ -1526,10 +1525,10 @@ std::pair<Expr, vector<Expr>> MemRef::refines(const MemRef &other) const {
 MemRef MemRef::eval(Model mdl) const {
   MemRef m2 = *this;
   for (size_t i = 0; i < m2.dims.size(); ++i)
-    m2.dims[i] = mdl.eval(m2.dims[i], true).simplify();
+    m2.dims[i] = mdl.eval(m2.dims[i], true);
 
-  m2.bid = mdl.eval(m2.bid, true).simplify();
-  m2.offset = mdl.eval(m2.offset, true).simplify();
+  m2.bid = mdl.eval(m2.bid, true);
+  m2.offset = mdl.eval(m2.offset, true);
 
   return m2;
 }

@@ -134,7 +134,6 @@ Expr get1DSize(const vector<Expr> &dims) {
     szaccml = szaccml * d;
   }
 
-  szaccml = szaccml.simplify();
   return szaccml;
 }
 
@@ -167,7 +166,6 @@ Expr to1DIdx(
     // TODO: migrate constant foldings
     idx = idx * dims[i] + idxs[i];
   }
-  idx = idx.simplify();
   return idx;
 }
 
