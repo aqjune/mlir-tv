@@ -906,7 +906,8 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
     for (int64_t i = 0; i < dimSize; ++i) {
       auto idx1d = smt::simplifyList(smt::from1DIdx(Index(i), t.dims));
       vector<int64_t> idxconsts;
-      for (auto &e: idx1d) {
+      for (auto &e0: idx1d) {
+        Expr e = e0.simplify();
         int64_t ii;
         bool isint = e.isInt(ii);
         assert(isint);
