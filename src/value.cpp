@@ -1015,13 +1015,22 @@ Tensor Tensor::tile(const vector<unsigned> &repeat) const {
 }
 
 Tensor Tensor::transpose() const {
-  assert(dims.size() == 2);
-  auto i = Index::var("i", VarType::BOUND);
-  auto j = Index::var("j", VarType::BOUND);
+  assert(dims.size() >= 2 && dims.size() <= 4);
+
+  auto indVars = Index::boundIndexVars(dims.size());
+  vector<Expr> newDims, newIndVars;
+
+  for (unsigned i = 1; i < dims.size(); i ++) {
+    newDims.push_back(dims[i]);
+    newIndVars.push_back(indVars[i]);
+  }
+
+  newDims.push_back(dims[0]);
+  newIndVars.push_back(indVars[0]);
 
   // UB if uninitialized
   return Tensor::mkInitializedLambda(
-      elemType, {dims[1], dims[0]}, {j, i}, get({i, j}));
+      elemType, move(newDims), move(newIndVars), get(indVars));
 }
 
 Tensor Tensor::mkLambda(
@@ -1095,26 +1104,72 @@ Tensor Tensor::mkIte(
       move(retExpr), move(retInit));
 }
 
+// attr1[i_1][i_2]..[i_N] = attr2[i_N][i_1]...[i_N-1]
+// Currently support dimension = 2, 3, 4
 static bool isTranspose(mlir::ElementsAttr attr1, mlir::ElementsAttr attr2) {
   auto attr1ty = attr1.getType().dyn_cast<mlir::RankedTensorType>();
   auto attr2ty = attr2.getType().dyn_cast<mlir::RankedTensorType>();
   if (!attr1ty || !attr2ty)
     return false;
-  else if (attr1ty.getRank() != 2 || attr2ty.getRank() != 2)
-    return false;
-  else if (attr1ty.getDimSize(0) != attr2ty.getDimSize(1) ||
-           attr1ty.getDimSize(1) != attr2ty.getDimSize(0))
+  else if (attr1ty.getRank() != attr2ty.getRank())
     return false;
 
-  auto attr1Values = attr1.getValues<mlir::Attribute>();
-  auto attr2Values = attr2.getValues<mlir::Attribute>();
-  for (uint64_t i = 0; i < attr1ty.getDimSize(0); ++i) {
-    for (uint64_t j = 0; j < attr1ty.getDimSize(1); ++j) {
-      if (attr1Values[{i, j}] != attr2Values[{j, i}])
-        return false;
+  if (attr1ty.getRank() == 2) {
+    if (attr1ty.getDimSize(0) != attr2ty.getDimSize(1) ||
+           attr1ty.getDimSize(1) != attr2ty.getDimSize(0))
+      return false;
+
+    auto attr1Values = attr1.getValues<mlir::Attribute>();
+    auto attr2Values = attr2.getValues<mlir::Attribute>();
+    for (uint64_t i = 0; i < attr1ty.getDimSize(0); ++i) {
+      for (uint64_t j = 0; j < attr1ty.getDimSize(1); ++j) {
+        if (attr1Values[{i, j}] != attr2Values[{j, i}])
+          return false;
+      }
     }
+    return true;
+
+  } else if (attr1ty.getRank() == 3) {
+    if (attr1ty.getDimSize(0) != attr2ty.getDimSize(1) ||
+          attr1ty.getDimSize(1) != attr2ty.getDimSize(2) ||
+          attr1ty.getDimSize(2) != attr2ty.getDimSize(0))
+      return false;
+
+    auto attr1Values = attr1.getValues<mlir::Attribute>();
+    auto attr2Values = attr2.getValues<mlir::Attribute>();
+    for (uint64_t i = 0; i < attr1ty.getDimSize(0); ++i) {
+      for (uint64_t j = 0; j < attr1ty.getDimSize(1); ++j) {
+        for (uint64_t k = 0; k < attr1ty.getDimSize(2); ++k) {
+          if (attr1Values[{i, j, k}] != attr2Values[{k, i, j}])
+            return false;
+        }
+      }
+    }
+    return true;
+
+  } else if (attr1ty.getRank() == 4) {
+    if (attr1ty.getDimSize(0) != attr2ty.getDimSize(1) ||
+        attr1ty.getDimSize(1) != attr2ty.getDimSize(2) ||
+        attr1ty.getDimSize(2) != attr2ty.getDimSize(3) ||
+        attr1ty.getDimSize(3) != attr2ty.getDimSize(0))
+      return false;
+
+    auto attr1Values = attr1.getValues<mlir::Attribute>();
+    auto attr2Values = attr2.getValues<mlir::Attribute>();
+    for (uint64_t i = 0; i < attr1ty.getDimSize(0); ++i) {
+      for (uint64_t j = 0; j < attr1ty.getDimSize(1); ++j) {
+        for (uint64_t k = 0; k < attr1ty.getDimSize(2); ++k) {
+          for (uint64_t l = 0; l < attr1ty.getDimSize(3); ++l) {
+            if (attr1Values[{i, j, k, l}] != attr2Values[{l, i, j, k}])
+              return false;
+          }
+        }
+      }
+    }
+    return true;
+  } else {
+    return false;
   }
-  return true;
 }
 
 Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
@@ -1151,7 +1206,7 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
             verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t << "\n";
             return t;
 
-          } else if (isTranspose(a, attr)) {
+          } else if (isTranspose(attr, a)) {
             // Transposing a constant tensor happens frequently.
             verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t
                 << ".transpose()\n";
