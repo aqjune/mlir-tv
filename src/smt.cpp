@@ -138,11 +138,11 @@ Expr get1DSize(const vector<Expr> &dims) {
 }
 
 vector<Expr> simplifyList(const vector<Expr> &exprs) {
-  vector<Expr> v;
+  /*vector<Expr> v;
   v.reserve(exprs.size());
   for (auto &e: exprs)
-    v.push_back(e.simplify());
-  return v;
+    v.push_back(e.simplify());*/
+  return exprs;
 }
 
 vector<Expr> makeCube(Expr &&e, unsigned rank) {
