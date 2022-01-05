@@ -1517,7 +1517,7 @@ void encodeOp(State &st, mlir::tensor::ExpandShapeOp op, bool) {
 
     // If the original size isn't divisible, raise UB
     st.wellDefined(op, orgdim.urem(const_size) == 0);
-    newdims[unknown_dim] = orgdim.udiv(const_size); 
+    newdims[unknown_dim] = orgdim.udiv(const_size);
   }
 
   st.regs.add(op.getResult(), t.reshape(newdims));
@@ -2352,6 +2352,98 @@ void encodeOp(State &st, mlir::memref::TensorStoreOp op, bool encodeMemWrite) {
 }
 
 template<>
+void encodeOp(State &st, mlir::memref::ExpandShapeOp op, bool encodeMemWrite) {
+  auto srcType = op.src().getType().cast<mlir::MemRefType>();
+  auto resType = op.result().getType().cast<mlir::MemRefType>();
+
+  if (!srcType.getLayout().isIdentity() || !resType.getLayout().isIdentity())
+    throw UnsupportedException(op.getOperation(),
+      "We do not support non-identity layout memref");
+
+  MemRef m = st.regs.get<MemRef>(op.src());
+  // The fresh variables created by ShapedValue::getDims will be ignored
+  // by the for loop below.
+  auto newdims = ShapedValue::getDims(op.getResultType(), true);
+  auto indices = op.getReassociationIndices();
+
+  unsigned i = 0;
+  for (unsigned srci = 0; srci < indices.size(); ++srci) {
+    auto &ids = indices[srci];
+    auto orgdim = (Expr)m.getDim(srci);
+
+    // Allow one '?' only.
+    int unknown_dim = -1;
+    int64_t const_size = 1;
+    for (auto id: ids) {
+      if (op.getResultType().getDimSize(id) == mlir::TensorType::kDynamicSize) {
+        if (unknown_dim != -1)
+          throw UnsupportedException(op.getOperation(),
+              "it has more than one unknown dimension size in one group");
+        unknown_dim = i;
+      } else {
+        const_size *= op.getResultType().getDimSize(id);
+      }
+      ++i;
+    }
+
+    if (unknown_dim == -1)
+      // Nothing to do; it is already well-defined
+      continue;
+
+    if (Index::BITS < 64 && (size_t)const_size >= (1ull << Index::BITS))
+      throw UnsupportedException(op.getOperation(),
+          "tensor size is too large");
+
+    // If the original size isn't divisible, raise UB
+    st.wellDefined(op, orgdim.urem(const_size) == 0);
+    newdims[unknown_dim] = orgdim.udiv(const_size);
+  }
+
+  st.regs.add(op.getResult(), m.reshape(newdims));
+  // Reshape does not look into memref's elements, so init check is not
+  // necessary.
+}
+
+template<>
+void encodeOp(State &st, mlir::memref::CollapseShapeOp op, bool) {
+  auto srcType = op.src().getType().cast<mlir::MemRefType>();
+  auto resType = op.result().getType().cast<mlir::MemRefType>();
+
+  if (!srcType.getLayout().isIdentity() || !resType.getLayout().isIdentity())
+    throw UnsupportedException(op.getOperation(),
+      "We do not support non-identity layout memref");
+
+  MemRef m = st.regs.get<MemRef>(op.getOperand());
+  mlir::ShapedType resTy = op.getResultType();
+
+  auto reassocExprs = op.getReassociationIndices();
+  assert(reassocExprs.size() == (size_t)resTy.getRank());
+
+  vector<Expr> newDims;
+  if (reassocExprs.size() == 0) {
+    newDims.push_back(Index(1));
+  } else {
+    // If the collapsed size does not match op.getResultType(), it is UB.
+    for (unsigned i = 0; i < reassocExprs.size(); ++i) {
+      Expr size = Index::one();
+      for (auto &idx: reassocExprs[i])
+        size = size * m.getDim(idx);
+
+      if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
+        st.wellDefined(op, size == resTy.getDimSize(i),
+            "size check");
+      newDims.push_back(move(size));
+    }
+  }
+
+  st.wellDefined(op, m.get1DSize() == smt::get1DSize(newDims),
+      "size check");
+  st.regs.add(op.getResult(), m.reshape(newDims));
+  // Note: tensor_collapse_shape does not look into elements, so initialization
+  // check is not necessary.
+}
+
+template<>
 void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
   if (!encodeMemWrite)
     throw UnsupportedException(op.getOperation(),
@@ -3075,6 +3167,8 @@ static void encodeBlock(
     ENCODE(st, op, mlir::memref::StoreOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::SubViewOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::TensorStoreOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::ExpandShapeOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::CollapseShapeOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::linalg::DepthwiseConv2DNhwcHwcmOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::Conv2DNchwFchwOp, encodeMemWriteOps);

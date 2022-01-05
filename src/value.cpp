@@ -1608,6 +1608,11 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
   }
 }
 
+MemRef MemRef::reshape(const std::vector<smt::Expr> &newDims) {
+  return MemRef(m, elemType, bid, offset,
+    newDims, MemRef::Layout(newDims), Expr::mkBool(true));
+}
+
 MemRef MemRef::mkIte(smt::Expr cond,
     const MemRef &trueValue, const MemRef &falseValue) {
   auto trueDims = trueValue.getDims();
