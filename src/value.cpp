@@ -545,18 +545,11 @@ Tensor Tensor::affine(
     srcidxs[i] = newv.simplify();
   }
   auto elem = get(srcidxs);
-  auto identity = *getIdentity(elemType);
 
   return {
     elemType,
     move(newsizes),
-    Expr::mkLambda( // Value
-      idxvar,
-      Expr::mkIte(
-        ((Expr)idxvar).ult(::get1DSize(newsizes)), // TODO: is this chk needed?
-        elem,
-        identity
-      )),
+    Expr::mkLambda(idxvar, elem), // Value
     splatArrayForTensor(Expr::mkBool(true)) // Initialized
   };
 }
