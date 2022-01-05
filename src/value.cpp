@@ -1087,25 +1087,98 @@ Tensor Tensor::mkIte(
       move(retExpr), move(retInit));
 }
 
-static bool isTranspose(mlir::ElementsAttr attr1, mlir::ElementsAttr attr2) {
+// attr1[i_1][i_2]..[i_N] = attr2[i_N][i_1]...[i_N-1]
+// Currently support dimension = 2, 3, 4
+static bool isTransposed(mlir::ElementsAttr attr1, mlir::ElementsAttr attr2) {
   auto attr1ty = attr1.getType().dyn_cast<mlir::RankedTensorType>();
   auto attr2ty = attr2.getType().dyn_cast<mlir::RankedTensorType>();
   if (!attr1ty || !attr2ty)
     return false;
-  else if (attr1ty.getRank() != 2 || attr2ty.getRank() != 2)
-    return false;
-  else if (attr1ty.getDimSize(0) != attr2ty.getDimSize(1) ||
-           attr1ty.getDimSize(1) != attr2ty.getDimSize(0))
+  else if (attr1ty.getRank() != attr2ty.getRank())
     return false;
 
-  auto attr1Values = attr1.getValues<mlir::Attribute>();
-  auto attr2Values = attr2.getValues<mlir::Attribute>();
-  for (uint64_t i = 0; i < attr1ty.getDimSize(0); ++i) {
-    for (uint64_t j = 0; j < attr1ty.getDimSize(1); ++j) {
-      if (attr1Values[{i, j}] != attr2Values[{j, i}])
-        return false;
+  if (attr1ty.getRank() == 2) {
+    if (attr1ty.getDimSize(0) != attr2ty.getDimSize(1) ||
+           attr1ty.getDimSize(1) != attr2ty.getDimSize(0))
+      return false;
+
+    auto attr1Values = attr1.getValues<mlir::Attribute>();
+    auto attr2Values = attr2.getValues<mlir::Attribute>();
+    for (uint64_t i = 0; i < attr1ty.getDimSize(0); ++i) {
+      for (uint64_t j = 0; j < attr1ty.getDimSize(1); ++j) {
+        if (attr1Values[{i, j}] != attr2Values[{j, i}])
+          return false;
+      }
     }
+    return true;
+
+  } else if (attr1ty.getRank() == 3) {
+    if (attr1ty.getDimSize(0) != attr2ty.getDimSize(1) ||
+          attr1ty.getDimSize(1) != attr2ty.getDimSize(2) ||
+          attr1ty.getDimSize(2) != attr2ty.getDimSize(0))
+      return false;
+
+    auto attr1Values = attr1.getValues<mlir::Attribute>();
+    auto attr2Values = attr2.getValues<mlir::Attribute>();
+    for (uint64_t i = 0; i < attr1ty.getDimSize(0); ++i) {
+      for (uint64_t j = 0; j < attr1ty.getDimSize(1); ++j) {
+        for (uint64_t k = 0; k < attr1ty.getDimSize(2); ++k) {
+          if (attr1Values[{i, j, k}] != attr2Values[{k, i, j}])
+            return false;
+        }
+      }
+    }
+    return true;
+
+  } else if (attr1ty.getRank() == 4) {
+    if (attr1ty.getDimSize(0) != attr2ty.getDimSize(1) ||
+        attr1ty.getDimSize(1) != attr2ty.getDimSize(2) ||
+        attr1ty.getDimSize(2) != attr2ty.getDimSize(3) ||
+        attr1ty.getDimSize(3) != attr2ty.getDimSize(0))
+      return false;
+
+    auto attr1Values = attr1.getValues<mlir::Attribute>();
+    auto attr2Values = attr2.getValues<mlir::Attribute>();
+    for (uint64_t i = 0; i < attr1ty.getDimSize(0); ++i) {
+      for (uint64_t j = 0; j < attr1ty.getDimSize(1); ++j) {
+        for (uint64_t k = 0; k < attr1ty.getDimSize(2); ++k) {
+          for (uint64_t l = 0; l < attr1ty.getDimSize(3); ++l) {
+            if (attr1Values[{i, j, k, l}] != attr2Values[{l, i, j, k}])
+              return false;
+          }
+        }
+      }
+    }
+    return true;
+  } else {
+    return false;
   }
+}
+
+// Currently support, <dimx1x1x1..x1xf32> -> <dimxf32>
+static bool isSimpleReduction(mlir::ElementsAttr attr1, mlir::ElementsAttr attr2) {
+  auto attr1ty = attr1.getType().dyn_cast<mlir::RankedTensorType>();
+  auto attr2ty = attr2.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!attr1ty || !attr2ty)
+    return false;
+  if (attr1ty.getRank() <= attr2ty.getRank() || attr2ty.getRank() != 1)
+    return false;
+  if (attr1ty.getDimSize(0) != attr2ty.getDimSize(0))
+    return false;
+  for (uint64_t i = 1; i < attr1ty.getRank(); ++i)
+    if (attr1ty.getDimSize(i) != 1)
+      return false;
+
+  for (uint64_t i = 0; i < attr2ty.getDimSize(0); ++i) {
+    vector<uint64_t> idxs(attr1ty.getRank());
+    idxs[0] = i;
+
+    auto attr1Values = attr1.getValues<mlir::Attribute>();
+    auto attr2Values = attr2.getValues<mlir::Attribute>();
+    if (attr1Values[idxs] != attr2Values[i])
+      return false;
+  }
+
   return true;
 }
 
@@ -1143,11 +1216,36 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
             verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t << "\n";
             return t;
 
-          } else if (isTranspose(a, attr)) {
+          } else if (isTransposed(attr, a)) {
             // Transposing a constant tensor happens frequently.
             verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t
-                << ".transpose()\n";
-            return t.transpose();
+                << ".affine(...)\n";
+            const auto &dims = t.getDims();
+            auto indVars = Index::boundIndexVars(dims.size());
+            vector<Expr> newDims, newVars;
+
+            for (uint64_t i = 1; i < dims.size(); i ++) {
+              newDims.push_back(dims[i]);
+              newVars.push_back(indVars[i]);
+            }
+            newDims.push_back(dims[0]);
+            newVars.push_back(indVars[0]);
+
+            return t.affine(newVars, indVars, move(newDims));
+          } else if (isSimpleReduction(attr, a)) {
+            // Reduction a constant tensor happens frequently.
+            verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t
+                << ".affine(...)\n";
+            auto idx = Index::var("idx", VarType::BOUND);
+            auto dims = t.getDims();
+            vector<Expr> newVars = {idx};
+            auto attr1ty = attr.getType().dyn_cast<mlir::RankedTensorType>();
+            for (uint64_t i = 1; i < attr1ty.getRank(); ++i) {
+              newVars.push_back(Index::zero());
+              dims.push_back(Index::one());
+            }
+
+            return t.affine(newVars, {idx}, move(dims));
           }
         }
 
