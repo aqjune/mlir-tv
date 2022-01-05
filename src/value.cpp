@@ -1156,6 +1156,33 @@ static bool isTransposed(mlir::ElementsAttr attr1, mlir::ElementsAttr attr2) {
   }
 }
 
+// Currently support, <dimx1x1x1..x1xf32> -> <dimxf32>
+static bool isSimpleReduction(mlir::ElementsAttr attr1, mlir::ElementsAttr attr2) {
+  auto attr1ty = attr1.getType().dyn_cast<mlir::RankedTensorType>();
+  auto attr2ty = attr2.getType().dyn_cast<mlir::RankedTensorType>();
+  if (!attr1ty || !attr2ty)
+    return false;
+  if (attr1ty.getRank() <= attr2ty.getRank() || attr2ty.getRank() != 1)
+    return false;
+  if (attr1ty.getDimSize(0) != attr2ty.getDimSize(0))
+    return false;
+  for (uint64_t i = 1; i < attr1ty.getRank(); ++i)
+    if (attr1ty.getDimSize(i) != 1)
+      return false;
+
+  for (uint64_t i = 0; i < attr2ty.getDimSize(0); ++i) {
+    vector<uint64_t> idxs(attr1ty.getRank());
+    idxs[0] = i;
+
+    auto attr1Values = attr1.getValues<mlir::Attribute>();
+    auto attr2Values = attr2.getValues<mlir::Attribute>();
+    if (attr1Values[idxs] != attr2Values[i])
+      return false;
+  }
+
+  return true;
+}
+
 Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
       mlir::ElementsAttr attr) {
   mlir::Type elemType = tensorty.getElementType();
@@ -1198,7 +1225,7 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
             auto indVars = Index::boundIndexVars(dims.size());
             vector<Expr> newDims, newVars;
 
-            for (unsigned i = 1; i < dims.size(); i ++) {
+            for (uint64_t i = 1; i < dims.size(); i ++) {
               newDims.push_back(dims[i]);
               newVars.push_back(indVars[i]);
             }
@@ -1206,6 +1233,20 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
             newVars.push_back(indVars[0]);
 
             return t.affine(newVars, indVars, move(newDims));
+          } else if (isSimpleReduction(attr, a)) {
+            // Reduction a constant tensor happens frequently.
+            verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t
+                << ".affine(...)\n";
+            auto idx = Index::var("idx", VarType::BOUND);
+            auto dims = t.getDims();
+            vector<Expr> newVars = {idx};
+            auto attr1ty = attr.getType().dyn_cast<mlir::RankedTensorType>();
+            for (uint64_t i = 1; i < attr1ty.getRank(); ++i) {
+              newVars.push_back(Index::zero());
+              dims.push_back(Index::one());
+            }
+
+            return t.affine(newVars, {idx}, move(dims));
           }
         }
 
