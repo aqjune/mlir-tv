@@ -1013,15 +1013,10 @@ Tensor Tensor::transpose() const {
   auto i = Index::var("i", VarType::BOUND);
   auto j = Index::var("j", VarType::BOUND);
 
-  auto elem = get({i, j});
-  auto init = isInitialized({i, j});
+  auto body = get({i, j});
+  auto initialized = isInitialized({i, j});
 
-  return {
-    elemType,
-    {j, i},
-    Expr::mkLambda({j, i}, elem),
-    Expr::mkLambda({j, i}, init)
-  };
+  return mkLambda(elemType, {dims[1], dims[0]}, {j, i}, body, initialized);
 }
 
 Tensor Tensor::mkLambda(
