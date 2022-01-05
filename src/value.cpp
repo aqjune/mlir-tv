@@ -545,14 +545,12 @@ Tensor Tensor::affine(
     srcidxs[i] = newv.simplify();
   }
   auto elem = get(srcidxs);
-  auto init = isInitialized(srcidxs);
-  auto identity = *getIdentity(elemType);
 
   return {
     elemType,
     move(newsizes),
     Expr::mkLambda(idxvar, elem),
-    Expr::mkLambda(idxvar, init) // Initialized
+    splatArrayForTensor(Expr::mkBool(true)) // Initialized
   };
 }
 

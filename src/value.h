@@ -162,6 +162,8 @@ public:
   //   T2[newidxvars] = this[srcidxs]
   // For example, if newidxvars = [x, y, z] and srcidxs = [x, y + z],
   //   T2[x][y][z] = this[x][y + z]
+  // It is assumed that this tensor is initialized. The returned tensor
+  // is fully initialized.
   Tensor affine(
       const std::vector<smt::Expr> &newidxvars,
       std::vector<smt::Expr> srcidxs,
@@ -170,6 +172,8 @@ public:
   // Concatenates this and t2 along a given axis.
   // ex) If this: <2x3xf32>, t2:<2x5xf32> and axis = 1, the result is a tensor
   //     of size <2x8xf32>.
+  // It is assumed that this and t2 are initialized. The returned tensor
+  // is fully initialized.
   Tensor concat(const Tensor &t2, size_t axis);
 
   // Return a new tensor which is convolution of this tensor and filter.
@@ -202,19 +206,28 @@ public:
   // Return a new tensor that repeats for the given amount in each axis.
   Tensor tile(const std::vector<unsigned> &repeat) const;
 
+  // Transpose this 2-dimensional tensor.
+  // It is assumed that this tensor is initialized. The returned tensor
+  // is fully initialized.
   Tensor transpose() const;
 
   // Given two 2-dim tensors this and b, return their matrix multiplication
   // bTransposed is true, don't transpose b internally
+  // It is assumed that this tensor and b (and *init if not nullopt) are
+  // initialized. The returned tensor is fully initialized.
   Tensor matmul(const Tensor &b, bool bTransposed = false,
                 std::optional<Tensor> &&init = std::nullopt) const;
 
   // Return the result of an elementwise operation.
   // Assume that the shapes are equivalent.
+  // It is assumed that this tensor and b are initialized.
+  // The returned tensor is fully initialized.
   Tensor elementwiseBinOp(const Tensor &b,
       mlir::Type resultElemType,
       const std::function<smt::Expr(smt::Expr &&, smt::Expr &&)> &op) const;
 
+  // It is assumed that this tensor is initialized.
+  // The returned tensor is fully initialized.
   Tensor elementwiseUnaryOp(
       mlir::Type resultElemType,
       const std::function<smt::Expr(smt::Expr &&)> &op) const;
@@ -227,6 +240,8 @@ public:
   // the axis dimension is 1 and the corresponding elements contain summations
   // of elements.
   // Note that sum does not decrement the rank.
+  // It is assumed that this tensor is initialized.
+  // The returned tensor is fully initialized.
   Tensor sum(unsigned axis) const;
   
 
