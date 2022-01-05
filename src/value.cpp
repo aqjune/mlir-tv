@@ -549,7 +549,7 @@ Tensor Tensor::affine(
   return {
     elemType,
     move(newsizes),
-    Expr::mkLambda(idxvar, elem),
+    Expr::mkLambda(idxvar, elem), // Value
     splatArrayForTensor(Expr::mkBool(true)) // Initialized
   };
 }
