@@ -551,13 +551,7 @@ Tensor Tensor::affine(
   return {
     elemType,
     move(newsizes),
-    Expr::mkLambda( // Value
-      idxvar,
-      Expr::mkIte(
-        ((Expr)idxvar).ult(::get1DSize(newsizes)), // TODO: is this chk needed?
-        elem,
-        identity
-      )),
+    Expr::mkLambda(idxvar, elem),
     Expr::mkLambda(idxvar, init) // Initialized
   };
 }
@@ -1015,22 +1009,19 @@ Tensor Tensor::tile(const vector<unsigned> &repeat) const {
 }
 
 Tensor Tensor::transpose() const {
-  assert(dims.size() >= 2 && dims.size() <= 4);
+  assert(dims.size() == 2);
+  auto i = Index::var("i", VarType::BOUND);
+  auto j = Index::var("j", VarType::BOUND);
 
-  auto indVars = Index::boundIndexVars(dims.size());
-  vector<Expr> newDims, newIndVars;
+  auto elem = get({i, j});
+  auto init = isInitialized({i, j});
 
-  for (unsigned i = 1; i < dims.size(); i ++) {
-    newDims.push_back(dims[i]);
-    newIndVars.push_back(indVars[i]);
-  }
-
-  newDims.push_back(dims[0]);
-  newIndVars.push_back(indVars[0]);
-
-  // UB if uninitialized
-  return Tensor::mkInitializedLambda(
-      elemType, move(newDims), move(newIndVars), get(indVars));
+  return {
+    elemType,
+    {j, i},
+    Expr::mkLambda({j, i}, elem),
+    Expr::mkLambda({j, i}, init)
+  };
 }
 
 Tensor Tensor::mkLambda(
@@ -1106,7 +1097,7 @@ Tensor Tensor::mkIte(
 
 // attr1[i_1][i_2]..[i_N] = attr2[i_N][i_1]...[i_N-1]
 // Currently support dimension = 2, 3, 4
-static bool isTranspose(mlir::ElementsAttr attr1, mlir::ElementsAttr attr2) {
+static bool isTransposed(mlir::ElementsAttr attr1, mlir::ElementsAttr attr2) {
   auto attr1ty = attr1.getType().dyn_cast<mlir::RankedTensorType>();
   auto attr2ty = attr2.getType().dyn_cast<mlir::RankedTensorType>();
   if (!attr1ty || !attr2ty)
@@ -1206,11 +1197,22 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
             verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t << "\n";
             return t;
 
-          } else if (isTranspose(attr, a)) {
+          } else if (isTransposed(attr, a)) {
             // Transposing a constant tensor happens frequently.
             verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t
-                << ".transpose()\n";
-            return t.transpose();
+                << ".affine(...)\n";
+            const auto &dims = t.getDims();
+            auto indVars = Index::boundIndexVars(dims.size());
+            vector<Expr> newDims, newVars;
+
+            for (unsigned i = 1; i < dims.size(); i ++) {
+              newDims.push_back(dims[i]);
+              newVars.push_back(indVars[i]);
+            }
+            newDims.push_back(dims[0]);
+            newVars.push_back(indVars[0]);
+
+            return t.affine(newVars, indVars, move(newDims));
           }
         }
 
