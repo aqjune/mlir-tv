@@ -1011,10 +1011,9 @@ Tensor Tensor::transpose() const {
   auto i = Index::var("i", VarType::BOUND);
   auto j = Index::var("j", VarType::BOUND);
 
-  auto body = get({i, j});
-  auto initialized = isInitialized({i, j});
-
-  return mkLambda(elemType, {dims[1], dims[0]}, {j, i}, body, initialized);
+  // UB if uninitialized
+  return Tensor::mkInitializedLambda(
+      elemType, {dims[1], dims[0]}, {j, i}, get({i, j}));
 }
 
 Tensor Tensor::mkLambda(
