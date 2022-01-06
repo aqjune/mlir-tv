@@ -119,6 +119,7 @@ static void storeTensorTo(
     mlir::MemRefType memrefTy, bool ubIfReadOnly) {
   // Accessing uninitialized elem is UB.
   st.wellDefined(op, tensor.isFullyInitialized(), "tensor initialized");
+  st.hasQuantifier = true;
 
   if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
@@ -1620,6 +1621,7 @@ void encodeOp(State &st, mlir::linalg::MatmulOp op, bool) {
     st.wellDefined(op, b.isFullyInitialized(), "op 1 initialized");
     st.wellDefined(op, c.isFullyInitialized(), "op 2 initialized");
     st.regs.add(op.getResult(0), Tensor(result));
+    st.hasQuantifier = true;
   } else { // Buffer semantics
     auto ma = st.regs.get<MemRef>(op.getOperand(0));
     auto mb = st.regs.get<MemRef>(op.getOperand(1));
