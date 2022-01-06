@@ -1217,7 +1217,7 @@ Expr Expr::mkSplatArray(const Sort &domain, const Expr &splatElem) {
       e.setCVC5(solver.mkConstArray(
         solver.mkArraySort(*domain.cvc5, elem.getSort()), elem));
     } else {
-      auto dummy_var = solver.mkVar(*domain.cvc5);
+      auto dummy_var = solver.mkVar(*domain.cvc5, "asdfkjahsdkjfh");
       e.setCVC5(mkCVC5Lambda(dummy_var, elem));
     }
   }
@@ -1536,19 +1536,23 @@ void Matcher::setZ3(Expr &e, optional<z3::expr> &&opt) const {
 bool Matcher::matchBinaryOp(const Expr &expr, Z3_decl_kind z3Kind,
     function<bool(const Expr&)> lhsMatcher,
     function<bool(const Expr&)> rhsMatcher) const {
-  auto e = expr.getZ3Expr();
-  if (!e.is_app())
-    return false;
+  if (expr.hasZ3Expr()) {
+    auto e = expr.getZ3Expr();
+    if (!e.is_app())
+      return false;
 
-  Z3_app a = e;
-  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
-  if (Z3_get_decl_kind(*sctx.z3, decl) != z3Kind)
-    return false;
+    Z3_app a = e;
+    Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+    if (Z3_get_decl_kind(*sctx.z3, decl) != z3Kind)
+      return false;
 
-  Expr lhs = newExpr(), rhs = newExpr();
-  setZ3(lhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
-  setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
-  return lhsMatcher(lhs) && rhsMatcher(rhs);
+    Expr lhs = newExpr(), rhs = newExpr();
+    setZ3(lhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+    setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
+    return lhsMatcher(lhs) && rhsMatcher(rhs);
+  } else {
+    return false;
+  }
 }
 #endif // SOLVER_Z3
 
@@ -1560,79 +1564,91 @@ bool ConstBool::operator()(const Expr &expr) const {
 bool ConstSplatArray::operator()(const Expr &expr) const {
   // FIXME: cvc5
 #ifdef SOLVER_Z3
-  auto e = expr.getZ3Expr();
-  if (!e.is_app())
-    return false;
+  if (expr.hasZ3Expr()) {
+    auto e = expr.getZ3Expr();
+    if (!e.is_app())
+      return false;
 
-  Z3_app a = e;
-  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
-  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_CONST_ARRAY)
-    return false;
+    Z3_app a = e;
+    Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+    if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_CONST_ARRAY)
+      return false;
+
+    Expr newe = newExpr();
+    IF_Z3_ENABLED(setZ3(newe, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0))));
+    return subMatcher(newe);
+  }
 #endif // SOLVER_Z3
 
-  Expr newe = newExpr();
-  IF_Z3_ENABLED(setZ3(newe, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0))));
-  return subMatcher(newe);
+  return false;
 }
 
 bool Lambda::operator()(const Expr &expr) const {
   // FIXME: cvc5
 #ifdef SOLVER_Z3
-  auto e = expr.getZ3Expr();
+  if (expr.hasZ3Expr()) {
+    auto e = expr.getZ3Expr();
 
-  if (!e.is_lambda())
-    return false;
+    if (!e.is_lambda())
+      return false;
 
-  Z3_ast body = Z3_get_quantifier_body(*sctx.z3, (Z3_ast)e);
-#endif
+    Z3_ast body = Z3_get_quantifier_body(*sctx.z3, (Z3_ast)e);
 
-  Expr newe = newExpr();
-  IF_Z3_ENABLED(setZ3(newe, z3::expr(*sctx.z3, body)));
+    Expr newe = newExpr();
+    IF_Z3_ENABLED(setZ3(newe, z3::expr(*sctx.z3, body)));
 
-  return bodyMatcher(newe);
+    return bodyMatcher(newe);
+  }
+#endif // SOLVER_Z3
+
+  return false;
 }
 
 bool Store::operator()(const Expr &expr) const {
   // FIXME: cvc5
 #ifdef SOLVER_Z3
-  auto e = expr.getZ3Expr();
-  if (!e.is_app())
-    return false;
+  if (expr.hasZ3Expr()) {
+    auto e = expr.getZ3Expr();
+    if (!e.is_app())
+      return false;
 
-  Z3_app a = e;
-  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
-  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_STORE)
-    return false;
-#endif // SOLVER_Z3
+    Z3_app a = e;
+    Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+    if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_STORE)
+      return false;
 
-  Expr arr = newExpr(), idx = newExpr(), val = newExpr();
-#ifdef SOLVER_Z3
-  setZ3(arr, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
-  setZ3(idx, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
-  setZ3(val, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 2)));
+    Expr arr = newExpr(), idx = newExpr(), val = newExpr();
+    setZ3(arr, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+    setZ3(idx, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
+    setZ3(val, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 2)));
+
+    return arrMatcher(arr) && idxMatcher(idx) && valMatcher(val);
+  }
 #endif // SOLVER_Z3
-  return arrMatcher(arr) && idxMatcher(idx) && valMatcher(val);
+  return false;
 }
 
 bool Concat::operator()(const Expr &expr) const {
   // FIXME: cvc5
 #ifdef SOLVER_Z3
-  auto e = expr.getZ3Expr();
-  if (!e.is_app())
-    return false;
+  if (expr.hasZ3Expr()) {
+    auto e = expr.getZ3Expr();
+    if (!e.is_app())
+      return false;
 
-  Z3_app a = e;
-  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
-  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_CONCAT)
-    return false;
-#endif // SOLVER_Z3
+    Z3_app a = e;
+    Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+    if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_CONCAT)
+      return false;
 
-  Expr lhs = newExpr(), rhs = newExpr();
-#ifdef SOLVER_Z3
-  setZ3(lhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
-  setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
+    Expr lhs = newExpr(), rhs = newExpr();
+    setZ3(lhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+    setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
+
+    return lhsMatcher(lhs) && rhsMatcher(rhs);
+  }
 #endif // SOLVER_Z3
-  return lhsMatcher(lhs) && rhsMatcher(rhs);
+  return false;
 }
 
 bool URem::operator()(const Expr &expr) const {
@@ -1662,21 +1678,22 @@ bool Mul::operator()(const Expr &expr) const {
 bool ZeroExt::operator()(const Expr &expr) const {
   // FIXME: cvc5
 #ifdef SOLVER_Z3
-  auto e = expr.getZ3Expr();
-  if (!e.is_app())
-    return false;
+  if (expr.hasZ3Expr()) {
+    auto e = expr.getZ3Expr();
+    if (!e.is_app())
+      return false;
 
-  Z3_app a = e;
-  Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
-  if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_ZERO_EXT)
-    return false;
-#endif // SOLVER_Z3
+    Z3_app a = e;
+    Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
+    if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_ZERO_EXT)
+      return false;
 
-  Expr subexpr = newExpr();
-#ifdef SOLVER_Z3
-  setZ3(subexpr, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+    Expr subexpr = newExpr();
+    setZ3(subexpr, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
+    return matcher(subexpr);
+  }
 #endif // SOLVER_Z3
-  return matcher(subexpr);
+  return false;
 }
 
 bool Equals::operator()(const Expr &expr) const {
