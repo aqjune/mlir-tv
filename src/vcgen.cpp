@@ -563,15 +563,15 @@ static Results validate(ValidationInput vinput) {
   };
 
   Results result(Results::Code::TIMEOUT);
+  auto useAllLogic = arg_smt_use_all_logic.getValue();
   // (abstraction, use ALL logic?)
-  queue<pair<Abstraction, bool>> queue;
+  queue<Abstraction> queue;
 
-  queue.push({{AbsLevelFpDot::FULLY_ABS,
+  queue.push({AbsLevelFpDot::FULLY_ABS,
       AbsLevelFpCast::FULLY_ABS,
       AbsLevelIntDot::FULLY_ABS,
       vinput.isFpAddAssociative ? AbsFpAddSumEncoding::USE_SUM_ONLY :
-                  AbsFpAddSumEncoding::DEFAULT},
-      /* useAllLogic */arg_smt_use_all_logic.getValue() });
+                  AbsFpAddSumEncoding::DEFAULT});
 
 
   setEncodingOptions(vinput.useMultisetForFpSum);
@@ -581,7 +581,7 @@ static Results validate(ValidationInput vinput) {
   const string dumpSMTPath = vinput.dumpSMTPath;
 
   while (!queue.empty()) {
-    auto [abs, useAllLogic] = queue.front();
+    auto abs = queue.front();
     queue.pop();
 
     if (itrCount > 0)
@@ -608,7 +608,8 @@ static Results validate(ValidationInput vinput) {
     if (res.code == Results::INCONSISTENT) {
       return res;
     } else if (res.code == Results::SUCCESS) {
-      checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS, false, elapsedMillisec);
+      checkIsSrcAlwaysUB(vinput, res.code == Results::SUCCESS,
+          useAllLogic, elapsedMillisec);
       return res;
     } else {
       result = res;
@@ -642,7 +643,7 @@ static Results validate(ValidationInput vinput) {
     }
 
     if (isChanged) {
-      queue.push({nextAbs, /* useAllLogic */false});
+      queue.push(nextAbs);
     } else {
       /* 4. fp add, sum encoding level */
       // Since UNROLL_TO_ADD may cause big slowdown, turn in off at the end
@@ -653,7 +654,7 @@ static Results validate(ValidationInput vinput) {
       if (abs.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
         if (usedOps.fpSum) {
           nextAbs.fpAddSumEncoding = AbsFpAddSumEncoding::UNROLL_TO_ADD;
-          queue.push({nextAbs, /* useAllLogic */false});
+          queue.push(nextAbs);
         }
       }
     }
@@ -662,7 +663,7 @@ static Results validate(ValidationInput vinput) {
   }
 
   if (result.code == Results::TIMEOUT)
-    checkIsSrcAlwaysUB(vinput, false, false, elapsedMillisec);
+    checkIsSrcAlwaysUB(vinput, false, useAllLogic, elapsedMillisec);
 
   // If verification failed even when with the most concrete semantics,
   // return the last result
