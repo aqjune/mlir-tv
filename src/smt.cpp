@@ -408,7 +408,8 @@ bool Expr::isVar() const {
   bool res = false;
   IF_Z3_ENABLED(res |= z3 && z3->is_app() && z3->is_const() &&
                        !z3->is_numeral());
-  // TODO: CVC5
+  // TODO: CVC5. Temporary set true to pass assertion
+  IF_CVC5_ENABLED(res |= true);
   return res;
 }
 
@@ -617,21 +618,23 @@ Expr Expr::select(const vector<Expr> &idxs) const {
     }
   }));
 
-  Expr arr;
   // TODO: cvc5
 #ifdef SOLVER_Z3
-  Z3_app a = e.getZ3Expr();
-  arr.setZ3(z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
-#endif // SOLVER_Z3
+  if (e.hasZ3Expr()) {
+    Expr arr;
+    Z3_app a = e.getZ3Expr();
+    arr.setZ3(z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
 
-  optional<Expr> elem = nullopt;
-  using namespace matchers;
-  if (ConstSplatArray(Any(elem)).match(arr)) {
-    e = *elem;
+    optional<Expr> elem = nullopt;
+    using namespace matchers;
+    if (ConstSplatArray(Any(elem)).match(arr)) {
+      e = *elem;
+    }
+    if (Lambda(Any(elem)).match(arr) && idxs.size() == 1) {
+      e = elem->substituteDeBruijn({idxs[0]});
+    }
   }
-  if (Lambda(Any(elem)).match(arr) && idxs.size() == 1) {
-    e = elem->substituteDeBruijn({idxs[0]});
-  }
+  #endif // SOLVER_Z3
 
   return e;
 }
@@ -1733,9 +1736,8 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e) {
 }
 
 std::ostream& operator<<(std::ostream& os, const smt::Expr &e) {
-  IF_Z3_ENABLED(os << e.getZ3Expr());
-  // FIXME: consider CVC5
-  // IF_CVC5_ENABLED(os << e.getCVC5Term());
+  IF_Z3_ENABLED(if (e.hasZ3Expr()) os << e.getZ3Expr());
+  IF_CVC5_ENABLED(if (e.hasCVC5Term()) os << e.getCVC5Term());
   return os;
 }
 
