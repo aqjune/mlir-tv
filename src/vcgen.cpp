@@ -563,8 +563,7 @@ static Results validate(ValidationInput vinput) {
   };
 
   Results result(Results::Code::TIMEOUT);
-  auto useAllLogic =
-      arg_smt_use_all_logic.getValue() || vinput.isFpAddAssociative;
+  auto useAllLogic = arg_smt_use_all_logic.getValue();
   // (abstraction, use ALL logic?)
   queue<Abstraction> queue;
 
