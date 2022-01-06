@@ -1,4 +1,5 @@
 // VERIFY
+// NO-IDENTITY
 // ARGS: --smt-use-all-logic
 
 memref.global "private" constant @constant_a : memref<8x4xf32> = dense<1.0>
