@@ -1,4 +1,5 @@
 // EXPECT: "Memory mismatch"
+// ARGS: --smt-use-all-logic
 // Source writes matmul results in %c, but target does not.
 
 func @f(%a : memref<8x4xf32>, %b: memref<4x16xf32>, %c: memref<8x16xf32>) -> tensor<8x16xf32> {

@@ -1,4 +1,5 @@
 // EXPECT: "Source is more defined than target"
+// ARGS: --smt-use-all-logic
 // Source is more defined because %c have to point writable memory block in src.
 
 func @f(%a : memref<8x4xf32>, %b: memref<4x16xf32>, %c: memref<8x16xf32>) -> tensor<8x16xf32> {

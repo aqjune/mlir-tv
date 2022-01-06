@@ -1,4 +1,5 @@
 // VERIFY
+// ARGS: --smt-use-all-logic
 
 memref.global "private" constant @constant_a : memref<8x4xf32> = dense<1.0>
 memref.global "private" constant @constant_b : memref<4x16xf32> = dense<2.0>
