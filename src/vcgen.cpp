@@ -642,7 +642,7 @@ static Results validate(ValidationInput vinput) {
     }
 
     if (isChanged) {
-      queue.push({nextAbs, /* useAllLogic */vinput.isFpAddAssociative});
+      queue.push({nextAbs, /* useAllLogic */false});
     } else {
       /* 4. fp add, sum encoding level */
       // Since UNROLL_TO_ADD may cause big slowdown, turn in off at the end
@@ -653,7 +653,7 @@ static Results validate(ValidationInput vinput) {
       if (abs.fpAddSumEncoding == AbsFpAddSumEncoding::DEFAULT) {
         if (usedOps.fpSum) {
           nextAbs.fpAddSumEncoding = AbsFpAddSumEncoding::UNROLL_TO_ADD;
-          queue.push({nextAbs, /* useAllLogic */vinput.isFpAddAssociative});
+          queue.push({nextAbs, /* useAllLogic */false});
         }
       }
     }
