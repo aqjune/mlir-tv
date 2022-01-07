@@ -405,11 +405,13 @@ bool Expr::isTrue() const {
 }
 
 bool Expr::isVar() const {
-  bool res = true; // Temporary set true to pass assertion when cvc5 only
+  bool res = false;
   IF_Z3_ENABLED(
-    if(z3) res = z3 && z3->is_app() && z3->is_const() && !z3->is_numeral()
+    if (z3) res |= z3->is_app() && z3->is_const() && !z3->is_numeral()
   );
-  // TODO: CVC5. 
+  IF_CVC5_ENABLED(
+    if (cvc5) res |= !(cvc5->isIntegerValue() || cvc5->isBitVectorValue())
+  );
   return res;
 }
 
