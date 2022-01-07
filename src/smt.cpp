@@ -405,12 +405,11 @@ bool Expr::isTrue() const {
 }
 
 bool Expr::isVar() const {
-  bool res = false;
-  if (z3)
-    res = z3 && z3->is_app() && z3->is_const() && !z3->is_numeral();
-  else
-    // TODO: CVC5. Temporary set true to pass assertion
-    res = true;
+  bool res = true; // Temporary set true to pass assertion when cvc5 only
+  IF_Z3_ENABLED(
+    if(z3) res = z3 && z3->is_app() && z3->is_const() && !z3->is_numeral()
+  );
+  // TODO: CVC5. 
   return res;
 }
 
