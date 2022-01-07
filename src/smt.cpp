@@ -642,7 +642,7 @@ Expr Expr::select(const vector<Expr> &idxs) const {
 #ifdef SOLVER_CVC5
 static cvc5::api::Term mkCVC5Lambda(
     const cvc5::api::Term &var, const cvc5::api::Term &body) {
-  auto vlist = sctx.cvc5->mkTerm(cvc5::api::VARIABLE_LIST, {var});
+  auto vlist = sctx.cvc5->mkTerm(cvc5::api::BOUND_VAR_LIST, {var});
   return sctx.cvc5->mkTerm(cvc5::api::LAMBDA, vlist, body);
 }
 
@@ -689,8 +689,8 @@ Expr Expr::insert(const Expr &elem) const {
     return z3::store(arrayz3, idx, z3::select(arrayz3, idx) + 1);
   }));
   SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
-    auto newBag = solver.mkTerm(cvc5::api::BAG_MAKE, *elem.cvc5, solver.mkInteger(1));
-    return solver.mkTerm(cvc5::api::BAG_UNION_DISJOINT, *cvc5, newBag);
+    auto newBag = solver.mkTerm(cvc5::api::MK_BAG, *elem.cvc5, solver.mkInteger(1));
+    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *cvc5, newBag);
   }));
   return e;
 }
@@ -1178,7 +1178,7 @@ Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
   }));
   SET_CVC5(e, fupdate2(sctx.cvc5, body.cvc5, [&](auto &solver, auto cvc5body){
     auto cvc5vars = toCVC5TermVector(vars);
-    auto vlist = solver.mkTerm(cvc5::api::VARIABLE_LIST, cvc5vars);
+    auto vlist = solver.mkTerm(cvc5::api::BOUND_VAR_LIST, cvc5vars);
     return solver.mkTerm(cvc5::api::FORALL, vlist, cvc5body);
   }));
   return e;
@@ -1195,7 +1195,7 @@ Expr Expr::mkLambda(const vector<Expr> &vars, const Expr &body) {
   }));
   SET_CVC5(e, fupdate2(sctx.cvc5, body.cvc5, [&](auto &solver, auto cvc5body){
     auto cvc5vars = toCVC5TermVector(vars);
-    auto vlist = solver.mkTerm(cvc5::api::VARIABLE_LIST, cvc5vars);
+    auto vlist = solver.mkTerm(cvc5::api::BOUND_VAR_LIST, cvc5vars);
     return solver.mkTerm(cvc5::api::LAMBDA, vlist, cvc5body);
   }));
   return e;
