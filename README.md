@@ -16,9 +16,9 @@ Solvers (at least one of them must be used):
 [cvc5(limited support)](https://github.com/cvc5/cvc5)
 > Using the smt solvers of stable version is recommended, as latest commits may
 contain bugs or introduce breaking changes in their API.  
-As of now(2021/12/25), our project has been tested on
+As of now(2022/01/07), our project has been tested on
 [z3-4.8.13](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.13) and
-[cvc5-0.0.4](https://github.com/cvc5/cvc5/releases/tag/cvc5-0.0.4)
+[cvc5-0.0.3](https://github.com/cvc5/cvc5/releases/tag/cvc5-0.0.3)
 
 > We usually made our best effort to support the use of latest MLIR dialect and
 API, but we'll reside on commit [b5a0f0f](https://github.com/llvm/llvm-project/commit/b5a0f0f397c778cc7db71754c1b9c939f669568e) until further notice...
