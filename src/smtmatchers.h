@@ -15,6 +15,9 @@ protected:
       std::function<bool(const Expr&)> lhsMatcher,
       std::function<bool(const Expr&)> rhsMatcher) const;
 #endif
+#ifdef SOLVER_CVC5
+  void setCVC5(Expr &e, std::optional<cvc5::api::Term> &&opt) const;
+#endif
 };
 
 class Any: Matcher {

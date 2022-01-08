@@ -1558,6 +1558,13 @@ bool Matcher::matchBinaryOp(const Expr &expr, Z3_decl_kind z3Kind,
 }
 #endif // SOLVER_Z3
 
+#ifdef SOLVER_CVC5
+void Matcher::setCVC5(Expr &e, optional<cvc5::api::Term> &&opt) const {
+  e.setCVC5(move(opt));
+}
+
+#endif // SOLVER_CVC5
+
 
 bool ConstBool::operator()(const Expr &expr) const {
   return (val && expr.isTrue()) || (!val && expr.isFalse());
@@ -1678,7 +1685,6 @@ bool Mul::operator()(const Expr &expr) const {
 }
 
 bool ZeroExt::operator()(const Expr &expr) const {
-  // FIXME: cvc5
 #ifdef SOLVER_Z3
   if (expr.hasZ3Expr()) {
     auto e = expr.getZ3Expr();
@@ -1695,6 +1701,19 @@ bool ZeroExt::operator()(const Expr &expr) const {
     return matcher(subexpr);
   }
 #endif // SOLVER_Z3
+#ifdef SOLVER_CVC5
+  if (expr.hasCVC5Term()) {
+    auto op = expr.getCVC5Term();
+    if (op.getKind() != cvc5::api::BITVECTOR_ZERO_EXTEND)
+      return false;
+    if (op.getNumChildren() != 1)
+      return false;
+
+    Expr subexpr = newExpr();
+    setCVC5(subexpr, op[0]);
+    return matcher(subexpr);
+  }
+#endif // SOLVER_CVC5
   return false;
 }
 
