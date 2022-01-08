@@ -1219,7 +1219,7 @@ Expr Expr::mkSplatArray(const Sort &domain, const Expr &splatElem) {
       e.setCVC5(solver.mkConstArray(
         solver.mkArraySort(*domain.cvc5, elem.getSort()), elem));
     } else {
-      auto dummy_var = solver.mkVar(*domain.cvc5, "asdfkjahsdkjfh");
+      auto dummy_var = solver.mkVar(*domain.cvc5);
       e.setCVC5(mkCVC5Lambda(dummy_var, elem));
     }
   }
