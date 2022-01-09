@@ -160,6 +160,8 @@ public:
       std::string &&fn_suffix)
       : AbsFpEncoding(semantics, limit_bw, smaller_fpty_enc->value_bitwidth,
         prec_bw, std::move(fn_suffix)) {}
+  // Copying this object badly interacts with how CVC5 treats the term objects.
+  AbsFpEncoding(const AbsFpEncoding &) = delete;
 
   smt::Sort sort() const {
     return smt::Sort::bvSort(fp_bitwidth);

@@ -9,19 +9,11 @@ Currently MLIR-TV is in an experimental stage.
 ## How to build MLIR-TV
 
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
-[MLIR](https://github.com/llvm/llvm-project),
+[MLIR](https://github.com/llvm/llvm-project) (commit id [b5a0f0f](https://github.com/llvm/llvm-project/commit/b5a0f0f397c778cc7db71754c1b9c939f669568e)),
 [Python3](https://www.python.org/downloads/),  
 Solvers (at least one of them must be used):
-[z3](https://github.com/Z3Prover/z3),
-[cvc5(limited support)](https://github.com/cvc5/cvc5)
-> Using the smt solvers of stable version is recommended, as latest commits may
-contain bugs or introduce breaking changes in their API.  
-As of now(2021/12/25), our project has been tested on
-[z3-4.8.13](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.13) and
-[cvc5-0.0.4](https://github.com/cvc5/cvc5/releases/tag/cvc5-0.0.4)
-
-> We usually made our best effort to support the use of latest MLIR dialect and
-API, but we'll reside on commit [b5a0f0f](https://github.com/llvm/llvm-project/commit/b5a0f0f397c778cc7db71754c1b9c939f669568e) until further notice...
+[z3-4.8.13](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.13) ,
+[cvc5-0.0.3(limited support)](https://github.com/cvc5/cvc5/releases/tag/cvc5-0.0.3)
 
 - Installation of MLIR: please follow [this instruction](https://llvm.org/docs/GettingStarted.html#getting-the-source-code-and-building-llvm) & run `cmake --build . --target install`
 
