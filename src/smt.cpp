@@ -634,10 +634,10 @@ Expr Expr::select(const vector<Expr> &idxs) const {
     optional<Expr> elem, idx;
     using namespace matchers;
     if (ConstSplatArray(Any(elem)).match(arr)) {
-      e = *elem;
+      e.setZ3(elem->getZ3Expr());
     }
     if (Lambda(Any(elem), Any(idx)).match(arr) && idxs.size() == 1) {
-      e = elem->substituteDeBruijn({idxs[0]});
+      e.setZ3((elem->substituteDeBruijn({idxs[0]})).getZ3Expr());
     }
   }
 #endif // SOLVER_Z3
@@ -649,10 +649,10 @@ Expr Expr::select(const vector<Expr> &idxs) const {
     optional<Expr> elem, idx;
     using namespace matchers;
     if (ConstSplatArray(Any(elem)).match(arr)) {
-      e = *elem;
+      e.setCVC5(elem->getCVC5Term());
     }
     if (Lambda(Any(elem), Any(idx)).match(arr) && idxs.size() == 1) {
-      e = elem->substitute({*idx}, idxs);
+      e.setCVC5(elem->substitute({*idx}, idxs).getCVC5Term());
     }
   }
 #endif // SOLVER_CVC5
