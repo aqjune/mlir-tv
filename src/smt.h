@@ -31,7 +31,7 @@ class Model;
 class Sort;
 
 enum SolverType {
-  Z3, CVC5, ALL
+  Z3, CVC5
 };
 
 namespace matchers {
