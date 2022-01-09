@@ -283,6 +283,11 @@ cvc5::api::Term Expr::getCVC5Term() const {
 bool Expr::hasCVC5Term() const {
   return (bool)cvc5;
 }
+
+bool Expr::isConstantCVC5Term() const {
+  return cvc5 && (cvc5->isIntegerValue() || cvc5->isBitVectorValue()
+      || cvc5->isBooleanValue() || cvc5->isFloatingPointValue());
+}
 #endif // SOLVER_CVC5
 
 void Expr::lockOps() {
@@ -384,7 +389,7 @@ optional<uint64_t> Expr::asUInt() const {
 bool Expr::isNumeral() const {
   bool res = false;
   IF_Z3_ENABLED(res |= z3 && z3->is_numeral());
-  IF_CVC5_ENABLED(res |= cvc5 && (cvc5->isIntegerValue() || cvc5->isBitVectorValue()));
+  IF_CVC5_ENABLED(res |= isConstantCVC5Term());
   return res;
 }
 
@@ -410,7 +415,7 @@ bool Expr::isVar() const {
     if (z3) res |= z3->is_app() && z3->is_const() && !z3->is_numeral()
   );
   IF_CVC5_ENABLED(
-    if (cvc5) res |= !(cvc5->isIntegerValue() || cvc5->isBitVectorValue())
+    if (cvc5) res |= !isConstantCVC5Term()
   );
   return res;
 }
