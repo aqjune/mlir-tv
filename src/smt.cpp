@@ -1577,6 +1577,23 @@ void Matcher::setCVC5(Expr &e, optional<cvc5::api::Term> &&opt) const {
   e.setCVC5(move(opt));
 }
 
+bool Matcher::matchBinaryOp(const Expr &expr, cvc5::api::Kind opKind,
+    function<bool(const Expr&)> lhsMatcher,
+    function<bool(const Expr&)> rhsMatcher) const {
+  if (expr.hasCVC5Term()) {
+    auto term = expr.getCVC5Term();
+    if (term.getKind() != opKind || term.getNumChildren() != 2)
+      return false;
+
+    Expr lhs = newExpr(), rhs = newExpr();
+    setCVC5(lhs, move(term[0]));
+    setCVC5(rhs, move(term[1]));
+    return lhsMatcher(lhs) && rhsMatcher(rhs);
+  } else {
+    return false;
+  }
+}
+
 #endif // SOLVER_CVC5
 
 
@@ -1704,26 +1721,41 @@ bool Concat::operator()(const Expr &expr) const {
 
 bool URem::operator()(const Expr &expr) const {
 #ifdef SOLVER_Z3
-  return matchBinaryOp(expr, Z3_OP_BUREM, lhsMatcher, rhsMatcher);
+  if (expr.hasZ3Expr())
+    return matchBinaryOp(expr, Z3_OP_BUREM, lhsMatcher, rhsMatcher);
 #endif // SOLVER_Z3
+#ifdef SOLVER_CVC5
+  if (expr.hasCVC5Term())
+    return matchBinaryOp(expr, cvc5::api::BITVECTOR_UREM, lhsMatcher, rhsMatcher);
+#endif // SOLVER_CVC5
 
-  assert("Not implemented");
+  return false;
 }
 
 bool UDiv::operator()(const Expr &expr) const {
 #ifdef SOLVER_Z3
-  return matchBinaryOp(expr, Z3_OP_BUDIV, lhsMatcher, rhsMatcher);
+  if (expr.hasZ3Expr())
+    return matchBinaryOp(expr, Z3_OP_BUDIV, lhsMatcher, rhsMatcher);
 #endif // SOLVER_Z3
+#ifdef SOLVER_CVC5
+  if (expr.hasCVC5Term())
+    return matchBinaryOp(expr, cvc5::api::BITVECTOR_UDIV, lhsMatcher, rhsMatcher);
+#endif // SOLVER_CVC5
 
-  assert("Not implemented");
+  return false;
 }
 
 bool Mul::operator()(const Expr &expr) const {
 #ifdef SOLVER_Z3
-  return matchBinaryOp(expr, Z3_OP_BMUL, lhsMatcher, rhsMatcher);
+  if (expr.hasZ3Expr())
+    return matchBinaryOp(expr, Z3_OP_BMUL, lhsMatcher, rhsMatcher);
 #endif // SOLVER_Z3
+#ifdef SOLVER_CVC5
+  if (expr.hasCVC5Term())
+    return matchBinaryOp(expr, cvc5::api::BITVECTOR_MULT, lhsMatcher, rhsMatcher);
+#endif // SOLVER_CVC5
 
-  assert("Not implemented");
+  return false;
 }
 
 bool ZeroExt::operator()(const Expr &expr) const {
@@ -1761,10 +1793,15 @@ bool ZeroExt::operator()(const Expr &expr) const {
 
 bool Equals::operator()(const Expr &expr) const {
 #ifdef SOLVER_Z3
-  return matchBinaryOp(expr, Z3_OP_EQ, lhsMatcher, rhsMatcher);
+  if (expr.hasZ3Expr())
+    return matchBinaryOp(expr, Z3_OP_EQ, lhsMatcher, rhsMatcher);
 #endif // SOLVER_Z3
+#ifdef SOLVER_CVC5
+  if (expr.hasCVC5Term())
+    return matchBinaryOp(expr, cvc5::api::EQUAL, lhsMatcher, rhsMatcher);
+#endif // SOLVER_CVC5
 
-  assert("Not implemented");
+  return false;
 }
 
 }
