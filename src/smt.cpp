@@ -404,6 +404,10 @@ bool Expr::isTrue() const {
   return res;
 }
 
+bool Expr::isBooleanValue() const {
+  return isFalse() || isTrue();
+}
+
 bool Expr::isVar() const {
   bool res = false;
   IF_Z3_ENABLED(res |= z3 && z3->is_app() && z3->is_const() &&
