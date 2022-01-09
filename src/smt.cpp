@@ -1712,25 +1712,15 @@ bool Store::operator()(const Expr &expr) const {
 }
 
 bool Concat::operator()(const Expr &expr) const {
-  // FIXME: cvc5
 #ifdef SOLVER_Z3
-  if (expr.hasZ3Expr()) {
-    auto e = expr.getZ3Expr();
-    if (!e.is_app())
-      return false;
-
-    Z3_app a = e;
-    Z3_func_decl decl = Z3_get_app_decl(*sctx.z3, a);
-    if (Z3_get_decl_kind(*sctx.z3, decl) != Z3_OP_CONCAT)
-      return false;
-
-    Expr lhs = newExpr(), rhs = newExpr();
-    setZ3(lhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
-    setZ3(rhs, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 1)));
-
-    return lhsMatcher(lhs) && rhsMatcher(rhs);
-  }
+  if (expr.hasZ3Expr())
+    return matchBinaryOp(expr, Z3_OP_CONCAT, lhsMatcher, rhsMatcher);
 #endif // SOLVER_Z3
+#ifdef SOLVER_CVC5
+  if (expr.hasCVC5Term())
+    return matchBinaryOp(expr, cvc5::api::BITVECTOR_CONCAT, lhsMatcher, rhsMatcher);
+#endif // SOLVER_CVC5
+
   return false;
 }
 
