@@ -1672,7 +1672,6 @@ bool Lambda::operator()(const Expr &expr) const {
 }
 
 bool Store::operator()(const Expr &expr) const {
-  // FIXME: cvc5
 #ifdef SOLVER_Z3
   if (expr.hasZ3Expr()) {
     auto e = expr.getZ3Expr();
@@ -1692,6 +1691,23 @@ bool Store::operator()(const Expr &expr) const {
     return arrMatcher(arr) && idxMatcher(idx) && valMatcher(val);
   }
 #endif // SOLVER_Z3
+#ifdef SOLVER_CVC5
+  if (expr.hasCVC5Term()) {
+    auto term = expr.getCVC5Term();
+
+    if (term.getKind() != cvc5::api::STORE || term.getNumChildren() != 3)
+      return false;
+    
+    Expr arr = newExpr(), idx = newExpr(), val = newExpr();
+    setCVC5(arr, move(term[0]));
+    // Note idx is cvc5::api::BOUND_VAR_LIST
+    // must unwrap BOUND_VAR_LIST when using concrete index
+    setCVC5(idx, move(term[1])); 
+    setCVC5(val, move(term[2]));
+    
+    return arrMatcher(arr) && idxMatcher(idx) && valMatcher(val);
+  }
+#endif // SOLVER_CVC5
   return false;
 }
 
