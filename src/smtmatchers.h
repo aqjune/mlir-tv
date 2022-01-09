@@ -55,11 +55,12 @@ public:
 };
 
 class Lambda: Matcher {
-  std::function<bool(const Expr &)> bodyMatcher;
+  std::function<bool(const Expr &)> bodyMatcher, idxMatcher;
 
 public:
-  template<class T>
-  Lambda(T &&m): bodyMatcher(std::move(m)) {}
+  template<class T1, class T2>
+  Lambda(T1 &&m, T2 &&idx):
+    bodyMatcher(std::move(m)), idxMatcher(std::move(idx)) {}
 
   bool match(const Expr &expr) const { return (*this)(expr); }
   bool operator()(const Expr &e) const;

@@ -620,23 +620,37 @@ Expr Expr::select(const vector<Expr> &idxs) const {
     }
   }));
 
-  // TODO: cvc5
 #ifdef SOLVER_Z3
   if (e.hasZ3Expr()) {
     Expr arr;
     Z3_app a = e.getZ3Expr();
     arr.setZ3(z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
 
-    optional<Expr> elem = nullopt;
+    optional<Expr> elem, idx;
     using namespace matchers;
     if (ConstSplatArray(Any(elem)).match(arr)) {
       e = *elem;
     }
-    if (Lambda(Any(elem)).match(arr) && idxs.size() == 1) {
+    if (Lambda(Any(elem), Any(idx)).match(arr) && idxs.size() == 1) {
       e = elem->substituteDeBruijn({idxs[0]});
     }
   }
-  #endif // SOLVER_Z3
+#endif // SOLVER_Z3
+#ifdef SOLVER_CVC5
+  if (e.hasCVC5Term()) {
+    Expr arr;
+    arr.setCVC5(e.getCVC5Term()[0]); // get body term
+
+    optional<Expr> elem, idx;
+    using namespace matchers;
+    if (ConstSplatArray(Any(elem)).match(arr)) {
+      e = *elem;
+    }
+    if (Lambda(Any(elem), Any(idx)).match(arr) && idxs.size() == 1) {
+      e = elem->substitute({*idx}, idxs);
+    }
+  }
+#endif // SOLVER_CVC5
 
   return e;
 }
@@ -1571,7 +1585,6 @@ bool ConstBool::operator()(const Expr &expr) const {
 }
 
 bool ConstSplatArray::operator()(const Expr &expr) const {
-  // FIXME: cvc5
 #ifdef SOLVER_Z3
   if (expr.hasZ3Expr()) {
     auto e = expr.getZ3Expr();
@@ -1584,16 +1597,27 @@ bool ConstSplatArray::operator()(const Expr &expr) const {
       return false;
 
     Expr newe = newExpr();
-    IF_Z3_ENABLED(setZ3(newe, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0))));
+    setZ3(newe, z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
     return subMatcher(newe);
   }
 #endif // SOLVER_Z3
+#ifdef SOLVER_CVC5
+  if (expr.hasCVC5Term()) {
+    auto e = expr.getCVC5Term();
+
+    if (!e.isConstArray())
+      return false;
+
+    Expr newe = newExpr();
+    setCVC5(newe, e.getConstArrayBase());
+    return subMatcher(newe);
+  }
+#endif // SOLVER_CVC5
 
   return false;
 }
 
 bool Lambda::operator()(const Expr &expr) const {
-  // FIXME: cvc5
 #ifdef SOLVER_Z3
   if (expr.hasZ3Expr()) {
     auto e = expr.getZ3Expr();
@@ -1604,11 +1628,29 @@ bool Lambda::operator()(const Expr &expr) const {
     Z3_ast body = Z3_get_quantifier_body(*sctx.z3, (Z3_ast)e);
 
     Expr newe = newExpr();
-    IF_Z3_ENABLED(setZ3(newe, z3::expr(*sctx.z3, body)));
+    setZ3(newe, z3::expr(*sctx.z3, body));
 
+    // Z3 matches body only (because Z3 supports de bruijn indexing)
     return bodyMatcher(newe);
   }
 #endif // SOLVER_Z3
+#ifdef SOLVER_CVC5
+  if (expr.hasCVC5Term()) {
+    auto e = expr.getCVC5Term();
+    if (e.getKind() != cvc5::api::LAMBDA || e.getNumChildren() != 2)
+      return false;
+
+    auto vlist = e[0];
+    if (vlist.getKind() != cvc5::api::BOUND_VAR_LIST)
+      return false;
+
+    Expr newidx = newExpr(), newe = newExpr();
+    setCVC5(newidx, move(vlist[0]));
+    setCVC5(newe, move(e[1]));
+
+    return bodyMatcher(newe) && idxMatcher(newidx);
+  }
+#endif // SOLVER_CVC5
 
   return false;
 }
