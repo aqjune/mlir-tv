@@ -1088,8 +1088,7 @@ Expr Expr::substituteDeBruijn(const std::vector<Expr> &values) const {
   }));
 #endif // SOLVER_Z3
 
-  // TODO: CVC5
-
+  // CVC5 doesn't support de bruijn indexing
   return e;
 }
 
