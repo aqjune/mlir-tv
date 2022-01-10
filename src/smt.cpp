@@ -898,7 +898,11 @@ EXPR_BVOP_UINT64(operator^)
 Expr Expr::operator^(const Expr &rhs) const {
   Expr e;
   SET_Z3_USEOP(e, rhs, operator^);
-  SET_CVC5_USEOP(e, rhs, BITVECTOR_XOR);
+  if (sort().isBV()) {
+    SET_CVC5_USEOP(e, rhs, BITVECTOR_XOR);
+  } else {
+    SET_CVC5_USEOP(e, rhs, XOR);
+  }
   return e;
 }
 
