@@ -49,8 +49,7 @@ llvm::cl::opt<smt::SolverType> arg_solver("solver",
   llvm::cl::init(smt::SolverType::Z3),
   llvm::cl::values(
     clEnumValN(smt::SolverType::Z3, "Z3", "Z3 Solver"),
-    clEnumValN(smt::SolverType::CVC5, "CVC5", "CVC5 Solver"),
-    clEnumValN(smt::SolverType::ALL, "ALL", "Z3, CVC5 Solvers")
+    clEnumValN(smt::SolverType::CVC5, "CVC5", "CVC5 Solver")
   ),
   llvm::cl::cat(MlirTvCategory)
 );
@@ -93,9 +92,9 @@ int main(int argc, char* argv[]) {
   setVerbose(arg_verbose.getValue());
 
   smt::setTimeout(arg_smt_to.getValue());
-  if (arg_solver.getValue() == smt::ALL || arg_solver.getValue() == smt::Z3)
+  if (arg_solver.getValue() == smt::Z3)
     smt::useZ3();
-  if (arg_solver.getValue() == smt::ALL || arg_solver.getValue() == smt::CVC5) {
+  if (arg_solver.getValue() == smt::CVC5) {
 #ifdef SOLVER_CVC5
     smt::useCVC5();
 #else

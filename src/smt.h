@@ -31,7 +31,7 @@ class Model;
 class Sort;
 
 enum SolverType {
-  Z3, CVC5, ALL
+  Z3, CVC5
 };
 
 namespace matchers {
@@ -77,6 +77,9 @@ class Expr : private Object<T_Z3(z3::expr), T_CVC5(cvc5::api::Term)> {
 private:
   Expr(): isOpLocked(false) {}
   bool isOpLocked;
+#ifdef SOLVER_Z3
+  Expr substituteDeBruijn(const std::vector<Expr> &values) const;
+#endif
 
 public:
 #ifdef SOLVER_Z3
@@ -86,6 +89,7 @@ public:
 #ifdef SOLVER_CVC5
   cvc5::api::Term getCVC5Term() const;
   bool hasCVC5Term() const;
+  bool isConstantCVC5Term() const;
 #endif // SOLVER_CVC5
 
   // Lock arithmetic operations that create new expressions for debugging.
@@ -177,7 +181,6 @@ public:
 
   Expr substitute(const std::vector<Expr> &vars,
                   const std::vector<Expr> &values) const;
-  Expr substituteDeBruijn(const std::vector<Expr> &values) const;
 
   // Returns true if this and e2's expr are equal.
   // Note that

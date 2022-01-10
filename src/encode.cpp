@@ -114,6 +114,76 @@ static void addToBoolMap(map<string, Expr> &m, std::string &&key, Expr &&b) {
   }
 }
 
+static void storeTensorTo(
+    State &st, mlir::Operation *op, Tensor &&tensor, const MemRef &memref,
+    mlir::MemRefType memrefTy, bool ubIfReadOnly) {
+  // Accessing uninitialized elem is UB.
+  st.wellDefined(op, tensor.isFullyInitialized(), "tensor initialized");
+
+  if (memrefTy.getLayout().isIdentity()) {
+    // memref with identity map
+    auto success = st.m->storeArray(memrefTy.getElementType(),
+        tensor.asArray(), memref.getBID(), memref.getOffset(),
+        tensor.get1DSize());
+    st.wellDefined(op, success.checkWrite(!ubIfReadOnly),
+        "storing to dest");
+
+  } else {
+    // TODO: can we further optimize this if we know that memref is a
+    // freshly created block?
+    // We may not need to preserve the 'previous' bytes.
+
+    vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
+    auto tVal = tensor.get(idxs);
+    auto tInBounds = tensor.isInBounds(idxs);
+    auto tInit = tensor.isInitialized(idxs);
+    auto [mVal, mInfo] = memref.getWithAccessInfo(idxs);
+
+    st.wellDefined(op, Expr::mkForall(idxs, tInBounds.implies(tInit)));
+    st.wellDefined(op, Expr::mkForall(idxs,
+        tInBounds.implies(mInfo.checkWrite())));
+
+    // NOTE: this will be always false if mVal and tVal store unequal constants.
+    // Therefore, we can't encode this condition as UB because
+    // (1) If they are in src: src always becomes UB (false negative)
+    // (2) If they are in tgt: tgt always becomes UB (false positive)
+    // Therefore, encode this as precondition; precondition does not introduce
+    // false negative, if properly handled (not implemented yet; see how Alive2
+    // does it).
+    st.addPrecondition(Expr::mkForall(idxs,
+        tInBounds.implies(mVal == tVal)));
+    st.hasQuantifier = true;
+  }
+}
+
+static Tensor loadTensor(
+    State &st, mlir::Operation *op, const MemRef &memref,
+    mlir::MemRefType memrefTy) {
+  mlir::Type elemTy = memrefTy.getElementType();
+
+  if (memrefTy.getLayout().isIdentity()) {
+    // memref with identity map
+    auto [arr, info] = st.m->loadArray(elemTy,
+        memref.getBID(), memref.getOffset(), memref.get1DSize());
+    st.wellDefined(op, info.checkRead());
+
+    auto idx = Index::var("loadidx", VarType::BOUND);
+    return Tensor::mkLambdaFrom1D(elemTy, memref.getDims(),
+        move(idx), arr.select(idx), Expr::mkBool(true));
+
+  } else {
+    vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
+    auto [val, info] = memref.getWithAccessInfo(idxs);
+
+    st.wellDefined(op, Expr::mkForall(idxs,
+        fitsInDims(idxs, memref.getDims()).implies(info.checkRead())));
+    st.hasQuantifier = true;
+
+    return Tensor::mkInitializedLambda(elemTy, memref.getDims(),
+        move(idxs), move(val));
+  }
+}
+
 template<class ValTy>
 static vector<ValTy> getFromMixedOps(
     const State &st, const llvm::SmallVector<mlir::OpFoldResult> &mixedOps) {
@@ -2187,75 +2257,6 @@ void encodeOp(State &st, mlir::memref::SubViewOp op, bool) {
   st.regs.add(op.getResult(), move(memref));
 }
 
-static void storeTensorTo(
-    State &st, mlir::Operation *op, Tensor &&tensor, const MemRef &memref,
-    mlir::MemRefType memrefTy, bool ubIfReadOnly) {
-  // Accessing uninitialized elem is UB.
-  st.wellDefined(op, tensor.isFullyInitialized(), "tensor initialized");
-
-  if (memrefTy.getLayout().isIdentity()) {
-    // memref with identity map
-    auto success = st.m->storeArray(memrefTy.getElementType(),
-        tensor.asArray(), memref.getBID(), memref.getOffset(),
-        tensor.get1DSize());
-    st.wellDefined(op, success.checkWrite(!ubIfReadOnly),
-        "storing to dest");
-
-  } else {
-    // TODO: can we further optimize this if we know that memref is a
-    // freshly created block?
-    // We may not need to preserve the 'previous' bytes.
-
-    vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
-    auto tVal = tensor.get(idxs);
-    auto tInBounds = tensor.isInBounds(idxs);
-    auto tInit = tensor.isInitialized(idxs);
-    auto [mVal, mInfo] = memref.getWithAccessInfo(idxs);
-
-    st.wellDefined(op, Expr::mkForall(idxs, tInBounds.implies(tInit)));
-    st.wellDefined(op, Expr::mkForall(idxs,
-        tInBounds.implies(mInfo.checkWrite())));
-
-    // NOTE: this will be always false if mVal and tVal store unequal constants.
-    // Therefore, we can't encode this condition as UB because
-    // (1) If they are in src: src always becomes UB (false negative)
-    // (2) If they are in tgt: tgt always becomes UB (false positive)
-    // Therefore, encode this as precondition; precondition does not introduce
-    // false negative, if properly handled (not implemented yet; see how Alive2
-    // does it).
-    st.addPrecondition(Expr::mkForall(idxs,
-        tInBounds.implies(mVal == tVal)));
-    st.hasQuantifier = true;
-  }
-}
-
-static Tensor loadTensor(
-    State &st, mlir::Operation *op, const MemRef &memref,
-    mlir::MemRefType memrefTy) {
-  mlir::Type elemTy = memrefTy.getElementType();
-
-  if (memrefTy.getLayout().isIdentity()) {
-    // memref with identity map
-    auto [arr, info] = st.m->loadArray(elemTy,
-        memref.getBID(), memref.getOffset(), memref.get1DSize());
-    st.wellDefined(op, info.checkRead());
-
-    auto idx = Index::var("loadidx", VarType::BOUND);
-    return Tensor::mkLambdaFrom1D(elemTy, memref.getDims(),
-        move(idx), arr.select(idx), Expr::mkBool(true));
-
-  } else {
-    vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
-    auto [val, info] = memref.getWithAccessInfo(idxs);
-
-    st.wellDefined(op, Expr::mkForall(idxs,
-        fitsInDims(idxs, memref.getDims()).implies(info.checkRead())));
-    st.hasQuantifier = true;
-
-    return Tensor::mkInitializedLambda(elemTy, memref.getDims(),
-        move(idxs), move(val));
-  }
-}
 template<>
 void encodeOp(State &st, mlir::bufferization::ToMemrefOp op,
     bool encodeMemWrite) {

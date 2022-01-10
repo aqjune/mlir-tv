@@ -240,7 +240,7 @@ AbsFpEncoding &getFpEncoding(mlir::Type ty) {
   if (ty.isF32()) {
     return getFloatEncoding();
   } else if (ty.isF64()) {
-     return getDoubleEncoding();
+    return getDoubleEncoding();
   }
   llvm_unreachable("Unknown type");
 }
