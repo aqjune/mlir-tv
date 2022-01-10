@@ -424,7 +424,7 @@ bool Expr::hasQuantifier() const {
 #ifdef SOLVER_Z3
   if (z3) {
     auto e = getZ3Expr();
-    if (e.is_quantifier()) return true;
+    if (e.is_forall() || e.is_exists()) return true;
     if (!e.is_app()) return false;
 
     Z3_app a = e;
