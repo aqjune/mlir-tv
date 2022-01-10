@@ -169,7 +169,6 @@ static Tensor loadTensor(
     st.wellDefined(op, info.checkRead());
     st.hasQuantifier |= info.checkRead().hasQuantifier();
 
-
     auto idx = Index::var("loadidx", VarType::BOUND);
     return Tensor::mkLambdaFrom1D(elemTy, memref.getDims(),
         move(idx), arr.select(idx), Expr::mkBool(true));
