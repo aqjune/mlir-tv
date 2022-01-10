@@ -1609,6 +1609,9 @@ MemRef MemRef::subview(const vector<Expr> &offsets,
 }
 
 MemRef MemRef::reshape(const std::vector<smt::Expr> &newDims) {
+  // Currently we support identity map only.
+  assert (isIdentityMap());
+
   return MemRef(m, elemType, bid, offset,
     newDims, MemRef::Layout(newDims), Expr::mkBool(true));
 }

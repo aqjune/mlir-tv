@@ -418,6 +418,7 @@ public:
       int rankDiff = 0);
 
   // Return a new memref with new dimensions.
+  // The memref created here is a view reference
   MemRef reshape(const std::vector<smt::Expr> &newDims);
 
   // Returns (cond ? trueValue : falseValue).
