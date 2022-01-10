@@ -417,6 +417,10 @@ public:
       const llvm::SmallDenseSet<unsigned> &unusedDims,
       int rankDiff = 0);
 
+  // Return a new memref with new dimensions.
+  // The memref created here is a view reference
+  MemRef reshape(const std::vector<smt::Expr> &newDims);
+
   // Returns (cond ? trueValue : falseValue).
   // It is assumed that trueValue.layout is equivalent to falseValue.layout.
   // Also trueValue.dims == falseValue.dims is assumed, to be consistent with
