@@ -1638,6 +1638,9 @@ void encodeOp(State &st, mlir::linalg::MatmulOp op, bool) {
     Tensor result = a.matmul(b, /*transposed*/false, c);
 
     storeTensorTo(st, op, move(result), mc, cTy, true);
+    // No alias checks between input & output
+    st.wellDefined(op, mc.noalias(ma) & mc.noalias(mb),
+        "output does not alias inputs");
   }
 }
 
