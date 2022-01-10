@@ -61,6 +61,10 @@ class Lambda: Matcher {
   std::function<bool(const Expr &)> bodyMatcher, idxMatcher;
 
 public:
+  template<class T1>
+  Lambda(T1 &&m): bodyMatcher(std::move(m)) {}
+
+  // NOTE: this constructor must not be used when using Z3; idxMatcher is not used.
   template<class T1, class T2>
   Lambda(T1 &&m, T2 &&idx):
     bodyMatcher(std::move(m)), idxMatcher(std::move(idx)) {}

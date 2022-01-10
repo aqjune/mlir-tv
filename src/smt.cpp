@@ -631,12 +631,12 @@ Expr Expr::select(const vector<Expr> &idxs) const {
     Z3_app a = e.getZ3Expr();
     arr.setZ3(z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
 
-    optional<Expr> elem, idx;
+    optional<Expr> elem;
     using namespace matchers;
     if (ConstSplatArray(Any(elem)).match(arr)) {
       e.setZ3(elem->getZ3Expr());
     }
-    if (Lambda(Any(elem), Any(idx)).match(arr) && idxs.size() == 1) {
+    if (Lambda(Any(elem)).match(arr) && idxs.size() == 1) {
       e.setZ3((elem->substituteDeBruijn({idxs[0]})).getZ3Expr());
     }
   }
