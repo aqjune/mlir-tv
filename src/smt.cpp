@@ -1085,17 +1085,17 @@ Expr Expr::substitute(
   return e;
 }
 
+#ifdef SOLVER_Z3
 Expr Expr::substituteDeBruijn(const std::vector<Expr> &values) const {
   Expr e;
-#ifdef SOLVER_Z3
   e.setZ3(fmap(this->z3, [&values](z3::expr e) {
     return e.substitute(toZ3ExprVector(values));
   }));
-#endif // SOLVER_Z3
 
   // CVC5 doesn't support de bruijn indexing
   return e;
 }
+#endif // SOLVER_Z3
 
 bool Expr::isIdentical(const Expr &e2, bool is_or) const {
   bool res = !is_or;

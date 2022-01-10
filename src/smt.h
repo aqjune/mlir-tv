@@ -77,6 +77,9 @@ class Expr : private Object<T_Z3(z3::expr), T_CVC5(cvc5::api::Term)> {
 private:
   Expr(): isOpLocked(false) {}
   bool isOpLocked;
+#ifdef SOLVER_Z3
+  Expr substituteDeBruijn(const std::vector<Expr> &values) const;
+#endif
 
 public:
 #ifdef SOLVER_Z3
@@ -178,7 +181,6 @@ public:
 
   Expr substitute(const std::vector<Expr> &vars,
                   const std::vector<Expr> &values) const;
-  Expr substituteDeBruijn(const std::vector<Expr> &values) const;
 
   // Returns true if this and e2's expr are equal.
   // Note that
