@@ -1598,10 +1598,13 @@ void encodeOp(State &st, mlir::tensor::ExpandShapeOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::MatmulOp op, bool) {
+void encodeOp(State &st, mlir::linalg::MatmulOp op, bool encodeMemWriteOp) {
   if (!(op.hasTensorSemantics() || op.hasBufferSemantics()))
     throw UnsupportedException(op.getOperation(),
         "tensor/buffer semantics is supported only");
+  if (op.hasBufferSemantics() && !encodeMemWriteOp)
+    throw UnsupportedException(op.getOperation(),
+        "We do not support memory writes in this scope");
 
   if (op.getNumInputs() != 2 || op.getNumOutputs() != 1)
     throw UnsupportedException(op.getOperation(),
