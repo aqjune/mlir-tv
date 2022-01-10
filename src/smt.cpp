@@ -609,10 +609,26 @@ Expr Expr::select(const Expr &idx) const {
 }
 
 Expr Expr::select(const vector<Expr> &idxs) const {
+  // Check whether the result can be simplified
+  optional<Expr> elem;
+  using namespace matchers;
+  if (ConstSplatArray(Any(elem)).match(*this)) {
+    return *elem;
+  }
+
   Expr e;
+
   SET_Z3(e, fmap(this->z3, [&idxs](auto e) {
     return z3::select(e, toZ3ExprVector(idxs)); 
   }));
+#ifdef SOLVER_Z3
+  if (hasZ3Expr()) {
+    if (Lambda(Any(elem)).match((*this)) && idxs.size() == 1) {
+      e.setZ3((elem->substituteDeBruijn({idxs[0]})).getZ3Expr());
+    }
+  }
+#endif // SOLVER_Z3
+
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
       [&idxs](auto &solver, auto e) {
     if (e.getSort().isArray()) {
@@ -624,34 +640,10 @@ Expr Expr::select(const vector<Expr> &idxs) const {
       return solver.mkTerm(cvc5::api::APPLY_UF, v);
     }
   }));
-
-#ifdef SOLVER_Z3
-  if (e.hasZ3Expr()) {
-    Expr arr;
-    Z3_app a = e.getZ3Expr();
-    arr.setZ3(z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, 0)));
-
-    optional<Expr> elem;
-    using namespace matchers;
-    if (ConstSplatArray(Any(elem)).match(arr)) {
-      e.setZ3(elem->getZ3Expr());
-    }
-    if (Lambda(Any(elem)).match(arr) && idxs.size() == 1) {
-      e.setZ3((elem->substituteDeBruijn({idxs[0]})).getZ3Expr());
-    }
-  }
-#endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
-  if (e.hasCVC5Term()) {
-    Expr arr;
-    arr.setCVC5(e.getCVC5Term()[0]); // get body term
-
-    optional<Expr> elem, idx;
-    using namespace matchers;
-    if (ConstSplatArray(Any(elem)).match(arr)) {
-      e.setCVC5(elem->getCVC5Term());
-    }
-    if (Lambda(Any(elem), Any(idx)).match(arr) && idxs.size() == 1) {
+  if (hasCVC5Term()) {
+    optional<Expr> idx;
+    if (Lambda(Any(elem), Any(idx)).match(*this) && idxs.size() == 1) {
       e.setCVC5(elem->substitute({*idx}, idxs).getCVC5Term());
     }
   }
