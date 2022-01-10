@@ -420,6 +420,42 @@ bool Expr::isVar() const {
   return res;
 }
 
+bool Expr::hasQuantifier() const {
+#ifdef SOLVER_Z3
+  if (z3) {
+    auto e = getZ3Expr();
+    if (e.is_quantifier()) return true;
+    if (!e.is_app()) return false;
+
+    Z3_app a = e;
+    for (unsigned i = 0; i < Z3_get_app_num_args(*sctx.z3, a); i++) {
+      Expr newe = Expr();
+      newe.setZ3(z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, i)));
+      if (newe.hasQuantifier())
+        return true;
+    }
+    return false;
+  }
+#endif // SOLVER_Z3
+
+#ifdef SOLVER_CVC5
+  if(cvc5) {
+    auto e = getCVC5Term();
+    if (e.getKind() == cvc5::api::FORALL || e.getKind() == cvc5::api::EXISTS)
+      return true;
+
+    for (unsigned i = 0; i < e.getNumChildren(); i++) {
+      Expr newe = Expr();
+      newe.setCVC5(move(e[i]));
+      if (newe.hasQuantifier())
+        return true;
+    }
+    return false;
+  }
+#endif // SOLVER_CVC5
+  return false;
+}
+
 string Expr::getVarName() const {
   assert(isVar());
   // TODO: CVC5
