@@ -15,6 +15,12 @@ protected:
       std::function<bool(const Expr&)> lhsMatcher,
       std::function<bool(const Expr&)> rhsMatcher) const;
 #endif
+#ifdef SOLVER_CVC5
+  void setCVC5(Expr &e, std::optional<cvc5::api::Term> &&opt) const;
+  bool matchBinaryOp(const Expr &expr, cvc5::api::Kind opKind,
+    std::function<bool(const Expr&)> lhsMatcher,
+    std::function<bool(const Expr&)> rhsMatcher) const;
+#endif
 };
 
 class Any: Matcher {
@@ -52,11 +58,16 @@ public:
 };
 
 class Lambda: Matcher {
-  std::function<bool(const Expr &)> bodyMatcher;
+  std::function<bool(const Expr &)> bodyMatcher, idxMatcher;
 
 public:
-  template<class T>
-  Lambda(T &&m): bodyMatcher(std::move(m)) {}
+  template<class T1>
+  Lambda(T1 &&m): bodyMatcher(std::move(m)) {}
+
+  // NOTE: this constructor must not be used when using Z3; idxMatcher is not used.
+  template<class T1, class T2>
+  Lambda(T1 &&m, T2 &&idx):
+    bodyMatcher(std::move(m)), idxMatcher(std::move(idx)) {}
 
   bool match(const Expr &expr) const { return (*this)(expr); }
   bool operator()(const Expr &e) const;
