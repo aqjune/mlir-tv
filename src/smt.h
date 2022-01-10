@@ -112,9 +112,10 @@ public:
   // Returns true if at least one expr in z3, cvc5, ... is constant false.
   bool isFalse() const;
   bool isTrue() const;
-  bool isBooleanValue() const;
   // Returns true if this is a variable.
   bool isVar() const;
+  // Returns true if expression is quantifier.
+  bool hasQuantifier() const;
   std::string getVarName() const;
 
   Expr urem(const Expr &rhs) const;

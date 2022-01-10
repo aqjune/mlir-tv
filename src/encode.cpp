@@ -119,7 +119,7 @@ static void storeTensorTo(
     mlir::MemRefType memrefTy, bool ubIfReadOnly) {
   // Accessing uninitialized elem is UB.
   st.wellDefined(op, tensor.isFullyInitialized(), "tensor initialized");
-  st.hasQuantifier |= !tensor.isFullyInitialized().isBooleanValue();
+  st.hasQuantifier |= tensor.isFullyInitialized().hasQuantifier();
 
   if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
@@ -167,6 +167,8 @@ static Tensor loadTensor(
     auto [arr, info] = st.m->loadArray(elemTy,
         memref.getBID(), memref.getOffset(), memref.get1DSize());
     st.wellDefined(op, info.checkRead());
+    st.hasQuantifier |= info.checkRead().hasQuantifier();
+
 
     auto idx = Index::var("loadidx", VarType::BOUND);
     return Tensor::mkLambdaFrom1D(elemTy, memref.getDims(),
@@ -1621,9 +1623,9 @@ void encodeOp(State &st, mlir::linalg::MatmulOp op, bool) {
     st.wellDefined(op, b.isFullyInitialized(), "op 1 initialized");
     st.wellDefined(op, c.isFullyInitialized(), "op 2 initialized");
     st.regs.add(op.getResult(0), Tensor(result));
-    st.hasQuantifier |= !a.isFullyInitialized().isBooleanValue();
-    st.hasQuantifier |= !b.isFullyInitialized().isBooleanValue();
-    st.hasQuantifier |= !c.isFullyInitialized().isBooleanValue();
+    st.hasQuantifier |= a.isFullyInitialized().hasQuantifier();
+    st.hasQuantifier |= b.isFullyInitialized().hasQuantifier();
+    st.hasQuantifier |= c.isFullyInitialized().hasQuantifier();
   } else { // Buffer semantics
     auto ma = st.regs.get<MemRef>(op.getOperand(0));
     auto mb = st.regs.get<MemRef>(op.getOperand(1));
