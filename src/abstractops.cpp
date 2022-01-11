@@ -1127,6 +1127,23 @@ Expr AbsFpEncoding::getFpAssociativePrecondition() {
         precond = precond & (abag == bbag).implies(asum == bsum);
       }
     }
+
+    // precondition for bags union
+    for (unsigned i = 0; i < fp_sums.size(); i ++) {
+      for (unsigned j = 0; j < i; j ++) {
+        for (unsigned k = j + 1; k < i; k ++) {
+          auto [abag, aelems, alen, asum] = fp_sums[i];
+          auto [bbag, belems, blen, bsum] = fp_sums[j];
+          auto [cbag, celems, clen, csum] = fp_sums[k];
+
+          if (alen != blen + clen) continue;
+          auto precondition = (bbag.bagUnion(cbag) == abag)
+            .implies(add(bsum, csum) == asum);
+          precond = precond & precondition;
+        }
+      }
+    }
+
     return precond;
   }
 

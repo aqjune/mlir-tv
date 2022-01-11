@@ -119,6 +119,7 @@ static void storeTensorTo(
     mlir::MemRefType memrefTy, bool ubIfReadOnly) {
   // Accessing uninitialized elem is UB.
   st.wellDefined(op, tensor.isFullyInitialized(), "tensor initialized");
+  st.hasQuantifier |= tensor.isFullyInitialized().hasQuantifier();
 
   if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
@@ -166,6 +167,7 @@ static Tensor loadTensor(
     auto [arr, info] = st.m->loadArray(elemTy,
         memref.getBID(), memref.getOffset(), memref.get1DSize());
     st.wellDefined(op, info.checkRead());
+    st.hasQuantifier |= info.checkRead().hasQuantifier();
 
     auto idx = Index::var("loadidx", VarType::BOUND);
     return Tensor::mkLambdaFrom1D(elemTy, memref.getDims(),
@@ -1596,29 +1598,53 @@ void encodeOp(State &st, mlir::tensor::ExpandShapeOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::MatmulOp op, bool) {
-  if (!op.hasTensorSemantics())
+void encodeOp(State &st, mlir::linalg::MatmulOp op, bool encodeMemWriteOp) {
+  if (!(op.hasTensorSemantics() || op.hasBufferSemantics()))
     throw UnsupportedException(op.getOperation(),
-        "tensor semantics is supported only");
+        "tensor/buffer semantics is supported only");
+  if (op.hasBufferSemantics() && !encodeMemWriteOp)
+    throw UnsupportedException(op.getOperation(),
+        "We do not support memory writes in this scope");
 
   if (op.getNumInputs() != 2 || op.getNumOutputs() != 1)
     throw UnsupportedException(op.getOperation(),
         "unsupported form");
 
   if (getElemTy(op.getOperand(0)) != getElemTy(op.getOperand(1)) ||
-      getElemTy(op.getOperand(0)) != getElemTy(op.getResult(0)))
+      getElemTy(op.getOperand(0)) != getElemTy(op.getOperand(2)))
     throw UnsupportedException(op.getOperation(),
         "unsupported types");
 
-  Tensor a = st.regs.get<Tensor>(op.getOperand(0));
-  Tensor b = st.regs.get<Tensor>(op.getOperand(1));
-  Tensor c = st.regs.get<Tensor>(op.getOperand(2));
-  Tensor result = a.matmul(b, /*transposed*/false, c);
+  if (op.hasTensorSemantics()) {
+    Tensor a = st.regs.get<Tensor>(op.getOperand(0));
+    Tensor b = st.regs.get<Tensor>(op.getOperand(1));
+    Tensor c = st.regs.get<Tensor>(op.getOperand(2));
+    Tensor result = a.matmul(b, /*transposed*/false, c);
 
-  st.wellDefined(op, a.isFullyInitialized(), "op 0 initialized");
-  st.wellDefined(op, b.isFullyInitialized(), "op 1 initialized");
-  st.wellDefined(op, c.isFullyInitialized(), "op 2 initialized");
-  st.regs.add(op.getResult(0), Tensor(result));
+    st.wellDefined(op, a.isFullyInitialized(), "op 0 initialized");
+    st.wellDefined(op, b.isFullyInitialized(), "op 1 initialized");
+    st.wellDefined(op, c.isFullyInitialized(), "op 2 initialized");
+    st.regs.add(op.getResult(0), Tensor(result));
+    st.hasQuantifier |= a.isFullyInitialized().hasQuantifier();
+    st.hasQuantifier |= b.isFullyInitialized().hasQuantifier();
+    st.hasQuantifier |= c.isFullyInitialized().hasQuantifier();
+  } else { // Buffer semantics
+    auto ma = st.regs.get<MemRef>(op.getOperand(0));
+    auto mb = st.regs.get<MemRef>(op.getOperand(1));
+    auto mc = st.regs.get<MemRef>(op.getOperand(2));
+    auto aTy = op.getOperand(0).getType().cast<mlir::MemRefType>();
+    auto bTy = op.getOperand(1).getType().cast<mlir::MemRefType>();
+    auto cTy = op.getOperand(2).getType().cast<mlir::MemRefType>();
+    Tensor a = loadTensor(st, op, ma, aTy);
+    Tensor b = loadTensor(st, op, mb, bTy);
+    Tensor c = loadTensor(st, op, mc, cTy);
+    Tensor result = a.matmul(b, /*transposed*/false, c);
+
+    storeTensorTo(st, op, move(result), mc, cTy, true);
+    // No alias checks between input & output
+    st.wellDefined(op, mc.noalias(ma) & mc.noalias(mb),
+        "output does not alias inputs");
+  }
 }
 
 template<>

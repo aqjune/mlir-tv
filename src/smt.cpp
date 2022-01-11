@@ -420,6 +420,42 @@ bool Expr::isVar() const {
   return res;
 }
 
+bool Expr::hasQuantifier() const {
+#ifdef SOLVER_Z3
+  if (z3) {
+    auto e = getZ3Expr();
+    if (e.is_forall() || e.is_exists()) return true;
+    if (!e.is_app()) return false;
+
+    Z3_app a = e;
+    for (unsigned i = 0; i < Z3_get_app_num_args(*sctx.z3, a); i++) {
+      Expr newe = Expr();
+      newe.setZ3(z3::expr(*sctx.z3, Z3_get_app_arg(*sctx.z3, a, i)));
+      if (newe.hasQuantifier())
+        return true;
+    }
+    return false;
+  }
+#endif // SOLVER_Z3
+
+#ifdef SOLVER_CVC5
+  if(cvc5) {
+    auto e = getCVC5Term();
+    if (e.getKind() == cvc5::api::FORALL || e.getKind() == cvc5::api::EXISTS)
+      return true;
+
+    for (unsigned i = 0; i < e.getNumChildren(); i++) {
+      Expr newe = Expr();
+      newe.setCVC5(move(e[i]));
+      if (newe.hasQuantifier())
+        return true;
+    }
+    return false;
+  }
+#endif // SOLVER_CVC5
+  return false;
+}
+
 string Expr::getVarName() const {
   assert(isVar());
   // TODO: CVC5
@@ -707,6 +743,24 @@ Expr Expr::insert(const Expr &elem) const {
   }));
   return e;
 }
+
+Expr Expr::bagUnion(const Expr &other) const {
+  CHECK_LOCK2(other);
+    Expr e;
+  // Z3 doesn't support multisets. We encode it using a const array.
+  SET_Z3(e, fupdate2(sctx.z3, z3, [&](auto &ctx, auto &arrayz3) {
+    auto domain = arrayz3.get_sort().array_domain();
+    auto idx = ctx.constant("idx", domain);
+    auto lhs = z3::select(arrayz3, idx);
+    auto rhs = z3::select(*other.z3, idx);
+    return z3::lambda(idx, lhs + rhs);
+  }));
+  SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
+    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *cvc5, *other.cvc5);
+  }));
+  return e;
+}
+
 
 
 Expr Expr::getMSB() const {
