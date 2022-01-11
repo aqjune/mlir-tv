@@ -744,6 +744,24 @@ Expr Expr::insert(const Expr &elem) const {
   return e;
 }
 
+Expr Expr::bagUnion(const Expr &other) const {
+  CHECK_LOCK2(other);
+    Expr e;
+  // Z3 doesn't support multisets. We encode it using a const array.
+  SET_Z3(e, fupdate2(sctx.z3, z3, [&](auto &ctx, auto &arrayz3) {
+    auto domain = arrayz3.get_sort().array_domain();
+    auto idx = ctx.constant("idx", domain);
+    auto lhs = z3::select(arrayz3, idx);
+    auto rhs = z3::select(*other.z3, idx);
+    return z3::lambda(idx, lhs + rhs);
+  }));
+  SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
+    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *cvc5, *other.cvc5);
+  }));
+  return e;
+}
+
+
 
 Expr Expr::getMSB() const {
   auto bw = sort().bitwidth() - 1;
