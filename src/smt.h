@@ -148,6 +148,7 @@ public:
 
   /* Bag(multiset) operations */
   Expr insert(const Expr &elem) const;
+  Expr bagUnion(const Expr &other) const;
 
   Expr extract(unsigned hbit, unsigned lbit) const;
   Expr getMSB() const;
