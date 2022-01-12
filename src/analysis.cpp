@@ -295,6 +295,7 @@ void analyzeBlock(
     // For constant globals: conservatively assume that they increase varCount
     for (const auto &result: op.getResults()) {
       bool canCreateNewFp =
+          // Operations create new fp expect these.
           !mlir::isa<mlir::tosa::ConcatOp>(op) &&
           !mlir::isa<mlir::tosa::GatherOp>(op) &&
           !mlir::isa<mlir::tosa::ReshapeOp>(op) &&
@@ -319,6 +320,12 @@ void analyzeBlock(
         mlir::isa<mlir::tosa::FullyConnectedOp>(op) ||
         mlir::isa<mlir::tosa::ReduceSumOp>(op)) {
       res.isElementwiseFPOps = false;
+
+      // Reduction op can create intermediate fp values.
+      // We also count them in a conservative assumption.
+      for (const auto &operand: op.getOperands()) {
+        analyzeVariable(operand, res, VarAnalysisConfig::op(true));
+      }
     }
 
     ANALYZE(op, mlir::tosa::ClampOp, res);
