@@ -295,7 +295,7 @@ void analyzeBlock(
     // For constant globals: conservatively assume that they increase varCount
     for (const auto &result: op.getResults()) {
       bool canCreateNewFp =
-          // Operations create new fp expect these.
+          // Operations create new fp except these.
           !mlir::isa<mlir::tosa::ConcatOp>(op) &&
           !mlir::isa<mlir::tosa::GatherOp>(op) &&
           !mlir::isa<mlir::tosa::ReshapeOp>(op) &&
