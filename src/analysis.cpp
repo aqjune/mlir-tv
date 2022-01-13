@@ -127,14 +127,20 @@ bool analyzeElemAttr(
 
 struct VarAnalysisConfig {
   bool isArg;
+  bool isOperand;
   bool createsNewFpVal;
 
 public:
   static VarAnalysisConfig arg() {
-    return { .isArg = true, .createsNewFpVal = false};
+    return { .isArg = true, .isOperand = false, .createsNewFpVal = false};
+  }
+  static VarAnalysisConfig operand() {
+    return { .isArg = false, .isOperand = true, .createsNewFpVal = false};
   }
   static VarAnalysisConfig op(bool createsNewFpVal) {
-    return { .isArg = false, .createsNewFpVal = createsNewFpVal};
+    return {
+      .isArg = false, .isOperand = false, .createsNewFpVal = createsNewFpVal
+    };
   }
 };
 
@@ -147,7 +153,7 @@ void analyzeVariable(
   size_t &f64ElemCounts = res.F64.elemCounts;
   decltype(res.memref.argCount) &memrefCnt =
       config.isArg ? res.memref.argCount : res.memref.varCount;
-  bool doCount = config.createsNewFpVal || config.isArg;
+  bool doCount = config.isArg || config.isOperand || config.createsNewFpVal;
 
   if (ty.isF32()) {
     if (doCount)
@@ -182,7 +188,7 @@ void analyzeVariable(
     }
   }
 
-  if (ty.isa<mlir::MemRefType>())
+  if (ty.isa<mlir::MemRefType>() && !config.isOperand)
     memrefCnt[elemty]++;
 }
 
@@ -295,6 +301,7 @@ void analyzeBlock(
     // For constant globals: conservatively assume that they increase varCount
     for (const auto &result: op.getResults()) {
       bool canCreateNewFp =
+          // Operations create new fp except these.
           !mlir::isa<mlir::tosa::ConcatOp>(op) &&
           !mlir::isa<mlir::tosa::GatherOp>(op) &&
           !mlir::isa<mlir::tosa::ReshapeOp>(op) &&
@@ -319,6 +326,12 @@ void analyzeBlock(
         mlir::isa<mlir::tosa::FullyConnectedOp>(op) ||
         mlir::isa<mlir::tosa::ReduceSumOp>(op)) {
       res.isElementwiseFPOps = false;
+
+      // Reduction op can create intermediate fp values.
+      // We also count them in a conservative assumption.
+      for (const auto &operand: op.getOperands()) {
+        analyzeVariable(operand, res, VarAnalysisConfig::operand());
+      }
     }
 
     ANALYZE(op, mlir::tosa::ClampOp, res);
