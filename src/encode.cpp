@@ -2669,6 +2669,11 @@ static void
 encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
                             const vector<Index> &indVarBounds) {
   mlir::AffineMap map = op.getLoopsToShapesMap();
+  // numRes: # of output affine Exprs
+  // For example, given two affine maps
+  //   (i, j, k) -> (i, j)
+  //   (i, j, k) -> (i, k)
+  //   numDims = 3 (i, j, k), numRes = 4 (i, j, i, k)
   unsigned numRes = map.getNumResults();
 
   vector<Index> viewSizes;
