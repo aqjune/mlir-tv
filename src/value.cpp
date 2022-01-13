@@ -1207,7 +1207,8 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
         totalSize *= dsize;
       }
 
-      if (MAX_CONST_SIZE >= 0 && totalSize > MAX_CONST_SIZE) {
+      if (elemType.isa<mlir::FloatType>() &&
+          MAX_CONST_SIZE >= 0 && totalSize > MAX_CONST_SIZE) {
         verbose("Tensor::fromElemsAttr") << "Too many elements: " <<
             totalSize << " > " << MAX_CONST_SIZE << "\n";
 
@@ -1292,7 +1293,8 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
     for (unsigned i = 0; i < rank; ++i)
       dims.push_back(tensorty.getDimSize(i));
 
-    if (MAX_CONST_SIZE >= 0 && totalSize > MAX_CONST_SIZE) {
+    if (elemType.isa<mlir::FloatType>() &&
+        MAX_CONST_SIZE >= 0 && totalSize > MAX_CONST_SIZE) {
       verbose("Tensor::fromElemsAttr") << "Too many sparse elements: " <<
           totalSize << " > " << MAX_CONST_SIZE << "\n";
 
