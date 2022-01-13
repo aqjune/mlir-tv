@@ -382,7 +382,7 @@ static Results checkRefinement(
   return Results::SUCCESS;
 }
 
-static void raiseUnsupported(const UnsupportedException &ue) {
+static void printUnsupported(const UnsupportedException &ue) {
   auto obj = ue.getObject();
   string reason = ue.getReason();
 
@@ -403,8 +403,6 @@ static void raiseUnsupported(const UnsupportedException &ue) {
     if (!reason.empty())
       llvm::errs() << "\t" << reason << "\n";
   }
-
-  exit(UNSUPPORTED_EXIT_CODE);
 }
 
 static State encodeFinalState(
@@ -727,6 +725,7 @@ Results validate(
   llvm::for_each(*tgt, [&](auto &op) { fillFns(tgtfns, op); });
 
   Results verificationResult = Results::SUCCESS;
+  bool hasUnsupported = false;
   for (auto [name, srcfn]: srcfns) {
     auto itr = tgtfns.find(name);
     if (itr == tgtfns.end()) {
@@ -751,7 +750,9 @@ Results validate(
       globals = mergeGlobals(
           src_res.memref.usedGlobals, tgt_res.memref.usedGlobals);
     } catch (UnsupportedException ue) {
-      raiseUnsupported(ue);
+      printUnsupported(ue);
+      hasUnsupported = true;
+      continue;
     }
 
     auto f32_consts = src_res.F32.constSet;
@@ -816,8 +817,13 @@ Results validate(
     try {
       verificationResult.merge(validate(vinput));
     } catch (UnsupportedException ue) {
-      raiseUnsupported(ue);
+      printUnsupported(ue);
+      hasUnsupported = true;
     }
+  }
+
+  if (hasUnsupported) {
+    exit(UNSUPPORTED_EXIT_CODE);
   }
 
   return verificationResult;
