@@ -127,14 +127,20 @@ bool analyzeElemAttr(
 
 struct VarAnalysisConfig {
   bool isArg;
+  bool isOperand;
   bool createsNewFpVal;
 
 public:
   static VarAnalysisConfig arg() {
-    return { .isArg = true, .createsNewFpVal = false};
+    return { .isArg = true, .isOperand = false, .createsNewFpVal = false};
+  }
+  static VarAnalysisConfig operand() {
+    return { .isArg = false, .isOperand = true, .createsNewFpVal = false};
   }
   static VarAnalysisConfig op(bool createsNewFpVal) {
-    return { .isArg = false, .createsNewFpVal = createsNewFpVal};
+    return {
+      .isArg = false, .isOperand = false, .createsNewFpVal = createsNewFpVal
+    };
   }
 };
 
@@ -147,7 +153,7 @@ void analyzeVariable(
   size_t &f64ElemCounts = res.F64.elemCounts;
   decltype(res.memref.argCount) &memrefCnt =
       config.isArg ? res.memref.argCount : res.memref.varCount;
-  bool doCount = config.createsNewFpVal || config.isArg;
+  bool doCount = config.isArg || config.isOperand || config.createsNewFpVal;
 
   if (ty.isF32()) {
     if (doCount)
@@ -182,7 +188,7 @@ void analyzeVariable(
     }
   }
 
-  if (ty.isa<mlir::MemRefType>())
+  if (ty.isa<mlir::MemRefType>() && !config.isOperand)
     memrefCnt[elemty]++;
 }
 
@@ -324,7 +330,7 @@ void analyzeBlock(
       // Reduction op can create intermediate fp values.
       // We also count them in a conservative assumption.
       for (const auto &operand: op.getOperands()) {
-        analyzeVariable(operand, res, VarAnalysisConfig::op(true));
+        analyzeVariable(operand, res, VarAnalysisConfig::operand());
       }
     }
 
