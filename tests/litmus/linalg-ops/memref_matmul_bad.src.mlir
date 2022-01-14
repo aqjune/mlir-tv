@@ -1,5 +1,7 @@
 // EXPECT: "Source is more defined than target"
+// NO-IDENTITY
 // Source is more defined because %c have to point writable memory block in src.
+// Pass identity checks since tgt-tgt pair takes too long time.
 
 func @f(%a : memref<8x4xf32>, %b: memref<4x2xf32>, %c: memref<8x2xf32>) -> tensor<8x2xf32> {
   %ta = bufferization.to_tensor %a : memref<8x4xf32>
