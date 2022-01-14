@@ -3092,6 +3092,21 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
       auto m_res = st.regs.get<MemRef>(opi);
       storeTensorTo(st, op, move(tvec_res->at(i)), m_res,
           opi.getType().cast<mlir::MemRefType>(), true);
+
+      // Noalias with input operands
+      for (unsigned j = 0; j < op.getNumInputs(); j ++) {
+        auto opj = op.getInputOperand(j)->get();
+        auto input = st.regs.get<MemRef>(opj);
+        st.wellDefined(op, input.noalias(m_res));
+      }
+      // Noalias with other output operands
+      for (unsigned j = 0; j < op.getNumOutputs(); j ++) {
+        if (i == j) continue;
+
+        auto opj = op.getOutputOperand(j)->get();
+        auto output = st.regs.get<MemRef>(opj);
+        st.wellDefined(op, output.noalias(m_res));
+      }
     }
   } else {
     llvm_unreachable("Unknown linalg::generic semantics");
