@@ -3102,9 +3102,9 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
         st.wellDefined(op, input.noalias(m_res));
       }
       // Noalias with other output operands
-      for (unsigned j = 0; j < op.getNumOutputs(); j ++) {
+      for (unsigned j = 0; j < i; j ++) {
         auto opj = op.getOutputOperand(j)->get();
-        if (i == j || !opj.getType().isa<mlir::MemRefType>()) continue;
+        if (!opj.getType().isa<mlir::MemRefType>()) continue;
 
         auto output = st.regs.get<MemRef>(opj);
         st.wellDefined(op, output.noalias(m_res));
