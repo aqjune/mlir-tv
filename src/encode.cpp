@@ -3096,14 +3096,16 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
       // Noalias with input operands
       for (unsigned j = 0; j < op.getNumInputs(); j ++) {
         auto opj = op.getInputOperand(j)->get();
+        if (!opj.getType().isa<mlir::MemRefType>()) continue;
+
         auto input = st.regs.get<MemRef>(opj);
         st.wellDefined(op, input.noalias(m_res));
       }
       // Noalias with other output operands
       for (unsigned j = 0; j < op.getNumOutputs(); j ++) {
-        if (i == j) continue;
-
         auto opj = op.getOutputOperand(j)->get();
+        if (i == j || !opj.getType().isa<mlir::MemRefType>()) continue;
+
         auto output = st.regs.get<MemRef>(opj);
         st.wellDefined(op, output.noalias(m_res));
       }
