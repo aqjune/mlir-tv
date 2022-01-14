@@ -839,6 +839,25 @@ Tensor Tensor::sum(unsigned axis) const {
       move(newSizes), move(indVars), summation);
 }
 
+Tensor Tensor::avgPool(const vector<Expr> &kernels,
+    const vector<Expr> &strides) const {
+  assert(kernels.size() == 2);
+  assert(strides.size() == 2);
+
+  vector<Expr> newSizes = {getDim(0),
+    ((Expr)(getDim(1)-kernels[0]+Index(1))).udiv(strides[0]),
+    ((Expr)(getDim(2)-kernels[1]+Index(1))).udiv(strides[1]),
+    getDim(3)
+  };
+
+  Expr resultArray = aop::getFpEncoding(elemType)
+    .avgPool(arr, kernels[0], kernels[1], strides[0], strides[1]);
+  auto indvar = Index::var("idx", VarType::BOUND);
+  auto pooling = resultArray.select(indvar);
+  return mkLambdaFrom1D(elemType, move(newSizes), indvar, pooling,
+    /* initialized */Expr::mkBool(true));
+}
+
 pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
   assert(elemType == other.elemType);
 

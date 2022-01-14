@@ -1303,6 +1303,32 @@ void encodeOp(State &st, mlir::tosa::GatherOp op, bool) {
       move(outputValue)));
 }
 
+template<>
+void encodeOp(State &st, mlir::tosa::AvgPool2dOp op, bool) {
+  auto input = st.regs.get<Tensor>(op.input());
+  auto kernelDims = getFromArrayAttr<Index>(op.kernel());
+  auto paddings = getFromArrayAttr<Index>(op.pad());
+  auto strides = getFromArrayAttr<Index>(op.stride());
+
+  for (unsigned i = 0; i < input.getRank(); i ++) {
+    uint64_t v;
+    if(!paddings[i].isUInt(v))
+      throw UnsupportedException(op.getOperation(),
+          "Unsupported pad element type");
+    if (v > 0)
+      throw UnsupportedException(op.getOperation(),
+          "Currently we support zero padded pooling");
+  }
+
+  auto result = input.avgPool(kernelDims, strides);
+  st.regs.add(op.getResult(), move(result));
+  st.wellDefined(op, input.isFullyInitialized(), "source tensor initialized");
+}
+
+template<>
+void encodeOp(State &st, mlir::tosa::MaxPool2dOp op, bool) {
+  throw UnsupportedException("maxpool");
+}
 
 template<>
 void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
@@ -1716,6 +1742,46 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
   st.wellDefined(op, move(welldef), "loop body");
   st.wellDefined(op, sourceTensor.isFullyInitialized(),
       "source tensor initialized");
+}
+
+template<>
+void encodeOp(State &st, mlir::linalg::PoolingNhwcSumOp op, bool) {
+  if (op.hasBufferSemantics())
+    throw UnsupportedException("Buffer semantic does not supported yet.");
+
+  auto strideAttr = op.strides();
+  auto dilationAttr = op.dilations();
+
+  if (!strideAttr.isSplat() || !dilationAttr.isSplat())
+    throw UnsupportedException("Currently we support splat elements");
+
+  auto stride = strideAttr.getSplatValue<mlir::Attribute>()
+      .dyn_cast<mlir::IntegerAttr>().getInt();
+  auto dilation = dilationAttr.getSplatValue<mlir::Attribute>()
+      .dyn_cast<mlir::IntegerAttr>().getInt();
+
+  if (dilation != 1)
+    throw UnsupportedException("Currently we support simple dilations");
+
+  vector<Expr> kernelDims = st.regs.get<Tensor>(op.inputs()[1]).getDims();
+  vector<Expr> strides = {Index(stride), Index(stride)};
+  auto input = st.regs.get<Tensor>(op.inputs()[0]);
+  auto output = st.regs.get<Tensor>(op.outputs()[0]);
+  auto pooling = input.avgPool(kernelDims, strides);
+  auto elemType = input.getElemType();
+  auto result = pooling
+    .elementwiseBinOp(output, elemType, [elemType](Expr &&a, Expr &&b) -> Expr {
+      return Float(a, elemType).add(Float(b, elemType));
+    });
+
+  st.regs.add(op.getResult(0), move(result));
+  st.wellDefined(op, input.isFullyInitialized(), "input tensor initialized");
+  st.wellDefined(op, output.isFullyInitialized(), "output tensor initialized");
+}
+
+template<>
+void encodeOp(State &st, mlir::linalg::PoolingNhwcMaxOp op, bool) {
+  throw UnsupportedException("PoolingNhwcMaxOp");
 }
 
 static pair<Expr, Expr> encodeDimOp(
@@ -3230,6 +3296,8 @@ static void encodeBlock(
     ENCODE(st, op, mlir::linalg::InitTensorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::MatmulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::PadTensorOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::linalg::PoolingNhwcSumOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::linalg::PoolingNhwcMaxOp, encodeMemWriteOps);
     
     ENCODE(st, op, mlir::shape::ShapeOfOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::shape::ToExtentTensorOp, encodeMemWriteOps);
@@ -3270,6 +3338,8 @@ static void encodeBlock(
     ENCODE(st, op, mlir::tosa::SubOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TileOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tosa::TransposeOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::AvgPool2dOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tosa::MaxPool2dOp, encodeMemWriteOps);
 
     if (arg_assign_random_to_unsupported_ops.getValue()) {
       assignRandomValue(st, &op, printOps);

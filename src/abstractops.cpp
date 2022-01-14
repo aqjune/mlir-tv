@@ -279,6 +279,8 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_divfn.reset();
   fp_hashfn.reset();
   fp_sums.clear();
+  fp_pooling_sumfn.reset();
+  fp_pooling_maxfn.reset();
 }
 
 FnDecl AbsFpEncoding::getAddFn() {
@@ -372,6 +374,28 @@ FnDecl AbsFpEncoding::getRoundDirFn() {
     fp_rounddirfn.emplace({src_fty}, tgt_fty, "fp_rounddir_" + fn_suffix);
   }
   return *fp_rounddirfn;
+}
+
+FnDecl AbsFpEncoding::getPoolingSumFn() {
+  if (!fp_pooling_sumfn) {
+    auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
+    auto attr = Index::sort();
+    // (Input, Kernel_Y Kernel_X, Stride_Y, Stride_X)
+    fp_pooling_sumfn.emplace({arrs, attr, attr, attr, attr},
+        arrs, "fp_pooling_sum_" + fn_suffix);
+  }
+  return *fp_pooling_sumfn;
+}
+
+FnDecl AbsFpEncoding::getPoolingMaxFn() {
+  if (!fp_pooling_maxfn) {
+    auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
+    auto attr = Index::sort();
+    // (Input, Kernel_Y Kernel_X, Stride_Y, Stride_X)
+    fp_pooling_maxfn.emplace({arrs, attr, attr, attr, attr},
+        arrs, "fp_pooling_max_" + fn_suffix);
+  }
+  return *fp_pooling_maxfn;
 }
 
 size_t AbsFpEncoding::getHashRangeBits() const {
@@ -1113,6 +1137,12 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
             Expr::mkIte(is_prec_zero, floored_float,
               Expr::mkIte(round_dir == Expr::mkBV(0, 1),
                 floored_float, ceiled_float))))));
+}
+
+Expr AbsFpEncoding::avgPool(const Expr &arr,
+    const Expr &kernelY, const Expr &kernelX,
+    const Expr &strideY, const Expr &strideX) {
+  return getPoolingSumFn().apply({arr, kernelY, kernelX, strideY, strideX});
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() {

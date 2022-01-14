@@ -143,6 +143,8 @@ private:
   std::optional<smt::FnDecl> fp_expfn;
   std::optional<smt::FnDecl> fp_hashfn;
   std::optional<smt::FnDecl> fp_rounddirfn;
+  std::optional<smt::FnDecl> fp_pooling_sumfn;
+  std::optional<smt::FnDecl> fp_pooling_maxfn;
   std::string fn_suffix;
 
 private:
@@ -179,6 +181,8 @@ private:
   smt::FnDecl getExpFn();
   smt::FnDecl getHashFnForAddAssoc();
   smt::FnDecl getRoundDirFn();
+  smt::FnDecl getPoolingSumFn();
+  smt::FnDecl getPoolingMaxFn();
 
   size_t getHashRangeBits() const;
   uint64_t getSignBit() const;
@@ -215,6 +219,9 @@ public:
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
       const smt::Expr &f2);
+  smt::Expr avgPool(const smt::Expr &arr,
+      const smt::Expr &kernelY, const smt::Expr &kernelX,
+      const smt::Expr &strideY, const smt::Expr &strideX);
   smt::Expr getFpAssociativePrecondition();
   smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
   smt::Expr getFpConstantPrecondition();

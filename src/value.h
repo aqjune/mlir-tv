@@ -243,7 +243,9 @@ public:
   // It is assumed that this tensor is initialized.
   // The returned tensor is fully initialized.
   Tensor sum(unsigned axis) const;
-  
+
+  Tensor avgPool(const std::vector<smt::Expr> &kernels,
+                 const std::vector<smt::Expr> &strides) const;
 
   operator smt::Expr() const { return arr; }
 
