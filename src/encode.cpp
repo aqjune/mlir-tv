@@ -1777,38 +1777,56 @@ static void encodeLinalgPooling(State &st, T op) {
   if (dilation != 1)
     throw UnsupportedException("Currently we support simple dilations");
 
-  vector<Expr> kernelDims = st.regs.get<Tensor>(op.inputs()[1]).getDims();
-  vector<Expr> strides = {Index(stride), Index(stride)};
-  auto input = st.regs.get<Tensor>(op.inputs()[0]);
-  auto output = st.regs.get<Tensor>(op.outputs()[0]);
+  if (op.hasTensorSemantics()) {
+    vector<Expr> kernelDims = st.regs.get<Tensor>(op.inputs()[1]).getDims();
+    vector<Expr> strides = {Index(stride), Index(stride)};
+    auto input = st.regs.get<Tensor>(op.inputs()[0]);
+    auto output = st.regs.get<Tensor>(op.outputs()[0]);
 
-  bool isAvgPool = std::is_same<T, mlir::linalg::PoolingNhwcSumOp>::value;
-  auto pooling = isAvgPool ?
-      input.avgPool(kernelDims, strides) : input.maxPool(kernelDims, strides);
-  auto elemType = input.getElemType();
-  auto result = pooling
-    .elementwiseBinOp(output, elemType, [elemType](Expr &&a, Expr &&b) -> Expr {
-      return Float(a, elemType).add(Float(b, elemType));
-    });
+    bool isAvgPool = std::is_same<T, mlir::linalg::PoolingNhwcSumOp>::value;
+    auto pooling = isAvgPool ?
+        input.avgPool(kernelDims, strides) : input.maxPool(kernelDims, strides);
+    auto elemType = input.getElemType();
+    auto result = pooling
+      .elementwiseBinOp(output, elemType, [elemType](Expr &&a, Expr &&b) -> Expr {
+        return Float(a, elemType).add(Float(b, elemType));
+      });
 
-  st.regs.add(op.getResult(0), move(result));
-  st.wellDefined(op, input.isFullyInitialized(), "input tensor initialized");
-  st.wellDefined(op, output.isFullyInitialized(), "output tensor initialized");
+    st.regs.add(op.getResult(0), move(result));
+    st.wellDefined(op, input.isFullyInitialized(), "input tensor initialized");
+    st.wellDefined(op, output.isFullyInitialized(), "output tensor initialized");
+  } else {
+    vector<Expr> kernelDims = st.regs.get<MemRef>(op.inputs()[1]).getDims();
+    vector<Expr> strides = {Index(stride), Index(stride)};
+    MemRef minput = st.regs.get<MemRef>(op.inputs()[0]);
+    MemRef moutput = st.regs.get<MemRef>(op.outputs()[0]);
+    auto inputTy = op.inputs()[0].getType().template cast<mlir::MemRefType>();
+    auto outputTy = op.outputs()[0].getType().template cast<mlir::MemRefType>();
+
+    Tensor input = loadTensor(st, op, minput, inputTy);
+    Tensor output = loadTensor(st, op, moutput, outputTy);
+
+    bool isAvgPool = std::is_same<T, mlir::linalg::PoolingNhwcSumOp>::value;
+    auto pooling = isAvgPool ?
+        input.avgPool(kernelDims, strides) : input.maxPool(kernelDims, strides);
+    auto elemType = input.getElemType();
+    auto result = pooling
+      .elementwiseBinOp(output, elemType, [elemType](Expr &&a, Expr &&b) -> Expr {
+        return Float(a, elemType).add(Float(b, elemType));
+      });
+
+    storeTensorTo(st, op, move(result), moutput, outputTy, true);
+    st.wellDefined(op, moutput.noalias(minput));
+  }
 }
 
 template<>
 void encodeOp(State &st, mlir::linalg::PoolingNhwcSumOp op, bool) {
-  if (op.hasBufferSemantics())
-    throw UnsupportedException("Buffer semantic does not supported yet.");
-
   encodeLinalgPooling(st, op);
 }
 
 template<>
 void encodeOp(State &st, mlir::linalg::PoolingNhwcMaxOp op, bool) {
-  if (op.hasBufferSemantics())
-    throw UnsupportedException("Buffer semantic does not supported yet.");
-
   encodeLinalgPooling(st, op);
 }
 
