@@ -1761,13 +1761,10 @@ void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
       "source tensor initialized");
 }
 
-template<>
-void encodeOp(State &st, mlir::linalg::PoolingNhwcSumOp op, bool) {
-  if (op.hasBufferSemantics())
-    throw UnsupportedException("Buffer semantic does not supported yet.");
-
-  auto strideAttr = op.strides();
-  auto dilationAttr = op.dilations();
+template<class T>
+static void encodeLinalgPooling(State &st, T op) {
+  mlir::DenseIntElementsAttr strideAttr = op.strides();
+  mlir::DenseIntElementsAttr dilationAttr = op.dilations();
 
   if (!strideAttr.isSplat() || !dilationAttr.isSplat())
     throw UnsupportedException("Currently we support splat elements");
@@ -1784,7 +1781,10 @@ void encodeOp(State &st, mlir::linalg::PoolingNhwcSumOp op, bool) {
   vector<Expr> strides = {Index(stride), Index(stride)};
   auto input = st.regs.get<Tensor>(op.inputs()[0]);
   auto output = st.regs.get<Tensor>(op.outputs()[0]);
-  auto pooling = input.avgPool(kernelDims, strides);
+
+  bool isAvgPool = std::is_same<T, mlir::linalg::PoolingNhwcSumOp>::value;
+  auto pooling = isAvgPool ?
+      input.avgPool(kernelDims, strides) : input.maxPool(kernelDims, strides);
   auto elemType = input.getElemType();
   auto result = pooling
     .elementwiseBinOp(output, elemType, [elemType](Expr &&a, Expr &&b) -> Expr {
@@ -1797,38 +1797,19 @@ void encodeOp(State &st, mlir::linalg::PoolingNhwcSumOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::linalg::PoolingNhwcSumOp op, bool) {
+  if (op.hasBufferSemantics())
+    throw UnsupportedException("Buffer semantic does not supported yet.");
+
+  encodeLinalgPooling(st, op);
+}
+
+template<>
 void encodeOp(State &st, mlir::linalg::PoolingNhwcMaxOp op, bool) {
   if (op.hasBufferSemantics())
     throw UnsupportedException("Buffer semantic does not supported yet.");
 
-  auto strideAttr = op.strides();
-  auto dilationAttr = op.dilations();
-
-  if (!strideAttr.isSplat() || !dilationAttr.isSplat())
-    throw UnsupportedException("Currently we support splat elements");
-
-  auto stride = strideAttr.getSplatValue<mlir::Attribute>()
-      .dyn_cast<mlir::IntegerAttr>().getInt();
-  auto dilation = dilationAttr.getSplatValue<mlir::Attribute>()
-      .dyn_cast<mlir::IntegerAttr>().getInt();
-
-  if (dilation != 1)
-    throw UnsupportedException("Currently we support simple dilations");
-
-  vector<Expr> kernelDims = st.regs.get<Tensor>(op.inputs()[1]).getDims();
-  vector<Expr> strides = {Index(stride), Index(stride)};
-  auto input = st.regs.get<Tensor>(op.inputs()[0]);
-  auto output = st.regs.get<Tensor>(op.outputs()[0]);
-  auto pooling = input.maxPool(kernelDims, strides);
-  auto elemType = input.getElemType();
-  auto result = pooling
-    .elementwiseBinOp(output, elemType, [elemType](Expr &&a, Expr &&b) -> Expr {
-      return Float(a, elemType).add(Float(b, elemType));
-    });
-
-  st.regs.add(op.getResult(0), move(result));
-  st.wellDefined(op, input.isFullyInitialized(), "input tensor initialized");
-  st.wellDefined(op, output.isFullyInitialized(), "output tensor initialized");
+  encodeLinalgPooling(st, op);
 }
 
 static pair<Expr, Expr> encodeDimOp(
