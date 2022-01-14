@@ -1145,6 +1145,12 @@ Expr AbsFpEncoding::avgPool(const Expr &arr,
   return getPoolingSumFn().apply({arr, kernelY, kernelX, strideY, strideX});
 }
 
+Expr AbsFpEncoding::maxPool(const Expr &arr,
+    const Expr &kernelY, const Expr &kernelX,
+    const Expr &strideY, const Expr &strideX) {
+  return getPoolingMaxFn().apply({arr, kernelY, kernelX, strideY, strideX});
+}
+
 Expr AbsFpEncoding::getFpAssociativePrecondition() {
   if (useMultiset) {
     // precondition between `bag equality <-> assoc_sumfn`

@@ -246,6 +246,8 @@ public:
 
   Tensor avgPool(const std::vector<smt::Expr> &kernels,
                  const std::vector<smt::Expr> &strides) const;
+  Tensor maxPool(const std::vector<smt::Expr> &kernels,
+                 const std::vector<smt::Expr> &strides) const;
 
   operator smt::Expr() const { return arr; }
 

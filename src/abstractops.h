@@ -222,6 +222,9 @@ public:
   smt::Expr avgPool(const smt::Expr &arr,
       const smt::Expr &kernelY, const smt::Expr &kernelX,
       const smt::Expr &strideY, const smt::Expr &strideX);
+  smt::Expr maxPool(const smt::Expr &arr,
+      const smt::Expr &kernelY, const smt::Expr &kernelX,
+      const smt::Expr &strideY, const smt::Expr &strideX);
   smt::Expr getFpAssociativePrecondition();
   smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
   smt::Expr getFpConstantPrecondition();
