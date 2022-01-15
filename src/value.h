@@ -345,9 +345,8 @@ public:
     Layout(const std::vector<smt::Expr> &dims);
 
     Layout(const std::vector<smt::Expr> &indVars,
-        const Fn &layout,
-        const Fn &inbounds,
-        bool useUF = false); // encode "mapping" using uninterpreted function
+        const Fn &layout,    // (i, j, k) -> block offset
+        const Fn &inbounds);
 
     // MARK(makesource)
     // Without this copy constructor, I encounter libc+abi.dylib related error in MacOS
@@ -403,6 +402,10 @@ public:
 
   AccessInfo store(const smt::Expr &value,
       const std::vector<smt::Expr> &indices) const;
+
+  // Given a block offset ofs, check whether there exists inbounds indices
+  // d1, d2, .. s.t. to1DIdxWithLayout(d1, d2, ..) == ofs.
+  smt::Expr isValid1DOffset(const smt::Expr &ofs) const;
 
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;

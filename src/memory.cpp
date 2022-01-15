@@ -115,14 +115,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
   unsigned addedGlobalVars = 0;
 
   for (auto &[elemTy, numBlks]: globalBlocksCnt) {
-    optional<Sort> elemSMTTy;
-
-    if (elemTy.isa<mlir::FloatType>())
-      elemSMTTy = Float::sort(elemTy);
-    else if (elemTy.isIndex())
-      elemSMTTy = Index::sort();
-    else if (elemTy.isa<mlir::IntegerType>())
-      elemSMTTy = Integer::sort(elemTy.getIntOrFloatBitWidth());
+    optional<Sort> elemSMTTy = convertPrimitiveTypeToSort(elemTy);
 
     if (!elemSMTTy)
       throw UnsupportedException(elemTy);
@@ -387,6 +380,29 @@ AccessInfo Memory::storeArray(
   return getInfo(elemTy, bid, offset, size);
 }
 
+void Memory::freshArray(
+    mlir::Type elemTy, const Expr &bid) {
+  optional<Sort> elemSMTTy = convertPrimitiveTypeToSort(elemTy);
+
+  if (!elemSMTTy)
+    throw UnsupportedException(elemTy);
+
+  auto arrSort = Sort::arraySort(Index::sort(), *elemSMTTy);
+  auto initSort = Sort::arraySort(Index::sort(), Sort::boolSort());
+
+  auto suffix = [&](const string &s) {
+    return "#newarray_" + s;
+  };
+  auto init = Expr::mkFreshVar(initSort, suffix("initialized"));
+  auto arr = Expr::mkFreshVar(arrSort, suffix("array"));
+
+  update(elemTy, bid, [&](auto ubid) {
+        return &arrays.find(elemTy)->second[ubid]; },
+      [&arr](auto ubid) { return arr; });
+  update(elemTy, bid, [&](auto ubid) {
+        return &initialized.find(elemTy)->second[ubid]; },
+      [&init](auto ubid) { return init; });
+}
 
 pair<Expr, AccessInfo> Memory::load(
     mlir::Type elemTy, const Expr &bid, const Expr &idx) const {

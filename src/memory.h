@@ -89,12 +89,12 @@ public:
 
   // Mark memblock's writable flag to `writable`
   void setWritable(mlir::Type elemTy, const smt::Expr &bid, bool writable);
-  // get memblocks' writable flag
+  // Get the writable flag
   smt::Expr getWritable(mlir::Type elemTy, const smt::Expr &bid) const;
 
   // Mark memblock's liveness to false.
   void setLivenessToFalse(mlir::Type elemTy, const smt::Expr &bid);
-  // get memblocks' writable flag
+  // Get the liveness flag
   smt::Expr getLiveness(mlir::Type elemTy, const smt::Expr &bid) const;
 
   smt::Expr isInitialized(mlir::Type elemTy,
@@ -106,6 +106,9 @@ public:
   AccessInfo storeArray(
       mlir::Type elemTy, const smt::Expr &arr, const smt::Expr &bid,
       const smt::Expr &offset, const smt::Expr &size);
+
+  // Create a fresh element array and its initialized array for bid.
+  void freshArray(mlir::Type elemTy, const smt::Expr &bid);
 
   // Returns: (loaded value, load successful?)
   std::pair<smt::Expr, AccessInfo> load(
