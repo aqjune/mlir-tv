@@ -1,5 +1,5 @@
 func @maxpool(%arg0: tensor<1x7x7x1280xf32>) -> tensor<1x1x1x1280xf32> {
-  %cst = arith.constant 0.000000e+00 : f32
+  %cst = arith.constant -3.40282347E+38 : f32
   %0 = linalg.init_tensor [1, 1, 1, 1280] : tensor<1x1x1x1280xf32>
   %1 = linalg.fill(%cst, %0) : f32, tensor<1x1x1x1280xf32> -> tensor<1x1x1x1280xf32> 
   %2 = linalg.init_tensor [7, 7] : tensor<7x7xf32>
