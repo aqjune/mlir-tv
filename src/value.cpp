@@ -864,8 +864,8 @@ Tensor Tensor::maxPool(const vector<Expr> &kernels,
   assert(strides.size() == 2);
 
   vector<Expr> newSizes = {getDim(0),
-    ((Expr)(getDim(1)-kernels[0]+Index(1))).udiv(strides[0]),
-    ((Expr)(getDim(2)-kernels[1]+Index(1))).udiv(strides[1]),
+    ((Expr)(getDim(1)+strides[0]-kernels[0])).udiv(strides[0]),
+    ((Expr)(getDim(2)+strides[1]-kernels[1])).udiv(strides[1]),
     getDim(3)
   };
 
