@@ -11,9 +11,9 @@ using namespace std;
 
 
 namespace {
-string freshName(string prefix) {
+string freshName(string &&prefix) {
   static int count = 0;
-  return prefix + to_string(count ++);
+  return prefix + "#" + to_string(count ++);
 }
 }
 
@@ -1374,7 +1374,7 @@ MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
   Expr condition = Expr::mkBool(true);
   vector<FnDecl> inverseFns;
   for (unsigned i = 0; i < indVars.size(); i ++) {
-    auto inverseName = freshName("inverse" + to_string(i));
+    auto inverseName = freshName("inverse_fn" + to_string(i));
     inverseFns.emplace_back(Index::sort(), Index::sort(), move(inverseName));
 
     condition = condition &
@@ -1499,6 +1499,12 @@ AccessInfo MemRef::store(const Expr &value,
 
   info.inbounds &= move(inbounds);
   return info;
+}
+
+Expr MemRef::isValid1DOffset(const Expr &ofs0) const {
+  Expr ofs = ofs0 - (Expr)offset;
+  auto [idx, inbounds] = to1DIdxWithLayout(layout.getInverseIndices(ofs));
+  return (idx == ofs) & inbounds;
 }
 
 Expr MemRef::isInBounds() const {

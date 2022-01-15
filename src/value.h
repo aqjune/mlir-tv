@@ -399,6 +399,10 @@ public:
   AccessInfo store(const smt::Expr &value,
       const std::vector<smt::Expr> &indices) const;
 
+  // Given a block offset ofs, check whether there exists inbounds indices
+  // d1, d2, .. s.t. to1DIdxWithLayout(d1, d2, ..) == ofs.
+  smt::Expr isValid1DOffset(const smt::Expr &ofs) const;
+
   smt::Expr isInBounds() const;
   smt::Expr isGlobalBlock() const;
   smt::Expr isLocalBlock() const;

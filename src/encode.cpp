@@ -119,15 +119,16 @@ static void storeTensorTo(
     mlir::MemRefType memrefTy, bool ubIfReadOnly) {
   // Accessing uninitialized elem is UB.
   st.wellDefined(op, tensor.isFullyInitialized(), "tensor initialized");
-  st.hasQuantifier |= tensor.isFullyInitialized().hasQuantifier();
+  auto elemTy = memrefTy.getElementType();
 
   if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
-    auto success = st.m->storeArray(memrefTy.getElementType(),
+    auto success = st.m->storeArray(elemTy,
         tensor.asArray(), memref.getBID(), memref.getOffset(),
         tensor.get1DSize());
     st.wellDefined(op, success.checkWrite(!ubIfReadOnly),
         "storing to dest");
+    st.hasQuantifier |= tensor.isFullyInitialized().hasQuantifier();
 
   } else {
     // TODO: can we further optimize this if we know that memref is a
@@ -135,24 +136,45 @@ static void storeTensorTo(
     // We may not need to preserve the 'previous' bytes.
 
     vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
+    auto ofs1d = Index::var("ofs", VarType::BOUND);
     auto tVal = tensor.get(idxs);
     auto tInBounds = tensor.isInBounds(idxs);
-    auto tInit = tensor.isInitialized(idxs);
-    auto [mVal, mInfo] = memref.getWithAccessInfo(idxs);
 
-    st.wellDefined(op, Expr::mkForall(idxs, tInBounds.implies(tInit)));
+    auto [mValBefore1d, mInfoBefore1d] = st.m->load(elemTy, memref.getBID(),
+        ofs1d);
+    auto mInitializedBefore1d = mInfoBefore1d.initialized;
+
+    // Create a fresh SMT array for the block pointed by memref!
+    st.m->freshArray(elemTy, memref.getBID());
+
+    auto [mValAfter, mInfoAfter] = memref.getWithAccessInfo(idxs);
+
+    auto [mValAfter1d, mInfoAfter1d] = st.m->load(elemTy, memref.getBID(),
+        ofs1d);
+    auto mInitializedAfter1d = mInfoAfter1d.initialized;
+
+    // Wrote successfully
     st.wellDefined(op, Expr::mkForall(idxs,
-        tInBounds.implies(mInfo.checkWrite())));
+        tInBounds.implies(mInfoAfter.checkWrite(!ubIfReadOnly))));
 
-    // NOTE: this will be always false if mVal and tVal store unequal constants.
-    // Therefore, we can't encode this condition as UB because
-    // (1) If they are in src: src always becomes UB (false negative)
-    // (2) If they are in tgt: tgt always becomes UB (false positive)
-    // Therefore, encode this as precondition; precondition does not introduce
-    // false negative, if properly handled (not implemented yet; see how Alive2
-    // does it).
-    st.addPrecondition(Expr::mkForall(idxs,
-        tInBounds.implies(mVal == tVal)));
+    // Write preconditions that relates the arrays before/after writes.
+    // A precondition for the updated elements
+    auto precUpdated = Expr::mkForall(idxs,
+        tInBounds.implies(mValAfter == tVal));
+    st.addPrecondition(move(precUpdated));
+    auto precInit = Expr::mkForall(idxs,
+        tInBounds.implies(mInfoAfter.initialized));
+    st.addPrecondition(move(precInit));
+
+    // A precondition for the untouched elements
+    auto precPreserved = Expr::mkForall({ofs1d},
+        // If ofs1d is a valid block offset that cannot be reached using this
+        // memref...
+        (mInfoAfter1d.inbounds & !memref.isValid1DOffset(ofs1d))
+          // The values and initialized bits are preserved.
+          .implies((mValBefore1d == mValAfter1d) &
+                   (mInitializedBefore1d == mInitializedAfter1d)));
+    st.addPrecondition(move(precPreserved));
     st.hasQuantifier = true;
   }
 }
