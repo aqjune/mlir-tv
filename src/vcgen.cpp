@@ -94,6 +94,12 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::init(0), llvm::cl::value_desc("number"),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<bool> memref_inputs_simple("memref-inputs-simple",
+  llvm::cl::desc("Assume that MemRef arguments point to distinct memory"
+                 " blocks and their offsets are zero."),
+  llvm::cl::init(false),
+  llvm::cl::cat(MlirTvCategory));
+
 llvm::cl::opt<unsigned int> max_unknown_dimsize("max-unknown-dimsize",
   llvm::cl::desc("Maximum dimension size for unknown shaped dimension"
                     "(default value: 50)"),
@@ -153,6 +159,7 @@ static State createInputState(
     ArgInfo &args, vector<Expr> &preconds) {
   State s(move(initMem));
   unsigned n = fn.getNumArguments();
+  TypeMap<unsigned> numMemRefArgs;
 
   for (unsigned i = 0; i < n; ++i) {
     auto arg = fn.getArgument(i);
@@ -195,6 +202,12 @@ static State createInputState(
       // TODO : out of bounds pointer is allowed?
       auto memref = MemRef(s.m.get(), ty.getElementType(),
           "arg" + to_string(arg.getArgNumber()), dims, layout);
+
+      if (memref_inputs_simple) {
+        s.addPrecondition(((Expr)memref.getOffset()).isZero());
+        unsigned constBID = numMemRefArgs[ty.getElementType()]++;
+        s.addPrecondition(memref.getBID() == constBID);
+      }
 
       // Function argument MemRefs must point to global memblocks.
       preconds.push_back(memref.isGlobalBlock());
