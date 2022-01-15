@@ -840,7 +840,7 @@ Tensor Tensor::sum(unsigned axis) const {
 }
 
 Tensor Tensor::avgPool(const vector<Expr> &kernelDims,
-    const vector<Expr> &strides) const {
+    const vector<Expr> &strides, optional<Tensor> &&init) const {
   assert(kernelDims.size() == 2);
   assert(strides.size() == 2);
 
@@ -851,6 +851,7 @@ Tensor Tensor::avgPool(const vector<Expr> &kernelDims,
     getDim(3)
   };
   vector<Expr> outputIdxs = Index::boundIndexVars(outputDims.size());
+  auto initVal = fmap(init, [&](auto t) { return t.get(outputIdxs); });
   // output[N][OH][OW][C]
   //  = avg_pool(input[N][OH * stride + KH][OW * stride + KW][C])
   auto kernel1DSize = kernelDims[0] * kernelDims[1];
@@ -863,14 +864,14 @@ Tensor Tensor::avgPool(const vector<Expr> &kernelDims,
   };
   auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
   auto outputExpr = aop::getFpEncoding(elemType)
-      .avgPool(kernelExpr, kernel1DSize);
+      .avgPool(kernelExpr, kernel1DSize, move(initVal));
 
   return Tensor::mkInitializedLambda(elemType,
       move(outputDims), move(outputIdxs), move(outputExpr));
 }
 
 Tensor Tensor::maxPool(const vector<Expr> &kernelDims,
-    const vector<Expr> &strides) const {
+    const vector<Expr> &strides, optional<Tensor> &&init) const {
   assert(kernelDims.size() == 2);
   assert(strides.size() == 2);
 
@@ -881,6 +882,7 @@ Tensor Tensor::maxPool(const vector<Expr> &kernelDims,
     getDim(3)
   };
   vector<Expr> outputIdxs = Index::boundIndexVars(outputDims.size());
+  auto initVal = fmap(init, [&](auto t) { return t.get(outputIdxs); });
   // output[N][OH][OW][C]
   //  = max_pool(input[N][OH * stride + KH][OW * stride + KW][C])
   auto kernel1DSize = kernelDims[0] * kernelDims[1];
@@ -893,7 +895,7 @@ Tensor Tensor::maxPool(const vector<Expr> &kernelDims,
   };
   auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
   auto outputExpr = aop::getFpEncoding(elemType)
-      .maxPool(kernelExpr, kernel1DSize);
+      .maxPool(kernelExpr, kernel1DSize, move(initVal));
 
   return Tensor::mkInitializedLambda(elemType,
       move(outputDims), move(outputIdxs), move(outputExpr));

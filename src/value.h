@@ -245,9 +245,11 @@ public:
   Tensor sum(unsigned axis) const;
 
   Tensor avgPool(const std::vector<smt::Expr> &kernelDims,
-                 const std::vector<smt::Expr> &strides) const;
+                 const std::vector<smt::Expr> &strides,
+                 std::optional<Tensor> &&init = std::nullopt) const;
   Tensor maxPool(const std::vector<smt::Expr> &kernelDims,
-                 const std::vector<smt::Expr> &strides) const;
+                 const std::vector<smt::Expr> &strides,
+                 std::optional<Tensor> &&init = std::nullopt) const;
 
   operator smt::Expr() const { return arr; }
 

@@ -1812,8 +1812,8 @@ static void encodeLinalgPooling(State &st, T op) {
     auto output = st.regs.get<Tensor>(op.outputs()[0]);
 
     bool isAvgPool = std::is_same<T, mlir::linalg::PoolingNhwcSumOp>::value;
-    auto pooling = isAvgPool ?
-        input.avgPool(kernelDims, strides) : input.maxPool(kernelDims, strides);
+    auto pooling = isAvgPool ? input.avgPool(kernelDims, strides, output)
+        : input.maxPool(kernelDims, strides, output);
     auto elemType = input.getElemType();
     auto result = pooling
       .elementwiseBinOp(output, elemType, [elemType](Expr &&a, Expr &&b) -> Expr {
@@ -1835,8 +1835,8 @@ static void encodeLinalgPooling(State &st, T op) {
     Tensor output = loadTensor(st, op, moutput, outputTy);
 
     bool isAvgPool = std::is_same<T, mlir::linalg::PoolingNhwcSumOp>::value;
-    auto pooling = isAvgPool ?
-        input.avgPool(kernelDims, strides) : input.maxPool(kernelDims, strides);
+    auto pooling = isAvgPool ? input.avgPool(kernelDims, strides, output)
+        : input.maxPool(kernelDims, strides, output);
     auto elemType = input.getElemType();
     auto result = pooling
       .elementwiseBinOp(output, elemType, [elemType](Expr &&a, Expr &&b) -> Expr {
