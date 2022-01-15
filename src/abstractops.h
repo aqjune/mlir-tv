@@ -219,10 +219,10 @@ public:
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
       const smt::Expr &f2);
-  smt::Expr avgPool(const smt::Expr &arr,
+  smt::Expr avgPool(const smt::Expr &arr, const smt::Expr &n,
       const smt::Expr &kernelY, const smt::Expr &kernelX,
       const smt::Expr &strideY, const smt::Expr &strideX);
-  smt::Expr maxPool(const smt::Expr &arr,
+  smt::Expr maxPool(const smt::Expr &arr, const smt::Expr &n,
       const smt::Expr &kernelY, const smt::Expr &kernelX,
       const smt::Expr &strideY, const smt::Expr &strideX);
   smt::Expr getFpAssociativePrecondition();

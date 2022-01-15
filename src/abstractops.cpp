@@ -1139,16 +1139,24 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
                 floored_float, ceiled_float))))));
 }
 
-Expr AbsFpEncoding::avgPool(const Expr &arr,
+Expr AbsFpEncoding::avgPool(const Expr &arr, const smt::Expr &n,
     const Expr &kernelY, const Expr &kernelX,
     const Expr &strideY, const Expr &strideX) {
-  return getPoolingSumFn().apply({arr, kernelY, kernelX, strideY, strideX});
+  Expr i = (Expr) Index::var("idx", VarType::BOUND);
+  Expr arri = arr.select(i), identity = zero(true);
+  Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, identity));
+
+  return getPoolingSumFn().apply({input, kernelY, kernelX, strideY, strideX});
 }
 
-Expr AbsFpEncoding::maxPool(const Expr &arr,
+Expr AbsFpEncoding::maxPool(const Expr &arr, const smt::Expr &n,
     const Expr &kernelY, const Expr &kernelX,
     const Expr &strideY, const Expr &strideX) {
-  return getPoolingMaxFn().apply({arr, kernelY, kernelX, strideY, strideX});
+  Expr i = (Expr) Index::var("idx", VarType::BOUND);
+  Expr arri = arr.select(i), identity = zero(true);
+  Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, identity));
+
+  return getPoolingMaxFn().apply({input, kernelY, kernelX, strideY, strideX});
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() {

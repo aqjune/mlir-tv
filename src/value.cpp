@@ -851,7 +851,7 @@ Tensor Tensor::avgPool(const vector<Expr> &kernels,
   };
 
   Expr resultArray = aop::getFpEncoding(elemType)
-    .avgPool(arr, kernels[0], kernels[1], strides[0], strides[1]);
+    .avgPool(arr, get1DSize(), kernels[0], kernels[1], strides[0], strides[1]);
   auto indvar = Index::var("idx", VarType::BOUND);
   auto pooling = resultArray.select(indvar);
   return mkLambdaFrom1D(elemType, move(newSizes), indvar, pooling,
@@ -870,7 +870,7 @@ Tensor Tensor::maxPool(const vector<Expr> &kernels,
   };
 
   Expr resultArray = aop::getFpEncoding(elemType)
-    .maxPool(arr, kernels[0], kernels[1], strides[0], strides[1]);
+    .maxPool(arr, get1DSize(), kernels[0], kernels[1], strides[0], strides[1]);
   auto indvar = Index::var("idx", VarType::BOUND);
   auto pooling = resultArray.select(indvar);
   return mkLambdaFrom1D(elemType, move(newSizes), indvar, pooling,
