@@ -1368,59 +1368,28 @@ MemRef::Layout::Layout(const vector<Expr> &dims):
 
 MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
     const Fn &layout,
-    const Fn &inbounds,
-    bool useUF): indVars(indVars), inbounds(inbounds),
+    const Fn &inbounds): indVars(indVars), inbounds(inbounds),
     precondition(Expr::mkBool(true)) // Will be replaced later
     {
+  Expr condition = Expr::mkBool(true);
+  vector<FnDecl> inverseFns;
+  for (unsigned i = 0; i < indVars.size(); i ++) {
+    auto inverseName = freshName("inverse" + to_string(i));
+    inverseFns.emplace_back(Index::sort(), Index::sort(), move(inverseName));
 
-  if (useUF) {
-    vector<smt::Sort> domains(indVars.size(), Index::sort());
-    FnDecl layoutFn(domains, Index::sort(), freshName("layoutFn"));
-    auto layoutFnExpr = layoutFn.apply(indVars);
-    Expr condition = (layoutFnExpr == layout(indVars));
-
-    vector<FnDecl> inverseFns;
-    for (unsigned i = 0; i < indVars.size(); i ++) {
-      auto inverseName = freshName("inverse" + to_string(i));
-      inverseFns.emplace_back(Index::sort(), Index::sort(), move(inverseName));
-
-      condition = condition & (inverseFns.back()(layoutFnExpr) == indVars[i]);
-    }
-    this->inverseMappings = [inverseFns](const Expr &idx) {
-      vector<Expr> ret;
-      for (auto &fn: inverseFns)
-        ret.push_back(fn(idx));
-      return ret;
-    };
-
-    this->mapping = [layoutFn](auto &indices) {
-      return layoutFn.apply(indices);
-    };
-
-    this->precondition = Expr::mkForall(
-        indVars, inbounds(indVars).implies(condition));
-
-  } else {
-    Expr condition = Expr::mkBool(true);
-    vector<FnDecl> inverseFns;
-    for (unsigned i = 0; i < indVars.size(); i ++) {
-      auto inverseName = freshName("inverse" + to_string(i));
-      inverseFns.emplace_back(Index::sort(), Index::sort(), move(inverseName));
-
-      condition = condition &
-          (inverseFns.back()(layout(indVars)) == indVars[i]);
-    }
-    this->inverseMappings = [inverseFns](const Expr &idx) {
-      vector<Expr> ret;
-      for (auto &fn: inverseFns)
-        ret.push_back(fn(idx));
-      return ret;
-    };
-
-    this->mapping = layout;
-    this->precondition = Expr::mkForall(indVars,
-        inbounds(indVars).implies(condition));
+    condition = condition &
+        (inverseFns.back()(layout(indVars)) == indVars[i]);
   }
+  this->inverseMappings = [inverseFns](const Expr &idx) {
+    vector<Expr> ret;
+    for (auto &fn: inverseFns)
+      ret.push_back(fn(idx));
+    return ret;
+  };
+
+  this->mapping = layout;
+  this->precondition = Expr::mkForall(indVars,
+      inbounds(indVars).implies(condition));
 }
 
 MemRef::MemRef(Memory *m,

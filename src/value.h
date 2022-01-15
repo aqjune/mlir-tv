@@ -341,9 +341,8 @@ public:
     Layout(const std::vector<smt::Expr> &dims);
 
     Layout(const std::vector<smt::Expr> &indVars,
-        const Fn &layout,
-        const Fn &inbounds,
-        bool useUF = false); // encode "mapping" using uninterpreted function
+        const Fn &layout,    // (i, j, k) -> block offset
+        const Fn &inbounds);
 
     // MARK(makesource)
     // Without this copy constructor, I encounter libc+abi.dylib related error in MacOS
