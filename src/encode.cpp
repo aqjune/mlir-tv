@@ -1516,6 +1516,8 @@ encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op,
     auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations,
         /* bias */ nullopt, /* output */ t_output);
     storeTensorTo(st, op, move(t_res), mo, oTy, true);
+    st.wellDefined(op, mo.noalias(mi) & mo.noalias(mf),
+        "output does not alias inputs");
   }
 }
 
