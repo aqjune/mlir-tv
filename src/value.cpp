@@ -839,42 +839,64 @@ Tensor Tensor::sum(unsigned axis) const {
       move(newSizes), move(indVars), summation);
 }
 
-Tensor Tensor::avgPool(const vector<Expr> &kernels,
+Tensor Tensor::avgPool(const vector<Expr> &kernelDims,
     const vector<Expr> &strides) const {
-  assert(kernels.size() == 2);
+  assert(kernelDims.size() == 2);
   assert(strides.size() == 2);
 
-  vector<Expr> newSizes = {getDim(0),
-    ((Expr)(getDim(1)-kernels[0]+Index(1))).udiv(strides[0]),
-    ((Expr)(getDim(2)-kernels[1]+Index(1))).udiv(strides[1]),
+  // N, OH, OW, C
+  vector<Expr> outputDims = {getDim(0),
+    ((Expr)(getDim(1)+strides[0]-kernelDims[0])).udiv(strides[0]),
+    ((Expr)(getDim(2)+strides[1]-kernelDims[1])).udiv(strides[1]),
     getDim(3)
   };
+  vector<Expr> outputIdxs = Index::boundIndexVars(outputDims.size());
+  // output[N][OH][OW][C]
+  //  = avg_pool(input[N][OH * stride + KH][OW * stride + KW][C])
+  auto kernel1DSize = kernelDims[0] * kernelDims[1];
+  auto kernelIdx = Index::var("kernelIdx", VarType::BOUND);
+  auto kernelIdxs = from1DIdx(kernelIdx, kernelDims);
+  vector<Expr> inputIdxs = {outputIdxs[0],
+    outputIdxs[1] * strides[0] + kernelIdxs[0],
+    outputIdxs[2] * strides[1] + kernelIdxs[1],
+    outputIdxs[3]
+  };
+  auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
+  auto outputExpr = aop::getFpEncoding(elemType)
+      .avgPool(kernelExpr, kernel1DSize);
 
-  Expr resultArray = aop::getFpEncoding(elemType)
-    .avgPool(arr, get1DSize(), kernels[0], kernels[1], strides[0], strides[1]);
-  auto indvar = Index::var("idx", VarType::BOUND);
-  auto pooling = resultArray.select(indvar);
-  return mkLambdaFrom1D(elemType, move(newSizes), indvar, pooling,
-    /* initialized */Expr::mkBool(true));
+  return Tensor::mkInitializedLambda(elemType,
+      move(outputDims), move(outputIdxs), move(outputExpr));
 }
 
-Tensor Tensor::maxPool(const vector<Expr> &kernels,
+Tensor Tensor::maxPool(const vector<Expr> &kernelDims,
     const vector<Expr> &strides) const {
-  assert(kernels.size() == 2);
+  assert(kernelDims.size() == 2);
   assert(strides.size() == 2);
 
-  vector<Expr> newSizes = {getDim(0),
-    ((Expr)(getDim(1)+strides[0]-kernels[0])).udiv(strides[0]),
-    ((Expr)(getDim(2)+strides[1]-kernels[1])).udiv(strides[1]),
+  // N, OH, OW, C
+  vector<Expr> outputDims = {getDim(0),
+    ((Expr)(getDim(1)+strides[0]-kernelDims[0])).udiv(strides[0]),
+    ((Expr)(getDim(2)+strides[1]-kernelDims[1])).udiv(strides[1]),
     getDim(3)
   };
+  vector<Expr> outputIdxs = Index::boundIndexVars(outputDims.size());
+  // output[N][OH][OW][C]
+  //  = max_pool(input[N][OH * stride + KH][OW * stride + KW][C])
+  auto kernel1DSize = kernelDims[0] * kernelDims[1];
+  auto kernelIdx = Index::var("kernelIdx", VarType::BOUND);
+  auto kernelIdxs = from1DIdx(kernelIdx, kernelDims);
+  vector<Expr> inputIdxs = {outputIdxs[0],
+    outputIdxs[1] * strides[0] + kernelIdxs[0],
+    outputIdxs[2] * strides[1] + kernelIdxs[1],
+    outputIdxs[3]
+  };
+  auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
+  auto outputExpr = aop::getFpEncoding(elemType)
+      .maxPool(kernelExpr, kernel1DSize);
 
-  Expr resultArray = aop::getFpEncoding(elemType)
-    .maxPool(arr, get1DSize(), kernels[0], kernels[1], strides[0], strides[1]);
-  auto indvar = Index::var("idx", VarType::BOUND);
-  auto pooling = resultArray.select(indvar);
-  return mkLambdaFrom1D(elemType, move(newSizes), indvar, pooling,
-    /* initialized */Expr::mkBool(true));
+  return Tensor::mkInitializedLambda(elemType,
+      move(outputDims), move(outputIdxs), move(outputExpr));
 }
 
 pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {

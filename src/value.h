@@ -244,9 +244,9 @@ public:
   // The returned tensor is fully initialized.
   Tensor sum(unsigned axis) const;
 
-  Tensor avgPool(const std::vector<smt::Expr> &kernels,
+  Tensor avgPool(const std::vector<smt::Expr> &kernelDims,
                  const std::vector<smt::Expr> &strides) const;
-  Tensor maxPool(const std::vector<smt::Expr> &kernels,
+  Tensor maxPool(const std::vector<smt::Expr> &kernelDims,
                  const std::vector<smt::Expr> &strides) const;
 
   operator smt::Expr() const { return arr; }

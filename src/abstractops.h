@@ -220,11 +220,9 @@ public:
   smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
       const smt::Expr &f2);
   smt::Expr avgPool(const smt::Expr &arr, const smt::Expr &n,
-      const smt::Expr &kernelY, const smt::Expr &kernelX,
-      const smt::Expr &strideY, const smt::Expr &strideX);
+      std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr maxPool(const smt::Expr &arr, const smt::Expr &n,
-      const smt::Expr &kernelY, const smt::Expr &kernelX,
-      const smt::Expr &strideY, const smt::Expr &strideX);
+      std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr getFpAssociativePrecondition();
   smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
   smt::Expr getFpConstantPrecondition();

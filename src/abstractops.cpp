@@ -379,10 +379,9 @@ FnDecl AbsFpEncoding::getRoundDirFn() {
 FnDecl AbsFpEncoding::getPoolingSumFn() {
   if (!fp_pooling_sumfn) {
     auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
-    auto attr = Index::sort();
-    // (Input, Kernel_Y Kernel_X, Stride_Y, Stride_X)
-    fp_pooling_sumfn.emplace({arrs, attr, attr, attr, attr},
-        arrs, "fp_pooling_sum_" + fn_suffix);
+    // (initial value, array)
+    fp_pooling_sumfn.emplace({arrs, sort()}, sort(),
+        "fp_pooling_sum_" + fn_suffix);
   }
   return *fp_pooling_sumfn;
 }
@@ -390,10 +389,9 @@ FnDecl AbsFpEncoding::getPoolingSumFn() {
 FnDecl AbsFpEncoding::getPoolingMaxFn() {
   if (!fp_pooling_maxfn) {
     auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
-    auto attr = Index::sort();
-    // (Input, Kernel_Y Kernel_X, Stride_Y, Stride_X)
-    fp_pooling_maxfn.emplace({arrs, attr, attr, attr, attr},
-        arrs, "fp_pooling_max_" + fn_suffix);
+    // (initial value, array)
+    fp_pooling_maxfn.emplace({arrs, sort()}, sort(),
+        "fp_pooling_max_" + fn_suffix);
   }
   return *fp_pooling_maxfn;
 }
@@ -1139,24 +1137,22 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
                 floored_float, ceiled_float))))));
 }
 
-Expr AbsFpEncoding::avgPool(const Expr &arr, const smt::Expr &n,
-    const Expr &kernelY, const Expr &kernelX,
-    const Expr &strideY, const Expr &strideX) {
+Expr AbsFpEncoding::avgPool(const Expr &arr, const Expr &n,
+    optional<Expr> &&initValue) {
   Expr i = (Expr) Index::var("idx", VarType::BOUND);
   Expr arri = arr.select(i), identity = zero(true);
   Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, identity));
 
-  return getPoolingSumFn().apply({input, kernelY, kernelX, strideY, strideX});
+  return getPoolingSumFn().apply({input, initValue.value_or(identity)});
 }
 
-Expr AbsFpEncoding::maxPool(const Expr &arr, const smt::Expr &n,
-    const Expr &kernelY, const Expr &kernelX,
-    const Expr &strideY, const Expr &strideX) {
+Expr AbsFpEncoding::maxPool(const Expr &arr, const Expr &n,
+    optional<Expr> &&initValue) {
   Expr i = (Expr) Index::var("idx", VarType::BOUND);
   Expr arri = arr.select(i), identity = zero(true);
   Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, identity));
 
-  return getPoolingMaxFn().apply({input, kernelY, kernelX, strideY, strideX});
+  return getPoolingMaxFn().apply({input, initValue.value_or(identity)});
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() {
