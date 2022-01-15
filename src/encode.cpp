@@ -588,6 +588,12 @@ void encodeOp(State &st, mlir::arith::CmpIOp op, bool) {
     auto b = st.regs.get<Integer>(op.getOperand(1));
     st.regs.add(op, Integer(fn(a, b)));
 
+  } else if (op1Type.isa<mlir::IndexType>() &&
+              op2Type.isa<mlir::IndexType>()) {
+    auto a = st.regs.get<Index>(op.getOperand(0));
+    auto b = st.regs.get<Index>(op.getOperand(1));
+    st.regs.add(op, Integer(fn(a, b)));
+
   } else {
     throw UnsupportedException(op.getOperation(), "Unsupported cmpi operand");
   }
