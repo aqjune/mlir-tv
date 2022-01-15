@@ -1660,7 +1660,11 @@ MemRef MemRef::eval(Model mdl) const {
   return m2;
 }
 
-pair<Expr, Expr> MemRef::to1DIdxWithLayout(const vector<Expr> &idxs) const {
+pair<Expr, Expr> MemRef::to1DIdxWithLayout(const vector<Expr> &_idxs) const {
+  auto idxs = _idxs;
+  if (idxs.empty()) {
+    idxs.push_back(Index::zero());
+  }
   auto Expr = layout.mapping(idxs);
   auto inbounds = layout.inbounds(idxs);
   return {Expr, inbounds};
