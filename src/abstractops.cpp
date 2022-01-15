@@ -379,7 +379,7 @@ FnDecl AbsFpEncoding::getRoundDirFn() {
 FnDecl AbsFpEncoding::getPoolingSumFn() {
   if (!fp_pooling_sumfn) {
     auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
-    // (initial value, array)
+    // (array, initial value)
     fp_pooling_sumfn.emplace({arrs, sort()}, sort(),
         "fp_pooling_sum_" + fn_suffix);
   }
@@ -389,7 +389,7 @@ FnDecl AbsFpEncoding::getPoolingSumFn() {
 FnDecl AbsFpEncoding::getPoolingMaxFn() {
   if (!fp_pooling_maxfn) {
     auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
-    // (initial value, array)
+    // (array, initial value)
     fp_pooling_maxfn.emplace({arrs, sort()}, sort(),
         "fp_pooling_max_" + fn_suffix);
   }
