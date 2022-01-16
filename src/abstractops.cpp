@@ -537,13 +537,17 @@ void AbsFpEncoding::evalConsts(smt::Model model) {
 
   if (fpconst_nan) {
     *fpconst_nan = model.eval(*fpconst_nan);
-  } else if (fpconst_zero_pos) {
+  }
+  if (fpconst_zero_pos) {
     *fpconst_zero_pos = model.eval(*fpconst_zero_pos);
-  } else if (fpconst_zero_neg) {
+  }
+  if (fpconst_zero_neg) {
     *fpconst_zero_neg = model.eval(*fpconst_zero_neg);
-  } else if (fpconst_inf_pos) {
+  }
+  if (fpconst_inf_pos) {
     *fpconst_inf_pos = model.eval(*fpconst_inf_pos);
-  } else if (fpconst_inf_neg) {
+  }
+  if (fpconst_inf_neg) {
     *fpconst_inf_neg = model.eval(*fpconst_inf_neg);
   }
 }
