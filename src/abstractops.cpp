@@ -1301,7 +1301,7 @@ Expr AbsFpEncoding::getFpConstantPrecondition() {
   bool firstItr = true;
 
   for (const auto &[fp, absrepr] : fpconst_absrepr) {
-    assert(!fp.isInfinity() && !fp.isZero());
+    assert(!fp.isInfinity() && !fp.isZero() && !fp.isLargest());
 
     if (!fp.isNegative()) {
       // SMT encoding of x and -x is equivalent modulo sign bit; exit early
