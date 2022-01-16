@@ -535,6 +535,13 @@ void encodeOp(State &st, mlir::arith::XOrIOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::arith::SIToFPOp op, bool) {
+  auto arg = st.regs.get<Integer>(op.getOperand());
+  auto rty = op.getOut().getType();
+  st.regs.add(op, Float::casting(arg, rty));
+}
+
+template<>
 void encodeOp(State &st, mlir::arith::CmpFOp op, bool) {
   auto pred = op.getPredicate();
   auto op1Type = op.getOperand(0).getType();
@@ -3330,6 +3337,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::TruncFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::XOrIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::SIToFPOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::bufferization::CloneOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::bufferization::ToMemrefOp, encodeMemWriteOps);

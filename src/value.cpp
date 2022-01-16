@@ -161,6 +161,12 @@ Float Float::one(mlir::Type t) {
   throw UnsupportedException(t, "Unknown float type");
 }
 
+Float Float::casting(Integer &integer, mlir::Type ty) {
+  assert(sort(ty) != nullopt);
+
+  return {aop::getFpEncoding(ty).casting(integer), ty};
+}
+
 
 Float Float::exp(const Float &x) {
   return {aop::getFpEncoding(x.type).exp(x.e), x.type};

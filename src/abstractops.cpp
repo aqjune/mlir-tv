@@ -281,6 +281,7 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_sums.clear();
   fp_pooling_sumfn.reset();
   fp_pooling_maxfn.reset();
+  fp_integer32_castingfn.reset();
 }
 
 FnDecl AbsFpEncoding::getAddFn() {
@@ -394,6 +395,15 @@ FnDecl AbsFpEncoding::getPoolingMaxFn() {
         "fp_pooling_max_" + fn_suffix);
   }
   return *fp_pooling_maxfn;
+}
+
+FnDecl AbsFpEncoding::getInteger32CastingFn() {
+  if (!fp_integer32_castingfn) {
+    auto integer = Sort::bvSort(32);
+    fp_integer32_castingfn.emplace({integer}, sort(),
+        "fp_integer_casting_" + fn_suffix);
+  }
+  return *fp_integer32_castingfn;
 }
 
 size_t AbsFpEncoding::getHashRangeBits() const {
@@ -1135,6 +1145,13 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
             Expr::mkIte(is_prec_zero, floored_float,
               Expr::mkIte(round_dir == Expr::mkBV(0, 1),
                 floored_float, ceiled_float))))));
+}
+
+Expr AbsFpEncoding::casting(const smt::Expr &integer) {
+  if (integer.bitwidth() == 32)
+    return getInteger32CastingFn().apply({integer});
+  else
+    throw UnsupportedException("Current we support i32 casting");
 }
 
 Expr AbsFpEncoding::avgPool(const Expr &arr, const Expr &n,

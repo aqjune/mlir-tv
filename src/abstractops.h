@@ -145,6 +145,7 @@ private:
   std::optional<smt::FnDecl> fp_rounddirfn;
   std::optional<smt::FnDecl> fp_pooling_sumfn;
   std::optional<smt::FnDecl> fp_pooling_maxfn;
+  std::optional<smt::FnDecl> fp_integer32_castingfn;
   std::string fn_suffix;
 
 private:
@@ -183,6 +184,7 @@ private:
   smt::FnDecl getRoundDirFn();
   smt::FnDecl getPoolingSumFn();
   smt::FnDecl getPoolingMaxFn();
+  smt::FnDecl getInteger32CastingFn();
 
   size_t getHashRangeBits() const;
   uint64_t getSignBit() const;
@@ -217,6 +219,7 @@ public:
       const smt::Expr &n, std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
+  smt::Expr casting(const smt::Expr &integer);
   smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
       const smt::Expr &f2);
   smt::Expr avgPool(const smt::Expr &arr, const smt::Expr &n,
