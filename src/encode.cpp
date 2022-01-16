@@ -1542,16 +1542,33 @@ encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op,
   for (auto d: op.dilations())
     dilations.push_back(Index(d.getSExtValue()));
 
-  auto t_input = st.regs.get<Tensor>(op.image());
-  auto t_filter = st.regs.get<Tensor>(op.filter());
-  auto t_output = st.regs.get<Tensor>(op.outputs()[0]);
+  if (op.hasTensorSemantics()) {
+    auto t_input = st.regs.get<Tensor>(op.image());
+    auto t_filter = st.regs.get<Tensor>(op.filter());
+    auto t_output = st.regs.get<Tensor>(op.outputs()[0]);
 
-  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations,
-      /* bias */ nullopt, /* output */ t_output);
-  st.regs.add(op.getResult(0), move(t_res));
-  st.wellDefined(op, t_input.isFullyInitialized(), "input is initialized");
-  st.wellDefined(op, t_filter.isFullyInitialized(), "filter is initialized");
-  st.wellDefined(op, t_output.isFullyInitialized(), "output is initialized");
+    auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations,
+        /* bias */ nullopt, /* output */ t_output);
+    st.regs.add(op.getResult(0), move(t_res));
+    st.wellDefined(op, t_input.isFullyInitialized(), "input is initialized");
+    st.wellDefined(op, t_filter.isFullyInitialized(), "filter is initialized");
+    st.wellDefined(op, t_output.isFullyInitialized(), "output is initialized");
+  } else {
+    auto mi = st.regs.get<MemRef>(op.image());
+    auto mf = st.regs.get<MemRef>(op.filter());
+    auto mo = st.regs.get<MemRef>(op.outputs()[0]);
+    auto iTy = op.image().getType().cast<mlir::MemRefType>();
+    auto fTy = op.filter().getType().cast<mlir::MemRefType>();
+    auto oTy = op.outputs()[0].getType().cast<mlir::MemRefType>();
+    Tensor t_input = loadTensor(st, op, mi, iTy);
+    Tensor t_filter = loadTensor(st, op, mf, fTy);
+    Tensor t_output = loadTensor(st, op, mo, oTy);
+    auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations,
+        /* bias */ nullopt, /* output */ t_output);
+    storeTensorTo(st, op, move(t_res), mo, oTy, true);
+    st.wellDefined(op, mo.noalias(mi) & mo.noalias(mf),
+        "output does not alias inputs");
+  }
 }
 
 template<> void
