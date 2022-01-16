@@ -1163,6 +1163,8 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
 
   auto elemTy = getElemTy(op.getResult());
+  if (!elemTy.isa<mlir::FloatType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
 
   auto C = weight.getDim(2);
   auto M = weight.getDim(3);
