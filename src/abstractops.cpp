@@ -124,7 +124,9 @@ void setAbstraction(
     bool noArithProperties,
     unsigned unrollFpSumBound,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
-    unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
+    bool floatHasInfOrNaN,
+    unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts,
+    bool doubleHasInfOrNaN) {
   abstraction = abs;
   doUnrollIntSum = unrollIntSum;
   maxUnrollFpSumBound = unrollFpSumBound;
@@ -134,11 +136,17 @@ void setAbstraction(
   assert(!addAssoc ||
       abs.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY);
 
-  // without suffix f, it will become llvm::APFloat with double semantics
+  if (floatNonConstsCnt == 0 && doubleNonConstsCnt == 0 && !floatHasInfOrNaN &&
+      floatConsts.empty() && doubleConsts.empty() && !doubleHasInfOrNaN) {
+    // FP numbers are never used.
+    floatEnc.reset();
+    doubleEnc.reset();
+    return;
+  }
+
   // Note that 0.0, 1.0, and fMAX may already have been added during analysis.
   // Above three numbers are necessary to prove several arithmetic properties,
-  // so we're manually inserting them into constant sets
-  // just in case they are not added during the analysis.
+  // so manually insert them here.  
   floatConsts.emplace(0.0f);
   floatConsts.emplace(1.0f);
   floatConsts.emplace(llvm::APFloat::getLargest(llvm::APFloat::IEEEsingle()));
@@ -1293,7 +1301,10 @@ Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
 
 Expr AbsFpEncoding::getFpConstantPrecondition() {
   Expr precond = Expr::mkBool(true);
-  
+  if (!floatEnc && !doubleEnc)
+    // FP is never used.
+    return precond;
+
   auto prev_fp = llvm::APFloat::getLargest(semantics, true);
   // both largest() and infinity() are hardcoded value,
   // so we don't have to explicitly encode the relationship between them

@@ -42,6 +42,7 @@ public:
   TypeMap<size_t> numBlocksPerType;
   unsigned int f32NonConstsCount, f64NonConstsCount;
   set<llvm::APFloat> f32Consts, f64Consts;
+  bool f32HasInfOrNaN, f64HasInfOrNaN;
   vector<mlir::memref::GlobalOp> globals;
   bool isFpAddAssociative;
   bool unrollIntSum; // sum(arr) := arr[0] + ... + arr[arr.len-1]
@@ -511,8 +512,8 @@ static void checkIsSrcAlwaysUB(
       vinput.unrollIntSum,
       no_arith_properties.getValue(),
       arg_unroll_fp_sum_bound.getValue(),
-      vinput.f32NonConstsCount, vinput.f32Consts,
-      vinput.f64NonConstsCount, vinput.f64Consts);
+      vinput.f32NonConstsCount, vinput.f32Consts, vinput.f32HasInfOrNaN,
+      vinput.f64NonConstsCount, vinput.f64Consts, vinput.f64HasInfOrNaN);
   aop::setEncodingOptions(vinput.useMultisetForFpSum);
 
   ArgInfo args_dummy;
@@ -604,8 +605,8 @@ static Results validate(ValidationInput vinput) {
         vinput.unrollIntSum,
         no_arith_properties.getValue(),
         arg_unroll_fp_sum_bound.getValue(),
-        vinput.f32NonConstsCount, vinput.f32Consts,
-        vinput.f64NonConstsCount, vinput.f64Consts);
+        vinput.f32NonConstsCount, vinput.f32Consts, vinput.f32HasInfOrNaN,
+        vinput.f64NonConstsCount, vinput.f64Consts, vinput.f64HasInfOrNaN);
 
     if (!dumpSMTPath.empty()) {
       vinput.dumpSMTPath = dumpSMTPath;
@@ -809,7 +810,7 @@ Results validate(
         } else {
           return src_res.argCount + // # of variables in argument lists
             src_res.varCount + tgt_res.varCount + // # of variables in registers
-            src_res.elemCounts + tgt_res.elemCounts;
+            src_res.elemsCount + tgt_res.elemsCount;
                 // # of ShapedType elements count
         }
       };
@@ -822,7 +823,9 @@ Results validate(
           countNonConstFps(src_res.F64, tgt_res.F64, isElementwise);
     }
     vinput.f32Consts = f32_consts;
+    vinput.f32HasInfOrNaN = src_res.F32.hasInfOrNaN | tgt_res.F32.hasInfOrNaN;
     vinput.f64Consts = f64_consts;
+    vinput.f64HasInfOrNaN = src_res.F64.hasInfOrNaN | tgt_res.F64.hasInfOrNaN;
     vinput.isFpAddAssociative = arg_fp_add_associative.getValue();
     vinput.unrollIntSum = arg_unroll_int_sum.getValue();
     vinput.useMultisetForFpSum = arg_multiset.getValue();
