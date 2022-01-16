@@ -1,6 +1,5 @@
 #map2 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
 func @avgpool(%arg0: tensor<1x7x7x1280xf32>) -> tensor<1x1x1x1280xf32> {
-  %cst_0 = arith.constant 0.000000e+00 : f32
   %c49_i32 = arith.constant 49 : i32
   %0 = bufferization.to_memref %arg0 : memref<1x7x7x1280xf32>
   %cst = arith.constant 0.000000e+00 : f32
