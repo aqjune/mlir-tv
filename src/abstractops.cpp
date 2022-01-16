@@ -1295,7 +1295,7 @@ Expr AbsFpEncoding::getFpConstantPrecondition() {
   Expr precond = Expr::mkBool(true);
   
   auto prev_fp = llvm::APFloat::getInf(semantics, true);
-  // both largest() and infinity() are hardcoded hardcoded value,
+  // both largest() and infinity() are hardcoded value,
   // so we don't have to explicitly encode the relationship between them
   auto prev_absrepr = largest(true);
   bool firstItr = true;
