@@ -1818,9 +1818,9 @@ static void encodeLinalgPooling(State &st, T op) {
     auto input = st.regs.get<Tensor>(op.inputs()[0]);
     auto output = st.regs.get<Tensor>(op.outputs()[0]);
 
-    bool isAvgPool = std::is_same<T, mlir::linalg::PoolingNhwcSumOp>::value;
-    auto result = isAvgPool ? input.avgPool(kernelDims, strides, output)
-        : input.maxPool(kernelDims, strides, output);
+    bool isMaxPool = std::is_same<T, mlir::linalg::PoolingNhwcMaxOp>::value;
+    auto result = isMaxPool ? input.maxPool(kernelDims, strides, output)
+        : input.sumPool(kernelDims, strides, output);
 
     st.regs.add(op.getResult(0), move(result));
     st.wellDefined(op, input.isFullyInitialized(), "input tensor initialized");

@@ -845,6 +845,37 @@ Tensor Tensor::sum(unsigned axis) const {
       move(newSizes), move(indVars), summation);
 }
 
+Tensor Tensor::sumPool(const vector<Expr> &kernelDims,
+    const vector<Expr> &strides, optional<Tensor> &&init) const {
+  assert(kernelDims.size() == 2);
+  assert(strides.size() == 2);
+
+  // N, OH, OW, C
+  vector<Expr> outputDims = {getDim(0),
+    ((Expr)(getDim(1)+strides[0]-kernelDims[0])).udiv(strides[0]),
+    ((Expr)(getDim(2)+strides[1]-kernelDims[1])).udiv(strides[1]),
+    getDim(3)
+  };
+  vector<Expr> outputIdxs = Index::boundIndexVars(outputDims.size());
+  auto initVal = fmap(init, [&](auto t) { return t.get(outputIdxs); });
+  // output[N][OH][OW][C]
+  //  = sum_pool(input[N][OH * stride + KH][OW * stride + KW][C])
+  auto kernel1DSize = kernelDims[0] * kernelDims[1];
+  auto kernelIdx = Index::var("kernelIdx", VarType::BOUND);
+  auto kernelIdxs = from1DIdx(kernelIdx, kernelDims);
+  vector<Expr> inputIdxs = {outputIdxs[0],
+    outputIdxs[1] * strides[0] + kernelIdxs[0],
+    outputIdxs[2] * strides[1] + kernelIdxs[1],
+    outputIdxs[3]
+  };
+  auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
+  auto outputExpr = aop::getFpEncoding(elemType)
+      .sumPool(kernelExpr, kernel1DSize, move(initVal));
+
+  return Tensor::mkInitializedLambda(elemType,
+      move(outputDims), move(outputIdxs), move(outputExpr));
+}
+
 Tensor Tensor::avgPool(const vector<Expr> &kernelDims,
     const vector<Expr> &strides, optional<Tensor> &&init) const {
   assert(kernelDims.size() == 2);

@@ -1154,13 +1154,22 @@ Expr AbsFpEncoding::casting(const smt::Expr &integer) {
     throw UnsupportedException("Current we support i32 casting");
 }
 
+Expr AbsFpEncoding::sumPool(const Expr &arr, const Expr &n,
+    optional<Expr> &&initValue) {
+  Expr i = (Expr) Index::var("idx", VarType::BOUND);
+  Expr arri = arr.select(i), identity = zero(true);
+  Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, identity));
+  return getPoolingSumFn().apply({input, initValue.value_or(identity)});
+}
+
 Expr AbsFpEncoding::avgPool(const Expr &arr, const Expr &n,
     optional<Expr> &&initValue) {
   Expr i = (Expr) Index::var("idx", VarType::BOUND);
   Expr arri = arr.select(i), identity = zero(true);
   Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, identity));
-
-  return getPoolingSumFn().apply({input, initValue.value_or(identity)});
+  Expr sum = getPoolingSumFn().apply({input, initValue.value_or(identity)});
+  Expr count = casting(n);
+  return div(sum, count);
 }
 
 Expr AbsFpEncoding::maxPool(const Expr &arr, const Expr &n,
