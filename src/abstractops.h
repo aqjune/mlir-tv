@@ -100,6 +100,10 @@ private:
   std::optional<smt::Expr> fpconst_nan;
   std::optional<smt::Expr> fpconst_inf_pos;
   std::optional<smt::Expr> fpconst_inf_neg;
+  // float::MIN/MAX are stored in separate variable
+  // as they must be reserved a fixed value for correct validation
+  std::optional<smt::Expr> fpconst_min;
+  std::optional<smt::Expr> fpconst_max;
   // Abstract representation of valid fp constants.
   std::map<llvm::APFloat, smt::Expr> fpconst_absrepr;
 
@@ -190,6 +194,7 @@ public:
   smt::Expr one(bool isNegative = false) const;
   smt::Expr infinity(bool isNegative = false) const;
   smt::Expr nan() const;
+  smt::Expr largest(bool isNegative = false) const;
 
   std::vector<std::pair<llvm::APFloat, smt::Expr>> getAllConstants() const;
   void evalConsts(smt::Model model);
