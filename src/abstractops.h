@@ -68,8 +68,10 @@ void setAbstraction(Abstraction abs,
                     unsigned unrollFpSumBound,
                     unsigned floatNonConstsCnt,
                     std::set<llvm::APFloat> floatConsts,
+                    bool floatHasInfOrNaN,
                     unsigned doubleNonConstsCnt,
-                    std::set<llvm::APFloat> doubleConsts);
+                    std::set<llvm::APFloat> doubleConsts,
+                    bool doubleHasInfOrNaN);
 // A set of options that must not change the precision of validation.
 // useMultiset: To encode commutativity of fp summation, use multiset?
 void setEncodingOptions(bool useMultiset);

@@ -124,7 +124,9 @@ void setAbstraction(
     bool noArithProperties,
     unsigned unrollFpSumBound,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
-    unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
+    bool floatHasInfOrNaN,
+    unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts,
+    bool doubleHasInfOrNaN) {
   abstraction = abs;
   doUnrollIntSum = unrollIntSum;
   maxUnrollFpSumBound = unrollFpSumBound;
@@ -134,11 +136,17 @@ void setAbstraction(
   assert(!addAssoc ||
       abs.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY);
 
-  // without suffix f, it will become llvm::APFloat with double semantics
+  if (floatNonConstsCnt == 0 && doubleNonConstsCnt == 0 && !floatHasInfOrNaN &&
+      floatConsts.empty() && doubleConsts.empty() && !doubleHasInfOrNaN) {
+    // FP numbers are never used.
+    floatEnc.reset();
+    doubleEnc.reset();
+    return;
+  }
+
   // Note that 0.0 and 1.0 may already have been added during analysis.
   // 0.0 and 1.0 are necessary to prove several arithmetic properties,
-  // so we're manually inserting 0.0 and 1.0
-  // just in case they are not added during the analysis.
+  // so manually inserted here.
   floatConsts.emplace(0.0f);
   floatConsts.emplace(1.0f);
   doubleConsts.emplace(0.0);
@@ -1265,7 +1273,11 @@ Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
 
 Expr AbsFpEncoding::getFpConstantPrecondition() {
   Expr precond = Expr::mkBool(true);
-  
+
+  if (!floatEnc && !doubleEnc)
+    // FP is never used.
+    return precond;
+
   auto prev_fp = llvm::APFloat::getInf(semantics, true);
   auto prev_absrepr = infinity(true);
   bool firstItr = true;
