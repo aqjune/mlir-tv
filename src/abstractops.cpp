@@ -1215,10 +1215,10 @@ Expr AbsFpEncoding::avgPool(const Expr &arr, const Expr &n,
 Expr AbsFpEncoding::maxPool(const Expr &arr, const Expr &n,
     optional<Expr> &&initValue) {
   Expr i = (Expr) Index::var("idx", VarType::BOUND);
-  Expr arri = arr.select(i), identity = zero(true);
-  Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, identity));
+  Expr arri = arr.select(i), minimum = largest(true);
+  Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, minimum));
 
-  return getPoolingMaxFn().apply({input, initValue.value_or(identity)});
+  return getPoolingMaxFn().apply({input, initValue.value_or(minimum)});
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() {
