@@ -10,9 +10,10 @@
 
 struct FPAnalysisResult {
   std::set<llvm::APFloat> constSet;
+  bool hasInfOrNaN = false;
   size_t argCount = 0;
   size_t varCount = 0;
-  size_t elemCounts = 0;
+  size_t elemsCount = 0;
 };
 
 struct MemRefAnalysisResult {
