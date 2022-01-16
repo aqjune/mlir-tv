@@ -64,7 +64,7 @@ class Context: public Object<T_Z3(z3::context), T_CVC5(cvc5::api::Solver)> {
 private:
   uint64_t fresh_var_counter;
 #ifdef SOLVER_CVC5
-  map<string, cvc5::api::Term, less<>> cvc5_term_cache;
+  map<cvc5::api::Sort, map<string, cvc5::api::Term, less<>>> cvc5_term_cache;
 #endif // SOLVER_CVC5
 
 public:
@@ -90,16 +90,25 @@ public:
     this->cvc5->setOption("produce-models", "true");
   }
 
-  optional<cvc5::api::Term> getNamedTerm(string_view name) {
-    auto term_iter = cvc5_term_cache.find(name);
-    if (term_iter == cvc5_term_cache.end()) {
+  optional<cvc5::api::Term> getNamedTerm(const cvc5::api::Sort &sort,
+                                          string_view name) {
+    auto name_iter = cvc5_term_cache.find(sort);
+    if (name_iter == cvc5_term_cache.end()) {
       return nullopt;
     }
+    
+    auto term_iter = name_iter->second.find(name);
+    if (term_iter == name_iter->second.end()) {
+      return nullopt;
+    }
+
     return term_iter->second;
   }
 
   void addNamedTerm(const string &name, cvc5::api::Term &&term) {
-    cvc5_term_cache.insert({name, move(term)});
+    auto sort = term.getSort();
+    cvc5_term_cache.insert({sort, map<string, cvc5::api::Term, less<>>()});
+    cvc5_term_cache.find(sort)->second.insert({name, move(term)});
   }
 #endif // SOLVER_CVC5
 
@@ -1187,7 +1196,7 @@ Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
   }));
   SET_CVC5(e, fupdate2(sctx.cvc5, s.cvc5,
       [&name, &boundVar](auto &ctx, auto &cvc5sort){
-    if (!sctx.getNamedTerm(name).has_value()) {
+    if (!sctx.getNamedTerm(cvc5sort, name).has_value()) {
       cvc5::api::Term new_var;
       if (boundVar)
         new_var = ctx.mkVar(cvc5sort, name);
@@ -1196,7 +1205,7 @@ Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
       sctx.addNamedTerm(name, move(new_var));
     }
     
-    return *sctx.getNamedTerm(name);
+    return *sctx.getNamedTerm(cvc5sort, name);
   }));
   return e;
 }
