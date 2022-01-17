@@ -101,14 +101,14 @@ public:
   void addNamedTerm(const string &name, cvc5::api::Term &&term) {
     cvc5_term_cache.insert({name, move(term)});
   }
+
+  void clearCachedTerm() {
+    cvc5_term_cache.clear();
+  }
 #endif // SOLVER_CVC5
 
   string getFreshName(string prefix) {
     return prefix.append("#" + to_string(fresh_var_counter++));
-  }
-
-  void clearCachedTerm() {
-    cvc5_term_cache.clear();
   }
 };
 
