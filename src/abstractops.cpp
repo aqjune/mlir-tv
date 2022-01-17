@@ -424,10 +424,16 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         value_bit_info.prec_bitwidth == 0) {
       // This encoding is the smallest encoding or does not support casting
       value_id += 1;
-      // This naming convention is used by getFpTruncatePrecondition to relate
-      // float and double constants
-      e_value = Expr::mkVar(Sort::bvSort(value_bitwidth),
-                            "fp_const_sval_" + to_string(value_id) + "_");
+      if (llvm::APFloat::SemanticsToEnum(semantics) ==
+          llvm::APFloat::S_IEEEdouble) {
+        e_value = Expr::mkVar(Sort::bvSort(value_bitwidth),
+                              "fp_const_dval_" + to_string(value_id) + "_");
+      } else {
+        // This naming convention is used by getFpTruncatePrecondition to relate
+        // float and double constants
+        e_value = Expr::mkVar(Sort::bvSort(value_bitwidth),
+                              "fp_const_sval_" + to_string(value_id) + "_");
+      }      
     } else {
       auto casting_info = getCastingInfo(fp_const);
       assert(casting_info.has_value() &&
