@@ -2228,6 +2228,25 @@ void encodeOp(State &st, mlir::memref::AllocOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::memref::AllocaOp op, bool) {
+  auto memrefTy = op.getType().cast<mlir::MemRefType>();
+  if (!memrefTy.getLayout().isIdentity())
+    throw UnsupportedException(op.getOperation(),
+        "unsupported memref type for alloca: it has a non-identity layout map");
+
+  auto dsizes = op.dynamicSizes();
+  vector<Expr> dszExprs;
+  for (const auto &sz: dsizes) {
+    dszExprs.push_back(st.regs.get<Index>(sz));
+  }
+  auto dims = ShapedValue::getDims(memrefTy, false, move(dszExprs));
+
+  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true,
+      false);
+  st.regs.add(op, move(memref));
+}
+
+template<>
 void encodeOp(State &st, mlir::memref::DimOp op, bool) {
   auto [res, wf] = encodeDimOp(
       st, st.regs.get<MemRef>(op.source()).getDims(), op.index());
@@ -3260,6 +3279,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::math::ExpOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::memref::AllocOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::AllocaOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::CollapseShapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DeallocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DimOp, encodeMemWriteOps);
