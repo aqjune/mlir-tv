@@ -120,7 +120,8 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
     if (!elemSMTTy)
       throw UnsupportedException(elemTy);
 
-    vector<Expr> newArrs, newInits, newWrit, newNumElems, newLiveness;
+    vector<Expr> newArrs, newInits, newWrit, newNumElems, newLiveness,
+        newCreatedByAllocs;
     vector<mlir::memref::GlobalOp> globalsForTy;
 
     for (auto glb: globals) {
@@ -134,6 +135,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
     auto arrSort = Sort::arraySort(Index::sort(), *elemSMTTy);
     auto initSort = Sort::arraySort(Index::sort(), Sort::boolSort());
 
+    // Global variables
     for (unsigned i = 0; i < globalsForTy.size(); ++i) {
       auto glb = globalsForTy[i];
       auto res = globalVarBids.try_emplace(glb.getName().str(), elemTy, i);
@@ -155,8 +157,10 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
       newWrit.push_back(Expr::mkBool(!glb.constant()));
       newNumElems.push_back(Index(glb.type().getNumElements()));
       newLiveness.push_back(Expr::mkBool(true));
+      newCreatedByAllocs.push_back(Expr::mkBool(false));
     }
 
+    // Non-global variables
     for (unsigned i = globalsForTy.size(); i < numBlks; ++i) {
       auto suffix2 = [&](const string &s) {
         return "#nonlocal-" + to_string(i) + "_" + s;
@@ -168,6 +172,8 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
       newArrs.push_back(Expr::mkFreshVar(arrSort, suffix2("array")));
       newWrit.push_back(Expr::mkFreshVar(boolSort, suffix2("writable")));
       newNumElems.push_back(Expr::mkFreshVar(idxSort, suffix2("numelems")));
+      newCreatedByAllocs.push_back(Expr::mkFreshVar(boolSort,
+          suffix2("createdByAlloc")));
 
       if (blocksInitiallyAlive)
         newLiveness.push_back(Expr::mkBool(true));
@@ -180,6 +186,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
     writables.insert({elemTy, move(newWrit)});
     numelems.insert({elemTy, move(newNumElems)});
     liveness.insert({elemTy, move(newLiveness)});
+    createdByAllocs.insert({elemTy, move(newCreatedByAllocs)});
   }
 
   assert(addedGlobalVars == globals.size());
@@ -236,7 +243,8 @@ void Memory::update(
 }
 
 Expr Memory::addLocalBlock(
-    const Expr &numelem, mlir::Type elemTy, const Expr &writable) {
+    const Expr &numelem, mlir::Type elemTy, const Expr &writable,
+    bool createdByAlloc) {
   auto bid = getNumBlocks(elemTy);
   if (bid >= getNumGlobalBlocks(elemTy) + getMaxNumLocalBlocks(elemTy))
     throw UnsupportedException("Too many local blocks");
@@ -253,6 +261,7 @@ Expr Memory::addLocalBlock(
   writables[elemTy].push_back(writable);
   numelems[elemTy].push_back(numelem);
   liveness[elemTy].push_back(Expr::mkBool(true));
+  createdByAllocs[elemTy].push_back(Expr::mkBool(createdByAlloc));
   return Expr::mkBV(bid, bidBits);
 }
 
@@ -301,6 +310,12 @@ Expr Memory::getLiveness(mlir::Type elemTy, const Expr &bid) const {
   return itebid<Expr>(elemTy, bid, [&](auto ubid) {
       return liveness.find(elemTy)->second[ubid]; });
 }
+
+Expr Memory::isCreatedByAlloc(mlir::Type elemTy, const Expr &bid) const {
+  return itebid<Expr>(elemTy, bid, [&](auto ubid) {
+      return createdByAllocs.find(elemTy)->second[ubid]; });
+}
+
 Expr Memory::isInitialized(mlir::Type elemTy,
     const Expr &bid, const Expr &ofs) const {
   return itebid<Expr>(elemTy, bid, [&](auto ubid) {

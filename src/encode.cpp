@@ -2192,14 +2192,15 @@ void encodeOp(State &st, mlir::tosa::ReshapeOp op, bool) {
 }
 
 static MemRef createNewLocalBlk(
-    Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
+    Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable,
+    bool createdByAlloc = false) {
   if (!MemRef::isTypeSupported(memrefTy))
     throw UnsupportedException("unsupported element type");
 
   auto layout = MemRef::getLayout(memrefTy, dims);
   // Add a new local block
   auto bid = m->addLocalBlock(smt::get1DSize(dims),
-      memrefTy.getElementType(), Expr::mkBool(writable));
+      memrefTy.getElementType(), Expr::mkBool(writable), createdByAlloc);
   // Create MemRef which points to the newly created block
   auto memref =
       MemRef(m, memrefTy.getElementType(), bid, Index::zero(), dims,
@@ -2222,7 +2223,7 @@ void encodeOp(State &st, mlir::memref::AllocOp op, bool) {
   }
   auto dims = ShapedValue::getDims(memrefTy, false, move(dszExprs));
 
-  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true);
+  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true, true);
   st.regs.add(op, move(memref));
 }
 
@@ -2398,6 +2399,9 @@ void encodeOp(State &st, mlir::memref::DeallocOp op, bool encodeMemWrite) {
   // The dealloc operation should not be called on memrefs which alias an
   // alloc’d memref (e.g. memrefs returned by view operations).
   st.wellDefined(op, !src.isViewReference(), "not a view reference");
+
+  // The deallocating object must have been created by memref.alloc()
+  st.wellDefined(op, src.isCreatedByAlloc(), "must be created by memref.alloc");
 
   // Unlike free(), we don't need to check offset == 0 because MemRef tracks
   // the pointer to the data buffer as allocated, referred to as
@@ -3256,15 +3260,15 @@ static void encodeBlock(
     ENCODE(st, op, mlir::math::ExpOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::memref::AllocOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::CollapseShapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DeallocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DimOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::LoadOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::ExpandShapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::GetGlobalOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::LoadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::StoreOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::SubViewOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::TensorStoreOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::ExpandShapeOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::CollapseShapeOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::linalg::DepthwiseConv2DNhwcHwcmOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::Conv2DNchwFchwOp, encodeMemWriteOps);

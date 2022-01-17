@@ -1525,6 +1525,10 @@ Expr MemRef::getLiveness() const {
   return m->getLiveness(elemType, bid);
 }
 
+Expr MemRef::isCreatedByAlloc() const {
+  return m->isCreatedByAlloc(elemType, bid);
+}
+
 Expr MemRef::isFullyInitialized() const {
   auto idxs = Index::boundIndexVars(getRank());
   auto icc = getWithAccessInfo(idxs).second;
