@@ -115,19 +115,13 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
   unsigned addedGlobalVars = 0;
 
   for (auto &[elemTy, numBlks]: globalBlocksCnt) {
-    optional<Sort> elemSMTTy;
-
-    if (elemTy.isa<mlir::FloatType>())
-      elemSMTTy = Float::sort(elemTy);
-    else if (elemTy.isIndex())
-      elemSMTTy = Index::sort();
-    else if (elemTy.isa<mlir::IntegerType>())
-      elemSMTTy = Integer::sort(elemTy.getIntOrFloatBitWidth());
+    optional<Sort> elemSMTTy = convertPrimitiveTypeToSort(elemTy);
 
     if (!elemSMTTy)
       throw UnsupportedException(elemTy);
 
-    vector<Expr> newArrs, newInits, newWrit, newNumElems, newLiveness;
+    vector<Expr> newArrs, newInits, newWrit, newNumElems, newLiveness,
+        newCreatedByAllocs;
     vector<mlir::memref::GlobalOp> globalsForTy;
 
     for (auto glb: globals) {
@@ -141,6 +135,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
     auto arrSort = Sort::arraySort(Index::sort(), *elemSMTTy);
     auto initSort = Sort::arraySort(Index::sort(), Sort::boolSort());
 
+    // Global variables
     for (unsigned i = 0; i < globalsForTy.size(); ++i) {
       auto glb = globalsForTy[i];
       auto res = globalVarBids.try_emplace(glb.getName().str(), elemTy, i);
@@ -162,8 +157,10 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
       newWrit.push_back(Expr::mkBool(!glb.constant()));
       newNumElems.push_back(Index(glb.type().getNumElements()));
       newLiveness.push_back(Expr::mkBool(true));
+      newCreatedByAllocs.push_back(Expr::mkBool(false));
     }
 
+    // Non-global variables
     for (unsigned i = globalsForTy.size(); i < numBlks; ++i) {
       auto suffix2 = [&](const string &s) {
         return "#nonlocal-" + to_string(i) + "_" + s;
@@ -175,6 +172,8 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
       newArrs.push_back(Expr::mkFreshVar(arrSort, suffix2("array")));
       newWrit.push_back(Expr::mkFreshVar(boolSort, suffix2("writable")));
       newNumElems.push_back(Expr::mkFreshVar(idxSort, suffix2("numelems")));
+      newCreatedByAllocs.push_back(Expr::mkFreshVar(boolSort,
+          suffix2("createdByAlloc")));
 
       if (blocksInitiallyAlive)
         newLiveness.push_back(Expr::mkBool(true));
@@ -187,6 +186,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
     writables.insert({elemTy, move(newWrit)});
     numelems.insert({elemTy, move(newNumElems)});
     liveness.insert({elemTy, move(newLiveness)});
+    createdByAllocs.insert({elemTy, move(newCreatedByAllocs)});
   }
 
   assert(addedGlobalVars == globals.size());
@@ -243,7 +243,8 @@ void Memory::update(
 }
 
 Expr Memory::addLocalBlock(
-    const Expr &numelem, mlir::Type elemTy, const Expr &writable) {
+    const Expr &numelem, mlir::Type elemTy, const Expr &writable,
+    bool createdByAlloc) {
   auto bid = getNumBlocks(elemTy);
   if (bid >= getNumGlobalBlocks(elemTy) + getMaxNumLocalBlocks(elemTy))
     throw UnsupportedException("Too many local blocks");
@@ -260,6 +261,7 @@ Expr Memory::addLocalBlock(
   writables[elemTy].push_back(writable);
   numelems[elemTy].push_back(numelem);
   liveness[elemTy].push_back(Expr::mkBool(true));
+  createdByAllocs[elemTy].push_back(Expr::mkBool(createdByAlloc));
   return Expr::mkBV(bid, bidBits);
 }
 
@@ -308,6 +310,12 @@ Expr Memory::getLiveness(mlir::Type elemTy, const Expr &bid) const {
   return itebid<Expr>(elemTy, bid, [&](auto ubid) {
       return liveness.find(elemTy)->second[ubid]; });
 }
+
+Expr Memory::isCreatedByAlloc(mlir::Type elemTy, const Expr &bid) const {
+  return itebid<Expr>(elemTy, bid, [&](auto ubid) {
+      return createdByAllocs.find(elemTy)->second[ubid]; });
+}
+
 Expr Memory::isInitialized(mlir::Type elemTy,
     const Expr &bid, const Expr &ofs) const {
   return itebid<Expr>(elemTy, bid, [&](auto ubid) {
@@ -387,6 +395,29 @@ AccessInfo Memory::storeArray(
   return getInfo(elemTy, bid, offset, size);
 }
 
+void Memory::freshArray(
+    mlir::Type elemTy, const Expr &bid) {
+  optional<Sort> elemSMTTy = convertPrimitiveTypeToSort(elemTy);
+
+  if (!elemSMTTy)
+    throw UnsupportedException(elemTy);
+
+  auto arrSort = Sort::arraySort(Index::sort(), *elemSMTTy);
+  auto initSort = Sort::arraySort(Index::sort(), Sort::boolSort());
+
+  auto suffix = [&](const string &s) {
+    return "#newarray_" + s;
+  };
+  auto init = Expr::mkFreshVar(initSort, suffix("initialized"));
+  auto arr = Expr::mkFreshVar(arrSort, suffix("array"));
+
+  update(elemTy, bid, [&](auto ubid) {
+        return &arrays.find(elemTy)->second[ubid]; },
+      [&arr](auto ubid) { return arr; });
+  update(elemTy, bid, [&](auto ubid) {
+        return &initialized.find(elemTy)->second[ubid]; },
+      [&init](auto ubid) { return init; });
+}
 
 pair<Expr, AccessInfo> Memory::load(
     mlir::Type elemTy, const Expr &bid, const Expr &idx) const {

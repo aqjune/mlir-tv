@@ -44,6 +44,8 @@ class Memory {
   TypeMap<std::vector<smt::Expr>> numelems;
   // element type -> vector<Bool::sort()>
   TypeMap<std::vector<smt::Expr>> liveness;
+  // element type -> vector<Bool::sort()>
+  TypeMap<std::vector<smt::Expr>> createdByAllocs;
 
   // (Element type, bid) of global variables.
   std::map<std::string, std::pair<mlir::Type, unsigned>> globalVarBids;
@@ -74,9 +76,9 @@ public:
   // (numGlobalBlocks ~ numGlobalBlocks + numGlobalBlocks)
   smt::Expr isLocalBlock(mlir::Type elemType, const smt::Expr &bid) const;
 
-  // Returns: (newly created block id)
+  // Returns: (the newly created block's id)
   smt::Expr addLocalBlock(const smt::Expr &numelem, mlir::Type elemTy,
-      const smt::Expr &writable);
+      const smt::Expr &writable, bool createdByAlloc);
 
   smt::Expr getNumElementsOfMemBlock(mlir::Type elemTy, const smt::Expr &bid)
       const;
@@ -89,13 +91,16 @@ public:
 
   // Mark memblock's writable flag to `writable`
   void setWritable(mlir::Type elemTy, const smt::Expr &bid, bool writable);
-  // get memblocks' writable flag
+  // Get the writable flag
   smt::Expr getWritable(mlir::Type elemTy, const smt::Expr &bid) const;
 
   // Mark memblock's liveness to false.
   void setLivenessToFalse(mlir::Type elemTy, const smt::Expr &bid);
-  // get memblocks' writable flag
+  // Get the liveness flag
   smt::Expr getLiveness(mlir::Type elemTy, const smt::Expr &bid) const;
+
+  // Return whether the block (elemTy, bid) is created by memref.alloc.
+  smt::Expr isCreatedByAlloc(mlir::Type elemTy, const smt::Expr &bid) const;
 
   smt::Expr isInitialized(mlir::Type elemTy,
       const smt::Expr &bid, const smt::Expr &ofs) const;
@@ -106,6 +111,9 @@ public:
   AccessInfo storeArray(
       mlir::Type elemTy, const smt::Expr &arr, const smt::Expr &bid,
       const smt::Expr &offset, const smt::Expr &size);
+
+  // Create a fresh element array and its initialized array for bid.
+  void freshArray(mlir::Type elemTy, const smt::Expr &bid);
 
   // Returns: (loaded value, load successful?)
   std::pair<smt::Expr, AccessInfo> load(

@@ -25,10 +25,17 @@ template<class T> bool analyzeOp(T op, AnalysisResult &res);
 
 void analyzeAPFloat(
     const mlir::Type ty, const llvm::APFloat val, AnalysisResult &res) {
-  if (val.isNaN() || val.isInfinity())
+  if (val.isNaN() || val.isInfinity()) {
     // They cannot be inserted into set<APFloat>.
     // They will be specially treated in setAbstraction() (abstractops.cpp)
+    if (ty.isF32())
+      res.F32.hasInfOrNaN = true;
+    else if (ty.isF64())
+      res.F64.hasInfOrNaN = true;
+    else
+      throw UnsupportedException(ty, "Unsupported type");
     return;
+  }
 
   auto val_f32_round = val, val_f32_floor = val, val_f32_ceil = val;
   auto val_f64 = val, val_f64_floor = val, val_f64_ceil = val;
@@ -37,7 +44,7 @@ void analyzeAPFloat(
   llvm::APFloat::opStatus op_status;
   if (ty.isF32()) {
     op_status = val_f64.convert(llvm::APFloat::IEEEdouble(),
-                    // doesn't really matter in extension
+                    // doesn't matter in extension
                     llvm::APFloat::rmTowardZero, &lost_info);
   } else if (ty.isF64()) {
     op_status = val_f32_round.convert(llvm::APFloat::IEEEsingle(),
@@ -83,6 +90,9 @@ void analyzeAPFloat(
     // to map values correctly between different precisions
     res.F64.constSet.insert(val_f64_ceil);
     res.F64.constSet.insert(val_f64_floor);
+  } else {
+    // f64 -> f32 downcasting yields inf
+    res.F32.hasInfOrNaN = true;
   }
   res.F64.constSet.insert(val_f64);
 }
@@ -127,14 +137,20 @@ bool analyzeElemAttr(
 
 struct VarAnalysisConfig {
   bool isArg;
+  bool isOperand;
   bool createsNewFpVal;
 
 public:
   static VarAnalysisConfig arg() {
-    return { .isArg = true, .createsNewFpVal = false};
+    return { .isArg = true, .isOperand = false, .createsNewFpVal = false};
+  }
+  static VarAnalysisConfig operand() {
+    return { .isArg = false, .isOperand = true, .createsNewFpVal = false};
   }
   static VarAnalysisConfig op(bool createsNewFpVal) {
-    return { .isArg = false, .createsNewFpVal = createsNewFpVal};
+    return {
+      .isArg = false, .isOperand = false, .createsNewFpVal = createsNewFpVal
+    };
   }
 };
 
@@ -143,11 +159,11 @@ void analyzeVariable(
   auto ty = var.getType();
   size_t &f32Count = config.isArg ? res.F32.argCount : res.F32.varCount;
   size_t &f64Count = config.isArg ? res.F64.argCount : res.F64.varCount;
-  size_t &f32ElemCounts = res.F32.elemCounts;
-  size_t &f64ElemCounts = res.F64.elemCounts;
+  size_t &f32ElemsCount = res.F32.elemsCount;
+  size_t &f64ElemsCount = res.F64.elemsCount;
   decltype(res.memref.argCount) &memrefCnt =
       config.isArg ? res.memref.argCount : res.memref.varCount;
-  bool doCount = config.createsNewFpVal || config.isArg;
+  bool doCount = config.isArg || config.isOperand || config.createsNewFpVal;
 
   if (ty.isF32()) {
     if (doCount)
@@ -173,16 +189,23 @@ void analyzeVariable(
     else 
       cnt = Tensor::MAX_TENSOR_SIZE;
 
-    if (cnt > 0 && elemty.isF32()) {
+    if (elemty.isF32()) {
+      // Regardless of cnt, increment f32Count.
+      // This is necessary to enable preparation of abstract fp encoding
+      // even if tensor<0xf32> happens.
       f32Count ++;
-      f32ElemCounts += cnt - 1;
-    } else if (cnt > 0 && elemty.isF64()) {
+      if (cnt > 0)
+        f32ElemsCount += cnt - 1;
+    } else if (elemty.isF64()) {
       f64Count ++;
-      f64ElemCounts += cnt - 1;
+      if (cnt > 0)
+        f64ElemsCount += cnt - 1;
+    } else if (elemty.isa<mlir::FloatType>()) {
+      throw UnsupportedException(ty, "Unsupported type");
     }
   }
 
-  if (ty.isa<mlir::MemRefType>())
+  if (ty.isa<mlir::MemRefType>() && !config.isOperand)
     memrefCnt[elemty]++;
 }
 
@@ -295,6 +318,7 @@ void analyzeBlock(
     // For constant globals: conservatively assume that they increase varCount
     for (const auto &result: op.getResults()) {
       bool canCreateNewFp =
+          // Operations create new fp except these.
           !mlir::isa<mlir::tosa::ConcatOp>(op) &&
           !mlir::isa<mlir::tosa::GatherOp>(op) &&
           !mlir::isa<mlir::tosa::ReshapeOp>(op) &&
@@ -319,6 +343,12 @@ void analyzeBlock(
         mlir::isa<mlir::tosa::FullyConnectedOp>(op) ||
         mlir::isa<mlir::tosa::ReduceSumOp>(op)) {
       res.isElementwiseFPOps = false;
+
+      // Reduction op can create intermediate fp values.
+      // We also count them in a conservative manner.
+      for (const auto &operand: op.getOperands()) {
+        analyzeVariable(operand, res, VarAnalysisConfig::operand());
+      }
     }
 
     ANALYZE(op, mlir::tosa::ClampOp, res);
@@ -357,10 +387,14 @@ AnalysisResult analyze(mlir::FuncOp &fn) {
       << (res.isElementwiseFPOps ? "YES\n" : "NO\n");
   verbose("analysis") << "  f32 arg count: " << res.F32.argCount << "\n";
   verbose("analysis") << "  f32 var count: " << res.F32.varCount << "\n";
-  verbose("analysis") << "  f32 element counts: " << res.F32.elemCounts << "\n";
+  verbose("analysis") << "  f32 elements count: " << res.F32.elemsCount << "\n";
+  verbose("analysis") << "  f32 consts count: " << res.F32.constSet.size()
+      << "\n";
   verbose("analysis") << "  f64 arg count: " << res.F64.argCount << "\n";
   verbose("analysis") << "  f64 var count: " << res.F64.varCount << "\n";
-  verbose("analysis") << "  f64 element counts: " << res.F64.elemCounts << "\n";
+  verbose("analysis") << "  f64 elements count: " << res.F64.elemsCount << "\n";
+  verbose("analysis") << "  f64 consts count: " << res.F64.constSet.size()
+      << "\n";
   for (auto &[ty, cnt]: res.memref.argCount)
     verbose("analysis") << "  memref arg count (" << ty << "): " << cnt << "\n";
   for (auto &[ty, cnt]: res.memref.varCount)

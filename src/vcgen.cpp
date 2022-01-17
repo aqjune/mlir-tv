@@ -42,6 +42,7 @@ public:
   TypeMap<size_t> numBlocksPerType;
   unsigned int f32NonConstsCount, f64NonConstsCount;
   set<llvm::APFloat> f32Consts, f64Consts;
+  bool f32HasInfOrNaN, f64HasInfOrNaN;
   vector<mlir::memref::GlobalOp> globals;
   bool isFpAddAssociative;
   bool unrollIntSum; // sum(arr) := arr[0] + ... + arr[arr.len-1]
@@ -92,6 +93,12 @@ llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
   llvm::cl::desc("Number of memory blocks per type required to validate"
                  " translation (set 0 to determine it via analysis)"),
   llvm::cl::init(0), llvm::cl::value_desc("number"),
+  llvm::cl::cat(MlirTvCategory));
+
+llvm::cl::opt<bool> memref_inputs_simple("memref-inputs-simple",
+  llvm::cl::desc("Assume that MemRef arguments point to distinct memory"
+                 " blocks and their offsets are zero."),
+  llvm::cl::init(false),
   llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<unsigned int> max_unknown_dimsize("max-unknown-dimsize",
@@ -153,6 +160,7 @@ static State createInputState(
     ArgInfo &args, vector<Expr> &preconds) {
   State s(move(initMem));
   unsigned n = fn.getNumArguments();
+  TypeMap<unsigned> numMemRefArgs;
 
   for (unsigned i = 0; i < n; ++i) {
     auto arg = fn.getArgument(i);
@@ -195,6 +203,12 @@ static State createInputState(
       // TODO : out of bounds pointer is allowed?
       auto memref = MemRef(s.m.get(), ty.getElementType(),
           "arg" + to_string(arg.getArgNumber()), dims, layout);
+
+      if (memref_inputs_simple) {
+        s.addPrecondition(((Expr)memref.getOffset()).isZero());
+        unsigned constBID = numMemRefArgs[ty.getElementType()]++;
+        s.addPrecondition(memref.getBID() == constBID);
+      }
 
       // Function argument MemRefs must point to global memblocks.
       preconds.push_back(memref.isGlobalBlock());
@@ -382,7 +396,7 @@ static Results checkRefinement(
   return Results::SUCCESS;
 }
 
-static void raiseUnsupported(const UnsupportedException &ue) {
+static void printUnsupported(const UnsupportedException &ue) {
   auto obj = ue.getObject();
   string reason = ue.getReason();
 
@@ -403,8 +417,6 @@ static void raiseUnsupported(const UnsupportedException &ue) {
     if (!reason.empty())
       llvm::errs() << "\t" << reason << "\n";
   }
-
-  exit(UNSUPPORTED_EXIT_CODE);
 }
 
 static State encodeFinalState(
@@ -500,8 +512,8 @@ static void checkIsSrcAlwaysUB(
       vinput.unrollIntSum,
       no_arith_properties.getValue(),
       arg_unroll_fp_sum_bound.getValue(),
-      vinput.f32NonConstsCount, vinput.f32Consts,
-      vinput.f64NonConstsCount, vinput.f64Consts);
+      vinput.f32NonConstsCount, vinput.f32Consts, vinput.f32HasInfOrNaN,
+      vinput.f64NonConstsCount, vinput.f64Consts, vinput.f64HasInfOrNaN);
   aop::setEncodingOptions(vinput.useMultisetForFpSum);
 
   ArgInfo args_dummy;
@@ -593,8 +605,8 @@ static Results validate(ValidationInput vinput) {
         vinput.unrollIntSum,
         no_arith_properties.getValue(),
         arg_unroll_fp_sum_bound.getValue(),
-        vinput.f32NonConstsCount, vinput.f32Consts,
-        vinput.f64NonConstsCount, vinput.f64Consts);
+        vinput.f32NonConstsCount, vinput.f32Consts, vinput.f32HasInfOrNaN,
+        vinput.f64NonConstsCount, vinput.f64Consts, vinput.f64HasInfOrNaN);
 
     if (!dumpSMTPath.empty()) {
       vinput.dumpSMTPath = dumpSMTPath;
@@ -727,6 +739,7 @@ Results validate(
   llvm::for_each(*tgt, [&](auto &op) { fillFns(tgtfns, op); });
 
   Results verificationResult = Results::SUCCESS;
+  bool hasUnsupported = false;
   for (auto [name, srcfn]: srcfns) {
     auto itr = tgtfns.find(name);
     if (itr == tgtfns.end()) {
@@ -751,7 +764,9 @@ Results validate(
       globals = mergeGlobals(
           src_res.memref.usedGlobals, tgt_res.memref.usedGlobals);
     } catch (UnsupportedException ue) {
-      raiseUnsupported(ue);
+      printUnsupported(ue);
+      hasUnsupported = true;
+      continue;
     }
 
     auto f32_consts = src_res.F32.constSet;
@@ -795,7 +810,7 @@ Results validate(
         } else {
           return src_res.argCount + // # of variables in argument lists
             src_res.varCount + tgt_res.varCount + // # of variables in registers
-            src_res.elemCounts + tgt_res.elemCounts;
+            src_res.elemsCount + tgt_res.elemsCount;
                 // # of ShapedType elements count
         }
       };
@@ -808,7 +823,9 @@ Results validate(
           countNonConstFps(src_res.F64, tgt_res.F64, isElementwise);
     }
     vinput.f32Consts = f32_consts;
+    vinput.f32HasInfOrNaN = src_res.F32.hasInfOrNaN | tgt_res.F32.hasInfOrNaN;
     vinput.f64Consts = f64_consts;
+    vinput.f64HasInfOrNaN = src_res.F64.hasInfOrNaN | tgt_res.F64.hasInfOrNaN;
     vinput.isFpAddAssociative = arg_fp_add_associative.getValue();
     vinput.unrollIntSum = arg_unroll_int_sum.getValue();
     vinput.useMultisetForFpSum = arg_multiset.getValue();
@@ -816,8 +833,13 @@ Results validate(
     try {
       verificationResult.merge(validate(vinput));
     } catch (UnsupportedException ue) {
-      raiseUnsupported(ue);
+      printUnsupported(ue);
+      hasUnsupported = true;
     }
+  }
+
+  if (hasUnsupported) {
+    exit(UNSUPPORTED_EXIT_CODE);
   }
 
   return verificationResult;

@@ -124,7 +124,9 @@ void setAbstraction(
     bool noArithProperties,
     unsigned unrollFpSumBound,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
-    unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts) {
+    bool floatHasInfOrNaN,
+    unsigned doubleNonConstsCnt, set<llvm::APFloat> doubleConsts,
+    bool doubleHasInfOrNaN) {
   abstraction = abs;
   doUnrollIntSum = unrollIntSum;
   maxUnrollFpSumBound = unrollFpSumBound;
@@ -134,15 +136,23 @@ void setAbstraction(
   assert(!addAssoc ||
       abs.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY);
 
-  // without suffix f, it will become llvm::APFloat with double semantics
-  // Note that 0.0 and 1.0 may already have been added during analysis.
-  // 0.0 and 1.0 are necessary to prove several arithmetic properties,
-  // so we're manually inserting 0.0 and 1.0
-  // just in case they are not added during the analysis.
+  if (floatNonConstsCnt == 0 && doubleNonConstsCnt == 0 && !floatHasInfOrNaN &&
+      floatConsts.empty() && doubleConsts.empty() && !doubleHasInfOrNaN) {
+    // FP numbers are never used.
+    floatEnc.reset();
+    doubleEnc.reset();
+    return;
+  }
+
+  // Note that 0.0, 1.0, and fMAX may already have been added during analysis.
+  // Above three numbers are necessary to prove several arithmetic properties,
+  // so manually insert them here.  
   floatConsts.emplace(0.0f);
   floatConsts.emplace(1.0f);
+  floatConsts.emplace(llvm::APFloat::getLargest(llvm::APFloat::IEEEsingle()));
   doubleConsts.emplace(0.0);
   doubleConsts.emplace(1.0);
+  doubleConsts.emplace(llvm::APFloat::getLargest(llvm::APFloat::IEEEdouble()));
 
   // + 2: reserved for +NaN, +Inf; separately counted because they cannot be
   // included in set<APFloat>
@@ -270,6 +280,8 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fpconst_inf_neg = Expr::mkBV(signed_value + inf_value, fp_bitwidth);
   fpconst_zero_pos = Expr::mkBV(0, fp_bitwidth);
   fpconst_zero_neg = Expr::mkBV(signed_value + 0, fp_bitwidth);
+  fpconst_max = Expr::mkBV(inf_value - 1, fp_bitwidth);
+  fpconst_min = Expr::mkBV(signed_value + inf_value - 1, fp_bitwidth);
 
   fp_sumfn.reset();
   fp_assoc_sumfn.reset();
@@ -408,6 +420,9 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
     if (fp_const.isZero()) {
       // 0.0 should not be added to absrepr
       continue;
+    } else if (fp_const.isLargest()) {
+      // fp::MAX should not be added to absrepr
+      continue;
     }
 
     optional<Expr> e_value;
@@ -416,10 +431,17 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         value_bit_info.prec_bitwidth == 0) {
       // This encoding is the smallest encoding or does not support casting
       value_id += 1;
-      // This naming convention is used by getFpTruncatePrecondition to relate
-      // float and double constants
+      string var_prefix;
+      if (llvm::APFloat::SemanticsToEnum(semantics) ==
+          llvm::APFloat::S_IEEEdouble) {
+        var_prefix = "fp_const_dval_";
+      } else {
+        // This naming convention is used by getFpTruncatePrecondition to relate
+        // float and double constants
+        var_prefix = "fp_const_sval_";
+      }
       e_value = Expr::mkVar(Sort::bvSort(value_bitwidth),
-                            "fp_const_sval_" + to_string(value_id) + "_");
+                              var_prefix + to_string(value_id) + "_");
     } else {
       auto casting_info = getCastingInfo(fp_const);
       assert(casting_info.has_value() &&
@@ -500,6 +522,9 @@ Expr AbsFpEncoding::constant(const llvm::APFloat &f) const {
     return *fpconst_zero_pos;
   else if (f.isNegZero())
     return *fpconst_zero_neg;
+  else if (f.isLargest()) {
+    return f.isNegative() ? *fpconst_min : *fpconst_max;
+  }
 
   // all other constant values in src and tgt IRs are added at analysis stage,
   // so this expression should never fail!
@@ -526,6 +551,12 @@ vector<pair<llvm::APFloat, Expr>> AbsFpEncoding::getAllConstants() const {
   if (fpconst_inf_neg)
     constants.emplace_back(llvm::APFloat::getInf(semantics, true),
         *fpconst_inf_neg);
+  if (fpconst_max)
+    constants.emplace_back(llvm::APFloat::getLargest(semantics, false),
+        *fpconst_max);
+  if (fpconst_min)
+    constants.emplace_back(llvm::APFloat::getLargest(semantics, true),
+        *fpconst_min);
 
   return constants;
 }
@@ -537,15 +568,23 @@ void AbsFpEncoding::evalConsts(smt::Model model) {
 
   if (fpconst_nan) {
     *fpconst_nan = model.eval(*fpconst_nan);
-  } else if (fpconst_zero_pos) {
+  }
+  if (fpconst_zero_pos) {
     *fpconst_zero_pos = model.eval(*fpconst_zero_pos);
-  } else if (fpconst_zero_neg) {
+  }
+  if (fpconst_zero_neg) {
     *fpconst_zero_neg = model.eval(*fpconst_zero_neg);
-  } else if (fpconst_inf_pos) {
+  }
+  if (fpconst_inf_pos) {
     *fpconst_inf_pos = model.eval(*fpconst_inf_pos);
-  } else if (fpconst_inf_neg) {
+  }
+  if (fpconst_inf_neg) {
     *fpconst_inf_neg = model.eval(*fpconst_inf_neg);
   }
+  if (fpconst_max)
+    *fpconst_max = model.eval(*fpconst_max);
+  if (fpconst_min)
+    *fpconst_min = model.eval(*fpconst_min);
 }
 
 vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
@@ -573,6 +612,10 @@ vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
     vec.push_back(llvm::APFloat::getInf(semantics));
   } else if (fpconst_inf_neg && fpconst_inf_neg->isIdentical(e_simp)) {
     vec.push_back(llvm::APFloat::getInf(semantics, true));
+  } else if (fpconst_max && fpconst_max->isIdentical(e_simp)) {
+    vec.push_back(llvm::APFloat::getLargest(semantics, false));
+  } else if (fpconst_min && fpconst_min->isIdentical(e_simp)) {
+    vec.push_back(llvm::APFloat::getLargest(semantics, true));
   }
 
   return vec;
@@ -595,6 +638,10 @@ Expr AbsFpEncoding::infinity(bool isNegative) const {
 
 Expr AbsFpEncoding::nan() const {
   return constant(llvm::APFloat::getNaN(semantics));
+}
+
+Expr AbsFpEncoding::largest(bool isNegative) const {
+  return constant(llvm::APFloat::getLargest(semantics, isNegative));
 }
 
 Expr AbsFpEncoding::isnan(const Expr &f) {
@@ -1261,13 +1308,18 @@ Expr AbsFpEncoding::getFpTruncatePrecondition(aop::AbsFpEncoding &tgt) {
 
 Expr AbsFpEncoding::getFpConstantPrecondition() {
   Expr precond = Expr::mkBool(true);
-  
-  auto prev_fp = llvm::APFloat::getInf(semantics, true);
-  auto prev_absrepr = infinity(true);
+  if (!floatEnc && !doubleEnc)
+    // FP is never used.
+    return precond;
+
+  auto prev_fp = llvm::APFloat::getLargest(semantics, true);
+  // both largest() and infinity() are hardcoded value,
+  // so we don't have to explicitly encode the relationship between them
+  auto prev_absrepr = largest(true);
   bool firstItr = true;
 
   for (const auto &[fp, absrepr] : fpconst_absrepr) {
-    assert(!fp.isInfinity() && !fp.isZero());
+    assert(!fp.isInfinity() && !fp.isZero() && !fp.isLargest());
 
     if (!fp.isNegative()) {
       // SMT encoding of x and -x is equivalent modulo sign bit; exit early

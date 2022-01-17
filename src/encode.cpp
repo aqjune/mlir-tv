@@ -119,15 +119,16 @@ static void storeTensorTo(
     mlir::MemRefType memrefTy, bool ubIfReadOnly) {
   // Accessing uninitialized elem is UB.
   st.wellDefined(op, tensor.isFullyInitialized(), "tensor initialized");
-  st.hasQuantifier |= tensor.isFullyInitialized().hasQuantifier();
+  auto elemTy = memrefTy.getElementType();
 
   if (memrefTy.getLayout().isIdentity()) {
     // memref with identity map
-    auto success = st.m->storeArray(memrefTy.getElementType(),
+    auto success = st.m->storeArray(elemTy,
         tensor.asArray(), memref.getBID(), memref.getOffset(),
         tensor.get1DSize());
     st.wellDefined(op, success.checkWrite(!ubIfReadOnly),
         "storing to dest");
+    st.hasQuantifier |= tensor.isFullyInitialized().hasQuantifier();
 
   } else {
     // TODO: can we further optimize this if we know that memref is a
@@ -135,24 +136,45 @@ static void storeTensorTo(
     // We may not need to preserve the 'previous' bytes.
 
     vector<Expr> idxs = Index::boundIndexVars(memrefTy.getRank());
+    auto ofs1d = Index::var("ofs", VarType::BOUND);
     auto tVal = tensor.get(idxs);
     auto tInBounds = tensor.isInBounds(idxs);
-    auto tInit = tensor.isInitialized(idxs);
-    auto [mVal, mInfo] = memref.getWithAccessInfo(idxs);
 
-    st.wellDefined(op, Expr::mkForall(idxs, tInBounds.implies(tInit)));
+    auto [mValBefore1d, mInfoBefore1d] = st.m->load(elemTy, memref.getBID(),
+        ofs1d);
+    auto mInitializedBefore1d = mInfoBefore1d.initialized;
+
+    // Create a fresh SMT array for the block pointed by memref!
+    st.m->freshArray(elemTy, memref.getBID());
+
+    auto [mValAfter, mInfoAfter] = memref.getWithAccessInfo(idxs);
+
+    auto [mValAfter1d, mInfoAfter1d] = st.m->load(elemTy, memref.getBID(),
+        ofs1d);
+    auto mInitializedAfter1d = mInfoAfter1d.initialized;
+
+    // Wrote successfully
     st.wellDefined(op, Expr::mkForall(idxs,
-        tInBounds.implies(mInfo.checkWrite())));
+        tInBounds.implies(mInfoAfter.checkWrite(!ubIfReadOnly))));
 
-    // NOTE: this will be always false if mVal and tVal store unequal constants.
-    // Therefore, we can't encode this condition as UB because
-    // (1) If they are in src: src always becomes UB (false negative)
-    // (2) If they are in tgt: tgt always becomes UB (false positive)
-    // Therefore, encode this as precondition; precondition does not introduce
-    // false negative, if properly handled (not implemented yet; see how Alive2
-    // does it).
-    st.addPrecondition(Expr::mkForall(idxs,
-        tInBounds.implies(mVal == tVal)));
+    // Write preconditions that relates the arrays before/after writes.
+    // A precondition for the updated elements
+    auto precUpdated = Expr::mkForall(idxs,
+        tInBounds.implies(mValAfter == tVal));
+    st.addPrecondition(move(precUpdated));
+    auto precInit = Expr::mkForall(idxs,
+        tInBounds.implies(mInfoAfter.initialized));
+    st.addPrecondition(move(precInit));
+
+    // A precondition for the untouched elements
+    auto precPreserved = Expr::mkForall({ofs1d},
+        // If ofs1d is a valid block offset that cannot be reached using this
+        // memref...
+        (mInfoAfter1d.inbounds & !memref.isValid1DOffset(ofs1d))
+          // The values and initialized bits are preserved.
+          .implies((mValBefore1d == mValAfter1d) &
+                   (mInitializedBefore1d == mInitializedAfter1d)));
+    st.addPrecondition(move(precPreserved));
     st.hasQuantifier = true;
   }
 }
@@ -586,6 +608,12 @@ void encodeOp(State &st, mlir::arith::CmpIOp op, bool) {
               op2Type.isa<mlir::IntegerType>()) {
     auto a = st.regs.get<Integer>(op.getOperand(0));
     auto b = st.regs.get<Integer>(op.getOperand(1));
+    st.regs.add(op, Integer(fn(a, b)));
+
+  } else if (op1Type.isa<mlir::IndexType>() &&
+              op2Type.isa<mlir::IndexType>()) {
+    auto a = st.regs.get<Index>(op.getOperand(0));
+    auto b = st.regs.get<Index>(op.getOperand(1));
     st.regs.add(op, Integer(fn(a, b)));
 
   } else {
@@ -1128,6 +1156,8 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
 
   auto elemTy = getElemTy(op.getResult());
+  if (!elemTy.isa<mlir::FloatType>())
+    throw UnsupportedException(op.getOperation(), "Unsupported type");
 
   auto C = weight.getDim(2);
   auto M = weight.getDim(3);
@@ -1464,16 +1494,33 @@ encodeOp(State &st, mlir::linalg::DepthwiseConv2DNhwcHwcmOp op,
   for (auto d: op.dilations())
     dilations.push_back(Index(d.getSExtValue()));
 
-  auto t_input = st.regs.get<Tensor>(op.image());
-  auto t_filter = st.regs.get<Tensor>(op.filter());
-  auto t_output = st.regs.get<Tensor>(op.outputs()[0]);
+  if (op.hasTensorSemantics()) {
+    auto t_input = st.regs.get<Tensor>(op.image());
+    auto t_filter = st.regs.get<Tensor>(op.filter());
+    auto t_output = st.regs.get<Tensor>(op.outputs()[0]);
 
-  auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations,
-      /* bias */ nullopt, /* output */ t_output);
-  st.regs.add(op.getResult(0), move(t_res));
-  st.wellDefined(op, t_input.isFullyInitialized(), "input is initialized");
-  st.wellDefined(op, t_filter.isFullyInitialized(), "filter is initialized");
-  st.wellDefined(op, t_output.isFullyInitialized(), "output is initialized");
+    auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations,
+        /* bias */ nullopt, /* output */ t_output);
+    st.regs.add(op.getResult(0), move(t_res));
+    st.wellDefined(op, t_input.isFullyInitialized(), "input is initialized");
+    st.wellDefined(op, t_filter.isFullyInitialized(), "filter is initialized");
+    st.wellDefined(op, t_output.isFullyInitialized(), "output is initialized");
+  } else {
+    auto mi = st.regs.get<MemRef>(op.image());
+    auto mf = st.regs.get<MemRef>(op.filter());
+    auto mo = st.regs.get<MemRef>(op.outputs()[0]);
+    auto iTy = op.image().getType().cast<mlir::MemRefType>();
+    auto fTy = op.filter().getType().cast<mlir::MemRefType>();
+    auto oTy = op.outputs()[0].getType().cast<mlir::MemRefType>();
+    Tensor t_input = loadTensor(st, op, mi, iTy);
+    Tensor t_filter = loadTensor(st, op, mf, fTy);
+    Tensor t_output = loadTensor(st, op, mo, oTy);
+    auto t_res = t_input.depthwiseConv2D(t_filter, strides, dilations,
+        /* bias */ nullopt, /* output */ t_output);
+    storeTensorTo(st, op, move(t_res), mo, oTy, true);
+    st.wellDefined(op, mo.noalias(mi) & mo.noalias(mf),
+        "output does not alias inputs");
+  }
 }
 
 template<> void
@@ -2145,14 +2192,15 @@ void encodeOp(State &st, mlir::tosa::ReshapeOp op, bool) {
 }
 
 static MemRef createNewLocalBlk(
-    Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable) {
+    Memory *m, vector<Expr> &&dims, mlir::MemRefType memrefTy, bool writable,
+    bool createdByAlloc = false) {
   if (!MemRef::isTypeSupported(memrefTy))
     throw UnsupportedException("unsupported element type");
 
   auto layout = MemRef::getLayout(memrefTy, dims);
   // Add a new local block
   auto bid = m->addLocalBlock(smt::get1DSize(dims),
-      memrefTy.getElementType(), Expr::mkBool(writable));
+      memrefTy.getElementType(), Expr::mkBool(writable), createdByAlloc);
   // Create MemRef which points to the newly created block
   auto memref =
       MemRef(m, memrefTy.getElementType(), bid, Index::zero(), dims,
@@ -2161,9 +2209,9 @@ static MemRef createNewLocalBlk(
   return {move(memref)};
 }
 
-template<>
-void encodeOp(State &st, mlir::memref::AllocOp op, bool) {
-  auto memrefTy = op.getType().cast<mlir::MemRefType>();
+template<class T>
+static void encodeAllocLikeOp(State &st, T op) {
+  auto memrefTy = op.getType().template cast<mlir::MemRefType>();
   if (!memrefTy.getLayout().isIdentity())
     throw UnsupportedException(op.getOperation(),
         "unsupported memref type for alloc: it has a non-identity layout map");
@@ -2175,8 +2223,19 @@ void encodeOp(State &st, mlir::memref::AllocOp op, bool) {
   }
   auto dims = ShapedValue::getDims(memrefTy, false, move(dszExprs));
 
-  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true);
+  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true,
+      std::is_same_v<T, mlir::memref::AllocOp>);
   st.regs.add(op, move(memref));
+}
+
+template<>
+void encodeOp(State &st, mlir::memref::AllocOp op, bool) {
+  encodeAllocLikeOp(st, op);
+}
+
+template<>
+void encodeOp(State &st, mlir::memref::AllocaOp op, bool) {
+  encodeAllocLikeOp(st, op);
 }
 
 template<>
@@ -2351,6 +2410,9 @@ void encodeOp(State &st, mlir::memref::DeallocOp op, bool encodeMemWrite) {
   // The dealloc operation should not be called on memrefs which alias an
   // alloc’d memref (e.g. memrefs returned by view operations).
   st.wellDefined(op, !src.isViewReference(), "not a view reference");
+
+  // The deallocating object must have been created by memref.alloc()
+  st.wellDefined(op, src.isCreatedByAlloc(), "must be created by memref.alloc");
 
   // Unlike free(), we don't need to check offset == 0 because MemRef tracks
   // the pointer to the data buffer as allocated, referred to as
@@ -2669,6 +2731,11 @@ static void
 encodeUBForTensorShapeMatch(State &st, mlir::linalg::GenericOp op,
                             const vector<Index> &indVarBounds) {
   mlir::AffineMap map = op.getLoopsToShapesMap();
+  // numRes: # of output affine Exprs
+  // For example, given two affine maps
+  //   (i, j, k) -> (i, j)
+  //   (i, j, k) -> (i, k)
+  //   numDims = 3 (i, j, k), numRes = 4 (i, j, i, k)
   unsigned numRes = map.getNumResults();
 
   vector<Index> viewSizes;
@@ -3087,6 +3154,23 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
       auto m_res = st.regs.get<MemRef>(opi);
       storeTensorTo(st, op, move(tvec_res->at(i)), m_res,
           opi.getType().cast<mlir::MemRefType>(), true);
+
+      // Noalias with input operands
+      for (unsigned j = 0; j < op.getNumInputs(); j ++) {
+        auto opj = op.getInputOperand(j)->get();
+        if (!opj.getType().isa<mlir::MemRefType>()) continue;
+
+        auto input = st.regs.get<MemRef>(opj);
+        st.wellDefined(op, input.noalias(m_res));
+      }
+      // Noalias with other output operands
+      for (unsigned j = 0; j < i; j ++) {
+        auto opj = op.getOutputOperand(j)->get();
+        if (!opj.getType().isa<mlir::MemRefType>()) continue;
+
+        auto output = st.regs.get<MemRef>(opj);
+        st.wellDefined(op, output.noalias(m_res));
+      }
     }
   } else {
     llvm_unreachable("Unknown linalg::generic semantics");
@@ -3187,15 +3271,16 @@ static void encodeBlock(
     ENCODE(st, op, mlir::math::ExpOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::memref::AllocOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::AllocaOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::CollapseShapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DeallocOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::DimOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::LoadOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::ExpandShapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::GetGlobalOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::LoadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::StoreOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::SubViewOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::memref::TensorStoreOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::ExpandShapeOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::memref::CollapseShapeOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::linalg::DepthwiseConv2DNhwcHwcmOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::Conv2DNchwFchwOp, encodeMemWriteOps);
