@@ -102,7 +102,7 @@ public:
     cvc5_term_cache.insert({name, move(term)});
   }
 
-  void clearCachedTerm() {
+  void clearCachedTerms() {
     cvc5_term_cache.clear();
   }
 #endif // SOLVER_CVC5
@@ -1557,7 +1557,7 @@ Solver::~Solver() {
   // We can't destroy solver since it will invalidate every variable
   // it has created
   if (sctx.cvc5) {
-    sctx.clearCachedTerm();
+    sctx.clearCachedTerms();
     sctx.cvc5->pop();
   }
 #endif // SOLVER_CVC5
