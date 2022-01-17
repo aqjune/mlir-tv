@@ -434,7 +434,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         var_prefix = "fp_const_sval_";
       }
       e_value = Expr::mkVar(Sort::bvSort(value_bitwidth),
-                              var_prefix + to_string(value_id) + "_");   
+                              var_prefix + to_string(value_id) + "_");
     } else {
       auto casting_info = getCastingInfo(fp_const);
       assert(casting_info.has_value() &&
