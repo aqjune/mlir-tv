@@ -2209,9 +2209,9 @@ static MemRef createNewLocalBlk(
   return {move(memref)};
 }
 
-template<>
-void encodeOp(State &st, mlir::memref::AllocOp op, bool) {
-  auto memrefTy = op.getType().cast<mlir::MemRefType>();
+template<class T>
+static void encodeAllocLikeOp(State &st, T op) {
+  auto memrefTy = op.getType().template cast<mlir::MemRefType>();
   if (!memrefTy.getLayout().isIdentity())
     throw UnsupportedException(op.getOperation(),
         "unsupported memref type for alloc: it has a non-identity layout map");
@@ -2223,27 +2223,19 @@ void encodeOp(State &st, mlir::memref::AllocOp op, bool) {
   }
   auto dims = ShapedValue::getDims(memrefTy, false, move(dszExprs));
 
-  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true, true);
+  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true,
+      std::is_same_v<T, mlir::memref::AllocOp>);
   st.regs.add(op, move(memref));
 }
 
 template<>
+void encodeOp(State &st, mlir::memref::AllocOp op, bool) {
+  encodeAllocLikeOp(st, op);
+}
+
+template<>
 void encodeOp(State &st, mlir::memref::AllocaOp op, bool) {
-  auto memrefTy = op.getType().cast<mlir::MemRefType>();
-  if (!memrefTy.getLayout().isIdentity())
-    throw UnsupportedException(op.getOperation(),
-        "unsupported memref type for alloca: it has a non-identity layout map");
-
-  auto dsizes = op.dynamicSizes();
-  vector<Expr> dszExprs;
-  for (const auto &sz: dsizes) {
-    dszExprs.push_back(st.regs.get<Index>(sz));
-  }
-  auto dims = ShapedValue::getDims(memrefTy, false, move(dszExprs));
-
-  auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, true,
-      false);
-  st.regs.add(op, move(memref));
+  encodeAllocLikeOp(st, op);
 }
 
 template<>
