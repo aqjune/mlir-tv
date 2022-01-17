@@ -106,6 +106,10 @@ public:
   string getFreshName(string prefix) {
     return prefix.append("#" + to_string(fresh_var_counter++));
   }
+
+  void clearCachedTerm() {
+    cvc5_term_cache.clear();
+  }
 };
 
 Context sctx;
@@ -1196,7 +1200,10 @@ Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
       sctx.addNamedTerm(name, move(new_var));
     }
     
-    return *sctx.getNamedTerm(name);
+    const auto term = *sctx.getNamedTerm(name);
+    assert(cvc5sort == term.getSort() &&
+            "Term(s) of duplicate names are not allowed");
+    return term;
   }));
   return e;
 }
@@ -1549,8 +1556,10 @@ Solver::~Solver() {
 #ifdef SOLVER_CVC5
   // We can't destroy solver since it will invalidate every variable
   // it has created
-  if (sctx.cvc5)
+  if (sctx.cvc5) {
+    sctx.clearCachedTerm();
     sctx.cvc5->pop();
+  }
 #endif // SOLVER_CVC5
 }
 
