@@ -870,7 +870,7 @@ Tensor Tensor::sumPool(const vector<Expr> &kernelDims,
   };
   auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
   auto outputExpr = aop::getFpEncoding(elemType)
-      .sumPool(kernelExpr, kernel1DSize, move(initVal));
+      .sum(kernelExpr, kernel1DSize, nullopt, move(initVal));
 
   return Tensor::mkInitializedLambda(elemType,
       move(outputDims), move(outputIdxs), move(outputExpr));
@@ -900,8 +900,10 @@ Tensor Tensor::avgPool(const vector<Expr> &kernelDims,
     outputIdxs[3]
   };
   auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
-  auto outputExpr = aop::getFpEncoding(elemType)
-      .avgPool(kernelExpr, kernel1DSize, move(initVal));
+  auto sumExpr = aop::getFpEncoding(elemType)
+      .sum(kernelExpr, kernel1DSize, nullopt, move(initVal));
+  auto count = aop::getFpEncoding(elemType).casting(kernel1DSize);
+  auto outputExpr = aop::getFpEncoding(elemType).div(sumExpr, count);
 
   return Tensor::mkInitializedLambda(elemType,
       move(outputDims), move(outputIdxs), move(outputExpr));

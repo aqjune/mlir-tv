@@ -149,8 +149,7 @@ private:
   std::optional<smt::FnDecl> fp_expfn;
   std::optional<smt::FnDecl> fp_hashfn;
   std::optional<smt::FnDecl> fp_rounddirfn;
-  std::optional<smt::FnDecl> fp_pooling_sumfn;
-  std::optional<smt::FnDecl> fp_pooling_maxfn;
+  std::optional<smt::FnDecl> fp_maxfn;
   std::optional<smt::FnDecl> fp_integer32_castingfn;
   std::string fn_suffix;
 
@@ -188,8 +187,7 @@ private:
   smt::FnDecl getExpFn();
   smt::FnDecl getHashFnForAddAssoc();
   smt::FnDecl getRoundDirFn();
-  smt::FnDecl getPoolingSumFn();
-  smt::FnDecl getPoolingMaxFn();
+  smt::FnDecl getMaxFn();
   smt::FnDecl getInteger32CastingFn();
 
   size_t getHashRangeBits() const;
@@ -229,10 +227,6 @@ public:
   smt::Expr casting(const smt::Expr &integer);
   smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
       const smt::Expr &f2);
-  smt::Expr sumPool(const smt::Expr &arr, const smt::Expr &n,
-      std::optional<smt::Expr> &&initValue = std::nullopt);
-  smt::Expr avgPool(const smt::Expr &arr, const smt::Expr &n,
-      std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr maxPool(const smt::Expr &arr, const smt::Expr &n,
       std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr getFpAssociativePrecondition();

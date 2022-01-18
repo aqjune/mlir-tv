@@ -291,8 +291,7 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_divfn.reset();
   fp_hashfn.reset();
   fp_sums.clear();
-  fp_pooling_sumfn.reset();
-  fp_pooling_maxfn.reset();
+  fp_maxfn.reset();
   fp_integer32_castingfn.reset();
 }
 
@@ -389,24 +388,13 @@ FnDecl AbsFpEncoding::getRoundDirFn() {
   return *fp_rounddirfn;
 }
 
-FnDecl AbsFpEncoding::getPoolingSumFn() {
-  if (!fp_pooling_sumfn) {
+FnDecl AbsFpEncoding::getMaxFn() {
+  if (!fp_maxfn) {
     auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
     // (array, initial value)
-    fp_pooling_sumfn.emplace({arrs, sort()}, sort(),
-        "fp_pooling_sum_" + fn_suffix);
+    fp_maxfn.emplace({arrs, sort()}, sort(), "fp_max_" + fn_suffix);
   }
-  return *fp_pooling_sumfn;
-}
-
-FnDecl AbsFpEncoding::getPoolingMaxFn() {
-  if (!fp_pooling_maxfn) {
-    auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
-    // (array, initial value)
-    fp_pooling_maxfn.emplace({arrs, sort()}, sort(),
-        "fp_pooling_max_" + fn_suffix);
-  }
-  return *fp_pooling_maxfn;
+  return *fp_maxfn;
 }
 
 FnDecl AbsFpEncoding::getInteger32CastingFn() {
@@ -1201,31 +1189,13 @@ Expr AbsFpEncoding::casting(const smt::Expr &integer) {
     throw UnsupportedException("Current we support i32 casting");
 }
 
-Expr AbsFpEncoding::sumPool(const Expr &arr, const Expr &n,
-    optional<Expr> &&initValue) {
-  Expr i = (Expr) Index::var("idx", VarType::BOUND);
-  Expr arri = arr.select(i), identity = zero(true);
-  Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, identity));
-  return getPoolingSumFn().apply({input, initValue.value_or(identity)});
-}
-
-Expr AbsFpEncoding::avgPool(const Expr &arr, const Expr &n,
-    optional<Expr> &&initValue) {
-  Expr i = (Expr) Index::var("idx", VarType::BOUND);
-  Expr arri = arr.select(i), identity = zero(true);
-  Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, identity));
-  Expr sum = getPoolingSumFn().apply({input, initValue.value_or(identity)});
-  Expr count = casting(n);
-  return div(sum, count);
-}
-
 Expr AbsFpEncoding::maxPool(const Expr &arr, const Expr &n,
     optional<Expr> &&initValue) {
   Expr i = (Expr) Index::var("idx", VarType::BOUND);
   Expr arri = arr.select(i), minimum = largest(true);
   Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, minimum));
 
-  return getPoolingMaxFn().apply({input, initValue.value_or(minimum)});
+  return getMaxFn().apply({input, initValue.value_or(minimum)});
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() {
