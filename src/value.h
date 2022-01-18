@@ -417,6 +417,7 @@ public:
   smt::Expr isGlobalBlock() const;
   smt::Expr isLocalBlock() const;
   smt::Expr getLiveness() const;
+  smt::Expr isCreatedByAlloc() const;
   smt::Expr noalias(const MemRef &other) const;
   smt::Expr isFullyInitialized() const;
   void setWritable(bool writable);
