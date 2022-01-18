@@ -31,6 +31,7 @@ public:
   static Float var(std::string &&name, mlir::Type ty, VarType vty);
   static Float constant(const llvm::APFloat &apf, mlir::Type ty);
   static Float one(mlir::Type ty);
+  static Float castFromSignedInt(Integer &integer, mlir::Type ty);
 
   // Returns e^x
   static Float exp(const Float &x);
@@ -243,7 +244,16 @@ public:
   // It is assumed that this tensor is initialized.
   // The returned tensor is fully initialized.
   Tensor sum(unsigned axis) const;
-  
+
+  Tensor sumPool(const std::vector<smt::Expr> &kernelDims,
+                 const std::vector<smt::Expr> &strides,
+                 std::optional<Tensor> &&init = std::nullopt) const;
+  Tensor avgPool(const std::vector<smt::Expr> &kernelDims,
+                 const std::vector<smt::Expr> &strides,
+                 std::optional<Tensor> &&init = std::nullopt) const;
+  Tensor maxPool(const std::vector<smt::Expr> &kernelDims,
+                 const std::vector<smt::Expr> &strides,
+                 std::optional<Tensor> &&init = std::nullopt) const;
 
   operator smt::Expr() const { return arr; }
 

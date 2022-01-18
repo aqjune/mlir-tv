@@ -291,6 +291,8 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_divfn.reset();
   fp_hashfn.reset();
   fp_sums.clear();
+  fp_maxfn.reset();
+  fp_sint32tofp_fn.reset();
 }
 
 FnDecl AbsFpEncoding::getAddFn() {
@@ -384,6 +386,24 @@ FnDecl AbsFpEncoding::getRoundDirFn() {
     fp_rounddirfn.emplace({src_fty}, tgt_fty, "fp_rounddir_" + fn_suffix);
   }
   return *fp_rounddirfn;
+}
+
+FnDecl AbsFpEncoding::getMaxFn() {
+  if (!fp_maxfn) {
+    auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
+    // (array, initial value)
+    fp_maxfn.emplace({arrs, sort()}, sort(), "fp_max_" + fn_suffix);
+  }
+  return *fp_maxfn;
+}
+
+FnDecl AbsFpEncoding::getInt32ToFpFn() {
+  if (!fp_sint32tofp_fn) {
+    auto integer = Sort::bvSort(32);
+    fp_sint32tofp_fn.emplace({integer}, sort(),
+        "fp_sint32tofp_" + fn_suffix);
+  }
+  return *fp_sint32tofp_fn;
 }
 
 size_t AbsFpEncoding::getHashRangeBits() const {
@@ -1160,6 +1180,22 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
             Expr::mkIte(is_prec_zero, floored_float,
               Expr::mkIte(round_dir == Expr::mkBV(0, 1),
                 floored_float, ceiled_float))))));
+}
+
+Expr AbsFpEncoding::castFromSignedInt(const smt::Expr &integer) {
+  if (integer.bitwidth() == 32)
+    return getInt32ToFpFn().apply({integer});
+  else
+    throw UnsupportedException("Currently, we support i32 only.");
+}
+
+Expr AbsFpEncoding::maxPool(const Expr &arr, const Expr &n,
+    optional<Expr> &&initValue) {
+  Expr i = (Expr) Index::var("idx", VarType::BOUND);
+  Expr arri = arr.select(i), minimum = largest(true);
+  Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, minimum));
+
+  return getMaxFn().apply({input, initValue.value_or(minimum)});
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() {
