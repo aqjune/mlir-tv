@@ -161,10 +161,10 @@ Float Float::one(mlir::Type t) {
   throw UnsupportedException(t, "Unknown float type");
 }
 
-Float Float::casting(Integer &integer, mlir::Type ty) {
+Float Float::castFromSignedInt(Integer &integer, mlir::Type ty) {
   assert(sort(ty) != nullopt);
 
-  return {aop::getFpEncoding(ty).casting(integer), ty};
+  return {aop::getFpEncoding(ty).castFromSignedInt(integer), ty};
 }
 
 
@@ -902,7 +902,7 @@ Tensor Tensor::avgPool(const vector<Expr> &kernelDims,
   auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
   auto sumExpr = aop::getFpEncoding(elemType)
       .sum(kernelExpr, kernel1DSize, nullopt, move(initVal));
-  auto count = aop::getFpEncoding(elemType).casting(kernel1DSize);
+  auto count = aop::getFpEncoding(elemType).castFromSignedInt(kernel1DSize);
   auto outputExpr = aop::getFpEncoding(elemType).div(sumExpr, count);
 
   return Tensor::mkInitializedLambda(elemType,

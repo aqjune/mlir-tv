@@ -292,7 +292,7 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
   fp_hashfn.reset();
   fp_sums.clear();
   fp_maxfn.reset();
-  fp_integer32_castingfn.reset();
+  fp_sint32tofp_fn.reset();
 }
 
 FnDecl AbsFpEncoding::getAddFn() {
@@ -397,13 +397,13 @@ FnDecl AbsFpEncoding::getMaxFn() {
   return *fp_maxfn;
 }
 
-FnDecl AbsFpEncoding::getInteger32CastingFn() {
-  if (!fp_integer32_castingfn) {
+FnDecl AbsFpEncoding::getInt32ToFpFn() {
+  if (!fp_sint32tofp_fn) {
     auto integer = Sort::bvSort(32);
-    fp_integer32_castingfn.emplace({integer}, sort(),
-        "fp_integer_casting_" + fn_suffix);
+    fp_sint32tofp_fn.emplace({integer}, sort(),
+        "fp_sint32tofp_" + fn_suffix);
   }
-  return *fp_integer32_castingfn;
+  return *fp_sint32tofp_fn;
 }
 
 size_t AbsFpEncoding::getHashRangeBits() const {
@@ -1182,11 +1182,11 @@ Expr AbsFpEncoding::truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt) {
                 floored_float, ceiled_float))))));
 }
 
-Expr AbsFpEncoding::casting(const smt::Expr &integer) {
+Expr AbsFpEncoding::castFromSignedInt(const smt::Expr &integer) {
   if (integer.bitwidth() == 32)
-    return getInteger32CastingFn().apply({integer});
+    return getInt32ToFpFn().apply({integer});
   else
-    throw UnsupportedException("Current we support i32 casting");
+    throw UnsupportedException("Currently, we support i32 only.");
 }
 
 Expr AbsFpEncoding::maxPool(const Expr &arr, const Expr &n,

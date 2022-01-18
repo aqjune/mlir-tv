@@ -150,7 +150,7 @@ private:
   std::optional<smt::FnDecl> fp_hashfn;
   std::optional<smt::FnDecl> fp_rounddirfn;
   std::optional<smt::FnDecl> fp_maxfn;
-  std::optional<smt::FnDecl> fp_integer32_castingfn;
+  std::optional<smt::FnDecl> fp_sint32tofp_fn;
   std::string fn_suffix;
 
 private:
@@ -188,7 +188,7 @@ private:
   smt::FnDecl getHashFnForAddAssoc();
   smt::FnDecl getRoundDirFn();
   smt::FnDecl getMaxFn();
-  smt::FnDecl getInteger32CastingFn();
+  smt::FnDecl getInt32ToFpFn();
 
   size_t getHashRangeBits() const;
   uint64_t getSignBit() const;
@@ -224,7 +224,7 @@ public:
       const smt::Expr &n, std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr extend(const smt::Expr &f, aop::AbsFpEncoding &tgt);
   smt::Expr truncate(const smt::Expr &f, aop::AbsFpEncoding &tgt);
-  smt::Expr casting(const smt::Expr &integer);
+  smt::Expr castFromSignedInt(const smt::Expr &integer);
   smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
       const smt::Expr &f2);
   smt::Expr maxPool(const smt::Expr &arr, const smt::Expr &n,
