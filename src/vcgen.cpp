@@ -551,7 +551,8 @@ static void checkIsSrcAlwaysUB(
 static Results validate(ValidationInput vinput) {
   llvm::outs() << "=========== Function "
       << vinput.src.getName() << " ===========\n\n";
-  assert(vinput.src.getNumArguments() == vinput.tgt.getNumArguments());
+  if (vinput.src.getNumArguments() != vinput.tgt.getNumArguments())
+    throw UnsupportedException("source, target has different num arguments");
 
   int64_t elapsedMillisec = 0;
   Defer timePrinter([&]() {
