@@ -135,6 +135,12 @@ llvm::cl::opt<bool> no_arith_properties("no-arith-properties",
   llvm::cl::cat(MlirTvCategory));
 };
 
+llvm::cl::opt<string> arg_verify_fn_name("compare-fn-name",
+  llvm::cl::desc("Specify the name of a function to verify."
+      " If not set, verify every function."),
+  llvm::cl::value_desc("name"),
+  llvm::cl::cat(MlirTvCategory));
+
 static optional<string> checkFunctionSignatures(
     mlir::FuncOp src, mlir::FuncOp tgt) {
   if (src.getNumArguments() != tgt.getNumArguments())
@@ -741,7 +747,17 @@ Results validate(
 
   Results verificationResult = Results::SUCCESS;
   bool hasUnsupported = false;
+
+  llvm::StringRef verify_fn_name = llvm::StringRef(arg_verify_fn_name.getValue());
+  bool is_check_single_fn = !verify_fn_name.empty();
+
   for (auto [name, srcfn]: srcfns) {
+    if (is_check_single_fn) {
+      if (!name.equals(verify_fn_name)) {
+        continue;
+      }
+    }
+
     auto itr = tgtfns.find(name);
     if (itr == tgtfns.end()) {
       // The function does not exist in tgt! Let's skip this.
