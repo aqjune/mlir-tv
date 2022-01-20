@@ -1743,7 +1743,7 @@ MemRef MemRef::eval(Model mdl) const {
 pair<Expr, Expr> MemRef::to1DIdxWithLayout(const vector<Expr> &_idxs) const {
   auto idxs = _idxs;
   if (idxs.empty()) {
-    idxs.push_back(Index::zero());
+    idxs.push_back(Index::one());
   }
   auto Expr = layout.mapping(idxs);
   auto inbounds = layout.inbounds(idxs);
