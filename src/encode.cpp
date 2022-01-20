@@ -1940,6 +1940,9 @@ void encodeOp(State &st, mlir::tensor::FromElementsOp op, bool) {
   for (unsigned i = 0; i < resTy.getRank(); ++i)
     dims.push_back(resTy.getDimSize(i));
 
+  if(dims.size() == 1 && dims[0] == 0)
+    throw UnsupportedException(op.getOperation(), "Unsupported dimension size");
+
   auto elemTy = op.getType().getElementType();
   st.regs.add(op.getResult(), Tensor(elemTy, move(elems), dims));
 }
