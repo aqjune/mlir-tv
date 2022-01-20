@@ -1874,9 +1874,6 @@ void encodeOp(State &st, mlir::linalg::PoolingNhwcSumOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::linalg::PoolingNhwcMaxOp op, bool) {
-  if (!(getElemTy(op.getResult(0)).isa<mlir::FloatType>()))
-    throw UnsupportedException(op.getOperation(), "Unsupported type");
-
   encodeLinalgPooling(st, op);
 }
 
