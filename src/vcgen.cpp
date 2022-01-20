@@ -321,35 +321,57 @@ static Results checkRefinement(
 
   { // 0. test 
   // ./mlir-tv ../tests/litmus/arith-ops/subf.src.mlir ../tests/litmus/arith-ops/subf.tgt.mlir --fp-bits=3 --smt-to=100000000
-    auto f1 = Expr::mkVar(Sort::fpIEEE754Sort(), "Float1", true);
-    auto f2 = Expr::mkVar(Sort::fpIEEE754Sort(), "Float2", true);
-    auto f3 = Expr::mkVar(Sort::fpIEEE754Sort(), "Float3", true);
+    auto f1 = Expr::mkVar(Sort::fpIEEE754Sort(), "Float1");
+    auto f2 = Expr::mkVar(Sort::fpIEEE754Sort(), "Float2");
+    auto f3 = Expr::mkVar(Sort::fpIEEE754Sort(), "Float3");
 
     auto& encoding = aop::getFloatEncoding();
     auto mapping = FnDecl(Sort::fpIEEE754Sort(), encoding.sort(), "fp_map");
 
-    auto bv1 = Expr::mkVar(encoding.sort(), "bv1", true);
-    auto bv2 = Expr::mkVar(encoding.sort(), "bv2", true);
-    auto bv3 = Expr::mkVar(encoding.sort(), "bv3", true);
-    auto bijection = (f1 != f2).implies(bv1 != bv2) & (f1 != f3).implies(bv1 != bv3) & (f2 != f3).implies(bv2 != bv3);
-    auto exists = Expr::mkExists({bv1, bv2, bv3}, mapping.apply(f1) == bv1 & mapping.apply(f2) == bv2 & mapping.apply(f3) == bv3 & encoding.add(bv1, bv2) == bv3 & bijection);
-    auto fp_sum_equal = (f1 + f2 == f3);
-    auto expr = fp_sum_equal.implies(exists);
-    auto forall = Expr::mkForall({f1, f2, f3}, expr);
+    // Precond on mapping
+    auto f5 = Expr::mkVar(Sort::fpIEEE754Sort(), "Float5", true);
+    auto ex = Expr::mkIte(f5.isNaN(), mapping(f5) == encoding.nan(),
+      Expr::mkIte(f5 == encoding.infinity(false, true), mapping(f5) == encoding.infinity(false),
+      Expr::mkIte(f5 == encoding.infinity(true, true), mapping(f5) == encoding.infinity(true),
+      Expr::mkIte(f5 == encoding.zero(false, true), mapping(f5) == encoding.zero(false),
+      Expr::mkIte(f5 == encoding.zero(true, true), mapping(f5) == encoding.zero(true),
+      (mapping(f5) != encoding.nan()) & (mapping(f5) != encoding.infinity(false)) & (mapping(f5) != encoding.infinity(true)) & (mapping(f5) != encoding.zero(false)) & (mapping(f5) != encoding.zero(true))
+    )))));
+    auto precond = Expr::mkForall({f5}, ex);
 
-    // bijection
-    // auto x = Expr::mkVar(Sort::fpIEEE754Sort(), "Floatx", true);
-    // auto y = Expr::mkVar(Sort::fpIEEE754Sort(), "Floaty", true);
-    // auto constraints = (x != y).implies(mapping.apply(x) != mapping.apply(y));
-    // auto bijection = Expr::mkForall({x, y}, constraints);
+    auto fp_sum_equal = (f1 + f2 == f3);
+
+    auto bv1 = Expr::mkVar(encoding.sort(), "bv1");
+    auto bv2 = Expr::mkVar(encoding.sort(), "bv2");
+    auto bv3 = Expr::mkVar(encoding.sort(), "bv3");
+    auto bijection = (f1 != f2).implies(bv1 != bv2) & (f1 != f3).implies(bv1 != bv3) & (f2 != f3).implies(bv2 != bv3);
+    auto temp = (mapping(f1) == bv1) & (mapping(f2) == bv2) & (mapping(f3) == bv3) & bijection & (encoding.add(bv1, bv2) == bv3);
+    auto forall = Expr::mkForall({bv1, bv2, bv3}, !temp);
+
+    // forall f1,f2,f3 . f1 + f2 == f3 => exists bv1, bv2, bv3, mapping(f1) == bv1 & mapping(f2) == bv2 & mapping(f3) == bv3 & addf(bv1, bv2) == bv3 & ((f1 != f2).implies(bv1 != bv2) & (f1 != f3).implies(bv1 != bv3) & (f2 != f3).implies(bv2 != bv3))
+
+    // !(forall XXX, p => q)
+    // exists f1,f2,f3. f1+f2 == f3 /\ ~(exists bv1, bv2, bv3, mapping(f1) == bv1 & mapping(f2) == bv2 & mapping(f3) == bv3 & addf(bv1, bv2) == bv3 & ((f1 != f2).implies(bv1 != bv2) & (f1 != f3).implies(bv1 != bv3) & (f2 != f3).implies(bv2 != bv3))
+    // exists f1,f2,f3. f1+f2 == f3 /\  (forall bv1, bv2, bv3. !(mapping(f1) == bv1 & mapping(f2) == bv2 & mapping(f3) == bv3 & addf(bv1, bv2) == bv3 & ((f1 != f2).implies(bv1 != bv2) & (f1 != f3).implies(bv1 != bv3) & (f2 != f3).implies(bv2 != bv3))))
+    auto final = precond & forall;
+    llvm::outs() << "Expr: " << final << "\n";
 
     Solver s("ALL");
-    auto res = solve(s, forall, vinput.dumpSMTPath, fnname);
+    auto res = solve(s, final, vinput.dumpSMTPath, fnname);
 
     if (res.first.isUnknown()) {
       llvm::outs() << "Result: Timeout!!\n";
     } else if(res.first.hasSat()) {
       llvm::outs() << "Result: SAT!!, Time: " <<  res.second << "\n";
+      auto model = s.getModel();
+      model.dump();
+      llvm::outs() << "f1: " << model.eval(f1, true) << ", isNan: " << model.eval(f1.isNaN(), true) << "\n";
+      llvm::outs() << "f2: " << model.eval(f2, true) << ", isNan: " << model.eval(f2.isNaN(), true) << "\n";
+      llvm::outs() << "f3: " << model.eval(f3, true) << ", isNan: " << model.eval(f3.isNaN(), true) << "\n";
+      llvm::outs() << "apply: " << model.eval(mapping.apply(f1), true) << "\n";
+      llvm::outs() << "apply: " << model.eval(mapping.apply(f2), true) << "\n";
+      llvm::outs() << "apply: " << model.eval(mapping.apply(f3), true) << "\n";
+      llvm::outs() << "bvadd : " << model.eval(encoding.add(mapping.apply(f1), mapping.apply(f2)), true) << "\n";
     } else {
       llvm::outs() << "Result: UNSAT!!, Time: " <<  res.second << "\n";
     }

@@ -641,27 +641,43 @@ vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
   return vec;
 }
 
-Expr AbsFpEncoding::zero(bool isNegative) const {
-  return constant(llvm::APFloat::getZero(semantics, isNegative));
+Expr AbsFpEncoding::zero(bool isNegative, bool isFpaValue) const {
+  if (isFpaValue)
+    return Expr::mkFpaVal(
+      llvm::APFloat::getZero(semantics, isNegative).convertToFloat());
+  else
+    return constant(llvm::APFloat::getZero(semantics, isNegative));
 }
 
-Expr AbsFpEncoding::one(bool isNegative) const {
+Expr AbsFpEncoding::one(bool isNegative, bool isFpaValue) const {
   llvm::APFloat apf(semantics, 1);
   if (isNegative)
     apf.changeSign();
-  return constant(apf);
+
+  if (isFpaValue)
+    return Expr::mkFpaVal(apf.convertToFloat());
+  else
+    return constant(apf);
 }
 
-Expr AbsFpEncoding::infinity(bool isNegative) const {
-  return constant(llvm::APFloat::getInf(semantics, isNegative));
+Expr AbsFpEncoding::infinity(bool isNegative, bool isFpaValue) const {
+  if (isFpaValue)
+    return Expr::mkFpaVal(
+      llvm::APFloat::getInf(semantics, isNegative).convertToFloat());
+  else
+    return constant(llvm::APFloat::getInf(semantics, isNegative));
 }
 
 Expr AbsFpEncoding::nan() const {
   return constant(llvm::APFloat::getNaN(semantics));
 }
 
-Expr AbsFpEncoding::largest(bool isNegative) const {
-  return constant(llvm::APFloat::getLargest(semantics, isNegative));
+Expr AbsFpEncoding::largest(bool isNegative, bool isFpaValue) const {
+  if (isFpaValue)
+    return Expr::mkFpaVal(
+      llvm::APFloat::getLargest(semantics, isNegative).convertToFloat());
+  else
+    return constant(llvm::APFloat::getLargest(semantics, isNegative));
 }
 
 Expr AbsFpEncoding::isnan(const Expr &f) {

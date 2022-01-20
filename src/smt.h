@@ -140,6 +140,8 @@ public:
   Expr sge(const Expr &rhs) const;
   Expr sge(uint64_t rhs) const;
 
+  Expr isNaN() const;
+
   /* Array operations */
   Expr select(const Expr &idx) const;
   Expr select(const std::vector<Expr> &idxs) const;
@@ -207,6 +209,7 @@ public:
   static Expr mkBV(const uint64_t val, const size_t sz);
   static Expr mkBV(const uint64_t val, const Expr &sort_of);
   static Expr mkBool(const bool val);
+  static Expr mkFpaVal(const float val);
 
   static Expr mkForall(const std::vector<Expr> &vars, const Expr &body);
   static Expr mkExists(const std::vector<Expr> &vars, const Expr &body);
@@ -299,6 +302,7 @@ private:
   // No need for CVC5
 
 public:
+  void dump();
   Expr eval(const Expr &e, bool modelCompletion = false) const;
   std::vector<Expr> eval(const std::vector<Expr> &exprs, bool modelCompletion = false) const;
 

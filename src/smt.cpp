@@ -644,6 +644,14 @@ Expr Expr::sge(const Expr& rhs) const {
   return rhs.sle(*this);
 }
 
+Expr Expr::isNaN() const {
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [](auto &z3){
+    return z3.mk_is_nan();
+  }));
+  return e;
+}
+
 Expr Expr::select(const Expr &idx) const {
   return select(vector{idx});
 }
@@ -1238,6 +1246,14 @@ Expr Expr::mkBool(const bool val) {
   return e;
 }
 
+Expr Expr::mkFpaVal(const float val) {
+  Expr e;
+  SET_Z3(e, fupdate(sctx.z3, [val](auto &ctx){
+    return ctx.fpa_val(val);
+  }));
+  return e;
+}
+
 Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
   for (auto &v: vars) {
     assert(v.isVar());
@@ -1460,9 +1476,9 @@ Sort Sort::arraySort(const Sort &domain, const Sort &range) {
 
 Sort Sort::fpIEEE754Sort() {
   Sort s;
-  // SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(8, 24); }));
+  SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(8, 24); })); // f32
   // SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(5, 11); }));
-  SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(2, 3); }));
+  // SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(2, 3); }));
   return s;
 }
 
@@ -1491,6 +1507,10 @@ bool CheckResult::isInconsistent() const {
 }
 
 // ------- Model -------
+
+void Model::dump() {
+  cout << *z3 << "\n";
+}
 
 Expr Model::eval(const Expr &e, bool modelCompletion) const {
   Expr newe;
@@ -1612,7 +1632,6 @@ Model Solver::getModel() const {
   SET_Z3(m, fmap(z3, [](auto &solver) { return solver.get_model(); }));
   return m;
 }
-
 
 
 void useZ3() { IF_Z3_ENABLED(sctx.useZ3()); }
