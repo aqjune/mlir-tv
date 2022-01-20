@@ -934,7 +934,7 @@ Tensor Tensor::maxPool(const vector<Expr> &kernelDims,
   };
   auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
   auto outputExpr = aop::getFpEncoding(elemType)
-      .maxPool(kernelExpr, kernel1DSize, move(initVal));
+      .max(kernelExpr, kernel1DSize, move(initVal));
 
   return Tensor::mkInitializedLambda(elemType,
       move(outputDims), move(outputIdxs), move(outputExpr));
