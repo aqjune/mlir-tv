@@ -138,6 +138,8 @@ public:
          const std::vector<uint64_t> &dims, const smt::Expr &zero);
   // A dense tensor (1 dimensional).
   Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems);
+  // A zero-dim tensor
+  Tensor(mlir::Type elemType, smt::Sort &&sort);
 
 
   smt::Expr asArray() const { return arr; }
