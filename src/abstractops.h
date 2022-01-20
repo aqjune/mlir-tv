@@ -219,6 +219,8 @@ public:
   smt::Expr sum(const smt::Expr &a, const smt::Expr &n,
       std::optional<std::vector<smt::Expr>> &&elems = std::nullopt,
       std::optional<smt::Expr> &&initValue = std::nullopt);
+  smt::Expr max(const smt::Expr &arr, const smt::Expr &n,
+      std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr exp(const smt::Expr &x);
   smt::Expr dot(const smt::Expr &a, const smt::Expr &b,
       const smt::Expr &n, std::optional<smt::Expr> &&initValue = std::nullopt);
@@ -227,8 +229,6 @@ public:
   smt::Expr castFromSignedInt(const smt::Expr &integer);
   smt::Expr cmp(mlir::arith::CmpFPredicate pred, const smt::Expr &f1,
       const smt::Expr &f2);
-  smt::Expr maxPool(const smt::Expr &arr, const smt::Expr &n,
-      std::optional<smt::Expr> &&initValue = std::nullopt);
   smt::Expr getFpAssociativePrecondition();
   smt::Expr getFpTruncatePrecondition(aop::AbsFpEncoding &tgt);
   smt::Expr getFpConstantPrecondition();
