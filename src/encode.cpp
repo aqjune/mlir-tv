@@ -1938,14 +1938,8 @@ void encodeOp(State &st, mlir::tensor::FromElementsOp op, bool) {
   auto elemTy = op.getType().getElementType();
   if (elems.size() == 0) {
     // Zero-dim tensor: derive Sort from Op return type
-    optional<Sort> elemSort;
-    if (elemTy.isa<mlir::FloatType>())
-      elemSort = Float::sort(elemTy);
-    else if (elemTy.isIndex())
-      elemSort = Index::sort();
-    else if (elemTy.isInteger(elemTy.getIntOrFloatBitWidth()))
-      elemSort = Integer::sort(elemTy.getIntOrFloatBitWidth());
-    else
+    auto elemSort = convertPrimitiveTypeToSort(elemTy);
+    if (!elemSort)
       throw UnsupportedException(op.getOperation(), "Unsupported type");
     st.regs.add(op.getResult(), Tensor(elemTy, move(*elemSort)));
   }
