@@ -319,6 +319,42 @@ static Results checkRefinement(
         SMT_LOGIC : SMT_LOGIC_QF);
   verbose("checkRefinement") << "use logic: " << logic << "\n";
 
+  { // 0. test 
+  // ./mlir-tv ../tests/litmus/arith-ops/subf.src.mlir ../tests/litmus/arith-ops/subf.tgt.mlir --fp-bits=3 --smt-to=100000000
+    auto f1 = Expr::mkVar(Sort::fpIEEE754Sort(), "Float1", true);
+    auto f2 = Expr::mkVar(Sort::fpIEEE754Sort(), "Float2", true);
+    auto f3 = Expr::mkVar(Sort::fpIEEE754Sort(), "Float3", true);
+
+    auto& encoding = aop::getFloatEncoding();
+    auto mapping = FnDecl(Sort::fpIEEE754Sort(), encoding.sort(), "fp_map");
+
+    auto bv1 = Expr::mkVar(encoding.sort(), "bv1", true);
+    auto bv2 = Expr::mkVar(encoding.sort(), "bv2", true);
+    auto bv3 = Expr::mkVar(encoding.sort(), "bv3", true);
+    auto bijection = (f1 != f2).implies(bv1 != bv2) & (f1 != f3).implies(bv1 != bv3) & (f2 != f3).implies(bv2 != bv3);
+    auto exists = Expr::mkExists({bv1, bv2, bv3}, mapping.apply(f1) == bv1 & mapping.apply(f2) == bv2 & mapping.apply(f3) == bv3 & encoding.add(bv1, bv2) == bv3 & bijection);
+    auto fp_sum_equal = (f1 + f2 == f3);
+    auto expr = fp_sum_equal.implies(exists);
+    auto forall = Expr::mkForall({f1, f2, f3}, expr);
+
+    // bijection
+    // auto x = Expr::mkVar(Sort::fpIEEE754Sort(), "Floatx", true);
+    // auto y = Expr::mkVar(Sort::fpIEEE754Sort(), "Floaty", true);
+    // auto constraints = (x != y).implies(mapping.apply(x) != mapping.apply(y));
+    // auto bijection = Expr::mkForall({x, y}, constraints);
+
+    Solver s("ALL");
+    auto res = solve(s, forall, vinput.dumpSMTPath, fnname);
+
+    if (res.first.isUnknown()) {
+      llvm::outs() << "Result: Timeout!!\n";
+    } else if(res.first.hasSat()) {
+      llvm::outs() << "Result: SAT!!, Time: " <<  res.second << "\n";
+    } else {
+      llvm::outs() << "Result: UNSAT!!, Time: " <<  res.second << "\n";
+    }
+  }
+
   { // 1. Check UB
     verbose("checkRefinement") << "1. Check UB\n";
     Solver s(logic);

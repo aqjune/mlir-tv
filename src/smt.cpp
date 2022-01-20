@@ -1261,6 +1261,14 @@ Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
   return e;
 }
 
+Expr Expr::mkExists(const vector<Expr> &vars, const Expr &body) {
+  Expr e;
+  SET_Z3(e, fmap(body.z3, [&](auto &z3body){
+    return z3::exists(toZ3ExprVector(vars), z3body);
+  }));
+  return e;
+}
+
 Expr Expr::mkLambda(const Expr &var, const Expr &body) {
   return mkLambda(vector{var}, body);
 }
@@ -1447,6 +1455,14 @@ Sort Sort::arraySort(const Sort &domain, const Sort &range) {
         return ctx.mkArraySort(domcvc5, *range.cvc5);
     }
   ));
+  return s;
+}
+
+Sort Sort::fpIEEE754Sort() {
+  Sort s;
+  // SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(8, 24); }));
+  // SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(5, 11); }));
+  SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(2, 3); }));
   return s;
 }
 

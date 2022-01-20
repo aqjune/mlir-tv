@@ -209,6 +209,7 @@ public:
   static Expr mkBool(const bool val);
 
   static Expr mkForall(const std::vector<Expr> &vars, const Expr &body);
+  static Expr mkExists(const std::vector<Expr> &vars, const Expr &body);
   static Expr mkLambda(const Expr &var, const Expr &body);
   static Expr mkLambda(const std::vector<Expr> &vars, const Expr &body);
   static Expr mkSplatArray(const Sort &domain, const Expr &splatElem);
@@ -245,6 +246,8 @@ public:
   static Sort bvSort(size_t bw);
   static Sort boolSort();
   static Sort arraySort(const Sort &domain, const Sort &range);
+
+  static Sort fpIEEE754Sort();
 
   friend Expr;
   friend FnDecl;
