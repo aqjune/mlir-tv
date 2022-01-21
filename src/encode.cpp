@@ -3249,7 +3249,7 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
       // Reduction loops returning memref is not supported by MLIR-TV yet.
       if (outputType.isa<mlir::MemRefType>())
         throw UnsupportedException(op.getOperation(),
-            "memref is not yet supported in reduction loop");
+            "memref as reduction loop output is not yet supported");
       
       encodeReductionLoopBodyAndOutput(newst, block,
             indexingMaps, outputType, t_res, welldefs);
