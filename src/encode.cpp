@@ -1937,21 +1937,14 @@ void encodeOp(State &st, mlir::tensor::FromElementsOp op, bool) {
   for (unsigned i = 0; i < op.getNumOperands(); ++i)
     elems.push_back(st.regs.getExpr(op.getOperand(i)));
 
-  auto elemTy = op.getType().getElementType();
-  if (elems.size() == 0) {
-    // Zero-dim tensor: derive Sort from Op return type
-    auto elemSort = convertPrimitiveTypeToSort(elemTy);
-    if (!elemSort)
-      throw UnsupportedException(op.getOperation(), "Unsupported type");
-    st.regs.add(op.getResult(), Tensor(elemTy, move(*elemSort)));
-  } else {
-    if (resTy.getRank() == 0) {
-      dims.push_back(1);
-    }
-    for (unsigned i = 0; i < resTy.getRank(); ++i)
-      dims.push_back(resTy.getDimSize(i));
-    st.regs.add(op.getResult(), Tensor(elemTy, move(elems), dims));
+  if (resTy.getRank() == 0) {
+    dims.push_back(1);
   }
+  for (unsigned i = 0; i < resTy.getRank(); ++i)
+    dims.push_back(resTy.getDimSize(i));
+
+  auto elemTy = op.getType().getElementType();
+  st.regs.add(op.getResult(), Tensor(elemTy, move(elems), dims));
 }
 
 template<>
