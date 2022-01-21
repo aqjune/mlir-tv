@@ -1937,9 +1937,8 @@ void encodeOp(State &st, mlir::tensor::FromElementsOp op, bool) {
   for (unsigned i = 0; i < op.getNumOperands(); ++i)
     elems.push_back(st.regs.getExpr(op.getOperand(i)));
 
-  if (resTy.getRank() == 0) {
+  if (resTy.getRank() == 0)
     dims.push_back(1);
-  }
   for (unsigned i = 0; i < resTy.getRank(); ++i)
     dims.push_back(resTy.getDimSize(i));
 
