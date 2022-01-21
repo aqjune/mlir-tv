@@ -3246,6 +3246,11 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
       optional<Tensor> t_res;
       auto outputType = op.getOutputOperand(0)->get().getType()
           .cast<mlir::ShapedType>();
+      // Reduction loops returning memref is not supported by MLIR-TV yet.
+      if (outputType.isa<mlir::MemRefType>())
+        throw UnsupportedException(op.getOperation(),
+            "using memref as a reduction loop output is not yet supported");
+      
       encodeReductionLoopBodyAndOutput(newst, block,
             indexingMaps, outputType, t_res, welldefs);
       tvec_res = {*t_res};
