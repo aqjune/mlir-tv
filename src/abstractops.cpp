@@ -1191,7 +1191,7 @@ Expr AbsFpEncoding::castFromSignedInt(const smt::Expr &integer) {
 Expr AbsFpEncoding::max(const Expr &arr0, const Expr &n0,
     optional<Expr> &&initValue) {
 
-  if (n0.asUInt() == 1 && initValue == std::nullopt)
+  if (n0.asUInt() == 1 && !initValue)
     return arr0.select(Index(0));
 
   Expr arr = arr0, n = n0;
