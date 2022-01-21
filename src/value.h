@@ -141,6 +141,7 @@ public:
   // A zero-dim tensor
   Tensor(mlir::Type elemType, smt::Sort &&sort);
 
+  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems, std::vector<uint64_t> &dims);
 
   smt::Expr asArray() const { return arr; }
   smt::Expr getWellDefined() const;

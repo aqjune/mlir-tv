@@ -1932,6 +1932,8 @@ void encodeOp(State &st, mlir::tensor::InsertOp op, bool) {
 template<>
 void encodeOp(State &st, mlir::tensor::FromElementsOp op, bool) {
   vector<Expr> elems;
+  vector<uint64_t> dims;
+  auto resTy = op.getType().dyn_cast<mlir::RankedTensorType>();
   for (unsigned i = 0; i < op.getNumOperands(); ++i)
     elems.push_back(st.regs.getExpr(op.getOperand(i)));
 
@@ -1942,9 +1944,14 @@ void encodeOp(State &st, mlir::tensor::FromElementsOp op, bool) {
     if (!elemSort)
       throw UnsupportedException(op.getOperation(), "Unsupported type");
     st.regs.add(op.getResult(), Tensor(elemTy, move(*elemSort)));
+  } else {
+    if (resTy.getRank() == 0) {
+      dims.push_back(1);
+    }
+    for (unsigned i = 0; i < resTy.getRank(); ++i)
+      dims.push_back(resTy.getDimSize(i));
+    st.regs.add(op.getResult(), Tensor(elemTy, move(elems), dims));
   }
-  else
-    st.regs.add(op.getResult(), Tensor(elemTy, move(elems)));
 }
 
 template<>
