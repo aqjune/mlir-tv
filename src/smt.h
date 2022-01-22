@@ -152,6 +152,7 @@ public:
   Expr insert(const Expr &elem) const;
   Expr bagUnion(const Expr &other) const;
 
+  Expr abs() const;
   Expr extract(unsigned hbit, unsigned lbit) const;
   Expr getMSB() const;
   Expr concat(const Expr &lowbits) const;
@@ -164,6 +165,7 @@ public:
   Expr operator-(uint64_t rhs) const;
   Expr operator*(const Expr &rhs) const;
   Expr operator*(uint64_t rhs) const;
+  Expr operator/(const Expr &rhs) const;
   Expr operator^(const Expr &rhs) const;
   Expr operator^(uint64_t rhs) const;
   Expr operator&(const Expr &rhs) const;
@@ -176,6 +178,7 @@ public:
   Expr operator!=(uint64_t rhs) const { return !(*this == rhs); }
   Expr operator!() const;
   Expr operator~() const;
+  Expr operator-() const;
   Expr &operator&=(const Expr &rhs);
   Expr &operator|=(const Expr &rhs);
 
@@ -210,6 +213,7 @@ public:
   static Expr mkBV(const uint64_t val, const Expr &sort_of);
   static Expr mkBool(const bool val);
   static Expr mkFpaVal(const float val);
+  static Expr mkFpaVal(const double val);
 
   static Expr mkForall(const std::vector<Expr> &vars, const Expr &body);
   static Expr mkExists(const std::vector<Expr> &vars, const Expr &body);
@@ -239,6 +243,7 @@ public:
   unsigned bitwidth() const;
   bool isArray() const;
   Sort getArrayDomain() const;
+  bool isFPASort() const;
   bool isBV() const;
   bool isBool() const;
 
@@ -250,7 +255,8 @@ public:
   static Sort boolSort();
   static Sort arraySort(const Sort &domain, const Sort &range);
 
-  static Sort fpIEEE754Sort();
+  static Sort fp32IEEE754Sort();
+  static Sort fp64IEEE754Sort();
 
   friend Expr;
   friend FnDecl;

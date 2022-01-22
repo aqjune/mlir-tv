@@ -138,9 +138,9 @@ Index Index::eval(Model m) const {
 
 optional<Sort> Float::sort(mlir::Type t) {
   if (t.isF32()) {
-    return aop::getFloatEncoding().sort();
+    return Sort::fp32IEEE754Sort();
   } else if (t.isF64()) {
-    return aop::getDoubleEncoding().sort();
+    return Sort::fp64IEEE754Sort();
   }
   return nullopt;
 }
@@ -148,7 +148,11 @@ optional<Sort> Float::sort(mlir::Type t) {
 Float Float::constant(const llvm::APFloat &apf, mlir::Type ty) {
   assert(sort(ty) != nullopt);
 
-  return {aop::getFpEncoding(ty).constant(apf), ty};
+  if (ty.isF32())
+    return {Expr::mkFpaVal(apf.convertToFloat()), ty};
+  else
+    return {Expr::mkFpaVal(apf.convertToDouble()), ty};
+  // return {aop::getFpEncoding(ty).constant(apf), ty};
 }
 
 Float Float::one(mlir::Type t) {
@@ -173,7 +177,8 @@ Float Float::exp(const Float &x) {
 }
 
 Sort Float::sortFloat32() {
-  return aop::getFloatEncoding().sort();
+  return Sort::fp32IEEE754Sort();
+  // return aop::getFloatEncoding().sort();
 }
 
 Float Float::var(string &&name, mlir::Type ty, VarType varty) {
@@ -190,27 +195,29 @@ Float Float::var(string &&name, mlir::Type ty, VarType varty) {
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
   Expr e = f;
-  auto vec = aop::getFpEncoding(f.type).possibleConsts(e);
-  if (!vec.empty()) {
-    llvm::SmallVector<char, 16> str;
-    vec[0].toString(str);
-    os << str;
-    for (unsigned i = 1; i < vec.size(); ++i) {
-      str.clear();
-      vec[i].toString(str);
-      os << " or " << str;
-    }
-  } else {
-    os << "unknown (" << or_omit((Expr)f) << ")";
-  }
+  os << e.simplify();
+  // auto vec = aop::getFpEncoding(f.type).possibleConsts(e);
+  // if (!vec.empty()) {
+  //   llvm::SmallVector<char, 16> str;
+  //   vec[0].toString(str);
+  //   os << str;
+  //   for (unsigned i = 1; i < vec.size(); ++i) {
+  //     str.clear();
+  //     vec[i].toString(str);
+  //     os << " or " << str;
+  //   }
+  // } else {
+  //   os << "unknown (" << or_omit((Expr)f) << ")";
+  // }
   return os;
 };
 
 pair<Expr, vector<Expr>> Float::refines(const Float &other) const {
-  auto nan1 = aop::getFpEncoding(type).isnan(e);
-  auto nan2 = aop::getFpEncoding(type).isnan(other.e);
-  return {
-    Expr::mkIte(nan1 | nan2, nan1 == nan2, (Expr) other == (Expr) *this), {}};
+  return {(Expr) other == (Expr) *this, {}};
+  // auto nan1 = aop::getFpEncoding(type).isnan(e);
+  // auto nan2 = aop::getFpEncoding(type).isnan(other.e);
+  // return {
+  //   Expr::mkIte(nan1 | nan2, nan1 == nan2, (Expr) other == (Expr) *this), {}};
 }
 
 Float Float::eval(Model m) const {
@@ -802,7 +809,7 @@ Tensor Tensor::elementwiseBinOp(
 
   auto idxvar = Index::var("idx_binop", VarType::BOUND);
   Expr elemout = f(getRaw(idxvar), b.getRaw(idxvar));
-  assert(elemout.sort().isBV());
+  // assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
   return mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
@@ -813,11 +820,19 @@ Tensor Tensor::elementwiseUnaryOp(
     mlir::Type resultElemType, const function<Expr(Expr &&)> &f) const {
   auto idxvar = Index::var("idx_binop", VarType::BOUND);
   Expr elemout = f(getRaw(idxvar));
-  assert(elemout.sort().isBV());
+  // assert(elemout.sort().isBV());
+
+  
 
   // UB if uninitialized elem is used
-  return mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
+  auto res = mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
       /* initialized */Expr::mkBool(true));
+
+  // llvm::outs() << "ElemOut: " << elemout << "\n";
+  // llvm::outs() << "Elem(0): " << res.get({Index(0)}).simplify() << "\n";
+  // llvm::outs() << "Elem(1): " << res.get({Index(1)}).simplify() << "\n";
+  // llvm::outs() << "Elem(2): " << res.get({Index(2)}).simplify() << "\n";
+  return res;
 }
 
 Expr Tensor::dot(const Tensor &t2, optional<Expr> &&initValue) const {

@@ -171,8 +171,13 @@ public:
   // Copying this object badly interacts with how CVC5 treats the term objects.
   AbsFpEncoding(const AbsFpEncoding &) = delete;
 
+  bool isFloat() const {
+    return fn_suffix == "float";
+  }
+
   smt::Sort sort() const {
-    return smt::Sort::bvSort(fp_bitwidth);
+    return isFloat() ? smt::Sort::fp32IEEE754Sort() : smt::Sort::fp64IEEE754Sort();
+    // return smt::Sort::bvSort(fp_bitwidth);
   }
 
 private:
@@ -196,11 +201,11 @@ private:
 public:
   void addConstants(const std::set<llvm::APFloat>& const_set);
   smt::Expr constant(const llvm::APFloat &f) const;
-  smt::Expr zero(bool isNegative = false, bool isFpaValue = false) const;
-  smt::Expr one(bool isNegative = false, bool isFpaValue = false) const;
-  smt::Expr infinity(bool isNegative = false, bool isFpaValue = false) const;
+  smt::Expr zero(bool isNegative = false, bool isFpaValue = true) const;
+  smt::Expr one(bool isNegative = false, bool isFpaValue = true) const;
+  smt::Expr infinity(bool isNegative = false, bool isFpaValue = true) const;
   smt::Expr nan() const;
-  smt::Expr largest(bool isNegative = false, bool isFpaValue = false) const;
+  smt::Expr largest(bool isNegative = false, bool isFpaValue = true) const;
 
   std::vector<std::pair<llvm::APFloat, smt::Expr>> getAllConstants() const;
   void evalConsts(smt::Model model);

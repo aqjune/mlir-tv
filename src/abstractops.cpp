@@ -533,6 +533,13 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
 }
 
 Expr AbsFpEncoding::constant(const llvm::APFloat &f) const {
+  if (isFloat())
+    return Expr::mkFpaVal(f.convertToFloat());
+  else 
+    return Expr::mkFpaVal(f.convertToDouble());
+
+  // return (Expr)Float::constant(f, ty);
+
   if (f.isNaN())
     return *fpconst_nan;
   else if (f.isInfinity())
@@ -693,16 +700,20 @@ Expr AbsFpEncoding::iszero(const Expr &f, bool isNegative) {
 }
 
 Expr AbsFpEncoding::abs(const Expr &f) {
-  return Expr::mkBV(0, 1).concat(getMagnitudeBits(f));
+  return abs(f);
+  // return Expr::mkBV(0, 1).concat(getMagnitudeBits(f));
 }
 
 Expr AbsFpEncoding::neg(const Expr &f) {
-  auto sign = getSignBit(f);
-  auto sign_negated = sign ^ 1;
-  return sign_negated.concat(getMagnitudeBits(f));
+  return -f;
+  // auto sign = getSignBit(f);
+  // auto sign_negated = sign ^ 1;
+  // return sign_negated.concat(getMagnitudeBits(f));
 }
 
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
+  return _f1 + _f2;
+
   if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY) {
     auto i = Index::var("idx", VarType::BOUND);
     auto lambda = Expr::mkLambda(i, Expr::mkIte(i == Index::zero(), _f1, _f2));
@@ -768,6 +779,7 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
 }
 
 Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
+  return _f1 * _f2;
   usedOps.fpMul = true;
 
   if (!hasArithProperties)
@@ -837,6 +849,7 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
 }
 
 Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
+  return _f1 / _f2;
   usedOps.fpDiv = true;
 
   if (!hasArithProperties)

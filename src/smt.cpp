@@ -780,6 +780,13 @@ Expr Expr::getMSB() const {
   return extract(bw, bw);
 }
 
+Expr Expr::abs() const {
+  CHECK_LOCK();
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [&](auto e) { return z3::abs(e); }));
+  return e;
+}
+
 Expr Expr::extract(unsigned hbit, unsigned lbit) const {
   CHECK_LOCK();
 
@@ -873,7 +880,15 @@ Expr Expr::implies(const Expr &rhs) const {
 }
 
 Expr Expr::isZero() const {
-  return *this == Expr::mkBV(0, sort().bitwidth());
+  if (sort().isFPASort()) {
+    Expr e;
+    SET_Z3(e, fmap(this->z3, [](auto &z3){
+      return z3.mk_is_zero();
+    }));
+    return e;
+  } else {
+    return *this == Expr::mkBV(0, sort().bitwidth());
+  }
 }
 
 Expr Expr::isNonZero() const {
@@ -957,6 +972,13 @@ Expr Expr::operator*(const Expr &rhs) const {
   Expr e;
   SET_Z3_USEOP(e, rhs, operator*);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_MULT);
+  return e;
+}
+
+Expr Expr::operator/(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+  Expr e;
+  SET_Z3_USEOP(e, rhs, operator/);
   return e;
 }
 
@@ -1110,6 +1132,13 @@ Expr Expr::operator~() const {
   return e;
 }
 
+Expr Expr::operator-() const {
+  CHECK_LOCK();
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [&](auto e) { return -e; }));
+  return e;
+}
+
 Expr &Expr::operator&=(const Expr &rhs) {
   CHECK_LOCK2(rhs);
 
@@ -1247,6 +1276,14 @@ Expr Expr::mkBool(const bool val) {
 }
 
 Expr Expr::mkFpaVal(const float val) {
+  Expr e;
+  SET_Z3(e, fupdate(sctx.z3, [val](auto &ctx){
+    return ctx.fpa_val(val);
+  }));
+  return e;
+}
+
+Expr Expr::mkFpaVal(const double val) {
   Expr e;
   SET_Z3(e, fupdate(sctx.z3, [val](auto &ctx){
     return ctx.fpa_val(val);
@@ -1404,6 +1441,12 @@ Sort Sort::getArrayDomain() const {
   return s;
 }
 
+bool Sort::isFPASort() const {
+  optional<bool> res;
+  IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->is_fpa()));
+  return *res;
+}
+
 bool Sort::isBV() const {
   optional<bool> res;
   IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->is_bv()));
@@ -1474,11 +1517,15 @@ Sort Sort::arraySort(const Sort &domain, const Sort &range) {
   return s;
 }
 
-Sort Sort::fpIEEE754Sort() {
+Sort Sort::fp32IEEE754Sort() {
   Sort s;
   SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(8, 24); })); // f32
-  // SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(5, 11); }));
-  // SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(2, 3); }));
+  return s;
+}
+
+Sort Sort::fp64IEEE754Sort() {
+  Sort s;
+  SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(11, 53); })); // f64
   return s;
 }
 
