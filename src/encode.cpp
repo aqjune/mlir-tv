@@ -1348,7 +1348,7 @@ void encodeOp(State &st, mlir::tosa::AvgPool2dOp op, bool) {
   auto paddings = getFromArrayAttr<Index>(op.pad());
   auto strides = getFromArrayAttr<Index>(op.stride());
 
-  if (!op.getType().isa<mlir::FloatType>()) {
+  if (!input.getElemType().isa<mlir::FloatType>()) {
     throw UnsupportedException(op.getOperation(),
           "Unsupported element type");
   }
@@ -1375,7 +1375,7 @@ void encodeOp(State &st, mlir::tosa::MaxPool2dOp op, bool) {
   auto paddings = getFromArrayAttr<Index>(op.pad());
   auto strides = getFromArrayAttr<Index>(op.stride());
 
-  if (!op.getType().isa<mlir::FloatType>()) {
+  if (!input.getElemType().isa<mlir::FloatType>()) {
     throw UnsupportedException(op.getOperation(),
           "Unsupported element type");
   }
@@ -2260,22 +2260,20 @@ void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
   auto input = op.input();   // [N, IC]
   auto weight = op.weight(); // [OC, IC]
   auto bias = op.bias();     // [OC]
-  auto inputType = input.getType();
-  auto weightType = weight.getType();
-  auto biasType = bias.getType();
 
-  if (!inputType.isa<mlir::RankedTensorType>() ||
-      !weightType.isa<mlir::RankedTensorType>() ||
-      !biasType.isa<mlir::RankedTensorType>())
+  if (!input.getType().isa<mlir::RankedTensorType>() ||
+      !weight.getType().isa<mlir::RankedTensorType>() ||
+      !bias.getType().isa<mlir::RankedTensorType>())
     throw UnsupportedException(op.getOperation(), "Unsupported operand type");
-  
-  if ((inputType != weightType) || (weightType != biasType))
-    throw UnsupportedException(op.getOperation(),
-        "Operands of different types are unsupported");
 
   auto inputTensor = st.regs.get<Tensor>(input);
   auto weightTensor = st.regs.get<Tensor>(weight);
   auto biasTensor = st.regs.get<Tensor>(bias);
+
+  if ((inputTensor.getElemType() != weightTensor.getElemType()) ||
+      (weightTensor.getElemType() != biasTensor.getElemType()))
+      throw UnsupportedException(op.getOperation(),
+        "Operands of different types are unsupported");
 
   st.wellDefined(op, inputTensor.getDim(1) == weightTensor.getDim(1));
   st.wellDefined(op, weightTensor.getDim(0) == biasTensor.getDim(0));
