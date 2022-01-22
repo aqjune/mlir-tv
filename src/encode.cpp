@@ -155,7 +155,8 @@ static void storeTensorTo(
 
     // Wrote successfully
     st.wellDefined(op, Expr::mkForall(idxs,
-        tInBounds.implies(mInfoAfter.checkWrite(!ubIfReadOnly))));
+        tInBounds.implies(mInfoAfter.checkWrite(!ubIfReadOnly))),
+        "write successful");
 
     // Write preconditions that relates the arrays before/after writes.
     // A precondition for the updated elements
