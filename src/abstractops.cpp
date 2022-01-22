@@ -700,7 +700,7 @@ Expr AbsFpEncoding::iszero(const Expr &f, bool isNegative) {
 }
 
 Expr AbsFpEncoding::abs(const Expr &f) {
-  return abs(f);
+  return f.abs();
   // return Expr::mkBV(0, 1).concat(getMagnitudeBits(f));
 }
 
