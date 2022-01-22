@@ -1348,6 +1348,11 @@ void encodeOp(State &st, mlir::tosa::AvgPool2dOp op, bool) {
   auto paddings = getFromArrayAttr<Index>(op.pad());
   auto strides = getFromArrayAttr<Index>(op.stride());
 
+  if (!op.getType().isa<mlir::FloatType>()) {
+    throw UnsupportedException(op.getOperation(),
+          "Unsupported element type");
+  }
+
   for (unsigned i = 0; i < input.getRank(); i ++) {
     uint64_t v;
     if(!paddings[i].isUInt(v))
@@ -1369,6 +1374,11 @@ void encodeOp(State &st, mlir::tosa::MaxPool2dOp op, bool) {
   auto kernelDims = getFromArrayAttr<Index>(op.kernel());
   auto paddings = getFromArrayAttr<Index>(op.pad());
   auto strides = getFromArrayAttr<Index>(op.stride());
+
+  if (!op.getType().isa<mlir::FloatType>()) {
+    throw UnsupportedException(op.getOperation(),
+          "Unsupported element type");
+  }
 
   for (unsigned i = 0; i < input.getRank(); i ++) {
     uint64_t v;
