@@ -929,9 +929,10 @@ Expr AbsFpEncoding::lambdaSum(const smt::Expr &a, const smt::Expr &n) {
 
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
-  Expr result = getSumFn()(
-      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
-        Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
+  Expr result = getSumFn()(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero(true))));
+  // Expr result = getSumFn()(
+  //     Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
+  //       Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
 
   uint64_t len;
   if (getFpAddAssociativity() && n.isUInt(len))
@@ -1055,8 +1056,10 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b,
     Expr arr1 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity));
     Expr arr2 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity));
 
-    return getDotFn().apply({initValue.value_or(identity), arr1, arr2}) &
-      getDotFn().apply({initValue.value_or(identity), arr2, arr1});
+    return getDotFn().apply({initValue.value_or(identity), arr1, arr2});
+
+    // return getDotFn().apply({initValue.value_or(identity), arr1, arr2}) &
+    //   getDotFn().apply({initValue.value_or(identity), arr2, arr1});
 
   } else if (abstraction.fpDot == AbsLevelFpDot::SUM_MUL) {
     // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
