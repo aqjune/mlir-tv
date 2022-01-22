@@ -2260,10 +2260,18 @@ void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
   auto input = op.input();   // [N, IC]
   auto weight = op.weight(); // [OC, IC]
   auto bias = op.bias();     // [OC]
-  if (!input.getType().isa<mlir::RankedTensorType>() ||
-      !weight.getType().isa<mlir::RankedTensorType>() ||
-      !bias.getType().isa<mlir::RankedTensorType>())
+  auto inputType = input.getType();
+  auto weightType = weight.getType();
+  auto biasType = bias.getType();
+
+  if (!inputType.isa<mlir::RankedTensorType>() ||
+      !weightType.isa<mlir::RankedTensorType>() ||
+      !biasType.isa<mlir::RankedTensorType>())
     throw UnsupportedException(op.getOperation(), "Unsupported operand type");
+  
+  if ((inputType != weightType) || (weightType != biasType))
+    throw UnsupportedException(op.getOperation(),
+        "Operands of different types are unsupported");
 
   auto inputTensor = st.regs.get<Tensor>(input);
   auto weightTensor = st.regs.get<Tensor>(weight);
