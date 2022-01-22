@@ -391,8 +391,7 @@ FnDecl AbsFpEncoding::getRoundDirFn() {
 FnDecl AbsFpEncoding::getMaxFn() {
   if (!fp_maxfn) {
     auto arrs = Sort::arraySort(Index::sort(), sort()).toFnSort();
-    // (array, initial value)
-    fp_maxfn.emplace({arrs, sort()}, sort(), "fp_max_" + fn_suffix);
+    fp_maxfn.emplace(arrs, sort(), "fp_max_" + fn_suffix);
   }
   return *fp_maxfn;
 }
@@ -411,11 +410,11 @@ size_t AbsFpEncoding::getHashRangeBits() const {
   uint64_t maxLength = 0;
 
   for (auto &rel: fp_sums) {
-    maxLength = max(maxLength, rel.len);
+    maxLength = std::max(maxLength, rel.len);
   }
 
   uint64_t bounds = numSums * numSums * maxLength;
-  return max((uint64_t)1, log2_ceil(bounds));
+  return std::max((uint64_t)1, log2_ceil(bounds));
 }
 
 uint64_t AbsFpEncoding::getSignBit() const {
@@ -1205,13 +1204,26 @@ Expr AbsFpEncoding::castFromSignedInt(const smt::Expr &integer) {
     throw UnsupportedException("Currently, we support i32 only.");
 }
 
-Expr AbsFpEncoding::maxPool(const Expr &arr, const Expr &n,
+Expr AbsFpEncoding::max(const Expr &arr0, const Expr &n0,
     optional<Expr> &&initValue) {
+
+  if (n0.asUInt() == 1 && !initValue)
+    return arr0.select(Index(0));
+
+  Expr arr = arr0, n = n0;
+  Expr j = (Expr) Index::var("j", VarType::BOUND);
+  if (!initValue)
+    // TODO: FIXME!
+    initValue = largest(true);
+  arr = Expr::mkLambda(j,
+      Expr::mkIte(j.isZero(), *initValue, arr.select(j - 1)));
+  n = n0 + 1;
+
   Expr i = (Expr) Index::var("idx", VarType::BOUND);
-  Expr arri = arr.select(i), minimum = largest(true);
+  Expr arri = arr.select(i), minimum = infinity(true);
   Expr input = Expr::mkLambda(i, Expr::mkIte(i.ult(n), arri, minimum));
 
-  return getMaxFn().apply({input, initValue.value_or(minimum)});
+  return getMaxFn().apply({input});
 }
 
 Expr AbsFpEncoding::getFpAssociativePrecondition() {

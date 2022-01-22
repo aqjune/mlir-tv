@@ -1834,11 +1834,14 @@ static void encodeLinalgPooling(State &st, T op) {
         "dilation=1 is supported only");
 
   if (op.hasTensorSemantics()) {
+    mlir::Type elemTy = getElemTy(op.getResult(0));
+    if (!elemTy.isa<mlir::FloatType>())
+      throw UnsupportedException(op.getOperation(), "Unsupported type");
+
     vector<Expr> kernelDims = st.regs.get<Tensor>(op.inputs()[1]).getDims();
     vector<Expr> strides = {Index(stride), Index(stride)};
     auto input = st.regs.get<Tensor>(op.inputs()[0]);
     auto output = st.regs.get<Tensor>(op.outputs()[0]);
-
     bool isMaxPool = std::is_same<T, mlir::linalg::PoolingNhwcMaxOp>::value;
     auto result = isMaxPool ? input.maxPool(kernelDims, strides, output)
         : input.sumPool(kernelDims, strides, output);
@@ -1847,6 +1850,12 @@ static void encodeLinalgPooling(State &st, T op) {
     st.wellDefined(op, input.isFullyInitialized(), "input tensor initialized");
     st.wellDefined(op, output.isFullyInitialized(), "output tensor initialized");
   } else {
+    mlir::Type elemTy = op.outputs()[0].getType()
+                          .template cast<mlir::MemRefType>()
+                          .getElementType();
+    if (!elemTy.isa<mlir::FloatType>())
+      throw UnsupportedException(op.getOperation(), "Unsupported type");
+
     vector<Expr> kernelDims = st.regs.get<MemRef>(op.inputs()[1]).getDims();
     vector<Expr> strides = {Index(stride), Index(stride)};
     MemRef minput = st.regs.get<MemRef>(op.inputs()[0]);
@@ -1932,11 +1941,18 @@ void encodeOp(State &st, mlir::tensor::InsertOp op, bool) {
 template<>
 void encodeOp(State &st, mlir::tensor::FromElementsOp op, bool) {
   vector<Expr> elems;
+  vector<uint64_t> dims;
+  auto resTy = op.getType().dyn_cast<mlir::RankedTensorType>();
   for (unsigned i = 0; i < op.getNumOperands(); ++i)
     elems.push_back(st.regs.getExpr(op.getOperand(i)));
 
+  if (resTy.getRank() == 0)
+    dims.push_back(1);
+  for (unsigned i = 0; i < resTy.getRank(); ++i)
+    dims.push_back(resTy.getDimSize(i));
+
   auto elemTy = op.getType().getElementType();
-  st.regs.add(op.getResult(), Tensor(elemTy, move(elems)));
+  st.regs.add(op.getResult(), Tensor(elemTy, move(elems), dims));
 }
 
 template<>
@@ -3230,6 +3246,11 @@ void encodeOp(State &st, mlir::linalg::GenericOp op, bool encodeMemWriteOp) {
       optional<Tensor> t_res;
       auto outputType = op.getOutputOperand(0)->get().getType()
           .cast<mlir::ShapedType>();
+      // Reduction loops returning memref is not supported by MLIR-TV yet.
+      if (outputType.isa<mlir::MemRefType>())
+        throw UnsupportedException(op.getOperation(),
+            "using memref as a reduction loop output is not yet supported");
+      
       encodeReductionLoopBodyAndOutput(newst, block,
             indexingMaps, outputType, t_res, welldefs);
       tvec_res = {*t_res};
