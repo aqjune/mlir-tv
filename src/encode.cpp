@@ -2663,18 +2663,18 @@ void encodeOp(State &st, mlir::memref::CollapseShapeOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
+void encodeOp(State &st, mlir::memref::CopyOp op, bool encodeMemWrite) {
   if (!encodeMemWrite)
     throw UnsupportedException(op.getOperation(),
         "We do not support memory writes in this scope");
-  else if (op.inputPermutation() || op.outputPermutation())
-    // Well, this might be straightforward...
-    throw UnsupportedException(op.getOperation(),
-        "linalg.copy with permutations is not supported");
+  // else if (op.inputPermutation() || op.outputPermutation())
+  //   // Well, this might be straightforward...
+  //   throw UnsupportedException(op.getOperation(),
+  //       "linalg.copy with permutations is not supported");
 
   auto *opr = op.getOperation();
-  auto mrIn = st.regs.get<MemRef>(op.input());
-  auto mrOut = st.regs.get<MemRef>(op.output());
+  auto mrIn = st.regs.get<MemRef>(op.getSource());
+  auto mrOut = st.regs.get<MemRef>(op.getSource());
 
   // Src and tgt's shapes & element types must match
   for (unsigned i = 0; i < mrIn.getRank(); ++i)
@@ -2685,10 +2685,10 @@ void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
   st.wellDefined(opr, mrIn.noalias(mrOut), "src and dst does not alias");
 
   auto loadedTensor = loadTensor(st, op, mrIn,
-      op.input().getType().cast<mlir::MemRefType>());
+      op.getSource().getType().cast<mlir::MemRefType>());
 
   storeTensorTo(st, opr, move(loadedTensor), mrOut,
-      op.output().getType().cast<mlir::MemRefType>(), true);
+      op.getSource().getType().cast<mlir::MemRefType>(), true);
 }
 
 template<>
@@ -3422,7 +3422,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::linalg::DepthwiseConv2DNhwcHwcmOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::Conv2DNchwFchwOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::Conv2DNhwcHwcfOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::linalg::CopyOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::CopyOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::DotOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::FillOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::GenericOp, encodeMemWriteOps);
