@@ -2668,10 +2668,6 @@ void encodeOp(State &st, mlir::memref::CopyOp op, bool encodeMemWrite) {
   if (!encodeMemWrite)
     throw UnsupportedException(op.getOperation(),
         "We do not support memory writes in this scope");
-  // else if (op.inputPermutation() || op.outputPermutation())
-  //   // Well, this might be straightforward...
-  //   throw UnsupportedException(op.getOperation(),
-  //       "linalg.copy with permutations is not supported");
 
   auto *opr = op.getOperation();
   auto mrIn = st.regs.get<MemRef>(op.getSource());
