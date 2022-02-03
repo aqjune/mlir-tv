@@ -818,7 +818,7 @@ void encodeOp(State &st, mlir::ReturnOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::SelectOp op, bool) {
+void encodeOp(State &st, mlir::arith::SelectOp op, bool) {
   auto condTy = op.getCondition().getType();
   auto trueTy = op.getTrueValue().getType();
   auto falseTy = op.getFalseValue().getType();
@@ -3376,7 +3376,7 @@ static void encodeBlock(
 
     // Encode ops. Alphabetically sorted.
     ENCODE(st, op, mlir::AffineApplyOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::SelectOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::SelectOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::ReturnOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::arith::AddFOp, encodeMemWriteOps);
