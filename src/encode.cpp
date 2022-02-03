@@ -1747,7 +1747,7 @@ void encodeOp(State &st, mlir::linalg::MatmulOp op, bool encodeMemWriteOp) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
+void encodeOp(State &st, mlir::tensor::PadOp op, bool) {
   auto retty = op.getType().dyn_cast<mlir::RankedTensorType>();
   if (!retty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
@@ -3429,7 +3429,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::linalg::IndexOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::InitTensorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::MatmulOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::linalg::PadTensorOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tensor::PadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::PoolingNhwcMaxOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::PoolingNhwcSumOp, encodeMemWriteOps);
     

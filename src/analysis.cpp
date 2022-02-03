@@ -292,7 +292,7 @@ bool analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
 }
 
 template<>
-bool analyzeOp(mlir::linalg::PadTensorOp op, AnalysisResult &res) {
+bool analyzeOp(mlir::tensor::PadOp op, AnalysisResult &res) {
   analyzeRegion(op.region(), res);
   return true;
 }
@@ -359,7 +359,7 @@ void analyzeBlock(
 
     // Analyze operations having subregions.
     ANALYZE(op, mlir::linalg::GenericOp, res);
-    ANALYZE(op, mlir::linalg::PadTensorOp, res);
+    ANALYZE(op, mlir::tensor::PadOp, res);
     ANALYZE(op, mlir::tensor::GenerateOp, res);
   }
 }
