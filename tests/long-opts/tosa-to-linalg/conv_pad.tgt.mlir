@@ -4,9 +4,9 @@
 module  {
   func @conv(%arg0: tensor<2x4x4x3xf32>, %arg1: tensor<16x3x6x3xf32>, %arg2: tensor<16xf32>) -> tensor<2x6x9x16xf32> {
     %cst = arith.constant 0.000000e+00 : f32
-    %0 = linalg.pad_tensor %arg0 low[0, 2, 5, 0] high[0, 2, 5, 0]  {
+    %0 = tensor.pad %arg0 low[0, 2, 5, 0] high[0, 2, 5, 0]  {
     ^bb0(%arg3: index, %arg4: index, %arg5: index, %arg6: index):  // no predecessors
-      linalg.yield %cst : f32
+      tensor.yield %cst : f32
     } : tensor<2x4x4x3xf32> to tensor<2x8x14x3xf32>
     %cst_0 = arith.constant dense<[1, 2, 3, 0]> : tensor<4xi64>
     %1 = linalg.init_tensor [3, 6, 3, 16] : tensor<3x6x3x16xf32>

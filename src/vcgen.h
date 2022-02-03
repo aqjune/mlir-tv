@@ -43,4 +43,5 @@ enum class VerificationStep {
   Memory
 };
 
-Results validate(mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt);
+Results validate(mlir::OwningOpRef<mlir::ModuleOp> &src,
+                  mlir::OwningOpRef<mlir::ModuleOp> &tgt);

@@ -9,7 +9,7 @@ Currently MLIR-TV is in an experimental stage.
 ## How to build MLIR-TV
 
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
-[MLIR](https://github.com/llvm/llvm-project) (commit id [b5a0f0f](https://github.com/llvm/llvm-project/commit/b5a0f0f397c778cc7db71754c1b9c939f669568e)),
+[MLIR](https://github.com/llvm/llvm-project),
 [Python3](https://www.python.org/downloads/),  
 Solvers (at least one of them must be used):
 [z3-4.8.13](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.13) ,

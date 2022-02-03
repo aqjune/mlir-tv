@@ -11,9 +11,9 @@ module  {
       %c-127_i32 = arith.constant -127 : i32
       %c126_i32 = arith.constant 126 : i32
       %4 = arith.cmpi slt, %arg1, %c-127_i32 : i32
-      %5 = select %4, %c-127_i32, %arg1 : i32
+      %5 = arith.select %4, %c-127_i32, %arg1 : i32
       %6 = arith.cmpi slt, %c126_i32, %arg1 : i32
-      %7 = select %6, %c126_i32, %5 : i32
+      %7 = arith.select %6, %c126_i32, %5 : i32
       linalg.yield %7 : i32
     } -> tensor<?x?xi32>
     return %3 : tensor<?x?xi32>
@@ -29,9 +29,9 @@ module  {
       %cst = arith.constant 1.000000e+00 : f32
       %cst_0 = arith.constant 2.000000e+00 : f32
       %4 = arith.cmpf olt, %arg1, %cst : f32
-      %5 = select %4, %cst, %arg1 : f32
+      %5 = arith.select %4, %cst, %arg1 : f32
       %6 = arith.cmpf olt, %cst_0, %arg1 : f32
-      %7 = select %6, %cst_0, %5 : f32
+      %7 = arith.select %6, %cst_0, %5 : f32
       linalg.yield %7 : f32
     } -> tensor<?x?xf32>
     return %3 : tensor<?x?xf32>

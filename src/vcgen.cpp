@@ -734,7 +734,8 @@ static vector<mlir::memref::GlobalOp> mergeGlobals(
 }
 
 Results validate(
-    mlir::OwningModuleRef &src, mlir::OwningModuleRef &tgt) {
+    mlir::OwningOpRef<mlir::ModuleOp> &src,
+    mlir::OwningOpRef<mlir::ModuleOp> &tgt) {
   map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
   auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
     auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
