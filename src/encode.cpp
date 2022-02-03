@@ -1348,6 +1348,11 @@ void encodeOp(State &st, mlir::tosa::AvgPool2dOp op, bool) {
   auto paddings = getFromArrayAttr<Index>(op.pad());
   auto strides = getFromArrayAttr<Index>(op.stride());
 
+  if (!input.getElemType().isa<mlir::FloatType>()) {
+    throw UnsupportedException(op.getOperation(),
+          "Unsupported element type");
+  }
+
   for (unsigned i = 0; i < input.getRank(); i ++) {
     uint64_t v;
     if(!paddings[i].isUInt(v))
@@ -1369,6 +1374,11 @@ void encodeOp(State &st, mlir::tosa::MaxPool2dOp op, bool) {
   auto kernelDims = getFromArrayAttr<Index>(op.kernel());
   auto paddings = getFromArrayAttr<Index>(op.pad());
   auto strides = getFromArrayAttr<Index>(op.stride());
+
+  if (!input.getElemType().isa<mlir::FloatType>()) {
+    throw UnsupportedException(op.getOperation(),
+          "Unsupported element type");
+  }
 
   for (unsigned i = 0; i < input.getRank(); i ++) {
     uint64_t v;
@@ -2250,6 +2260,7 @@ void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
   auto input = op.input();   // [N, IC]
   auto weight = op.weight(); // [OC, IC]
   auto bias = op.bias();     // [OC]
+
   if (!input.getType().isa<mlir::RankedTensorType>() ||
       !weight.getType().isa<mlir::RankedTensorType>() ||
       !bias.getType().isa<mlir::RankedTensorType>())
@@ -2258,6 +2269,11 @@ void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
   auto inputTensor = st.regs.get<Tensor>(input);
   auto weightTensor = st.regs.get<Tensor>(weight);
   auto biasTensor = st.regs.get<Tensor>(bias);
+
+  if ((inputTensor.getElemType() != weightTensor.getElemType()) ||
+      (weightTensor.getElemType() != biasTensor.getElemType()))
+      throw UnsupportedException(op.getOperation(),
+        "Operands of different types are unsupported");
 
   st.wellDefined(op, inputTensor.getDim(1) == weightTensor.getDim(1));
   st.wellDefined(op, weightTensor.getDim(0) == biasTensor.getDim(0));
