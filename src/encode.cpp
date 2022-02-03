@@ -2671,7 +2671,7 @@ void encodeOp(State &st, mlir::memref::CopyOp op, bool encodeMemWrite) {
 
   auto *opr = op.getOperation();
   auto mrIn = st.regs.get<MemRef>(op.getSource());
-  auto mrOut = st.regs.get<MemRef>(op.getSource());
+  auto mrOut = st.regs.get<MemRef>(op.getTarget());
 
   // Src and tgt's shapes & element types must match
   for (unsigned i = 0; i < mrIn.getRank(); ++i)
@@ -2685,7 +2685,7 @@ void encodeOp(State &st, mlir::memref::CopyOp op, bool encodeMemWrite) {
       op.getSource().getType().cast<mlir::MemRefType>());
 
   storeTensorTo(st, opr, move(loadedTensor), mrOut,
-      op.getSource().getType().cast<mlir::MemRefType>(), true);
+      op.getTarget().getType().cast<mlir::MemRefType>(), true);
 }
 
 template<>
