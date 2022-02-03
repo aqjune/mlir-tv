@@ -16,6 +16,7 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/AffineMap.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
 
 #include <functional>
@@ -1635,7 +1636,7 @@ void encodeOp(State &st, mlir::tensor::CollapseShapeOp op, bool) {
       for (auto &idx: reassocExprs[i])
         size = size * t.getDim(idx);
 
-      if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
+      if (resTy.getDimSize(i) != mlir::ShapedType::kDynamicSize)
         st.wellDefined(op, size == resTy.getDimSize(i),
             "size check");
       newDims.push_back(move(size));
@@ -1667,7 +1668,7 @@ void encodeOp(State &st, mlir::tensor::ExpandShapeOp op, bool) {
     int unknown_dim = -1;
     int64_t const_size = 1;
     for (auto id: ids) {
-      if (op.getResultType().getDimSize(id) == mlir::TensorType::kDynamicSize) {
+      if (op.getResultType().getDimSize(id) == mlir::ShapedType::kDynamicSize) {
         if (unknown_dim != -1)
           throw UnsupportedException(op.getOperation(),
               "it has more than one unknown dimension size in one group");
@@ -2594,7 +2595,7 @@ void encodeOp(State &st, mlir::memref::ExpandShapeOp op, bool encodeMemWrite) {
     int unknown_dim = -1;
     int64_t const_size = 1;
     for (auto id: ids) {
-      if (op.getResultType().getDimSize(id) == mlir::TensorType::kDynamicSize) {
+      if (op.getResultType().getDimSize(id) == mlir::ShapedType::kDynamicSize) {
         if (unknown_dim != -1)
           throw UnsupportedException(op.getOperation(),
               "it has more than one unknown dimension size in one group");
@@ -2648,7 +2649,7 @@ void encodeOp(State &st, mlir::memref::CollapseShapeOp op, bool) {
       for (auto &idx: reassocExprs[i])
         size = size * m.getDim(idx);
 
-      if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
+      if (resTy.getDimSize(i) != mlir::ShapedType::kDynamicSize)
         st.wellDefined(op, size == resTy.getDimSize(i),
             "size check");
       newDims.push_back(move(size));
