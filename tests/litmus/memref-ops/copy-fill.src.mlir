@@ -7,6 +7,6 @@ func @copy(%m1: memref<10x10xf32>, %m2: memref<10x10xf32>)
   %zerotensor = linalg.fill (%c0, %t): f32, tensor<10x10xf32> -> tensor<10x10xf32>
 
   memref.tensor_store %zerotensor, %m1: memref<10x10xf32>
-  memref.copy m1, m2 : memref<10x10xf32> to memref<10x10xf32>
+  memref.copy %m1, %m2 : memref<10x10xf32> to memref<10x10xf32>
   return
 }
