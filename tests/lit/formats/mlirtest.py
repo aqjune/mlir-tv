@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from operator import or_
 from lit.formats.base import TestFormat
 import lit
 from lit.Test import ResultCode
@@ -122,18 +123,24 @@ class VerifyIncorrectTest(ExitCodeDependentTestBase):
             return lit.Test.XFAIL, ""
 
 class ExpectTest(ExitCodeDependentTestBase):
-    def __init__(self, keywords: List[str]):
+    def __init__(self, keywords: List[str], cond_or: bool = False):
         super().__init__(TestKeyword.EXPECT)
         self.__keywords: list[str] = keywords
+        self.__use_cond_or: bool = cond_or
 
     def _check(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
         for keyword in self.__keywords:
             if keyword in outs or keyword in errs:
-                pass
+                if self.__use_cond_or:
+                    return lit.Test.PASS, ""
             else:
-                return lit.Test.FAIL, f"Expected message >>\n{keyword}\n\nstdout >>\n{outs}\n\nstderr >>\n{errs}"
+                if not self.__use_cond_or:
+                    return lit.Test.FAIL, f"Expected message >>\n{keyword}\n\nstdout >>\n{outs}\n\nstderr >>\n{errs}"
 
-        return lit.Test.PASS, ""
+        if self.__use_cond_or:
+            return lit.Test.FAIL, f"Expected messages >>\n{self.__keywords}\n\nstdout >>\n{outs}\n\nstderr >>\n{errs}"
+        else:
+            return lit.Test.PASS, ""
 
 class SrcTgtPairTest(TestFormat):
     __suffix_src: str = ".src.mlir"
@@ -142,8 +149,9 @@ class SrcTgtPairTest(TestFormat):
     __verify_regex = re.compile(r"^// ?VERIFY$")
     __verify_incorrect_regex = re.compile(r"^// ?VERIFY-INCORRECT$")
     __unsupported_regex = re.compile(r"^// ?UNSUPPORTED$")
-    __expect_regex = re.compile(r"^// ?EXPECT ?: ?\"(.+)\"$")
-    __expect_keyword_regex = re.compile(r"^// ?EXPECT ?: ?\"(.+)\"(?:(?: ?\&\& ?\"(.+)\")*|(?: ?\|\| ?\"(.+)\")*)$")
+    __expect_regex = re.compile(r"^// ?EXPECT ?: ?\"(.+?)\"(?: ?(?:(?:\&\&)|(?:\|\|)) ?\"(.+?)\")*$")
+    __expect_and_regex = re.compile(r"^// ?EXPECT ?: ?\"(.+?)\"(?: ?\&\& ?\"(.+?)\")*$")
+    __expect_or_regex =  re.compile(r"^// ?EXPECT ?: ?\"(.+?)\"(?: ?\|\| ?\"(.+?)\")*$")
     __args_identity_regex = re.compile(r"^// ?ARGS-IDCHECK ?: ?(.+)$")
     __skip_identity_regex = re.compile(r"^// ?SKIP-IDCHECK$")
 
@@ -201,12 +209,21 @@ class SrcTgtPairTest(TestFormat):
                     elif self.__unsupported_regex.match(line):
                         test.update(UnsupportedTest())
                     elif self.__expect_regex.match(line):
-                        if self.__expect_keyword_regex.match(line):
-                            keywords: list[str] = list(self.__expect_keyword_regex.findall(line)[0])
-                            # print(keywords)
-                            test.update(ExpectTest(keywords))
-                        else:
+                        # remove empty matches
+                        discard_empty = lambda x: bool(x) # str -> bool
+                        match = list(filter(discard_empty, self.__expect_regex.findall(line)[0]))
+                        and_match = list(filter(discard_empty, self.__expect_and_regex.findall(line)[0]))
+                        or_match = list(filter(discard_empty, self.__expect_or_regex.findall(line)[0]))
+
+                        if len(match) > len(and_match) and len(match) > len(or_match):
+                            # both && and || are used: this is not yet supported...
                             test.update(InvalidTest())
+                        elif len(or_match) > len(and_match):
+                            # matching against or regex yielded more keywords: test writer intended ||.
+                            test.update(ExpectTest(or_match, True))
+                        else:
+                            # matching against and regex yielded more keywords: test writer intended &&.
+                            test.update(ExpectTest(and_match))
                     elif self.__skip_identity_regex.match(line):
                         idcheck_args.update(None)
                     elif self.__args_identity_regex.match(line):
