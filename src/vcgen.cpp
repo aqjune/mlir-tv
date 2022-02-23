@@ -286,8 +286,8 @@ static pair<CheckResult, int64_t> solve(
   return {result, elapsedMillisec};
 }
 
-static const char *SMT_LOGIC_QF  = "ALL";
-static const char *SMT_LOGIC     = "ALL";
+static const char *SMT_LOGIC_QF  = "QF_AUFBV";
+static const char *SMT_LOGIC     = "AUFBV";
 static const char *SMT_LOGIC_ALL = "ALL";
 
 static Results checkRefinement(
@@ -589,8 +589,10 @@ static Results validate(ValidationInput vinput) {
   };
 
   Results result(Results::Code::TIMEOUT);
-  auto useAllLogic = arg_smt_use_all_logic.getValue();
-  // (abstraction, use ALL logic?)
+  // Use all logic when "smt-use-all-logic" or "use-concrete-fp" is on
+  // since IEEE754 encoding with arrays need ALL logic.
+  auto useAllLogic = arg_smt_use_all_logic.getValue()
+      || use_concrete_fp_encoding.getValue();
   queue<Abstraction> queue;
 
   queue.push({AbsLevelFpDot::FULLY_ABS,
