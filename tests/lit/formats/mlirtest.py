@@ -75,6 +75,9 @@ class ExitCodeDependentTestBase(TestBase):
             # 90~99:   unsupported
             # 100~109: timeout/value mismatch/etc
             return self._check(outs, errs, exit_code)
+        else:
+            # likely segfault
+            return lit.Test.FAIL, f"stdout >>\n{outs}\n\nstderr >>\n{errs}"
 
     @abstractmethod
     def _check(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
