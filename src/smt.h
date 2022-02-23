@@ -308,7 +308,6 @@ private:
   // No need for CVC5
 
 public:
-  void dump();
   Expr eval(const Expr &e, bool modelCompletion = false) const;
   std::vector<Expr> eval(const std::vector<Expr> &exprs, bool modelCompletion = false) const;
 

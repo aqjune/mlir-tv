@@ -1555,10 +1555,6 @@ bool CheckResult::isInconsistent() const {
 
 // ------- Model -------
 
-void Model::dump() {
-  cout << *z3 << "\n";
-}
-
 Expr Model::eval(const Expr &e, bool modelCompletion) const {
   Expr newe;
   SET_Z3(newe, fmap(z3, [modelCompletion, &e](auto &z3model){

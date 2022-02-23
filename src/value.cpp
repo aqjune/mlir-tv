@@ -825,14 +825,8 @@ Tensor Tensor::elementwiseUnaryOp(
   
 
   // UB if uninitialized elem is used
-  auto res = mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
+  return mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
       /* initialized */Expr::mkBool(true));
-
-  // llvm::outs() << "ElemOut: " << elemout << "\n";
-  // llvm::outs() << "Elem(0): " << res.get({Index(0)}).simplify() << "\n";
-  // llvm::outs() << "Elem(1): " << res.get({Index(1)}).simplify() << "\n";
-  // llvm::outs() << "Elem(2): " << res.get({Index(2)}).simplify() << "\n";
-  return res;
 }
 
 Expr Tensor::dot(const Tensor &t2, optional<Expr> &&initValue) const {
