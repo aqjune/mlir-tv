@@ -1591,10 +1591,14 @@ MemRef::Layout MemRef::getLayout(
       mlir::getStridesAndOffset(memRefTy, strides, offset);
   assert(succeeded(success) && "unexpected non-strided memref");
 
-  auto layoutFn = [strides, offset, getConstOrFreshVar](auto &indices) {
-    Expr layout = getConstOrFreshVar(offset, "offset");
-    for (size_t i = 0; i < strides.size(); i ++)
-      layout = layout + getConstOrFreshVar(strides[i], "strides") * indices[i];
+  Expr offsetExpr = getConstOrFreshVar(offset, "offset");
+  vector<Expr> stridesExpr;
+  for (size_t i = 0; i < strides.size(); i ++)
+    stridesExpr.push_back(getConstOrFreshVar(strides[i], "strides"));
+  auto layoutFn = [stridesExpr, offsetExpr](auto &indices) {
+    Expr layout = offsetExpr;
+    for (size_t i = 0; i < stridesExpr.size(); i ++)
+      layout = layout + stridesExpr[i] * indices[i];
     return layout;
   };
   return MemRef::Layout(Index::boundIndexVars(strides.size()),

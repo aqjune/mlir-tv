@@ -3,9 +3,9 @@
 module  {
   func @depthwise2(%arg0: tensor<2x5x5x2xf32>, %arg1: tensor<2x2x2x3xf32>, %arg2: tensor<6xf32>) -> tensor<2x6x6x6xf32> {
     %cst = arith.constant 0.000000e+00 : f32
-    %0 = linalg.pad_tensor %arg0 low[0, 1, 1, 0] high[0, 1, 1, 0]  {
+    %0 = tensor.pad %arg0 low[0, 1, 1, 0] high[0, 1, 1, 0]  {
     ^bb0(%arg3: index, %arg4: index, %arg5: index, %arg6: index):  // no predecessors
-      linalg.yield %cst : f32
+      tensor.yield %cst : f32
     } : tensor<2x5x5x2xf32> to tensor<2x7x7x2xf32>
     %1 = linalg.init_tensor [2, 6, 6, 2, 3] : tensor<2x6x6x2x3xf32>
     %cst_0 = arith.constant 0.000000e+00 : f32

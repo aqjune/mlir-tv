@@ -12,9 +12,11 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/AffineMap.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
 
 #include <functional>
@@ -155,7 +157,8 @@ static void storeTensorTo(
 
     // Wrote successfully
     st.wellDefined(op, Expr::mkForall(idxs,
-        tInBounds.implies(mInfoAfter.checkWrite(!ubIfReadOnly))));
+        tInBounds.implies(mInfoAfter.checkWrite(!ubIfReadOnly))),
+        "write successful");
 
     // Write preconditions that relates the arrays before/after writes.
     // A precondition for the updated elements
@@ -817,7 +820,7 @@ void encodeOp(State &st, mlir::ReturnOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::SelectOp op, bool) {
+void encodeOp(State &st, mlir::arith::SelectOp op, bool) {
   auto condTy = op.getCondition().getType();
   auto trueTy = op.getTrueValue().getType();
   auto falseTy = op.getFalseValue().getType();
@@ -1347,6 +1350,11 @@ void encodeOp(State &st, mlir::tosa::AvgPool2dOp op, bool) {
   auto paddings = getFromArrayAttr<Index>(op.pad());
   auto strides = getFromArrayAttr<Index>(op.stride());
 
+  if (!input.getElemType().isa<mlir::FloatType>()) {
+    throw UnsupportedException(op.getOperation(),
+          "Unsupported element type");
+  }
+
   for (unsigned i = 0; i < input.getRank(); i ++) {
     uint64_t v;
     if(!paddings[i].isUInt(v))
@@ -1368,6 +1376,11 @@ void encodeOp(State &st, mlir::tosa::MaxPool2dOp op, bool) {
   auto kernelDims = getFromArrayAttr<Index>(op.kernel());
   auto paddings = getFromArrayAttr<Index>(op.pad());
   auto strides = getFromArrayAttr<Index>(op.stride());
+
+  if (!input.getElemType().isa<mlir::FloatType>()) {
+    throw UnsupportedException(op.getOperation(),
+          "Unsupported element type");
+  }
 
   for (unsigned i = 0; i < input.getRank(); i ++) {
     uint64_t v;
@@ -1633,7 +1646,7 @@ void encodeOp(State &st, mlir::tensor::CollapseShapeOp op, bool) {
       for (auto &idx: reassocExprs[i])
         size = size * t.getDim(idx);
 
-      if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
+      if (resTy.getDimSize(i) != mlir::ShapedType::kDynamicSize)
         st.wellDefined(op, size == resTy.getDimSize(i),
             "size check");
       newDims.push_back(move(size));
@@ -1665,7 +1678,7 @@ void encodeOp(State &st, mlir::tensor::ExpandShapeOp op, bool) {
     int unknown_dim = -1;
     int64_t const_size = 1;
     for (auto id: ids) {
-      if (op.getResultType().getDimSize(id) == mlir::TensorType::kDynamicSize) {
+      if (op.getResultType().getDimSize(id) == mlir::ShapedType::kDynamicSize) {
         if (unknown_dim != -1)
           throw UnsupportedException(op.getOperation(),
               "it has more than one unknown dimension size in one group");
@@ -1745,7 +1758,7 @@ void encodeOp(State &st, mlir::linalg::MatmulOp op, bool encodeMemWriteOp) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
+void encodeOp(State &st, mlir::tensor::PadOp op, bool) {
   auto retty = op.getType().dyn_cast<mlir::RankedTensorType>();
   if (!retty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
@@ -2249,6 +2262,7 @@ void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
   auto input = op.input();   // [N, IC]
   auto weight = op.weight(); // [OC, IC]
   auto bias = op.bias();     // [OC]
+
   if (!input.getType().isa<mlir::RankedTensorType>() ||
       !weight.getType().isa<mlir::RankedTensorType>() ||
       !bias.getType().isa<mlir::RankedTensorType>())
@@ -2257,6 +2271,11 @@ void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
   auto inputTensor = st.regs.get<Tensor>(input);
   auto weightTensor = st.regs.get<Tensor>(weight);
   auto biasTensor = st.regs.get<Tensor>(bias);
+
+  if ((inputTensor.getElemType() != weightTensor.getElemType()) ||
+      (weightTensor.getElemType() != biasTensor.getElemType()))
+      throw UnsupportedException(op.getOperation(),
+        "Operands of different types are unsupported");
 
   st.wellDefined(op, inputTensor.getDim(1) == weightTensor.getDim(1));
   st.wellDefined(op, weightTensor.getDim(0) == biasTensor.getDim(0));
@@ -2592,7 +2611,7 @@ void encodeOp(State &st, mlir::memref::ExpandShapeOp op, bool encodeMemWrite) {
     int unknown_dim = -1;
     int64_t const_size = 1;
     for (auto id: ids) {
-      if (op.getResultType().getDimSize(id) == mlir::TensorType::kDynamicSize) {
+      if (op.getResultType().getDimSize(id) == mlir::ShapedType::kDynamicSize) {
         if (unknown_dim != -1)
           throw UnsupportedException(op.getOperation(),
               "it has more than one unknown dimension size in one group");
@@ -2646,7 +2665,7 @@ void encodeOp(State &st, mlir::memref::CollapseShapeOp op, bool) {
       for (auto &idx: reassocExprs[i])
         size = size * m.getDim(idx);
 
-      if (resTy.getDimSize(i) != mlir::TensorType::kDynamicSize)
+      if (resTy.getDimSize(i) != mlir::ShapedType::kDynamicSize)
         st.wellDefined(op, size == resTy.getDimSize(i),
             "size check");
       newDims.push_back(move(size));
@@ -2661,18 +2680,14 @@ void encodeOp(State &st, mlir::memref::CollapseShapeOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
+void encodeOp(State &st, mlir::memref::CopyOp op, bool encodeMemWrite) {
   if (!encodeMemWrite)
     throw UnsupportedException(op.getOperation(),
         "We do not support memory writes in this scope");
-  else if (op.inputPermutation() || op.outputPermutation())
-    // Well, this might be straightforward...
-    throw UnsupportedException(op.getOperation(),
-        "linalg.copy with permutations is not supported");
 
   auto *opr = op.getOperation();
-  auto mrIn = st.regs.get<MemRef>(op.input());
-  auto mrOut = st.regs.get<MemRef>(op.output());
+  auto mrIn = st.regs.get<MemRef>(op.getSource());
+  auto mrOut = st.regs.get<MemRef>(op.getTarget());
 
   // Src and tgt's shapes & element types must match
   for (unsigned i = 0; i < mrIn.getRank(); ++i)
@@ -2683,10 +2698,10 @@ void encodeOp(State &st, mlir::linalg::CopyOp op, bool encodeMemWrite) {
   st.wellDefined(opr, mrIn.noalias(mrOut), "src and dst does not alias");
 
   auto loadedTensor = loadTensor(st, op, mrIn,
-      op.input().getType().cast<mlir::MemRefType>());
+      op.getSource().getType().cast<mlir::MemRefType>());
 
   storeTensorTo(st, opr, move(loadedTensor), mrOut,
-      op.output().getType().cast<mlir::MemRefType>(), true);
+      op.getTarget().getType().cast<mlir::MemRefType>(), true);
 }
 
 template<>
@@ -3375,7 +3390,7 @@ static void encodeBlock(
 
     // Encode ops. Alphabetically sorted.
     ENCODE(st, op, mlir::AffineApplyOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::SelectOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::SelectOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::ReturnOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::arith::AddFOp, encodeMemWriteOps);
@@ -3420,14 +3435,14 @@ static void encodeBlock(
     ENCODE(st, op, mlir::linalg::DepthwiseConv2DNhwcHwcmOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::Conv2DNchwFchwOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::Conv2DNhwcHwcfOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::linalg::CopyOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::memref::CopyOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::DotOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::FillOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::GenericOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::IndexOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::InitTensorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::MatmulOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::linalg::PadTensorOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::tensor::PadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::PoolingNhwcMaxOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::PoolingNhwcSumOp, encodeMemWriteOps);
     
