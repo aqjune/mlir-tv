@@ -1497,6 +1497,10 @@ optional<Expr> AbsFpEncoding::getPrecisionBits(const smt::Expr &f) const {
 Expr getFpConstantPrecondition() {
   Expr cond = Expr::mkBool(true);
 
+  // We do not need any preconditions for IEEE754 encoding.
+  if (useIEEE754Encoding)
+    return cond;
+
   if (floatEnc) {
     cond &= floatEnc->getFpConstantPrecondition();
   }
