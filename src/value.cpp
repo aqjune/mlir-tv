@@ -138,9 +138,9 @@ Index Index::eval(Model m) const {
 
 optional<Sort> Float::sort(mlir::Type t) {
   if (t.isF32()) {
-    return Sort::fp32IEEE754Sort();
+    return aop::getFloatEncoding().sort();
   } else if (t.isF64()) {
-    return Sort::fp64IEEE754Sort();
+    return aop::getDoubleEncoding().sort();
   }
   return nullopt;
 }
@@ -148,11 +148,7 @@ optional<Sort> Float::sort(mlir::Type t) {
 Float Float::constant(const llvm::APFloat &apf, mlir::Type ty) {
   assert(sort(ty) != nullopt);
 
-  if (ty.isF32())
-    return {Expr::mkFpaVal(apf.convertToFloat()), ty};
-  else
-    return {Expr::mkFpaVal(apf.convertToDouble()), ty};
-  // return {aop::getFpEncoding(ty).constant(apf), ty};
+  return {aop::getFpEncoding(ty).constant(apf), ty};
 }
 
 Float Float::one(mlir::Type t) {
@@ -177,8 +173,7 @@ Float Float::exp(const Float &x) {
 }
 
 Sort Float::sortFloat32() {
-  return Sort::fp32IEEE754Sort();
-  // return aop::getFloatEncoding().sort();
+  return aop::getFloatEncoding().sort();
 }
 
 Float Float::var(string &&name, mlir::Type ty, VarType varty) {
