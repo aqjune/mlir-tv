@@ -65,6 +65,7 @@ void setAbstraction(Abstraction abs,
                     bool isFpAddAssociative,
                     bool unrollIntSum,
                     bool noArithProperties,
+                    bool useConcreteFPEncoding,
                     unsigned unrollFpSumBound,
                     unsigned floatNonConstsCnt,
                     std::set<llvm::APFloat> floatConsts,
@@ -115,6 +116,8 @@ private:
   unsigned fp_bitwidth;
   unsigned value_bitwidth;
 
+  bool useIEEE754Encoding;
+
   // Bits for casting.
   struct ValueBitInfo {
     unsigned limit_bitwidth;
@@ -156,28 +159,38 @@ private:
 private:
   AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned smaller_value_bw, unsigned prec_bw,
+      bool useIEEE754Encoding,
       std::string &&fn_suffix);
 
 public:
   AbsFpEncoding(const llvm::fltSemantics &semantics, unsigned value_bw,
+      bool useIEEE754Encoding,
       std::string &&fn_suffix)
-      : AbsFpEncoding(semantics, 0u, value_bw, 0u, std::move(fn_suffix)) {}
+      : AbsFpEncoding(semantics, 0u, value_bw, 0u,
+                      useIEEE754Encoding, std::move(fn_suffix)) {}
   // Use smaller_fpty_enc's value_bv_bits to calculate this type's value_bv_bits
   AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned prec_bw, AbsFpEncoding* smaller_fpty_enc,
+      bool useIEEE754Encoding,
       std::string &&fn_suffix)
       : AbsFpEncoding(semantics, limit_bw, smaller_fpty_enc->value_bitwidth,
-        prec_bw, std::move(fn_suffix)) {}
+        prec_bw, useIEEE754Encoding, std::move(fn_suffix)) {}
   // Copying this object badly interacts with how CVC5 treats the term objects.
   AbsFpEncoding(const AbsFpEncoding &) = delete;
 
-  bool isFloat() const {
-    return fn_suffix == "float";
-  }
-
   smt::Sort sort() const {
-    return isFloat() ? smt::Sort::fp32IEEE754Sort() : smt::Sort::fp64IEEE754Sort();
-    // return smt::Sort::bvSort(fp_bitwidth);
+    if (useIEEE754Encoding) {
+      switch (llvm::APFloat::SemanticsToEnum(semantics)) {
+      case llvm::APFloat::Semantics::S_IEEEsingle:
+        return smt::Sort::fp32IEEE754Sort();
+      case llvm::APFloat::Semantics::S_IEEEdouble:
+        return smt::Sort::fp64IEEE754Sort();
+      default:
+        llvm_unreachable("Unsupported type");
+      }
+    } else {
+      return smt::Sort::bvSort(fp_bitwidth);
+    }
   }
 
 private:

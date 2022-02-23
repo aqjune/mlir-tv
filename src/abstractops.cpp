@@ -24,6 +24,7 @@ aop::Abstraction abstraction;
 bool isFpAddAssociative;
 bool doUnrollIntSum;
 bool hasArithProperties;
+bool useConcreteFP;
 unsigned maxUnrollFpSumBound;
 
 optional<aop::AbsFpEncoding> floatEnc;
@@ -122,6 +123,7 @@ void setAbstraction(
     bool addAssoc,
     bool unrollIntSum,
     bool noArithProperties,
+    bool useConcreteFPEncoding,
     unsigned unrollFpSumBound,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
     bool floatHasInfOrNaN,
@@ -131,6 +133,7 @@ void setAbstraction(
   doUnrollIntSum = unrollIntSum;
   maxUnrollFpSumBound = unrollFpSumBound;
   hasArithProperties = !noArithProperties;
+  useConcreteFP = useConcreteFPEncoding;
   isFpAddAssociative = addAssoc;
 
   assert(!addAssoc ||
@@ -159,7 +162,8 @@ void setAbstraction(
   // Should not exceed 31 (limited by real-life float)
   unsigned floatBits =
       min((uint64_t) 31, log2_ceil(floatNonConstsCnt + floatConsts.size() + 2));
-  floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
+  floatEnc.emplace(llvm::APFloat::IEEEsingle(),
+      floatBits, useConcreteFP, "float");
   floatEnc->addConstants(floatConsts);
 
   if (abstraction.fpCast == AbsLevelFpCast::PRECISE) {
@@ -221,14 +225,15 @@ void setAbstraction(
     const unsigned doubleLimitBits = min(min_limit_bitwidth,
                                           32u - doublePrecBits);
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
-        doublePrecBits, &*floatEnc, "double");
+        doublePrecBits, &*floatEnc, useConcreteFP, "double");
   } else {
     // doubleBits must be at least as large as floatBits, to represent all
     // float constants in double.
     const unsigned doubleBits = 
         max(log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2),
             (uint64_t)floatBits);
-    doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
+    doubleEnc.emplace(llvm::APFloat::IEEEdouble(),
+        doubleBits, useConcreteFP, "double");
   }
   doubleEnc->addConstants(doubleConsts);
 }
@@ -257,8 +262,10 @@ AbsFpEncoding &getFpEncoding(mlir::Type ty) {
 
 AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned smaller_value_bw, unsigned prec_bw,
-       std::string &&fnsuffix)
-     :semantics(semantics), fn_suffix(move(fnsuffix)) {
+      bool useIEEE754Encoding,
+      std::string &&fnsuffix)
+     :semantics(semantics), fn_suffix(move(fnsuffix)),
+      useIEEE754Encoding(useIEEE754Encoding) {
   assert(smaller_value_bw > 0);
   verbose("AbsFpEncoding") << fn_suffix << ": limit bits: " << limit_bw
       << ", smaller value bits: " << smaller_value_bw << ", precision bits: "
@@ -533,13 +540,18 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
 }
 
 Expr AbsFpEncoding::constant(const llvm::APFloat &f) const {
-  if (isFloat())
-    return Expr::mkFpaVal(f.convertToFloat());
-  else 
-    return Expr::mkFpaVal(f.convertToDouble());
+  if (useIEEE754Encoding) {
+    switch (llvm::APFloat::SemanticsToEnum(semantics)) {
+    case llvm::APFloat::Semantics::S_IEEEsingle:
+      return Expr::mkFpaVal(f.convertToFloat());
+    case llvm::APFloat::Semantics::S_IEEEdouble:
+      return Expr::mkFpaVal(f.convertToDouble());
+    default:
+      llvm_unreachable("Unsupported type");
+    }
+  }
 
-  // return (Expr)Float::constant(f, ty);
-
+  // Use abstract encoding
   if (f.isNaN())
     return *fpconst_nan;
   else if (f.isInfinity())

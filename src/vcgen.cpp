@@ -74,6 +74,11 @@ llvm::cl::opt<bool> arg_multiset("multiset",
   llvm::cl::init(false),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<bool> use_concrete_fp_encoding("use-concrete-fp",
+  llvm::cl::desc("Use concrete IEEE 754 floating point encoding."),
+  llvm::cl::init(false), llvm::cl::Hidden,
+  llvm::cl::cat(MlirTvCategory));
+
 llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
   llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"),
   llvm::cl::cat(MlirTvCategory));
@@ -518,6 +523,7 @@ static void checkIsSrcAlwaysUB(
       vinput.isFpAddAssociative,
       vinput.unrollIntSum,
       no_arith_properties.getValue(),
+      use_concrete_fp_encoding.getValue(),
       arg_unroll_fp_sum_bound.getValue(),
       vinput.f32NonConstsCount, vinput.f32Consts, vinput.f32HasInfOrNaN,
       vinput.f64NonConstsCount, vinput.f64Consts, vinput.f64HasInfOrNaN);
@@ -612,6 +618,7 @@ static Results validate(ValidationInput vinput) {
         vinput.isFpAddAssociative,
         vinput.unrollIntSum,
         no_arith_properties.getValue(),
+        use_concrete_fp_encoding.getValue(),
         arg_unroll_fp_sum_bound.getValue(),
         vinput.f32NonConstsCount, vinput.f32Consts, vinput.f32HasInfOrNaN,
         vinput.f64NonConstsCount, vinput.f64Consts, vinput.f64HasInfOrNaN);
