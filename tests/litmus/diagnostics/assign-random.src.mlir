@@ -1,6 +1,6 @@
 // ARGS: -assign-random-to-unsupported-ops
 // EXPECT: "Assigning any value to this op (linalg.batch_matvec).."
-// SKIP-IDENTITY-CHECKS
+// SKIP-IDCHECK
 
 func @f(%ta: tensor<?x?x?xf32>, %tb: tensor<?x?x?xf32>, %tc: tensor<?x?x?xf32>,
 		%tv: tensor<?x?xf32>, %tv2: tensor<?x?xf32>) {

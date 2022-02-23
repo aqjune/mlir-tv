@@ -17,7 +17,7 @@ Use suffix `-bad` for `// VERIFY-INCORRECT` test cases
 `// EXPECT "<message>"` : check if the stdout/stderr includes the provided message  
 
 ## Test options
-`// SKIP-IDENTITY-CHECKS` : skip identity checks for `src.mlir` and `tgt.mlir`
+`// SKIP-IDCHECK` : skip identity checks for `src.mlir` and `tgt.mlir`
 
 ## Writing keywords and options
 All `src.mlir` must start with test keyword or test option. They must include one and only test keyword, and may include one or more test options.   
