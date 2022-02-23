@@ -22,7 +22,7 @@ Use suffix `-bad` for `// VERIFY-INCORRECT` test cases
 ## Test options
 `// ARGS: <arg>[( <arg>)+]` : Pass given arguments to `mlir-tv` for given test, except for identity checks.  
 `// SKIP-IDCHECK` : Skip identity checks for given test. **Cannot be used with `ARGS-IDCHECK`!**  
-`// ARGS-IDCHECK` : Pass given arguments to `mlir-tv` when running identity checks for given test. **Cannot be used with `SKIP-IDCHECK`!**
+`// ARGS-IDCHECK: <arg>[( <arg>)+]` : Pass given arguments to `mlir-tv` when running identity checks for given test. **Cannot be used with `SKIP-IDCHECK`!**
 
 ## Writing keywords and options
 All `src.mlir` must start with test keyword or test option. They must include one and only test keyword, and may include one or more test options.   
