@@ -809,7 +809,6 @@ Tensor Tensor::elementwiseBinOp(
 
   auto idxvar = Index::var("idx_binop", VarType::BOUND);
   Expr elemout = f(getRaw(idxvar), b.getRaw(idxvar));
-  // assert(elemout.sort().isBV());
 
   // UB if uninitialized elem is used
   return mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
@@ -820,7 +819,6 @@ Tensor Tensor::elementwiseUnaryOp(
     mlir::Type resultElemType, const function<Expr(Expr &&)> &f) const {
   auto idxvar = Index::var("idx_binop", VarType::BOUND);
   Expr elemout = f(getRaw(idxvar));
-  // assert(elemout.sort().isBV());
 
   
 
