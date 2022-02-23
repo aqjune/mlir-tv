@@ -1,5 +1,5 @@
 // EXPECT: "Return value mismatch"
-// NO-IDENTITY
+// SKIP-IDENTITY-CHECKS
 
 func @f() -> tensor<?xf32> {
 	%c10 = arith.constant 10: index

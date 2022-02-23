@@ -137,7 +137,7 @@ class SrcTgtPairTest(TestFormat):
     __verify_incorrect_regex = re.compile(r"^// ?VERIFY-INCORRECT$")
     __unsupported_regex = re.compile(r"^// ?UNSUPPORTED$")
     __expect_regex = re.compile(r"^// ?EXPECT ?: ?\"(.*)\"$")
-    __no_identity_regex = re.compile(r"^// ?NO-IDENTITY$")
+    __no_identity_regex = re.compile(r"^// ?SKIP-IDENTITY-CHECKS$")
 
     def __init__(self, dir_tv: str, pass_name: str) -> None:
         self._dir_tv: str = dir_tv
