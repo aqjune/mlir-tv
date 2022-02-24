@@ -190,20 +190,23 @@ Float Float::var(string &&name, mlir::Type ty, VarType varty) {
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float &f) {
   Expr e = f;
-  os << e.simplify();
-  // auto vec = aop::getFpEncoding(f.type).possibleConsts(e);
-  // if (!vec.empty()) {
-  //   llvm::SmallVector<char, 16> str;
-  //   vec[0].toString(str);
-  //   os << str;
-  //   for (unsigned i = 1; i < vec.size(); ++i) {
-  //     str.clear();
-  //     vec[i].toString(str);
-  //     os << " or " << str;
-  //   }
-  // } else {
-  //   os << "unknown (" << or_omit((Expr)f) << ")";
-  // }
+  if (e.sort().isFPASort()) {
+    os << e.simplify();
+  } else {
+    auto vec = aop::getFpEncoding(f.type).possibleConsts(e);
+    if (!vec.empty()) {
+      llvm::SmallVector<char, 16> str;
+      vec[0].toString(str);
+      os << str;
+      for (unsigned i = 1; i < vec.size(); ++i) {
+        str.clear();
+        vec[i].toString(str);
+        os << " or " << str;
+      }
+    } else {
+      os << "unknown (" << or_omit((Expr)f) << ")";
+    }
+  }
   return os;
 };
 
@@ -813,8 +816,6 @@ Tensor Tensor::elementwiseUnaryOp(
     mlir::Type resultElemType, const function<Expr(Expr &&)> &f) const {
   auto idxvar = Index::var("idx_binop", VarType::BOUND);
   Expr elemout = f(getRaw(idxvar));
-
-  
 
   // UB if uninitialized elem is used
   return mkLambdaFrom1D(resultElemType, getDims(), idxvar, elemout,
