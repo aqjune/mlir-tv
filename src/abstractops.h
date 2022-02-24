@@ -214,11 +214,11 @@ private:
 public:
   void addConstants(const std::set<llvm::APFloat>& const_set);
   smt::Expr constant(const llvm::APFloat &f) const;
-  smt::Expr zero(bool isNegative = false, bool isFpaValue = true) const;
-  smt::Expr one(bool isNegative = false, bool isFpaValue = true) const;
-  smt::Expr infinity(bool isNegative = false, bool isFpaValue = true) const;
+  smt::Expr zero(bool isNegative = false) const;
+  smt::Expr one(bool isNegative = false) const;
+  smt::Expr infinity(bool isNegative = false) const;
   smt::Expr nan() const;
-  smt::Expr largest(bool isNegative = false, bool isFpaValue = true) const;
+  smt::Expr largest(bool isNegative = false) const;
 
   std::vector<std::pair<llvm::APFloat, smt::Expr>> getAllConstants() const;
   void evalConsts(smt::Model model);

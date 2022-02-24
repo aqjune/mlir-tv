@@ -659,43 +659,28 @@ vector<llvm::APFloat> AbsFpEncoding::possibleConsts(const Expr &e) const {
   return vec;
 }
 
-Expr AbsFpEncoding::zero(bool isNegative, bool isFpaValue) const {
-  if (isFpaValue)
-    return Expr::mkFpaVal(
-      llvm::APFloat::getZero(semantics, isNegative).convertToFloat());
-  else
-    return constant(llvm::APFloat::getZero(semantics, isNegative));
+Expr AbsFpEncoding::zero(bool isNegative) const {
+  return constant(llvm::APFloat::getZero(semantics, isNegative));
 }
 
-Expr AbsFpEncoding::one(bool isNegative, bool isFpaValue) const {
+Expr AbsFpEncoding::one(bool isNegative) const {
   llvm::APFloat apf(semantics, 1);
   if (isNegative)
     apf.changeSign();
 
-  if (isFpaValue)
-    return Expr::mkFpaVal(apf.convertToFloat());
-  else
-    return constant(apf);
+  return constant(apf);
 }
 
-Expr AbsFpEncoding::infinity(bool isNegative, bool isFpaValue) const {
-  if (isFpaValue)
-    return Expr::mkFpaVal(
-      llvm::APFloat::getInf(semantics, isNegative).convertToFloat());
-  else
-    return constant(llvm::APFloat::getInf(semantics, isNegative));
+Expr AbsFpEncoding::infinity(bool isNegative) const {
+  return constant(llvm::APFloat::getInf(semantics, isNegative));
 }
 
 Expr AbsFpEncoding::nan() const {
   return constant(llvm::APFloat::getNaN(semantics));
 }
 
-Expr AbsFpEncoding::largest(bool isNegative, bool isFpaValue) const {
-  if (isFpaValue)
-    return Expr::mkFpaVal(
-      llvm::APFloat::getLargest(semantics, isNegative).convertToFloat());
-  else
-    return constant(llvm::APFloat::getLargest(semantics, isNegative));
+Expr AbsFpEncoding::largest(bool isNegative) const {
+  return constant(llvm::APFloat::getLargest(semantics, isNegative));
 }
 
 Expr AbsFpEncoding::isnan(const Expr &f) {
@@ -1404,6 +1389,10 @@ Expr AbsFpEncoding::getFpConstantPrecondition() {
     // FP is never used.
     return precond;
 
+  // We do not need any preconditions for IEEE754 encoding.
+  if (useIEEE754Encoding)
+    return precond;
+
   auto prev_fp = llvm::APFloat::getLargest(semantics, true);
   // both largest() and infinity() are hardcoded value,
   // so we don't have to explicitly encode the relationship between them
@@ -1496,10 +1485,6 @@ optional<Expr> AbsFpEncoding::getPrecisionBits(const smt::Expr &f) const {
 
 Expr getFpConstantPrecondition() {
   Expr cond = Expr::mkBool(true);
-
-  // We do not need any preconditions for IEEE754 encoding.
-  if (useIEEE754Encoding)
-    return cond;
 
   if (floatEnc) {
     cond &= floatEnc->getFpConstantPrecondition();
