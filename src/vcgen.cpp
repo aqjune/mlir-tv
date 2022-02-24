@@ -356,7 +356,6 @@ static Results checkRefinement(
       auto not_refines =
         (st_src.isWellDefined() & st_tgt.isWellDefined() & !refines)
         .simplify();
-
       auto res = solve(s, precond & not_refines, vinput.dumpSMTPath,
                       fnname + ".2.retval." + to_string(i));
       elapsedMillisec += res.second;

@@ -667,7 +667,6 @@ Expr AbsFpEncoding::one(bool isNegative) const {
   llvm::APFloat apf(semantics, 1);
   if (isNegative)
     apf.changeSign();
-
   return constant(apf);
 }
 
@@ -697,19 +696,23 @@ Expr AbsFpEncoding::iszero(const Expr &f, bool isNegative) {
 }
 
 Expr AbsFpEncoding::abs(const Expr &f) {
-  return f.abs();
-  // return Expr::mkBV(0, 1).concat(getMagnitudeBits(f));
+  if (useIEEE754Encoding)
+    return f.abs();
+
+  return Expr::mkBV(0, 1).concat(getMagnitudeBits(f));
 }
 
 Expr AbsFpEncoding::neg(const Expr &f) {
-  return -f;
-  // auto sign = getSignBit(f);
-  // auto sign_negated = sign ^ 1;
-  // return sign_negated.concat(getMagnitudeBits(f));
+  if (useIEEE754Encoding)
+    return -f;
+
+  auto sign = getSignBit(f);
+  auto sign_negated = sign ^ 1;
+  return sign_negated.concat(getMagnitudeBits(f));
 }
 
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
-  return _f1 + _f2;
+  usedOps.fpAdd = true;
 
   if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY) {
     auto i = Index::var("idx", VarType::BOUND);
@@ -718,7 +721,8 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     return sum(lambda, n, {{_f1, _f2}});
   }
 
-  usedOps.fpAdd = true;
+  if (useIEEE754Encoding)
+    return _f1 + _f2;
 
   if (!hasArithProperties)
     return getAddFn().apply({_f1, _f2});
@@ -776,8 +780,10 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
 }
 
 Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
-  return _f1 * _f2;
   usedOps.fpMul = true;
+
+  if (useIEEE754Encoding)
+    return _f1 * _f2;
 
   if (!hasArithProperties)
     return getMulFn().apply({_f1, _f2});
@@ -846,8 +852,10 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
 }
 
 Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
-  return _f1 / _f2;
   usedOps.fpDiv = true;
+
+  if (useIEEE754Encoding)
+    return _f1 / _f2;
 
   if (!hasArithProperties)
     return getDivFn().apply({_f1, _f2});
