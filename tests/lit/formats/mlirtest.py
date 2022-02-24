@@ -156,18 +156,18 @@ class ExpectTest(ExitCodeDependentTestBase):
 class SrcTgtPairTest(TestFormat):
     _suffix_src: str = ".src.mlir"
     _suffix_tgt: str = ".tgt.mlir"
-    _args_regex = re.compile(r"^// ?ARGS ?: ?(.+)$")
-    _verify_regex = re.compile(r"^// ?VERIFY$")
-    _verify_incorrect_regex = re.compile(r"^// ?VERIFY-INCORRECT$")
-    _unsupported_regex = re.compile(r"^// ?UNSUPPORTED$")
+    _args_regex = re.compile(r"^// *ARGS ?: ?(.+)$")
+    _verify_regex = re.compile(r"^// *VERIFY$")
+    _verify_incorrect_regex = re.compile(r"^// *VERIFY-INCORRECT$")
+    _unsupported_regex = re.compile(r"^// *UNSUPPORTED$")
     _expect_regex = re.compile(
-        r"^// ?EXPECT ?: ?\"(.+?)\"(?: ?(?:(?:\&\&)|(?:\|\|)) ?\"(.+?)\")*$")
+        r"^// *EXPECT ?: ?\"(.+?)\"(?: ?(?:(?:\&\&)|(?:\|\|)) ?\"(.+?)\")*$")
     _expect_and_regex = re.compile(
-        r"^// ?EXPECT ?: ?\"(.+?)\"(?: ?\&\& ?\"(.+?)\")*$")
+        r"^// *EXPECT ?: ?\"(.+?)\"(?: ?\&\& ?\"(.+?)\")*$")
     _expect_or_regex = re.compile(
-        r"^// ?EXPECT ?: ?\"(.+?)\"(?: ?\|\| ?\"(.+?)\")*$")
-    _args_identity_regex = re.compile(r"^// ?ARGS-IDCHECK ?: ?(.+)$")
-    _skip_identity_regex = re.compile(r"^// ?SKIP-IDCHECK$")
+        r"^// *EXPECT ?: ?\"(.+?)\"(?: ?\|\| ?\"(.+?)\")*$")
+    _args_identity_regex = re.compile(r"^// *ARGS-IDCHECK ?: ?(.+)$")
+    _skip_identity_regex = re.compile(r"^// *SKIP-IDCHECK$")
 
     def __init__(self, dir_tv: str, pass_name: str) -> None:
         self._dir_tv: str = dir_tv
