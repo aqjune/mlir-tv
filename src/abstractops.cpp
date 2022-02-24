@@ -683,6 +683,8 @@ Expr AbsFpEncoding::largest(bool isNegative) const {
 }
 
 Expr AbsFpEncoding::isnan(const Expr &f) {
+  if (useIEEE754Encoding)
+    return f.isNaN();
   // Modulo the sign bit, there is only one NaN representation in abs encoding.
   return getMagnitudeBits(f) == getMagnitudeBits(nan());
 }
@@ -934,10 +936,9 @@ Expr AbsFpEncoding::lambdaSum(const smt::Expr &a, const smt::Expr &n) {
 
   auto i = Index::var("idx", VarType::BOUND);
   Expr ai = a.select(i);
-  Expr result = getSumFn()(Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n), ai, zero(true))));
-  // Expr result = getSumFn()(
-  //     Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
-  //       Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
+  Expr result = getSumFn()(
+      Expr::mkLambda(i, Expr::mkIte(((Expr)i).ult(n),
+        Expr::mkIte(isnan(ai), nan(), ai), zero(true))));
 
   uint64_t len;
   if (getFpAddAssociativity() && n.isUInt(len))
@@ -1057,15 +1058,20 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b,
 
     Expr ai = a.select(i), bi = b.select(i);
     Expr identity = zero(true);
-    // Encode commutativity: dot(a, b) = dot(b, a)
     Expr arr1 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity));
     Expr arr2 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity));
 
-    return getDotFn().apply({initValue.value_or(identity), arr1, arr2});
+    // Encode commutativity: dot(a, b) = dot(b, a)
+    Expr lhs = getDotFn().apply({initValue.value_or(identity), arr1, arr2});
+    Expr rhs = getDotFn().apply({initValue.value_or(identity), arr2, arr1});
 
-    // return getDotFn().apply({initValue.value_or(identity), arr1, arr2}) &
-    //   getDotFn().apply({initValue.value_or(identity), arr2, arr1});
-
+    if (useIEEE754Encoding) {
+      // Use addition to encode commutative ops
+      return Expr::mkIte(arr1 == arr2, lhs, lhs + rhs);
+    } else {
+      // Use bitwise AND to encode commutative ops
+      return lhs & rhs;
+    }
   } else if (abstraction.fpDot == AbsLevelFpDot::SUM_MUL) {
     // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
     auto i = (Expr)Index::var("idx", VarType::BOUND);
