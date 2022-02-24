@@ -1,5 +1,4 @@
 from enum import Enum, auto
-from operator import or_
 from lit.formats.base import TestFormat
 import lit
 from lit.Test import ResultCode
