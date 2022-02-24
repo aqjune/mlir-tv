@@ -11,13 +11,18 @@ Also, each test case should form a pair of `.src.mlir` and `.tgt.mlir`.
 Use suffix `-bad` for `// VERIFY-INCORRECT` test cases
 
 ## Test keywords
-`// VERIFY` : check if the transformation is correct  
-`// VERIFY-INCORRECT` : check if the transformation is indeed wrong  
-`// UNSUPPORTED` : ignore test case that includes **yet** unimplemented dialects  
-`// EXPECT "<message>"` : check if the stdout/stderr includes the provided message  
+`// VERIFY` : Check if the transformation is correct  
+`// VERIFY-INCORRECT` : Check if the transformation is indeed wrong  
+`// UNSUPPORTED` : Ignore test case that includes **yet** unimplemented dialects  
+`// EXPECT: "<message>"[ ((&& "message")+|(|| "message")+)]` : Check if the stdout/stderr includes the provided message(s).
+* If messages are delimited by &&, the test passes iff every message is included
+* If messages are delimited by ||, the test passes if at least one of them is included.
+* **Using both && and || is not allowed.**
 
 ## Test options
-`// NO-IDENTITY` : skip identity checks for `src.mlir` and `tgt.mlir`
+`// ARGS: <arg>[( <arg>)+]` : Pass given arguments to `mlir-tv` for given test, except for identity checks.  
+`// SKIP-IDCHECK` : Skip identity checks for given test. **Cannot be used with `ARGS-IDCHECK`!**  
+`// ARGS-IDCHECK: <arg>[( <arg>)+]` : Pass given arguments to `mlir-tv` when running identity checks for given test. **Cannot be used with `SKIP-IDCHECK`!**
 
 ## Writing keywords and options
 All `src.mlir` must start with test keyword or test option. They must include one and only test keyword, and may include one or more test options.   

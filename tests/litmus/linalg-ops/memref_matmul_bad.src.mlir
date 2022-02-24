@@ -1,5 +1,5 @@
 // EXPECT: "Source is more defined than target"
-// NO-IDENTITY
+// SKIP-IDCHECK
 // Source is more defined because %c have to point writable memory block in src.
 // Pass identity checks since tgt-tgt pair takes too long time.
 

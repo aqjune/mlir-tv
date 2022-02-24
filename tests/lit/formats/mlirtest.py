@@ -3,7 +3,7 @@ from lit.formats.base import TestFormat
 import lit
 from lit.Test import ResultCode
 
-from typing import Tuple
+from typing import Any, List, Optional, Tuple
 from abc import ABC, abstractmethod
 import subprocess
 import os
@@ -35,7 +35,7 @@ def remove_suffix(input_string, suffix):
 
 
 class TestKeyword(Enum):
-    NOTEST = auto()
+    INVALID = auto()
     VERIFY = auto()
     VERIFY_INCORRECT = auto()
     UNSUPPORTED = auto()
@@ -75,6 +75,9 @@ class ExitCodeDependentTestBase(TestBase):
             # 90~99:   unsupported
             # 100~109: timeout/value mismatch/etc
             return self._check(outs, errs, exit_code)
+        else:
+            # likely segfault
+            return lit.Test.FAIL, f"stdout >>\n{outs}\n\nstderr >>\n{errs}"
 
     @abstractmethod
     def _check(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
@@ -84,12 +87,12 @@ class FixedResultTestBase(TestBase):
     def __init__(self, keyword: TestKeyword) -> None:
         super().__init__(keyword)
 
-class NoTest(FixedResultTestBase):
+class InvalidTest(FixedResultTestBase):
     def __init__(self):
-        super().__init__(TestKeyword.NOTEST)
+        super().__init__(TestKeyword.INVALID)
 
     def check_exit_code(self, outs, errs, exit_code) -> Tuple[ResultCode, str]:
-        return lit.Test.UNRESOLVED, ""
+        return lit.Test.UNRESOLVED, "Ill-formed test setup!"
 
 class UnsupportedTest(FixedResultTestBase):
     def __init__(self):
@@ -119,25 +122,37 @@ class VerifyIncorrectTest(ExitCodeDependentTestBase):
             return lit.Test.XFAIL, ""
 
 class ExpectTest(ExitCodeDependentTestBase):
-    def __init__(self, msg: str):
+    def __init__(self, keywords: List[str], cond_or: bool = False):
         super().__init__(TestKeyword.EXPECT)
-        self.__msg: str = msg
+        self.__keywords: list[str] = keywords
+        self.__use_cond_or: bool = cond_or
 
     def _check(self, outs: str, errs: str, exit_code: int) -> Tuple[ResultCode, str]:
-        if self.__msg in outs or self.__msg in errs:
-            return lit.Test.PASS, ""
+        for keyword in self.__keywords:
+            if keyword in outs or keyword in errs:
+                if self.__use_cond_or:
+                    return lit.Test.PASS, ""
+            else:
+                if not self.__use_cond_or:
+                    return lit.Test.FAIL, f"Expected message >>\n{keyword}\n\nstdout >>\n{outs}\n\nstderr >>\n{errs}"
+
+        if self.__use_cond_or:
+            return lit.Test.FAIL, f"Expected messages >>\n{self.__keywords}\n\nstdout >>\n{outs}\n\nstderr >>\n{errs}"
         else:
-            return lit.Test.FAIL, f"Expected message >>\n{self.__msg}\n\nstdout >>\n{outs}\n\nstderr >>\n{errs}"
+            return lit.Test.PASS, ""
 
 class SrcTgtPairTest(TestFormat):
     __suffix_src: str = ".src.mlir"
     __suffix_tgt: str = ".tgt.mlir"
-    __args_regex = re.compile(r"^// ?ARGS ?: ?(.*)$")
+    __args_regex = re.compile(r"^// ?ARGS ?: ?(.+)$")
     __verify_regex = re.compile(r"^// ?VERIFY$")
     __verify_incorrect_regex = re.compile(r"^// ?VERIFY-INCORRECT$")
     __unsupported_regex = re.compile(r"^// ?UNSUPPORTED$")
-    __expect_regex = re.compile(r"^// ?EXPECT ?: ?\"(.*)\"$")
-    __no_identity_regex = re.compile(r"^// ?NO-IDENTITY$")
+    __expect_regex = re.compile(r"^// ?EXPECT ?: ?\"(.+?)\"(?: ?(?:(?:\&\&)|(?:\|\|)) ?\"(.+?)\")*$")
+    __expect_and_regex = re.compile(r"^// ?EXPECT ?: ?\"(.+?)\"(?: ?\&\& ?\"(.+?)\")*$")
+    __expect_or_regex =  re.compile(r"^// ?EXPECT ?: ?\"(.+?)\"(?: ?\|\| ?\"(.+?)\")*$")
+    __args_identity_regex = re.compile(r"^// ?ARGS-IDCHECK ?: ?(.+)$")
+    __skip_identity_regex = re.compile(r"^// ?SKIP-IDCHECK$")
 
     def __init__(self, dir_tv: str, pass_name: str) -> None:
         self._dir_tv: str = dir_tv
@@ -157,44 +172,79 @@ class SrcTgtPairTest(TestFormat):
                 yield lit.Test.Test(testSuite, path_in_suite 
                     + (os.path.join(pass_name, remove_suffix(case_name, self.__suffix_src)),), localConfig)
 
-    def execute(self, test, litConfig) -> Tuple[ResultCode, str]:
-        test = test.getSourcePath()
-        tc_src = test + self.__suffix_src
-        tc_tgt = test + self.__suffix_tgt
+    def execute(self, test_filename, litConfig) -> Tuple[ResultCode, str]:
+        testname = test_filename.getSourcePath()
+        tc_src = testname + self.__suffix_src
+        tc_tgt = testname + self.__suffix_tgt
         if not (os.path.isfile(tc_src) and os.path.isfile(tc_tgt)):
             # src or tgt mlir file is missing
             return lit.Test.SKIPPED, ""
 
-        skip_identity_check: bool = False
-        custom_args: str = []
-        test: TestBase = NoTest()
-        with open(tc_src, 'r') as src_file:
-            for line in src_file.readlines():
-                if self.__verify_regex.match(line):
-                    test = VerifyTest()
-                elif self.__verify_incorrect_regex.match(line):
-                    test = VerifyIncorrectTest()
-                elif self.__unsupported_regex.match(line):
-                    test = UnsupportedTest()
-                    skip_identity_check = True
-                elif self.__expect_regex.match(line):
-                    msg: str = self.__expect_regex.findall(line)[0]
-                    test = ExpectTest(msg)
-                elif self.__no_identity_regex.match(line):
-                    skip_identity_check = True
-                elif self.__args_regex.match(line):
-                    custom_args = self.__args_regex.match(line).group(1).split()
-                elif not line.strip(): # empty line: no more test keyword
-                    break
+        class MutOnce:
+            def __init__(self, data: Any) -> None:
+                self.__data: Any = data
+                self.__mutable: bool = True
 
-        if not skip_identity_check:
-            src_identity: Tuple[ResultCode, str] = VerifyTest().check_exit_code(*_executeCommand(self._dir_tv, tc_src, tc_src))
+            def update(self, data: Any) -> None:
+                if self.__mutable:
+                    self.__data = data
+                    self.__mutable = False
+                else:
+                    raise RuntimeError
+
+            def get(self) -> Any:
+                return self.__data
+
+        idcheck_args = MutOnce([]) # Optional[list[str]]
+        custom_args = MutOnce([]) # list[str]
+        test = MutOnce(InvalidTest()) # TestBase
+        with open(tc_src, 'r') as src_file:
+            try:
+                for line in src_file.readlines():
+                    if self.__verify_regex.match(line):
+                        test.update(VerifyTest())
+                    elif self.__verify_incorrect_regex.match(line):
+                        test.update(VerifyIncorrectTest())
+                    elif self.__unsupported_regex.match(line):
+                        test.update(UnsupportedTest())
+                    elif self.__expect_regex.match(line):
+                        # remove empty matches
+                        discard_empty = lambda x: bool(x) # str -> bool
+                        match = list(filter(discard_empty, self.__expect_regex.findall(line)[0]))
+                        and_match = list(filter(discard_empty, self.__expect_and_regex.findall(line)[0]))
+                        or_match = list(filter(discard_empty, self.__expect_or_regex.findall(line)[0]))
+
+                        if len(match) > len(and_match) and len(match) > len(or_match):
+                            # both && and || are used: this is not yet supported...
+                            test.update(InvalidTest())
+                        elif len(or_match) > len(and_match):
+                            # matching against or regex yielded more keywords: test writer intended ||.
+                            test.update(ExpectTest(or_match, True))
+                        else:
+                            # matching against and regex yielded more keywords: test writer intended &&.
+                            test.update(ExpectTest(and_match))
+                    elif self.__skip_identity_regex.match(line):
+                        idcheck_args.update(None)
+                    elif self.__args_identity_regex.match(line):
+                        keywords: list[str] = list(self.__args_identity_regex.findall(line)[0])
+                        idcheck_args.update(keywords)
+                    elif self.__args_regex.match(line):
+                        custom_args.update(self.__args_regex.match(line).group(1).split())
+                    elif not line.strip(): # empty line: no more test keyword
+                        break
+            except RuntimeError:
+                # invalid test keyword combination
+                # override with InvalidTest
+                test = MutOnce(InvalidTest())
+
+        if not (test.get() == TestKeyword.UNSUPPORTED or test.get() == TestKeyword.INVALID) and idcheck_args.get() is not None:
+            src_identity: Tuple[ResultCode, str] = VerifyTest().check_exit_code(*_executeCommand(self._dir_tv, tc_src, tc_src, idcheck_args.get()))
             if src_identity[0] != lit.Test.PASS:
                 return src_identity
 
-            tgt_identity: Tuple[ResultCode, str] = VerifyTest().check_exit_code(*_executeCommand(self._dir_tv, tc_tgt, tc_tgt))
+            tgt_identity: Tuple[ResultCode, str] = VerifyTest().check_exit_code(*_executeCommand(self._dir_tv, tc_tgt, tc_tgt, idcheck_args.get()))
             if tgt_identity[0] != lit.Test.PASS:
                 return tgt_identity
 
-        return test.check_exit_code(*_executeCommand(
-            self._dir_tv, tc_src, tc_tgt, custom_args))
+        return test.get().check_exit_code(*_executeCommand(
+            self._dir_tv, tc_src, tc_tgt, custom_args.get()))
