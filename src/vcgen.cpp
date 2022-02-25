@@ -74,6 +74,11 @@ llvm::cl::opt<bool> arg_multiset("multiset",
   llvm::cl::init(false),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<bool> use_concrete_fp_encoding("use-concrete-fp",
+  llvm::cl::desc("Use concrete IEEE 754 floating point encoding."),
+  llvm::cl::init(false), llvm::cl::Hidden,
+  llvm::cl::cat(MlirTvCategory));
+
 llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
   llvm::cl::desc("Dump SMT queries to"), llvm::cl::value_desc("path"),
   llvm::cl::cat(MlirTvCategory));
@@ -517,6 +522,7 @@ static void checkIsSrcAlwaysUB(
       vinput.isFpAddAssociative,
       vinput.unrollIntSum,
       no_arith_properties.getValue(),
+      use_concrete_fp_encoding.getValue(),
       arg_unroll_fp_sum_bound.getValue(),
       vinput.f32NonConstsCount, vinput.f32Consts, vinput.f32HasInfOrNaN,
       vinput.f64NonConstsCount, vinput.f64Consts, vinput.f64HasInfOrNaN);
@@ -582,8 +588,10 @@ static Results validate(ValidationInput vinput) {
   };
 
   Results result(Results::Code::TIMEOUT);
-  auto useAllLogic = arg_smt_use_all_logic.getValue();
-  // (abstraction, use ALL logic?)
+  // Use all logic when "smt-use-all-logic" or "use-concrete-fp" is on
+  // since IEEE754 encoding with arrays need ALL logic.
+  auto useAllLogic = arg_smt_use_all_logic.getValue()
+      || use_concrete_fp_encoding.getValue();
   queue<Abstraction> queue;
 
   queue.push({AbsLevelFpDot::FULLY_ABS,
@@ -611,6 +619,7 @@ static Results validate(ValidationInput vinput) {
         vinput.isFpAddAssociative,
         vinput.unrollIntSum,
         no_arith_properties.getValue(),
+        use_concrete_fp_encoding.getValue(),
         arg_unroll_fp_sum_bound.getValue(),
         vinput.f32NonConstsCount, vinput.f32Consts, vinput.f32HasInfOrNaN,
         vinput.f64NonConstsCount, vinput.f64Consts, vinput.f64HasInfOrNaN);

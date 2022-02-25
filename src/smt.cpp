@@ -644,6 +644,14 @@ Expr Expr::sge(const Expr& rhs) const {
   return rhs.sle(*this);
 }
 
+Expr Expr::isNaN() const {
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [](auto &z3){
+    return z3.mk_is_nan();
+  }));
+  return e;
+}
+
 Expr Expr::select(const Expr &idx) const {
   return select(vector{idx});
 }
@@ -772,6 +780,13 @@ Expr Expr::getMSB() const {
   return extract(bw, bw);
 }
 
+Expr Expr::abs() const {
+  CHECK_LOCK();
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [&](auto e) { return z3::abs(e); }));
+  return e;
+}
+
 Expr Expr::extract(unsigned hbit, unsigned lbit) const {
   CHECK_LOCK();
 
@@ -865,7 +880,15 @@ Expr Expr::implies(const Expr &rhs) const {
 }
 
 Expr Expr::isZero() const {
-  return *this == Expr::mkBV(0, sort().bitwidth());
+  if (sort().isFPASort()) {
+    Expr e;
+    SET_Z3(e, fmap(this->z3, [](auto &z3){
+      return z3.mk_is_zero();
+    }));
+    return e;
+  } else {
+    return *this == Expr::mkBV(0, sort().bitwidth());
+  }
 }
 
 Expr Expr::isNonZero() const {
@@ -949,6 +972,13 @@ Expr Expr::operator*(const Expr &rhs) const {
   Expr e;
   SET_Z3_USEOP(e, rhs, operator*);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_MULT);
+  return e;
+}
+
+Expr Expr::operator/(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+  Expr e;
+  SET_Z3_USEOP(e, rhs, operator/);
   return e;
 }
 
@@ -1102,6 +1132,13 @@ Expr Expr::operator~() const {
   return e;
 }
 
+Expr Expr::operator-() const {
+  CHECK_LOCK();
+  Expr e;
+  SET_Z3(e, fmap(this->z3, [&](auto e) { return -e; }));
+  return e;
+}
+
 Expr &Expr::operator&=(const Expr &rhs) {
   CHECK_LOCK2(rhs);
 
@@ -1238,6 +1275,22 @@ Expr Expr::mkBool(const bool val) {
   return e;
 }
 
+Expr Expr::mkFpaVal(const float val) {
+  Expr e;
+  SET_Z3(e, fupdate(sctx.z3, [val](auto &ctx){
+    return ctx.fpa_val(val);
+  }));
+  return e;
+}
+
+Expr Expr::mkFpaVal(const double val) {
+  Expr e;
+  SET_Z3(e, fupdate(sctx.z3, [val](auto &ctx){
+    return ctx.fpa_val(val);
+  }));
+  return e;
+}
+
 Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
   for (auto &v: vars) {
     assert(v.isVar());
@@ -1257,6 +1310,14 @@ Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
     auto cvc5vars = toCVC5TermVector(vars);
     auto vlist = solver.mkTerm(cvc5::api::BOUND_VAR_LIST, cvc5vars);
     return solver.mkTerm(cvc5::api::FORALL, vlist, cvc5body);
+  }));
+  return e;
+}
+
+Expr Expr::mkExists(const vector<Expr> &vars, const Expr &body) {
+  Expr e;
+  SET_Z3(e, fmap(body.z3, [&](auto &z3body){
+    return z3::exists(toZ3ExprVector(vars), z3body);
   }));
   return e;
 }
@@ -1380,6 +1441,12 @@ Sort Sort::getArrayDomain() const {
   return s;
 }
 
+bool Sort::isFPASort() const {
+  optional<bool> res;
+  IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->is_fpa()));
+  return *res;
+}
+
 bool Sort::isBV() const {
   optional<bool> res;
   IF_Z3_ENABLED(if(z3) writeOrCheck(res, z3->is_bv()));
@@ -1447,6 +1514,18 @@ Sort Sort::arraySort(const Sort &domain, const Sort &range) {
         return ctx.mkArraySort(domcvc5, *range.cvc5);
     }
   ));
+  return s;
+}
+
+Sort Sort::fp32IEEE754Sort() {
+  Sort s;
+  SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(8, 24); })); // f32
+  return s;
+}
+
+Sort Sort::fp64IEEE754Sort() {
+  Sort s;
+  SET_Z3(s, fupdate(sctx.z3, [](auto &ctx){ return ctx.fpa_sort(11, 53); })); // f64
   return s;
 }
 
@@ -1596,7 +1675,6 @@ Model Solver::getModel() const {
   SET_Z3(m, fmap(z3, [](auto &solver) { return solver.get_model(); }));
   return m;
 }
-
 
 
 void useZ3() { IF_Z3_ENABLED(sctx.useZ3()); }
