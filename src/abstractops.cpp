@@ -24,6 +24,7 @@ aop::Abstraction abstraction;
 bool isFpAddAssociative;
 bool doUnrollIntSum;
 bool hasArithProperties;
+bool useConcreteFP;
 unsigned maxUnrollFpSumBound;
 
 optional<aop::AbsFpEncoding> floatEnc;
@@ -122,6 +123,7 @@ void setAbstraction(
     bool addAssoc,
     bool unrollIntSum,
     bool noArithProperties,
+    bool useConcreteFPEncoding,
     unsigned unrollFpSumBound,
     unsigned floatNonConstsCnt, set<llvm::APFloat> floatConsts,
     bool floatHasInfOrNaN,
@@ -131,6 +133,7 @@ void setAbstraction(
   doUnrollIntSum = unrollIntSum;
   maxUnrollFpSumBound = unrollFpSumBound;
   hasArithProperties = !noArithProperties;
+  useConcreteFP = useConcreteFPEncoding;
   isFpAddAssociative = addAssoc;
 
   assert(!addAssoc ||
@@ -159,7 +162,8 @@ void setAbstraction(
   // Should not exceed 31 (limited by real-life float)
   unsigned floatBits =
       min((uint64_t) 31, log2_ceil(floatNonConstsCnt + floatConsts.size() + 2));
-  floatEnc.emplace(llvm::APFloat::IEEEsingle(), floatBits, "float");
+  floatEnc.emplace(llvm::APFloat::IEEEsingle(),
+      floatBits, useConcreteFP, "float");
   floatEnc->addConstants(floatConsts);
 
   if (abstraction.fpCast == AbsLevelFpCast::PRECISE) {
@@ -221,14 +225,15 @@ void setAbstraction(
     const unsigned doubleLimitBits = min(min_limit_bitwidth,
                                           32u - doublePrecBits);
     doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleLimitBits,
-        doublePrecBits, &*floatEnc, "double");
+        doublePrecBits, &*floatEnc, useConcreteFP, "double");
   } else {
     // doubleBits must be at least as large as floatBits, to represent all
     // float constants in double.
     const unsigned doubleBits = 
         max(log2_ceil(doubleNonConstsCnt + doubleConsts.size() + 2),
             (uint64_t)floatBits);
-    doubleEnc.emplace(llvm::APFloat::IEEEdouble(), doubleBits, "double");
+    doubleEnc.emplace(llvm::APFloat::IEEEdouble(),
+        doubleBits, useConcreteFP, "double");
   }
   doubleEnc->addConstants(doubleConsts);
 }
@@ -257,8 +262,10 @@ AbsFpEncoding &getFpEncoding(mlir::Type ty) {
 
 AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned smaller_value_bw, unsigned prec_bw,
-       std::string &&fnsuffix)
-     :semantics(semantics), fn_suffix(move(fnsuffix)) {
+      bool useIEEE754Encoding,
+      std::string &&fnsuffix)
+     :semantics(semantics), fn_suffix(move(fnsuffix)),
+      useIEEE754Encoding(useIEEE754Encoding) {
   assert(smaller_value_bw > 0);
   verbose("AbsFpEncoding") << fn_suffix << ": limit bits: " << limit_bw
       << ", smaller value bits: " << smaller_value_bw << ", precision bits: "
@@ -533,6 +540,18 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
 }
 
 Expr AbsFpEncoding::constant(const llvm::APFloat &f) const {
+  if (useIEEE754Encoding) {
+    switch (llvm::APFloat::SemanticsToEnum(semantics)) {
+    case llvm::APFloat::Semantics::S_IEEEsingle:
+      return Expr::mkFpaVal(f.convertToFloat());
+    case llvm::APFloat::Semantics::S_IEEEdouble:
+      return Expr::mkFpaVal(f.convertToDouble());
+    default:
+      llvm_unreachable("Unsupported type");
+    }
+  }
+
+  // Use abstract encoding
   if (f.isNaN())
     return *fpconst_nan;
   else if (f.isInfinity())
@@ -664,6 +683,8 @@ Expr AbsFpEncoding::largest(bool isNegative) const {
 }
 
 Expr AbsFpEncoding::isnan(const Expr &f) {
+  if (useIEEE754Encoding)
+    return f.isNaN();
   // Modulo the sign bit, there is only one NaN representation in abs encoding.
   return getMagnitudeBits(f) == getMagnitudeBits(nan());
 }
@@ -677,16 +698,24 @@ Expr AbsFpEncoding::iszero(const Expr &f, bool isNegative) {
 }
 
 Expr AbsFpEncoding::abs(const Expr &f) {
+  if (useIEEE754Encoding)
+    return f.abs();
+
   return Expr::mkBV(0, 1).concat(getMagnitudeBits(f));
 }
 
 Expr AbsFpEncoding::neg(const Expr &f) {
+  if (useIEEE754Encoding)
+    return -f;
+
   auto sign = getSignBit(f);
   auto sign_negated = sign ^ 1;
   return sign_negated.concat(getMagnitudeBits(f));
 }
 
 Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
+  usedOps.fpAdd = true;
+
   if (abstraction.fpAddSumEncoding == AbsFpAddSumEncoding::USE_SUM_ONLY) {
     auto i = Index::var("idx", VarType::BOUND);
     auto lambda = Expr::mkLambda(i, Expr::mkIte(i == Index::zero(), _f1, _f2));
@@ -694,7 +723,8 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     return sum(lambda, n, {{_f1, _f2}});
   }
 
-  usedOps.fpAdd = true;
+  if (useIEEE754Encoding)
+    return _f1 + _f2;
 
   if (!hasArithProperties)
     return getAddFn().apply({_f1, _f2});
@@ -753,6 +783,9 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
 
 Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
   usedOps.fpMul = true;
+
+  if (useIEEE754Encoding)
+    return _f1 * _f2;
 
   if (!hasArithProperties)
     return getMulFn().apply({_f1, _f2});
@@ -822,6 +855,9 @@ Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
 
 Expr AbsFpEncoding::div(const Expr &_f1, const Expr &_f2) {
   usedOps.fpDiv = true;
+
+  if (useIEEE754Encoding)
+    return _f1 / _f2;
 
   if (!hasArithProperties)
     return getDivFn().apply({_f1, _f2});
@@ -1022,13 +1058,20 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b,
 
     Expr ai = a.select(i), bi = b.select(i);
     Expr identity = zero(true);
-    // Encode commutativity: dot(a, b) = dot(b, a)
     Expr arr1 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), ai, identity));
     Expr arr2 = Expr::mkLambda(i, Expr::mkIte(i.ult(n), bi, identity));
 
-    return getDotFn().apply({initValue.value_or(identity), arr1, arr2}) &
-      getDotFn().apply({initValue.value_or(identity), arr2, arr1});
+    // Encode commutativity: dot(a, b) = dot(b, a)
+    Expr lhs = getDotFn().apply({initValue.value_or(identity), arr1, arr2});
+    Expr rhs = getDotFn().apply({initValue.value_or(identity), arr2, arr1});
 
+    if (useIEEE754Encoding) {
+      // Use addition to encode commutative ops
+      return Expr::mkIte(arr1 == arr2, lhs, lhs + rhs);
+    } else {
+      // Use bitwise AND to encode commutative ops
+      return lhs & rhs;
+    }
   } else if (abstraction.fpDot == AbsLevelFpDot::SUM_MUL) {
     // usedOps.fpMul/fpSum will be updated by the fpMul()/fpSum() calls below
     auto i = (Expr)Index::var("idx", VarType::BOUND);
@@ -1358,6 +1401,10 @@ Expr AbsFpEncoding::getFpConstantPrecondition() {
   Expr precond = Expr::mkBool(true);
   if (!floatEnc && !doubleEnc)
     // FP is never used.
+    return precond;
+
+  // We do not need any preconditions for IEEE754 encoding.
+  if (useIEEE754Encoding)
     return precond;
 
   auto prev_fp = llvm::APFloat::getLargest(semantics, true);
