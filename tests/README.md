@@ -1,10 +1,12 @@
 # Before you add new test cases...
 
 ## Directory name convention
-### `<transformation-pass-name>`
-ex) `fold-tensor-extract-op`
+### Opts: `<transformation-pass-name>`
+ex) `opts/fold-tensor-extract-op`
+### Litmus: `<feature-category-name>`
+ex) `litmus/fp-ops`
 
-## Naming convention
+## File name convention
 ### `<case_name>[-bad].(src|tgt).mlir`
 ex) `nhwc_filter.src.mlir`, `const_tensor.tgt.mlir`, `i32-bad.src.mlir`.  
 Also, each test case should form a pair of `.src.mlir` and `.tgt.mlir`.  
@@ -13,7 +15,7 @@ Use suffix `-bad` for `// VERIFY-INCORRECT` test cases
 ## Test keywords
 `// VERIFY` : Check if the transformation is correct  
 `// VERIFY-INCORRECT` : Check if the transformation is indeed wrong  
-`// UNSUPPORTED` : Ignore test case that includes **yet** unimplemented dialects  
+`// UNSUPPORTED` : Use to ignore the test case that includes **yet** unimplemented dialects  
 `// EXPECT: "<message>"[ ((&& "message")+|(|| "message")+)]` : Check if the stdout/stderr includes the provided message(s).
 * If messages are delimited by &&, the test passes iff every message is included
 * If messages are delimited by ||, the test passes if at least one of them is included.
