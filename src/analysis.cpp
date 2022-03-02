@@ -333,6 +333,16 @@ void analyzeBlock(
       analyzeVariable(result, res, VarAnalysisConfig::op(canCreateNewFp));
     }
 
+    // GenericOp accepts memref argument as input & output
+    // and newly created FPs can be stored to output memref.
+    if (auto op2 = mlir::dyn_cast<mlir::linalg::GenericOp>(op)) {
+      if (op2.hasBufferSemantics()) {
+        for (const auto &operand: op2.outputs()) {
+          analyzeVariable(operand, res, VarAnalysisConfig::operand());
+        }
+      }
+    }
+
     // Check whether op has reductions such as summation, etc
     if (mlir::isa<mlir::linalg::DotOp>(op) ||
         mlir::isa<mlir::linalg::MatmulOp>(op) ||
