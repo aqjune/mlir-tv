@@ -954,8 +954,8 @@ void encodeOp(State &st, mlir::tosa::ClampOp op, bool) {
   auto unaryFn = [elemTy, &op](smt::Expr &&elem0) -> smt::Expr {
     // In TOSA 0.23:
     // apply_clip := apply_min(apply_max(value, minval), maxval)
-    // apply_max: (a >= b) ? a : b
-    // apply_min: (a < b)  ? a : b
+    // apply_max: (a >= b) ? a : b, NaN if either a or b is NaN (TOSA 0.23, Sec.1.9)
+    // apply_min: (a < b)  ? a : b, NaN if either a or b is NaN (TOSA 0.23, Sec.1.9) 
 
     if (elemTy.isa<mlir::IntegerType>()) {
       Integer minval(op.min_int(), elemTy.getIntOrFloatBitWidth());
@@ -971,11 +971,8 @@ void encodeOp(State &st, mlir::tosa::ClampOp op, bool) {
       Float elem(elem0, elemTy);
       auto olt = mlir::arith::CmpFPredicate::OLT;
       auto one = Expr::mkBV(1, 1);
-      // NOTE: strictly speaking, this isn't
-      // apply_min(apply_max(value, minval), maxval) because the results are
-      // different if value is NaN!
-      // But the definition makes validation of tosa-to-linalg lowering fail.
-      // Needs a discussion about this.
+      // To make clamp return NaN on NaN inputs, the first cmp predicate is
+      // reversed.
       Expr e1 = Float(Expr::mkIte(
           (Expr)elem.cmp(olt, minval) == one, minval, elem), elemTy);
       Expr e2 = Float(Expr::mkIte(
