@@ -36,7 +36,7 @@ public:
 
 class ValidationInput {
 public:
-  mlir::FuncOp src, tgt;
+  mlir::func::FuncOp src, tgt;
   string dumpSMTPath;
 
   TypeMap<size_t> numBlocksPerType;
@@ -147,7 +147,7 @@ llvm::cl::opt<string> arg_verify_fn_name("compare-fn-name",
   llvm::cl::cat(MlirTvCategory));
 
 static optional<string> checkFunctionSignatures(
-    mlir::FuncOp src, mlir::FuncOp tgt) {
+    mlir::func::FuncOp src, mlir::func::FuncOp tgt) {
   if (src.getNumArguments() != tgt.getNumArguments())
     return "The source and target program have different number of arguments.";
 
@@ -167,7 +167,7 @@ static optional<string> checkFunctionSignatures(
 }
 
 static State createInputState(
-    mlir::FuncOp fn, std::unique_ptr<Memory> &&initMem,
+    mlir::func::FuncOp fn, std::unique_ptr<Memory> &&initMem,
     ArgInfo &args, vector<Expr> &preconds) {
   State s(move(initMem));
   unsigned n = fn.getNumArguments();
@@ -294,8 +294,8 @@ static Results checkRefinement(
     const ValidationInput &vinput,
     const State &st_src, const State &st_tgt, Expr &&precond,
     bool useAllLogic, int64_t &elapsedMillisec) {
-  mlir::FuncOp src = vinput.src;
-  mlir::FuncOp tgt = vinput.tgt;
+  mlir::func::FuncOp src = vinput.src;
+  mlir::func::FuncOp tgt = vinput.tgt;
   auto fnname = src.getName().str();
 
   auto printErrorMsg = [&](Solver &s, CheckResult res, const char *msg,
@@ -433,7 +433,7 @@ static void printUnsupported(const UnsupportedException &ue) {
 static State encodeFinalState(
     const ValidationInput &vinput, unique_ptr<Memory> &&initMem,
     bool printOps, bool issrc, ArgInfo &args, vector<Expr> &preconds) {
-  mlir::FuncOp fn = issrc ? vinput.src : vinput.tgt;
+  mlir::func::FuncOp fn = issrc ? vinput.src : vinput.tgt;
 
   State st = createInputState(fn, move(initMem), args, preconds);
 
@@ -504,7 +504,7 @@ static Results tryValidation(
 static void checkIsSrcAlwaysUB(
     const ValidationInput &vinput, bool wasSuccess, bool useAllLogic,
     int64_t &elapsedMillisec) {
-  mlir::FuncOp src = vinput.src;
+  mlir::func::FuncOp src = vinput.src;
   string fnname = src.getName().str();
 
   // Set the abstract level to be as concrete as possible because we may not
@@ -745,9 +745,10 @@ static vector<mlir::memref::GlobalOp> mergeGlobals(
 Results validate(
     mlir::OwningOpRef<mlir::ModuleOp> &src,
     mlir::OwningOpRef<mlir::ModuleOp> &tgt) {
-  map<llvm::StringRef, mlir::FuncOp> srcfns, tgtfns;
-  auto fillFns = [](map<llvm::StringRef, mlir::FuncOp> &m, mlir::Operation &op) {
-    auto fnop = mlir::dyn_cast<mlir::FuncOp>(op);
+  map<llvm::StringRef, mlir::func::FuncOp> srcfns, tgtfns;
+  auto fillFns = [](map<llvm::StringRef, mlir::func::FuncOp> &m,
+                    mlir::Operation &op) {
+    auto fnop = mlir::dyn_cast<mlir::func::FuncOp>(op);
     if (fnop && !fnop.isDeclaration()) {
       m[fnop.getName()] = fnop;
     }

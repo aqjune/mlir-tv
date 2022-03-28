@@ -7,12 +7,12 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/AffineMap.h"
@@ -814,12 +814,6 @@ void encodeOp(State &st, mlir::AffineApplyOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::ReturnOp op, bool) {
-  for (unsigned i = 0; i < op.getNumOperands(); ++i)
-    st.retValues.push_back(st.regs.findOrCrash(op.getOperand(i)));
-}
-
-template<>
 void encodeOp(State &st, mlir::arith::SelectOp op, bool) {
   auto condTy = op.getCondition().getType();
   auto trueTy = op.getTrueValue().getType();
@@ -886,6 +880,12 @@ void encodeOp(State &st, mlir::arith::SelectOp op, bool) {
     auto isTrue = (Expr)condValue == Integer::boolTrue();
     st.regs.add(op, Expr::mkIte(isTrue, trueValue, falseValue), op.getType());
   }
+}
+
+template<>
+void encodeOp(State &st, mlir::func::ReturnOp op, bool) {
+  for (unsigned i = 0; i < op.getNumOperands(); ++i)
+    st.retValues.push_back(st.regs.findOrCrash(op.getOperand(i)));
 }
 
 template<>
@@ -3388,7 +3388,6 @@ static void encodeBlock(
     // Encode ops. Alphabetically sorted.
     ENCODE(st, op, mlir::AffineApplyOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SelectOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::ReturnOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::arith::AddFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::AddIOp, encodeMemWriteOps);
@@ -3413,6 +3412,8 @@ static void encodeBlock(
     ENCODE(st, op, mlir::bufferization::CloneOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::bufferization::ToMemrefOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::bufferization::ToTensorOp, encodeMemWriteOps);
+
+    ENCODE(st, op, mlir::func::ReturnOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::math::ExpOp, encodeMemWriteOps);
@@ -3495,7 +3496,7 @@ static void encodeBlock(
     llvm::outs() << "\n";
 }
 
-void encode(State &st, mlir::FuncOp &fn, bool printOps) {
+void encode(State &st, mlir::func::FuncOp &fn, bool printOps) {
   auto &region = fn.getRegion();
   if (!llvm::hasSingleElement(region))
     throw UnsupportedException(

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "utils.h"
@@ -29,4 +30,4 @@ struct AnalysisResult {
   bool isElementwiseFPOps = true;
 };
 
-AnalysisResult analyze(mlir::FuncOp &fn);
+AnalysisResult analyze(mlir::func::FuncOp &fn);
