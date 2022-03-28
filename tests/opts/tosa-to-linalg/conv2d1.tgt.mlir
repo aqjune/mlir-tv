@@ -13,7 +13,7 @@ module  {
     } -> tensor<2x2x2x1xf32>
     %3 = linalg.init_tensor [1, 1, 1, 1] : tensor<1x1x1x1xf32>
     %cst_1 = arith.constant 0.000000e+00 : f32
-    %4 = linalg.fill(%cst_1, %3) : f32, tensor<1x1x1x1xf32> -> tensor<1x1x1x1xf32> 
+    %4 = linalg.fill ins(%cst_1: f32) outs(%3: tensor<1x1x1x1xf32>) -> tensor<1x1x1x1xf32> 
     %5 = linalg.init_tensor [1, 1, 1, 1] : tensor<1x1x1x1xf32>
     %6 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%arg0, %2 : tensor<1x2x2x2xf32>, tensor<2x2x2x1xf32>) outs(%4 : tensor<1x1x1x1xf32>) -> tensor<1x1x1x1xf32>
     %7 = linalg.generic {indexing_maps = [#map2, #map1, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%0, %6 : tensor<1xf32>, tensor<1x1x1x1xf32>) outs(%5 : tensor<1x1x1x1xf32>) {

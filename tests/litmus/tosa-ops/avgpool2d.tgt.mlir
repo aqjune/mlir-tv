@@ -2,7 +2,7 @@
 func @avgpool(%arg0: tensor<1x13x13x1001xf32>) -> tensor<1x1x1x1001xf32> {
   %cst_194 = arith.constant 0.000000e+00 : f32
   %373 = linalg.init_tensor [1, 1, 1, 1001] : tensor<1x1x1x1001xf32>
-  %374 = linalg.fill(%cst_194, %373) : f32, tensor<1x1x1x1001xf32> -> tensor<1x1x1x1001xf32>
+  %374 = linalg.fill ins(%cst_194: f32) outs(%373: tensor<1x1x1x1001xf32>) -> tensor<1x1x1x1001xf32>
   %375 = linalg.init_tensor [13, 13] : tensor<13x13xf32>
   %376 = linalg.pooling_nhwc_sum {dilations = dense<1> : vector<2xi64>, strides = dense<1> : vector<2xi64>} ins(%arg0, %375 : tensor<1x13x13x1001xf32>, tensor<13x13xf32>) outs(%374 : tensor<1x1x1x1001xf32>) -> tensor<1x1x1x1001xf32>
   %377 = linalg.init_tensor [1, 1, 1, 1001] : tensor<1x1x1x1001xf32>
