@@ -12,7 +12,7 @@ option(USE_LIBC "Use libc++ in case the MLIR (and CVC5) is linked against libc++
 set(MLIR_INC_DIR "${MLIR_DIR}/include")
 set(MLIR_LIB_DIR "${MLIR_DIR}/lib")
 set(Z3_INC_DIR "${Z3_DIR}/include")
-set(Z3_LIB_DIR "${Z3_DIR}/bin")
+set(Z3_LIB_DIR "${Z3_DIR}/lib")
 set(CVC5_INC_DIR "${CVC5_DIR}/include")
 set(CVC5_LIB_DIR "${CVC5_DIR}/lib")
 
