@@ -1,7 +1,7 @@
 func @f(%a: tensor<100xf32>, %b: tensor<100xf32>) -> tensor<f32> {
   %outty = linalg.init_tensor [] : tensor<f32>
   %zero = arith.constant -0.0 : f32
-  %filled = linalg.fill(%zero, %outty) : f32, tensor<f32> -> tensor<f32>
+  %filled = linalg.fill ins(%zero: f32) outs(%outty: tensor<f32>) -> tensor<f32>
   %result = linalg.generic {
       indexing_maps = [affine_map<(d0) -> (d0)>,
                        affine_map<(d0) -> (d0)>,
