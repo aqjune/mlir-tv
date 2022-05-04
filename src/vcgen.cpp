@@ -91,7 +91,7 @@ llvm::cl::opt<bool> arg_smt_use_all_logic("smt-use-all-logic",
 llvm::cl::opt<unsigned> fp_bits("fp-bits",
   llvm::cl::desc("The number of bits for the abstract representation of "
                  "non-constant float and double values."),
-  llvm::cl::init(0), llvm::cl::value_desc("number"),
+  llvm::cl::init(31), llvm::cl::value_desc("number"),
   llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<unsigned int> num_memblocks("num-memory-blocks",
