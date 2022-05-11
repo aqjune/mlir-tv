@@ -764,21 +764,23 @@ Expr AbsFpEncoding::add(const Expr &_f1, const Expr &_f2) {
     // If both operands do not fall into any of the cases above,
     // use fp_add for abstract representation.
     // 
-    // There are two cases where we must override the sign bit of fp_add.
+    // The sign bit of fp_add should be overrided.
     // If signbit(f1) == 0 /\ signbit(f2) == 0, signbit(fpAdd(f1, f2)) = 0.
     // If signbit(f1) == 1 /\ signbit(f2) == 1, signbit(fpAdd(f1, f2)) = 1.
-    // Otherwise, we can just use the arbitrary sign yielded from fp_add.
-    Expr::mkIte(((getSignBit(f1) == bv_false) & (getSignBit(f2) == bv_false)),
-      // pos + pos -> pos
-      bv_false.concat(fp_add_value),
-    Expr::mkIte(((getSignBit(f1) == bv_true) & (getSignBit(f2) == bv_true)),
-      // neg + neg -> neg
-      bv_true.concat(fp_add_value),
+    // Otherwise, follow the sign of value with greater magnitude
+    Expr::mkIte(getSignBit(f1) == getSignBit(f2),
+      // pos + pos -> pos, neg + neg -> neg
+      getSignBit(f1).concat(fp_add_value),
     Expr::mkIte(getMagnitudeBits(f1) == getMagnitudeBits(f2),
       // x + -x -> 0.0
       zero(),
-      fp_add_res
-  ))))))))));
+      // |f1| > |f2| -> sign(f1 + f2) == sign(f1)
+      // |f1| < |f2| -> sign(f1 + f2) == sign(f2)
+      Expr::mkIte(getMagnitudeBits(f1).ugt(getMagnitudeBits(f2)),
+        getSignBit(f1),
+        getSignBit(f2)
+      ).concat(fp_add_value)
+  )))))))));
 }
 
 Expr AbsFpEncoding::mul(const Expr &_f1, const Expr &_f2) {
