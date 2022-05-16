@@ -40,7 +40,7 @@ llvm::cl::opt<string> filename_tgt(llvm::cl::Positional,
 
 llvm::cl::opt<unsigned> arg_smt_to("smt-to",
   llvm::cl::desc("Timeout for SMT queries (default=30000)"),
-  llvm::cl::init(30000), llvm::cl::value_desc("ms"),
+  llvm::cl::init(60000), llvm::cl::value_desc("ms"),
   llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<smt::SolverType> arg_solver("solver",

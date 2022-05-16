@@ -76,7 +76,7 @@ llvm::cl::opt<bool> arg_multiset("multiset",
 
 llvm::cl::opt<bool> use_concrete_fp_encoding("use-concrete-fp",
   llvm::cl::desc("Use concrete IEEE 754 floating point encoding."),
-  llvm::cl::init(false), llvm::cl::Hidden,
+  llvm::cl::init(true), llvm::cl::Hidden,
   llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<string> arg_dump_smt_to("dump-smt-to",
