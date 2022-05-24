@@ -501,6 +501,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         // Do not change smaller_value and increment prec bit.
         auto itr = prec_offset_map.insert({value_id, 1}).first;
         uint64_t prec = itr->second;
+        (void)prec;
         assert(prec < (1ull << value_bit_info.prec_bitwidth));
 
         auto prec_bits = mkNonzero(Expr::mkFreshVar(
