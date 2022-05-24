@@ -4,6 +4,7 @@
 #include "utils.h"
 
 #include "mlir/IR/Matchers.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 
 #include <type_traits>
