@@ -1,6 +1,6 @@
 // VERIFY
 
-func @sum(%x: tensor<1xf32>) -> f32
+func.func @sum(%x: tensor<1xf32>) -> f32
 {
   %zero = arith.constant -0.0 : f32
   %i = linalg.init_tensor [] : tensor<f32>

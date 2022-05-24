@@ -1,6 +1,6 @@
 // VERIFY
 
-func @f() -> tensor<2x2xi32> {
+func.func @f() -> tensor<2x2xi32> {
   %t1 = "tosa.const"() {value = dense<[[1, 2], [3, 4]]> : tensor<2x2xi32>} : () -> tensor<2x2xi32>
   %t2 = "tosa.const"() {value = dense<[[-1, -1], [-1, -1]]> : tensor<2x2xi32>} : () -> tensor<2x2xi32>
   %rt = "tosa.bitwise_or"(%t1, %t2) : (tensor<2x2xi32>, tensor<2x2xi32>) -> tensor<2x2xi32>

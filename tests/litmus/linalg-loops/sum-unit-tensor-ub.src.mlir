@@ -1,6 +1,6 @@
 // EXPECT: "correct (source is always undefined)"
 
- func @sum(%x: tensor<1xf32>) -> f32
+func.func @sum(%x: tensor<1xf32>) -> f32
  {
    %outty = linalg.init_tensor [] : tensor<f32>
    %result = linalg.generic {

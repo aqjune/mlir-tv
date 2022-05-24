@@ -8,7 +8,7 @@
 // Given the flag, mlir-tv checks the equality between two input arguments of
 // dot based on multiset theroy (to be precise, the argument of 'sum').
 
-func @f() -> (f32, f32) {
+func.func @f() -> (f32, f32) {
   %c0 = arith.constant 0 : index
   %i = linalg.init_tensor []: tensor<f32>
   %a1 = arith.constant sparse<[[0], [1]], [-12.0, 3.0]> : tensor<2xf32>

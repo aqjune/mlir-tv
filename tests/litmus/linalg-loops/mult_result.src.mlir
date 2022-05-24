@@ -9,7 +9,7 @@
   indexing_maps = #accesses,
   iterator_types = ["parallel"]
 }
-func @generic_mult2(
+func.func @generic_mult2(
     %t1: tensor<5xf32>,
     %t2: tensor<5xf32>,
     %t3: tensor<5xf32>) -> (tensor<5xf32>, tensor<5xf32>){

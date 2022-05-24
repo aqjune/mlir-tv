@@ -1,4 +1,4 @@
-func @conv(%input: tensor<1x225x225x3xf32>, %filter: tensor<3x3x3x32xf32>,
+func.func @conv(%input: tensor<1x225x225x3xf32>, %filter: tensor<3x3x3x32xf32>,
            %output: tensor<1x112x112x32xf32>) -> tensor<1x112x112x32xf32> {
   %0 = bufferization.to_memref %input : memref<1x225x225x3xf32>
   %1 = bufferization.to_memref %filter : memref<3x3x3x32xf32>

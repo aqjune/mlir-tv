@@ -1,3 +1,3 @@
-func @f(%a: memref<f32>, %b: memref<i32>) {
+func.func @f(%a: memref<f32>, %b: memref<i32>) {
   return
 }

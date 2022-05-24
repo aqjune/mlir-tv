@@ -1,5 +1,5 @@
 module  {
-  func @f(%arg0: tensor<1x2xf32>, %arg1: tensor<3x2xf32>, %arg2: tensor<5x2xf32>) -> tensor<9x2xf32> {
+  func.func @f(%arg0: tensor<1x2xf32>, %arg1: tensor<3x2xf32>, %arg2: tensor<5x2xf32>) -> tensor<9x2xf32> {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c0_0 = arith.constant 0 : index

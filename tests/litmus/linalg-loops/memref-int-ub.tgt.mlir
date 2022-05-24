@@ -4,7 +4,7 @@
   iterator_types = ["parallel"],
   indexing_maps = #access
 }
-func @f(%m : memref<2xi32>){
+func.func @f(%m : memref<2xi32>){
   %cst0 = arith.constant 0: index
   %cst1 = arith.constant 1: index
   %i1 = arith.constant 1: i32

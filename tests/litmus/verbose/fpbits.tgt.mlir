@@ -1,5 +1,5 @@
 // ARGS: -fp-bits=2
 
-func @f() {
+func.func @f() {
   return
 }

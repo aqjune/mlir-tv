@@ -1,7 +1,7 @@
 #map0 = affine_map<(d0, d1, d2) -> (d0, d2)>
 #map1 = affine_map<(d0, d1, d2) -> (d2, d1)>
 #map2 = affine_map<(d0, d1, d2) -> (d0, d1)>
-func @f(%arg0: tensor<16x8xi4>, %arg1: tensor<8x32xi4>, %arg2: tensor<16x32xi4>) -> tensor<16x32xi4> {
+func.func @f(%arg0: tensor<16x8xi4>, %arg1: tensor<8x32xi4>, %arg2: tensor<16x32xi4>) -> tensor<16x32xi4> {
   %0 = linalg.generic {
       indexing_maps = [#map0, #map1, #map2],
       iterator_types = ["parallel", "parallel", "reduction"]}

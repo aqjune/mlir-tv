@@ -1,7 +1,7 @@
 // VERIFY-INCORRECT
 // ARGS: -smt-to=120000
 
-func @sum(%mat: tensor<5x5xf32>) -> tensor<5xf32>
+func.func @sum(%mat: tensor<5x5xf32>) -> tensor<5xf32>
 {
   %zero = arith.constant -0.0 : f32
   %i = linalg.init_tensor [5] : tensor<5xf32>

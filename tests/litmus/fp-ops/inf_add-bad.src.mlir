@@ -2,7 +2,7 @@
 
 // This is incorrect if at least one of arg0 and arg1 is NaN or -Inf
 
-func @f(%arg0: f32, %arg1: f32) -> f32 {
+func.func @f(%arg0: f32, %arg1: f32) -> f32 {
   %inf = arith.constant 0x7F800000 : f32
   %v1 = arith.addf %inf, %arg0 : f32
   %v2 = arith.addf %inf, %arg1 : f32

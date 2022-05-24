@@ -1,4 +1,4 @@
-func @buffer_cast(%arg : tensor<2x3xf32>) -> f32
+func.func @buffer_cast(%arg : tensor<2x3xf32>) -> f32
 {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index

@@ -1,5 +1,5 @@
 #map1 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
-func @avgpool(%arg0: tensor<1x13x13x1001xf32>) -> tensor<1x1x1x1001xf32> {
+func.func @avgpool(%arg0: tensor<1x13x13x1001xf32>) -> tensor<1x1x1x1001xf32> {
   %cst_194 = arith.constant 0.000000e+00 : f32
   %373 = linalg.init_tensor [1, 1, 1, 1001] : tensor<1x1x1x1001xf32>
   %374 = linalg.fill ins(%cst_194: f32) outs(%373: tensor<1x1x1x1001xf32>) -> tensor<1x1x1x1001xf32>

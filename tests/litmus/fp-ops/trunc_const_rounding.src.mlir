@@ -1,6 +1,6 @@
 // VERIFY
 
-func @round() -> i1 {
+func.func @round() -> i1 {
   %c = arith.constant 3.00000012 : f64
   %ct = arith.truncf %c: f64 to f32
   %f = arith.constant 3.00000035 : f64
@@ -9,7 +9,7 @@ func @round() -> i1 {
   return %e: i1
 }
 
-func @round_diff() -> i1 {
+func.func @round_diff() -> i1 {
   %c = arith.constant 3.00000012 : f64
   %ct = arith.truncf %c: f64 to f32
   %f = arith.constant 3.0000004 : f64
@@ -18,7 +18,7 @@ func @round_diff() -> i1 {
   return %e: i1
 }
 
-func @round_neg() -> i1 {
+func.func @round_neg() -> i1 {
   %c = arith.constant -3.00000012 : f64
   %ct = arith.truncf %c: f64 to f32
   %f = arith.constant -3.00000035 : f64
@@ -27,7 +27,7 @@ func @round_neg() -> i1 {
   return %e: i1
 }
 
-func @round_neg_diff() -> i1 {
+func.func @round_neg_diff() -> i1 {
   %c = arith.constant -3.00000012 : f64
   %ct = arith.truncf %c: f64 to f32
   %f = arith.constant -3.0000004 : f64

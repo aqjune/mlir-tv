@@ -1,6 +1,6 @@
 // VERIFY
 
-func @extract() -> tensor<2xf32>
+func.func @extract() -> tensor<2xf32>
 {
   %v = arith.constant sparse<[[0,0,0],[0,0,1],[0,1,0],[0,1,1],[1,0,0],[1,0,1],[1,1,0],[1,1,1]],
                         [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]> : tensor<2x2x2xf32>

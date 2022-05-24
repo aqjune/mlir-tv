@@ -1,6 +1,6 @@
 #map = affine_map<(d0) -> (d0)>
 module  {
-  func @unit_dim_for_both_reduction(%arg0: tensor<1x?x1x1xf32>) -> tensor<1x1xf32> {
+  func.func @unit_dim_for_both_reduction(%arg0: tensor<1x?x1x1xf32>) -> tensor<1x1xf32> {
     %cst = arith.constant 1.000000e+00 : f32
     %0 = tensor.collapse_shape %arg0 [[0, 1, 2, 3]] : tensor<1x?x1x1xf32> into tensor<?xf32>
     %1 = linalg.init_tensor [1] : tensor<1xf32>

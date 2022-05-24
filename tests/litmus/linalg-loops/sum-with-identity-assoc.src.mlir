@@ -1,7 +1,7 @@
 // VERIFY
 // ARGS: --associative
 
-func @sum() -> tensor<f32>
+func.func @sum() -> tensor<f32>
 {
   %zero = arith.constant -0.0 : f32
   %i = linalg.init_tensor [] : tensor<f32>

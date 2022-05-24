@@ -1,4 +1,4 @@
-func @maxpool(%arg0: tensor<1x7x7x1280xf32>) -> tensor<1x1x1x1280xf32> {
+func.func @maxpool(%arg0: tensor<1x7x7x1280xf32>) -> tensor<1x1x1x1280xf32> {
   %cst = arith.constant -3.40282347E+38 : f32
   %0 = linalg.init_tensor [1, 1, 1, 1280] : tensor<1x1x1x1280xf32>
   %1 = linalg.fill ins(%cst: f32) outs(%0: tensor<1x1x1x1280xf32>) -> tensor<1x1x1x1280xf32> 

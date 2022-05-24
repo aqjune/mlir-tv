@@ -4,7 +4,7 @@
 // MLIR Doc says:
 //    Note, that mutating the result of the to_memref operation leads to undefined behavior.
 
-func @bufferize_fill(%arg0: tensor<?xf32>) -> tensor<?xf32> {
+func.func @bufferize_fill(%arg0: tensor<?xf32>) -> tensor<?xf32> {
   %c0 = arith.constant 0.0 : f32
   %0 = linalg.fill ins(%c0: f32) outs(%arg0: tensor<?xf32>) -> tensor<?xf32>
   return %0 : tensor<?xf32>

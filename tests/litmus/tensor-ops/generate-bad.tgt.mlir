@@ -1,4 +1,4 @@
-func @f(%arg0: index) -> tensor<16x?xindex> {
+func.func @f(%arg0: index) -> tensor<16x?xindex> {
   %result = tensor.generate %arg0 {
   ^bb0(%i: index, %j: index):
     %sum = arith.subi %i, %j : index

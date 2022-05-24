@@ -1,7 +1,7 @@
 // EXPECT: "[fpSum]: Sum of an array unrolled to fp_add."
 // ARGS: --verbose
 
-func @sum() -> tensor<f32>
+func.func @sum() -> tensor<f32>
 {
   %zero = arith.constant -0.0 : f32
   %i = linalg.init_tensor [] : tensor<f32>

@@ -1,4 +1,4 @@
-func @maxpool(%arg0: tensor<1x7x7x1280xf32>) -> tensor<1x1x1x1280xf32> {
+func.func @maxpool(%arg0: tensor<1x7x7x1280xf32>) -> tensor<1x1x1x1280xf32> {
   %0 = bufferization.to_memref %arg0 : memref<1x7x7x1280xf32>
   %cst = arith.constant -3.40282347E+38 : f32
   %1 = memref.alloc() : memref<1x1x1x1280xf32>

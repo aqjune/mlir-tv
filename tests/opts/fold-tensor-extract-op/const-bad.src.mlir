@@ -1,6 +1,6 @@
 // VERIFY-INCORRECT
 
-func @fold_tensor_extract(%arg0 : memref<2x3xf32>) -> f32
+func.func @fold_tensor_extract(%arg0 : memref<2x3xf32>) -> f32
 {
   %c1 = arith.constant 1 : index
   %c2 = arith.constant 1 : index

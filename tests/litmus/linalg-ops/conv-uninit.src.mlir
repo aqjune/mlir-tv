@@ -1,6 +1,6 @@
 // EXPECT: "correct (source is always undefined)"
 
-func @conv(%filter: memref<3x3x1x1xf32>,
+func.func @conv(%filter: memref<3x3x1x1xf32>,
            %output: memref<1x1x1x1xf32>) {
   %input = memref.alloc(): memref<1x3x3x1xf32>
   linalg.conv_2d_nhwc_hwcf

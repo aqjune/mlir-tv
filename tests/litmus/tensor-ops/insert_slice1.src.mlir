@@ -1,6 +1,6 @@
 // VERIFY
 
-func @insert_slice1(%arg0 : tensor<2x5x10x15xf32>, %arg1 : tensor<2x5x10x15xf32>) -> tensor<2x5x10x15xf32> {
+func.func @insert_slice1(%arg0 : tensor<2x5x10x15xf32>, %arg1 : tensor<2x5x10x15xf32>) -> tensor<2x5x10x15xf32> {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
   %c2 = arith.constant 2 : index

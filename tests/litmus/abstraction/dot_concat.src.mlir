@@ -2,7 +2,7 @@
 // ARGS: --associative --smt-use-all-logic
 
 // dot (A, B) + dot(C, D) → dot(A::C, B::D)
-func @f(%a: tensor<5xf32>, %b: tensor<5xf32>, %c: tensor<5xf32>, %d: tensor<5xf32>) -> f32 {
+func.func @f(%a: tensor<5xf32>, %b: tensor<5xf32>, %c: tensor<5xf32>, %d: tensor<5xf32>) -> f32 {
   %identity = arith.constant -0.0 : f32
   %i = linalg.init_tensor []: tensor<f32>
   %outty = linalg.fill ins(%identity: f32) outs(%i: tensor<f32>) -> tensor<f32>

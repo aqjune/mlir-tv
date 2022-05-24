@@ -3,7 +3,7 @@
 // Source is more defined because %c have to point writable memory block in src.
 // Pass identity checks since tgt-tgt pair takes too long time.
 
-func @f(%a : memref<8x4xf32>, %b: memref<4x2xf32>, %c: memref<8x2xf32>) -> tensor<8x2xf32> {
+func.func @f(%a : memref<8x4xf32>, %b: memref<4x2xf32>, %c: memref<8x2xf32>) -> tensor<8x2xf32> {
   %ta = bufferization.to_tensor %a : memref<8x4xf32>
   %tb = bufferization.to_tensor %b : memref<4x2xf32>
   %tc = bufferization.to_tensor %c : memref<8x2xf32>

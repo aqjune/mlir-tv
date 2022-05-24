@@ -6,7 +6,7 @@
   indexing_maps = #accesses,
   iterator_types = ["parallel", "parallel"]
 }
-func @dead_linalg_tensor(%arg0 : tensor<7x7xf32>) {
+func.func @dead_linalg_tensor(%arg0 : tensor<7x7xf32>) {
   %0 = linalg.generic #trait ins(%arg0 : tensor<7x7xf32>) outs(%arg0 : tensor<7x7xf32>) {
     ^bb0(%arg1: f32, %arg2: f32):  // no predecessors
       %cst_114 = arith.constant 0.000000e+00 : f32

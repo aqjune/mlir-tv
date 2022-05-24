@@ -2,7 +2,7 @@
 #map1 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
 #map2 = affine_map<(d0, d1, d2, d3) -> (d3)>
 module  {
-  func @conv(%arg0: tensor<1x2x2x2xf32>, %arg1: tensor<1x2x2x2xf32>) -> tensor<1x1x1x1xf32> {
+  func.func @conv(%arg0: tensor<1x2x2x2xf32>, %arg1: tensor<1x2x2x2xf32>) -> tensor<1x1x1x1xf32> {
     %cst = arith.constant -0.000000e+00 : f32
     %0 = tensor.from_elements %cst : tensor<1xf32>
     %cst_0 = arith.constant dense<[1, 2, 3, 0]> : tensor<4xi64>

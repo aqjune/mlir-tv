@@ -1,4 +1,4 @@
-func @sum(%mat: tensor<100x100xf64>) -> tensor<f64>
+func.func @sum(%mat: tensor<100x100xf64>) -> tensor<f64>
 {
   %c0 = arith.constant 0.0: f64
   %i0 = arith.constant 0: index

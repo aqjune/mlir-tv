@@ -1,3 +1,3 @@
-func @f(%sz: index) -> (){
+func.func @f(%sz: index) -> (){
   return
 }

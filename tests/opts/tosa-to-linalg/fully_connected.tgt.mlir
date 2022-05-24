@@ -2,7 +2,7 @@
 #map1 = affine_map<(d0, d1) -> (d0, d1)>
 #map2 = affine_map<(d0, d1) -> (d1)>
 module  {
-  func @f(%arg0: tensor<5x3xf32>, %arg1: tensor<6x3xf32>, %arg2: tensor<6xf32>) -> tensor<5x6xf32> {
+  func.func @f(%arg0: tensor<5x3xf32>, %arg1: tensor<6x3xf32>, %arg2: tensor<6xf32>) -> tensor<5x6xf32> {
     %0 = linalg.init_tensor [5, 6] : tensor<5x6xf32>
     %cst = arith.constant 0.000000e+00 : f32
     %1 = linalg.fill ins(%cst: f32) outs(%0: tensor<5x6xf32>) -> tensor<5x6xf32> 

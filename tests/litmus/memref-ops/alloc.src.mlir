@@ -1,6 +1,6 @@
 // VERIFY
 
-func @f() -> f32 {
+func.func @f() -> f32 {
   %ptr = memref.alloc(): memref<8x64xf32>
   %f0 = arith.constant 1.0: f32
   %c1 = arith.constant 1: index

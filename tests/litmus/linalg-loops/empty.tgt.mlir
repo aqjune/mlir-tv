@@ -5,7 +5,7 @@
   indexing_maps = #accesses,
   iterator_types = ["parallel", "parallel"]
 }
-func @dead_linalg_tensor(%arg0 : tensor<7x7xi32>) {
+func.func @dead_linalg_tensor(%arg0 : tensor<7x7xi32>) {
   %0 = linalg.generic #trait outs(%arg0 : tensor<7x7xi32>) {
   ^bb(%3: i32) :
     linalg.yield %3 : i32

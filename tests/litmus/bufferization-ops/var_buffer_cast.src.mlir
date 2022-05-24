@@ -1,6 +1,6 @@
 // VERIFY
 
-func @var_buffer_cast(%arg : tensor<?x?xf32>) -> f32
+func.func @var_buffer_cast(%arg : tensor<?x?xf32>) -> f32
 {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index

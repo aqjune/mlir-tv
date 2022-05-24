@@ -1,7 +1,7 @@
 // VERIFY
 // ARGS: --associative
 
-func @f() -> f32 {
+func.func @f() -> f32 {
   %a0 = arith.constant -12.0 : f32
   %a1 = arith.constant 2.0 : f32
   %a2 = arith.constant 3.0 : f32

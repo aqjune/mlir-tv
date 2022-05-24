@@ -6,7 +6,7 @@
   iterator_types = ["parallel"],
   indexing_maps = #access
 }
-func @f(%arg0 : memref<2xi32>){
+func.func @f(%arg0 : memref<2xi32>){
   linalg.generic #trait
      ins(%arg0 : memref<2xi32>)
     outs(%arg0 : memref<2xi32>) {

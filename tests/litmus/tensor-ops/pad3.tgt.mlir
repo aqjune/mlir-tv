@@ -1,4 +1,4 @@
-func @f(%t: tensor<?x?xf32>, %pad_value: f32) -> tensor<?x?xf32>{
+func.func @f(%t: tensor<?x?xf32>, %pad_value: f32) -> tensor<?x?xf32>{
   %c0 = arith.constant 0: index
   %c1 = arith.constant 1: index
   %c3 = arith.constant 3: index

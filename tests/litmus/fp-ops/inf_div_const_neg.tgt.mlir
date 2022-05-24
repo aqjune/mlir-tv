@@ -1,4 +1,4 @@
-func @f() -> f32 {
+func.func @f() -> f32 {
   %inf = arith.constant 0x7F800000 : f32
   %v = arith.constant -3.0 : f32
   %c = arith.divf %inf, %v : f32

@@ -1,7 +1,7 @@
 // VERIFY
 
 #map = affine_map<(d0) -> (d0)>
-func @dumb_loop(%arg0: tensor<?xi32>) -> tensor<?xi32> {
+func.func @dumb_loop(%arg0: tensor<?xi32>) -> tensor<?xi32> {
   %c0 = arith.constant 0: index
   %sz = tensor.dim %arg0, %c0: tensor<?xi32>
   %outty = linalg.init_tensor [%sz] : tensor<?xi32>

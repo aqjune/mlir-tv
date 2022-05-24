@@ -1,6 +1,6 @@
 // VERIFY
 
-func @extract(%x:f32) -> tensor<2xf32>
+func.func @extract(%x:f32) -> tensor<2xf32>
 {
   %c1 = arith.constant 1.0 : f32
   %c2 = arith.constant 2.0 : f32

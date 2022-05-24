@@ -2,7 +2,7 @@
 
 // To support this pair, sum(x1, x2, ..) = x1 + x2 + .. must be supported.
 
-func @f(%arg0: tensor<1x?x1x1xi32>) -> tensor<1x1xi32> {
+func.func @f(%arg0: tensor<1x?x1x1xi32>) -> tensor<1x1xi32> {
   %cst = arith.constant 1 : i32
   %init_tensor = linalg.init_tensor [1, 1] : tensor<1x1xi32>
   %filled = linalg.fill ins(%cst: i32) outs(%init_tensor: tensor<1x1xi32>) -> tensor<1x1xi32>

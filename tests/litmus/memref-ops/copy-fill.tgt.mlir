@@ -1,4 +1,4 @@
-func @copy(%m1: memref<10x10xf32>, %m2: memref<10x10xf32>)
+func.func @copy(%m1: memref<10x10xf32>, %m2: memref<10x10xf32>)
 {
   %t = linalg.init_tensor [10, 10]: tensor<10x10xf32>
   %c0 = arith.constant 0.0: f32

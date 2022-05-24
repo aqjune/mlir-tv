@@ -1,7 +1,7 @@
 // VERIFY-INCORRECT
 // ARGS: --associative
 
-func @sum(%mat: tensor<100x100xf32>) -> tensor<f32>
+func.func @sum(%mat: tensor<100x100xf32>) -> tensor<f32>
 {
   %zero = arith.constant -0.0 : f32
   %i = linalg.init_tensor [] : tensor<f32>

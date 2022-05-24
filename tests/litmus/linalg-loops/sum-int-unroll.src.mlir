@@ -1,7 +1,7 @@
 // VERIFY
 // ARGS: --unroll-int-sum
 
-func @sum() -> tensor<i8>
+func.func @sum() -> tensor<i8>
 {
   %cst = arith.constant dense<10> : tensor<5xi8>
   %zero = arith.constant 0 : i8

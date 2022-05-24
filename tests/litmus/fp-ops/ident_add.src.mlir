@@ -1,6 +1,6 @@
 // VERIFY
 
-func @f(%arg0: f32, %arg1: f32) -> f32 {
+func.func @f(%arg0: f32, %arg1: f32) -> f32 {
   %i = arith.constant -0.0 : f32
   %v1 = arith.addf %i, %arg0 : f32
   %v2 = arith.addf %i, %arg1 : f32

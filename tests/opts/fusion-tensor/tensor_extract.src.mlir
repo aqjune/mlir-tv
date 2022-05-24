@@ -1,6 +1,6 @@
 // VERIFY
 
-func @sigmoid_dynamic_dim(%0: tensor<?x1xf32>) -> tensor<?x1xf32> {
+func.func @sigmoid_dynamic_dim(%0: tensor<?x1xf32>) -> tensor<?x1xf32> {
   %cp5 = arith.constant 5.000000e-01 : f32
   %c0 = arith.constant 0 : index
   %shape = shape.shape_of %0 : tensor<?x1xf32> -> tensor<?xindex>

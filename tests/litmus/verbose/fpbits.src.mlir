@@ -3,6 +3,6 @@
 
 // 6 = 5 + 1(sign bit)
 
-func @f() {
+func.func @f() {
   return
 }

@@ -1,6 +1,6 @@
 // VERIFY-INCORRECT
 
-func @round() -> i1 {
+func.func @round() -> i1 {
   %c = arith.constant 3.00000012 : f64
   %ct = arith.truncf %c: f64 to f32
   %f = arith.constant 3.0000004 : f64

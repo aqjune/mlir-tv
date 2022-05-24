@@ -1,4 +1,4 @@
-func @sum() -> tensor<i8>
+func.func @sum() -> tensor<i8>
 {
   %fifty = arith.constant 50: i8
   %zero = arith.constant 0 : i8

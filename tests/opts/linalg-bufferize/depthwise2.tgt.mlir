@@ -1,5 +1,5 @@
 module  {
-  func @depthwise2(%arg0: tensor<1x11x9x3xf32>, %arg1: tensor<3x1x3x11xf32>) -> tensor<1x5x5x3x11xf32> {
+  func.func @depthwise2(%arg0: tensor<1x11x9x3xf32>, %arg1: tensor<3x1x3x11xf32>) -> tensor<1x5x5x3x11xf32> {
     %0 = bufferization.to_memref %arg0 : memref<1x11x9x3xf32>
     %1 = bufferization.to_memref %arg1 : memref<3x1x3x11xf32>
     %2 = memref.alloc() : memref<1x5x5x3x11xf32>

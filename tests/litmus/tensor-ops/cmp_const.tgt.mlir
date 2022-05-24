@@ -1,4 +1,4 @@
-func @f() -> tensor<5x3xi1> {
+func.func @f() -> tensor<5x3xi1> {
   %c = arith.constant dense<[[1, 0, 1],
     [0, 1, 0],
     [1, 0, 1],

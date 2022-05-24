@@ -1,6 +1,6 @@
 // VERIFY
 
-func @f(%t: tensor<?x?xf32>, %pad_value: f32) -> (f32, f32, f32, f32, f32) {
+func.func @f(%t: tensor<?x?xf32>, %pad_value: f32) -> (f32, f32, f32, f32, f32) {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
   %c2 = arith.constant 2 : index

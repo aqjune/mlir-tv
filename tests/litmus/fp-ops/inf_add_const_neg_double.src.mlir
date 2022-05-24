@@ -1,6 +1,6 @@
 // VERIFY
 
-func @f() -> f64 {
+func.func @f() -> f64 {
   %inf = arith.constant 0xFFF0000000000000 : f64
   %v = arith.constant 3.0 : f64
   %v1 = arith.addf %inf, %v : f64

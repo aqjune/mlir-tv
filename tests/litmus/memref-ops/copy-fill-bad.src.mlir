@@ -1,6 +1,6 @@
 // VERIFY-INCORRECT
 
-func @copy(%m1: memref<10x10xf32>, %m2: memref<10x10xf32>)
+func.func @copy(%m1: memref<10x10xf32>, %m2: memref<10x10xf32>)
 {
   %t = linalg.init_tensor [9, 9]: tensor<9x9xf32>
   %c0 = arith.constant 0.0: f32

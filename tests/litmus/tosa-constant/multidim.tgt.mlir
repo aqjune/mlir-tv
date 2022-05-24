@@ -1,4 +1,4 @@
-func @f() -> tensor<3x2xi32> {
+func.func @f() -> tensor<3x2xi32> {
   %t1 = "tosa.const"() {value = dense<[[1, 2]]> : tensor<1x2xi32>} : () -> tensor<1x2xi32>
   %t2 = "tosa.const"() {value = dense<[[3, 4]]> : tensor<1x2xi32>} : () -> tensor<1x2xi32>
   %t3 = "tosa.const"() {value = dense<[[5, 6]]> : tensor<1x2xi32>} : () -> tensor<1x2xi32>

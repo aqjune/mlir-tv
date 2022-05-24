@@ -1,4 +1,4 @@
-func @f() -> tensor<5x3xf32> {
+func.func @f() -> tensor<5x3xf32> {
   %cst = arith.constant sparse<[
     [0, 0], [0, 1], [0, 2],
     [1, 0], [1, 1], [1, 2],

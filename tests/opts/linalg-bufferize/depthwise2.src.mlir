@@ -1,6 +1,6 @@
 // VERIFY
 
-func @depthwise2(%arg0: tensor<1x11x9x3xf32>, %arg1: tensor<3x1x3x11xf32>) -> tensor<1x5x5x3x11xf32> {
+func.func @depthwise2(%arg0: tensor<1x11x9x3xf32>, %arg1: tensor<3x1x3x11xf32>) -> tensor<1x5x5x3x11xf32> {
   %0 = linalg.init_tensor [1, 5, 5, 3, 11] : tensor<1x5x5x3x11xf32>
   %cst = arith.constant 0.000000e+00 : f32
   %1 = linalg.fill ins(%cst: f32) outs(%0: tensor<1x5x5x3x11xf32>) -> tensor<1x5x5x3x11xf32> 
