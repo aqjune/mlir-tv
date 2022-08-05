@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @from_elem(%arg: tensor<1xf32>) -> tensor<1xf32>
+func @from_elem(%arg: tensor<1xf32>) -> tensor<1xf32>
 {
   %i = arith.constant 0 : index
   %c1 = arith.constant 3.0 : f32

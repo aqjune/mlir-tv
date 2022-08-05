@@ -1,5 +1,5 @@
 module  {
-  func.func @from_elem2() -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) {
+  func @from_elem2() -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) {
     %cst = arith.constant 1.100000e+01 : f32
     %cst_0 = arith.constant 1.000000e+01 : f32
     %cst_1 = arith.constant 9.000000e+00 : f32

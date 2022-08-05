@@ -2,7 +2,7 @@
 #map1 = affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d2 * 2 + d4, d1 * 2 + d3, d5)> // wrong mapping
 #map2 = affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d2, d6)>
 module  {
-  func.func @conv(%arg0: memref<3x3x3x32xf32>, %arg1: memref<1x225x225x3xf32>,
+  func @conv(%arg0: memref<3x3x3x32xf32>, %arg1: memref<1x225x225x3xf32>,
               %arg2: memref<1x112x112x32xf32>) {
     linalg.generic {indexing_maps = [#map0, #map1, #map2],
           iterator_types = ["parallel", "parallel", "parallel",

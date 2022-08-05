@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @f(%idx: index, %idx2: index) -> (f32, f32) {
+func @f(%idx: index, %idx2: index) -> (f32, f32) {
   %local = memref.alloc(): memref<8xf32>
   %local2 = memref.alloc(): memref<8xf32>
   %f1 = arith.constant 1.0: f32

@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @depthwise_conv() -> tensor<1x1x1x2xf32> {
+func @depthwise_conv() -> tensor<1x1x1x2xf32> {
   %arg0 =  arith.constant dense<[[[[1.0,1.0,1.0]]]]>: tensor<1x1x1x3xf32>
   %arg1 =  arith.constant dense<[[[[1.0,2.0],[3.0,4.0],[5.0,6.0]]]]>: tensor<1x1x3x2xf32>
   %arg2 =  arith.constant dense<[7.0,8.0,9.0,10.0,11.0,12.0]>: tensor<6xf32>

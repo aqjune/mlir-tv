@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @insert_slice_canonicalize(%arg0 : tensor<?x?x?xf32>, %arg1 : index,
+func @insert_slice_canonicalize(%arg0 : tensor<?x?x?xf32>, %arg1 : index,
     %arg2 : index, %arg3 : tensor<?x?x?xf32>) -> tensor<?x?x?xf32>
 {
   %c0 = arith.constant 0 : index

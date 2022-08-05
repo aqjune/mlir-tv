@@ -1,4 +1,4 @@
-func.func @f() -> f32 {
+func @f() -> f32 {
   %c0 = arith.constant 0 : index
   %i = linalg.init_tensor []: tensor<f32>
   %a1 = arith.constant sparse<[[1], [0]], [-12.0, 3.0]> : tensor<2xf32>

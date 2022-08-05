@@ -2,7 +2,7 @@
 // ARGS: -max-unknown-dimsize=25
 
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
-func.func @producer_indexed_consumer_fusion(%arg0: tensor<?x?xi32>,
+func @producer_indexed_consumer_fusion(%arg0: tensor<?x?xi32>,
                                        %arg1: tensor<?x?xi32>) -> tensor<?x?xi32> {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index

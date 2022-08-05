@@ -1,6 +1,6 @@
 // VERIFY-INCORRECT
 
-func.func @from_elem(%arg: tensor<2xf32>) -> tensor<2xf32>
+func @from_elem(%arg: tensor<2xf32>) -> tensor<2xf32>
 {
   %i = arith.constant 0 : index
   %c1 = arith.constant 3.0 : f32

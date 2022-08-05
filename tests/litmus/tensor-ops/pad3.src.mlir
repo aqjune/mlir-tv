@@ -1,6 +1,6 @@
 // VERIFY-INCORRECT
 
-func.func @f(%t: tensor<?x?xf32>, %pad_value: f32) -> tensor<?x?xf32>{
+func @f(%t: tensor<?x?xf32>, %pad_value: f32) -> tensor<?x?xf32>{
   %res = tensor.pad %t low[1, 2] high[2, 3] {
   ^bb0(%arg0 : index, %arg1 : index):
     tensor.yield %pad_value : f32

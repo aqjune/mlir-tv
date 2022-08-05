@@ -1,7 +1,7 @@
 #map0 = affine_map<(d0, d1, d2) -> (d0, d1)>
 #map1 = affine_map<(d0, d1, d2) -> (d0, d1, d2)>
 module  {
-  func.func @gather_float(%arg0: tensor<2x3x2xf32>, %arg1: tensor<2x3xi32>) {
+  func @gather_float(%arg0: tensor<2x3x2xf32>, %arg1: tensor<2x3xi32>) {
     %0 = linalg.init_tensor [2, 3, 2] : tensor<2x3x2xf32>
     %1 = linalg.generic {indexing_maps = [#map0, #map1], iterator_types = ["parallel", "parallel", "parallel"]} ins(%arg1 : tensor<2x3xi32>) outs(%0 : tensor<2x3x2xf32>) {
     ^bb0(%arg2: i32, %arg3: f32):  // no predecessors

@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @add(%arg0: tensor<2x1xf32>, %arg1: tensor<1x3xf32>) -> tensor<2x3xf32> {
+func @add(%arg0: tensor<2x1xf32>, %arg1: tensor<1x3xf32>) -> tensor<2x3xf32> {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
   %c2 = arith.constant 2 : index

@@ -1,4 +1,4 @@
-func.func @depthwise_conv(%arg0 : tensor<2x7x5x3xf32>, %arg1 : tensor<3x1x3x2xf32>, %arg2 : tensor<6xf32>) -> tensor<2x5x5x2xf32> {
+func @depthwise_conv(%arg0 : tensor<2x7x5x3xf32>, %arg1 : tensor<3x1x3x2xf32>, %arg2 : tensor<6xf32>) -> tensor<2x5x5x2xf32> {
   %i = linalg.init_tensor [2, 7, 5, 1] : tensor<2x7x5x1xf32>
   %i2 = linalg.init_tensor [3, 1, 1, 2] : tensor<3x1x1x2xf32>
   %in = tensor.extract_slice %arg0[0,0,0,2][2,7,5,1][1,1,1,1]: tensor<2x7x5x3xf32> to tensor<2x7x5xf32>

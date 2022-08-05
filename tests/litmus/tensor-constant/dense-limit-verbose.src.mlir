@@ -1,7 +1,7 @@
 // ARGS: -verbose -max-const-tensor-size=3
 // EXPECT: "Too many elements: 15 > 3"
 
-func.func @f() -> tensor<5x3xf32> {
+func @f() -> tensor<5x3xf32> {
   %cst = arith.constant dense<[[0.0, 1.0, 2.0],
        [3.0, 4.0, 5.0],
        [6.0, 7.0, 8.0],

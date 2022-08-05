@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @from_elem2()
+func @from_elem2()
     -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) {
   %f0 = arith.constant 0.0 : f32
   %f1 = arith.constant 1.0 : f32

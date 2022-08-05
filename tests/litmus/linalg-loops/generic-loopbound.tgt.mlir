@@ -9,7 +9,7 @@
   iterator_types = ["parallel"]
 }
 
-func.func @example(%A: tensor<4xf32>,
+func @example(%A: tensor<4xf32>,
               %B: tensor<?xf32>,
               %out_shape: tensor<?xf32>) {
   %tmp = linalg.generic #attrs

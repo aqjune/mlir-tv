@@ -1,11 +1,11 @@
 // VERIFY
 // ARGS: --associative
 
-func.func @sum() -> tensor<f32>
+func @sum() -> tensor<f32>
 {
   %zero = arith.constant -0.0 : f32
   %i = linalg.init_tensor [] : tensor<f32>
-  %outty = linalg.fill ins(%zero: f32) outs(%i: tensor<f32>) -> tensor<f32>
+  %outty = linalg.fill(%zero, %i): f32, tensor<f32> -> tensor<f32>
   %cst = arith.constant sparse<[[0], [1], [2], [3], [4]], [2.000000e+00, -0.000000e+00, 3.000000e+00, -0.000000e+00, -1.200000e+01]> : tensor<5xf32>
   %result = linalg.generic {
       indexing_maps = [affine_map<(d0) -> (d0)>,

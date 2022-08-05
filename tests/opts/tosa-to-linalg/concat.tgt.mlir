@@ -1,5 +1,5 @@
 module  {
-  func.func @f(%arg0: tensor<1x2xf32>, %arg1: tensor<3x2xf32>, %arg2: tensor<5x2xf32>) -> tensor<9x2xf32> {
+  func @f(%arg0: tensor<1x2xf32>, %arg1: tensor<3x2xf32>, %arg2: tensor<5x2xf32>) -> tensor<9x2xf32> {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c0_0 = arith.constant 0 : index
@@ -13,7 +13,7 @@ module  {
     %c9 = arith.constant 9 : index
     %0 = linalg.init_tensor [9, 2] : tensor<9x2xf32>
     %cst = arith.constant 0.000000e+00 : f32
-    %1 = linalg.fill ins(%cst: f32) outs(%0: tensor<9x2xf32>) -> tensor<9x2xf32> 
+    %1 = linalg.fill(%cst, %0): f32, tensor<9x2xf32> -> tensor<9x2xf32> 
     %c1_4 = arith.constant 1 : index
     %2 = tensor.insert_slice %arg0 into %1[0, 0] [1, 2] [1, 1] : tensor<1x2xf32> into tensor<9x2xf32>
     %c1_5 = arith.constant 1 : index

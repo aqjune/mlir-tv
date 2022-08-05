@@ -2,7 +2,7 @@
 
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 
-func.func @add_mul_fusion(%arg0: tensor<?x?xf32>, %arg1 : tensor<?x?xf32>, %arg2 : tensor<?x?xf32>) -> tensor<?x?xf32>
+func @add_mul_fusion(%arg0: tensor<?x?xf32>, %arg1 : tensor<?x?xf32>, %arg2 : tensor<?x?xf32>) -> tensor<?x?xf32>
 {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index

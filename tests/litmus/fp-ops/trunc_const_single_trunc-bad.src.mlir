@@ -1,6 +1,6 @@
 // VERIFY-INCORRECT
 
-func.func @f() -> f32 {
+func @f() -> f32 {
   %a = arith.constant 3.0 : f64
   %t = arith.truncf %a: f64 to f32
   return %t: f32

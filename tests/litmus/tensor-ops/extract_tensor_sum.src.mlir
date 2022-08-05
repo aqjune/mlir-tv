@@ -1,7 +1,7 @@
 // VERIFY
 // ARGS: --associative
 
-func.func @f(%a: tensor<1000xf32>, %b: tensor<1000xf32>) -> tensor<f32> {
+func @f(%a: tensor<1000xf32>, %b: tensor<1000xf32>) -> tensor<f32> {
   %i = linalg.init_tensor []: tensor<f32>
   %a1 = tensor.extract_slice %a[0][500][1]: tensor<1000xf32> to tensor<500xf32>
   %a2 = tensor.extract_slice %a[500][500][1]: tensor<1000xf32> to tensor<500xf32>

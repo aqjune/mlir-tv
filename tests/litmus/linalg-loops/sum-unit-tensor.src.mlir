@@ -1,10 +1,10 @@
 // VERIFY
 
-func.func @sum(%x: tensor<1xf32>) -> f32
+func @sum(%x: tensor<1xf32>) -> f32
 {
   %zero = arith.constant -0.0 : f32
   %i = linalg.init_tensor [] : tensor<f32>
-  %outty = linalg.fill ins(%zero: f32) outs(%i: tensor<f32>) -> tensor<f32>
+  %outty = linalg.fill(%zero, %i): f32, tensor<f32> -> tensor<f32>
   %result = linalg.generic {
       indexing_maps = [affine_map<(d0) -> (d0)>,
                       affine_map<(d0) -> ()>],

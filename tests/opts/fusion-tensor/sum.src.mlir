@@ -3,7 +3,7 @@
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 #map1 = affine_map<(d0) -> (0, d0)>
 #map2 = affine_map<(d0) -> (0)>
-func.func @consumer_with_reduction(%arg0: tensor<1x10xf32>,
+func @consumer_with_reduction(%arg0: tensor<1x10xf32>,
                               %arg1: tensor<1x10xf32>,
                               %arg2: tensor<1xf32>) -> tensor<1xf32> {
   %init = linalg.init_tensor [1, 10] : tensor<1x10xf32>

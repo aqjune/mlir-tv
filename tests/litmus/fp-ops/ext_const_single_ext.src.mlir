@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @f() -> f64 {
+func @f() -> f64 {
   %a = arith.constant 3.0 : f32
   %e = arith.extf %a: f32 to f64
   %ne = arith.constant -3.0 : f64

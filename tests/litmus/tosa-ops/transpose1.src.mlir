@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @transpose1() -> tensor<3x1x4x2xi32> {
+func @transpose1() -> tensor<3x1x4x2xi32> {
   %input = "tosa.const"() {value = dense<[[
     [[ 0,  1,  2,  3], [ 4,  5,  6,  7], [ 8,  9, 10, 11]],
     [[12, 13, 14, 15], [16, 17, 18, 19], [20, 21, 22, 23]]

@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @f(%arg0: index) -> index {
+func @f(%arg0: index) -> index {
   %result = tensor.generate %arg0 {
   ^bb0(%i: index, %j: index):
     %sum = arith.addi %i, %j : index

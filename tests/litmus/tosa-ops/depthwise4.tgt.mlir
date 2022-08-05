@@ -1,4 +1,4 @@
-func.func @depthwise_conv(%arg0 : tensor<1x1x1x3xf32>, %arg1 : tensor<1x1x3x2xf32>, %arg2 : tensor<6xf32>) -> tensor<1x1x1x2xf32> {
+func @depthwise_conv(%arg0 : tensor<1x1x1x3xf32>, %arg1 : tensor<1x1x3x2xf32>, %arg2 : tensor<6xf32>) -> tensor<1x1x1x2xf32> {
   %in = tensor.extract_slice %arg0[0,0,0,2][1,1,1,1][1,1,1,1]: tensor<1x1x1x3xf32> to tensor<1xf32>
   %fil = tensor.extract_slice %arg1[0,0,2,0][1,1,1,2][1,1,1,1]: tensor<1x1x3x2xf32> to tensor<2xf32>
   %in2 = tensor.expand_shape %in [[0,1,2,3]] : tensor<1xf32> into tensor<1x1x1x1xf32>

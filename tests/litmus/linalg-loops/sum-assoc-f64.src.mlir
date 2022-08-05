@@ -1,11 +1,11 @@
 // VERIFY
 // ARGS: --associative
 
-func.func @sum(%mat: tensor<100x100xf64>) -> tensor<f64>
+func @sum(%mat: tensor<100x100xf64>) -> tensor<f64>
 {
   %zero = arith.constant -0.0 : f64
   %i = linalg.init_tensor [] : tensor<f64>
-  %outty = linalg.fill ins(%zero: f64) outs(%i: tensor<f64>) -> tensor<f64>
+  %outty = linalg.fill(%zero, %i): f64, tensor<f64> -> tensor<f64>
 
   %mat_transposed = linalg.generic {
       indexing_maps = [affine_map<(d0,d1) -> (d1,d0)>,

@@ -1,11 +1,11 @@
-func.func @sum(%mat: tensor<100x100xf32>) -> tensor<f32>
+func @sum(%mat: tensor<100x100xf32>) -> tensor<f32>
 {
   %c0 = arith.constant 0.0: f32
   %i0 = arith.constant 0: index
   %i2 = arith.constant 2: index
   %zero = arith.constant -0.0 : f32
   %i = linalg.init_tensor [] : tensor<f32>
-  %outty = linalg.fill ins(%zero: f32) outs(%i: tensor<f32>) -> tensor<f32>
+  %outty = linalg.fill(%zero, %i): f32, tensor<f32> -> tensor<f32>
   %mat_col = tensor.collapse_shape %mat [[0, 1]] : tensor<100x100xf32> into tensor<10000xf32>
   %result = linalg.generic {
       indexing_maps = [affine_map<(d0) -> (d0)>,

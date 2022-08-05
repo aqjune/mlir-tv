@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @buffer_cast(%arg : tensor<0xf32>) -> ()
+func @buffer_cast(%arg : tensor<0xf32>) -> ()
 {
   return
 }

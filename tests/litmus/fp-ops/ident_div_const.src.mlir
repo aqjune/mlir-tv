@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @f() -> f32 {
+func @f() -> f32 {
   %v = arith.constant 3.0 : f32
   %i = arith.constant -1.0 : f32
   %c = arith.divf %v, %i : f32

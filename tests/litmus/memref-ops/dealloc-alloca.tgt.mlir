@@ -1,3 +1,3 @@
-func.func @f() {
+func @f() {
   return
 }

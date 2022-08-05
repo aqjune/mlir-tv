@@ -1,6 +1,6 @@
 #map = affine_map<(d0, d1) -> (d0, d1)>
 module  {
-  func.func @sigmoid_dynamic_dim(%arg0: tensor<?x1xf32>) -> tensor<?x1xf32> {
+  func @sigmoid_dynamic_dim(%arg0: tensor<?x1xf32>) -> tensor<?x1xf32> {
     %cst = arith.constant 5.000000e-01 : f32
     %c0 = arith.constant 0 : index
     %0 = tensor.dim %arg0, %c0 : tensor<?x1xf32>

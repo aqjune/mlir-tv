@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @f() -> i32 {
+func @f() -> i32 {
   %v = arith.constant 3: i32
   %w = arith.constant 2: i32
   %x = arith.muli %v, %w: i32

@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @f() -> i32 {
+func @f() -> i32 {
   %const_two = arith.constant 2: index
   %const_zero = arith.constant 0: index
   %c = arith.constant sparse<[[0, 0], [1, 0], [2, 0]],  [-1, -2, -3]> : tensor<5x1xi32>

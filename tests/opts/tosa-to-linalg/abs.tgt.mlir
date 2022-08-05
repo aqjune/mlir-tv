@@ -1,6 +1,6 @@
 #map = affine_map<(d0) -> (d0)>
 module  {
-  func.func @test_abs(%arg0: tensor<?xf32>) -> tensor<?xf32> {
+  func @test_abs(%arg0: tensor<?xf32>) -> tensor<?xf32> {
 		%c0 = arith.constant 0: index
     %sz = tensor.dim %arg0, %c0: tensor<?xf32>
     %0 = linalg.init_tensor [%sz] : tensor<?xf32>

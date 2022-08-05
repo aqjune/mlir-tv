@@ -1,6 +1,6 @@
 // VERIFY-INCORRECT
 
-func.func @f(%arg: memref<?xf32>, %idx: index, %idx2: index) -> (f32, f32) {
+func @f(%arg: memref<?xf32>, %idx: index, %idx2: index) -> (f32, f32) {
   %local = memref.alloc(): memref<8xf32>
   %f1 = arith.constant 1.0: f32
   %f2 = arith.constant 2.0: f32

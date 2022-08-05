@@ -1,4 +1,4 @@
-func.func @conv(%arg0: tensor<1x16x16x4xf32>, %arg1: tensor<3x3x4x16xf32>) -> tensor<1x14x14x16xf32> {
+func @conv(%arg0: tensor<1x16x16x4xf32>, %arg1: tensor<3x3x4x16xf32>) -> tensor<1x14x14x16xf32> {
     %out = linalg.init_tensor [1,16,14,14] : tensor<1x16x14x14xf32>
     %inperms = "tosa.const"() {value = dense<[0, 3, 1, 2]> : tensor<4xi64>} : () -> tensor<4xi64>
     %filperms = "tosa.const"() {value = dense<[3, 2, 0, 1]> : tensor<4xi64>} : () -> tensor<4xi64>

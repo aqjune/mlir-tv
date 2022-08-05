@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @f() -> f32 {
+func @f() -> f32 {
   %nan = arith.constant 0x7FC00000 : f32
   %v = arith.constant 3.0 : f32
   %v1 = arith.addf %nan, %v : f32

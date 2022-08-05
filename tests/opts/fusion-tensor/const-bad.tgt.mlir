@@ -1,6 +1,6 @@
 #map = affine_map<(d0, d1, d2) -> (d0, d1, d2)>
 module  {
-  func.func @generic_op_constant_fusion(%arg0: tensor<5x?x?xf32>) -> tensor<5x?x?xf32> {
+  func @generic_op_constant_fusion(%arg0: tensor<5x?x?xf32>) -> tensor<5x?x?xf32> {
     %c1 = arith.constant 1 : index
     %c2 = arith.constant 2 : index
     %cst = arith.constant 5.200000e+01 : f32 // wrong constant

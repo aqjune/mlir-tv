@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @fold_expand_collapse(%arg0 : tensor<?x4xf32>) -> tensor<?x4xf32>
+func @fold_expand_collapse(%arg0 : tensor<?x4xf32>) -> tensor<?x4xf32>
 {
   %0 = tensor.expand_shape %arg0 [[0, 1], [2]]
       : tensor<?x4xf32> into tensor<?x3x4xf32>

@@ -1,6 +1,6 @@
 // VERIFY
 
-func.func @f() -> f32 {
+func @f() -> f32 {
   %i = linalg.init_tensor []: tensor<f32>
   %a1 = arith.constant sparse<[[0], [1], [2]], [1.0, -0.0, -0.0]> : tensor<3xf32>
   %a2 = arith.constant sparse<[[0], [1], [2]], [1.0, 2.0, 3.0]> : tensor<3xf32>
