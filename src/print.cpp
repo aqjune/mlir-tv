@@ -1,5 +1,3 @@
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-
 #include "abstractops.h"
 #include "opts.h"
 #include "print.h"
@@ -18,7 +16,7 @@ static string intToStr(Expr e) {
   }
 }
 
-static void printInputs(Model m, mlir::func::FuncOp src, const State &st_src) {
+static void printInputs(Model m, mlir::FuncOp src, const State &st_src) {
   unsigned n = src.getNumArguments();
   for (unsigned i = 0; i < n; ++i) {
     auto argsrc = src.getArgument(i);
@@ -68,7 +66,7 @@ static Expr evalFromModel(Model m, Expr e) {
   return wb;
 }
 
-void printOperations(Model m, mlir::func::FuncOp fn, const State &st) {
+void printOperations(Model m, mlir::FuncOp fn, const State &st) {
   for (auto &op: fn.getRegion().front()) {
     llvm::outs() << "\t" << op << "\n";
 
@@ -96,8 +94,8 @@ void printOperations(Model m, mlir::func::FuncOp fn, const State &st) {
 }
 
 void printCounterEx(
-    Model m, const vector<Expr> &params, mlir::func::FuncOp src,
-    mlir::func::FuncOp tgt, const State &st_src, const State &st_tgt,
+    Model m, const vector<Expr> &params, mlir::FuncOp src,
+    mlir::FuncOp tgt, const State &st_src, const State &st_tgt,
     VerificationStep step, unsigned retvalidx, optional<mlir::Type> memElemTy) {
   llvm::outs() << "<Inputs>\n";
   printInputs(m, src, st_src);

@@ -7,7 +7,6 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -883,7 +882,7 @@ void encodeOp(State &st, mlir::arith::SelectOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::func::ReturnOp op, bool) {
+void encodeOp(State &st, mlir::ReturnOp op, bool) {
   for (unsigned i = 0; i < op.getNumOperands(); ++i)
     st.retValues.push_back(st.regs.findOrCrash(op.getOperand(i)));
 }
@@ -3413,7 +3412,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::bufferization::ToMemrefOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::bufferization::ToTensorOp, encodeMemWriteOps);
 
-    ENCODE(st, op, mlir::func::ReturnOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::ReturnOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::math::ExpOp, encodeMemWriteOps);
@@ -3496,7 +3495,7 @@ static void encodeBlock(
     llvm::outs() << "\n";
 }
 
-void encode(State &st, mlir::func::FuncOp &fn, bool printOps) {
+void encode(State &st, mlir::FuncOp &fn, bool printOps) {
   auto &region = fn.getRegion();
   if (!llvm::hasSingleElement(region))
     throw UnsupportedException(

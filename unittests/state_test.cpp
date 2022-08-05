@@ -19,10 +19,10 @@ func @add_mul_fusion(%arg0: tensor<?x?xf32>, %arg1: tensor<?x?xf32>, %arg2: tens
 }
 )"";
 
-  std::vector<mlir::func::FuncOp> parseIR(std::string IR, mlir::MLIRContext *ctx) {
+  std::vector<mlir::FuncOp> parseIR(std::string IR, mlir::MLIRContext *ctx) {
     src = mlir::parseSourceString(sourceIR, ctx);
-    std::vector<mlir::func::FuncOp> srcFns;
-    llvm::for_each(*src, [&](auto &op) { srcFns.push_back(mlir::dyn_cast<mlir::func::FuncOp>(op)); });
+    std::vector<mlir::FuncOp> srcFns;
+    llvm::for_each(*src, [&](auto &op) { srcFns.push_back(mlir::dyn_cast<mlir::FuncOp>(op)); });
     return srcFns;
   }
 

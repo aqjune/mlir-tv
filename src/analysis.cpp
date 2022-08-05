@@ -376,7 +376,7 @@ void analyzeBlock(
 }
 }
 
-AnalysisResult analyze(mlir::func::FuncOp &fn) {
+AnalysisResult analyze(mlir::FuncOp &fn) {
   AnalysisResult res;
 
   auto &region = fn.getRegion();
