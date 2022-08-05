@@ -57,32 +57,33 @@ jobs:
             -DCMAKE_BUILD_TYPE=RelWithDebInfo
           cmake --build build
   
-  build-release:
-    runs-on: ubuntu-20.04
-    container:
-      image: strikef/mlir-tv-ci-base:latest
-      credentials:
-        username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+  # Disabled until MLIR bug is fixed
+  # build-release:
+  #   runs-on: ubuntu-20.04
+  #   container:
+  #     image: strikef/mlir-tv-ci-base:latest
+  #     credentials:
+  #       username: ${{ secrets.DOCKER_HUB_USERNAME }}
+  #       password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-    steps:
-      - name: Checkout this repo
-        uses: actions/checkout@v2
-        with:
-          path: mlir-tv
+  #   steps:
+  #     - name: Checkout this repo
+  #       uses: actions/checkout@v2
+  #       with:
+  #         path: mlir-tv
 
-      - name: Build mlir-tv
-        run: |
-          cd mlir-tv
-          cmake -B build -G Ninja \
-            -DMLIR_DIR=/opt/llvm -DZ3_DIR=/opt/z3 -DCVC5_DIR=/opt/cvc5 \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
+  #     - name: Build mlir-tv
+  #       run: |
+  #         cd mlir-tv
+  #         cmake -B build -G Ninja \
+  #           -DMLIR_DIR=/opt/llvm -DZ3_DIR=/opt/z3 -DCVC5_DIR=/opt/cvc5 \
+  #           -DCMAKE_BUILD_TYPE=Release
+  #         cmake --build build
 
   build-Z3-only:
     runs-on: ubuntu-20.04
     container:
-      image: strikef/mlir-tv-ci-base:latest
+      image: strikef/mlir-tv-ci-base:2022-02-10
       credentials:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
@@ -104,7 +105,7 @@ jobs:
   build-CVC5-only:
     runs-on: ubuntu-20.04
     container:
-      image: strikef/mlir-tv-ci-base:latest
+      image: strikef/mlir-tv-ci-base:2022-02-10
       credentials:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
@@ -127,7 +128,7 @@ jobs:
     needs: build
     runs-on: ubuntu-20.04
     container:
-      image: strikef/mlir-tv-ci-base:latest
+      image: strikef/mlir-tv-ci-base:2022-02-10
       credentials:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
@@ -158,7 +159,7 @@ jobs:
     runs-on: ubuntu-20.04
     needs: build
     container:
-      image: strikef/mlir-tv-ci-base:latest
+      image: strikef/mlir-tv-ci-base:2022-02-10
       credentials:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
