@@ -798,8 +798,8 @@ void encodeOp(State &st, mlir::AffineApplyOp op, bool) {
     throw UnsupportedException(
         op.getOperation(), "num results is larger than one");
 
-  auto dimOperands = op.mapOperands().take_front(m.getNumDims());
-  auto symbolOperands = op.mapOperands().take_back(m.getNumSymbols());
+  auto dimOperands = op.getMapOperands().take_front(m.getNumDims());
+  auto symbolOperands = op.getMapOperands().take_back(m.getNumSymbols());
 
   vector<Index> indices, symbols;
   for (auto arg: dimOperands)
@@ -1971,9 +1971,9 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
   auto retty = op.getType().dyn_cast<mlir::RankedTensorType>();
   if (!retty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
-  auto *blk = op.getBody();
-  if (!blk)
+  if (op.getBody().getBlocks().size() != 1)
     throw UnsupportedException(op.getOperation(), "Unsupported form");
+  auto &blk = op.getBody().getBlocks().front();
 
   vector<Index> upperbound;
   {
@@ -1994,15 +1994,15 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
   {
     State newst = st;
     newst.linalgGenericScopes.push(State::LinalgGenericScope{move(upperbound)});
-    for (int i = 0; i < blk->getNumArguments(); ++i) {
+    for (int i = 0; i < blk.getNumArguments(); ++i) {
       Expr idxvar = newst.linalgGenericScopes.top().indVars[i];
-      newst.regs.add(blk->getArgument(i), Index(idxvar));
+      newst.regs.add(blk.getArgument(i), Index(idxvar));
     }
 
     auto identityMap = mlir::AffineMap::getMultiDimIdentityMap(
         retty.getRank(), op.getContext());
 
-    encodeParallelLoopBodyAndOutputs(newst, *blk, identityMap,
+    encodeParallelLoopBodyAndOutputs(newst, blk, identityMap,
         tvec_res, welldef);
 
     auto &indVars = newst.linalgGenericScopes.top().indVars;
@@ -2494,13 +2494,13 @@ void encodeOp(State &st, mlir::bufferization::ToMemrefOp op,
         "We do not support memory writes in this scope");
 
   auto tensor = st.regs.get<Tensor>(op.getOperand());
-  auto memrefTy = op.memref().getType().cast<mlir::MemRefType>();
+  auto memrefTy = op.getMemref().getType().cast<mlir::MemRefType>();
   auto dims = tensor.getDims();
 
   // Create a read-only block.
   auto memref = createNewLocalBlk(st.m.get(), move(dims), memrefTy, false);
   storeTensorTo(st, op.getOperation(), move(tensor), memref, memrefTy, false);
-  st.regs.add(op.memref(), move(memref));
+  st.regs.add(op.getMemref(), move(memref));
 }
 
 template<>
