@@ -31,6 +31,8 @@ cmake -DMLIR_DIR=<dir/to/mlir-install> \
 cmake --build .
 ```
 
+If you're seeing `error: pack expansion does not contain any unexpanded parameter packs` during compilation, please try the solution suggested at https://github.com/llvm/llvm-project/issues/55010.
+
 ## How to run MLIR-TV
 Run the built `mlir-tv` executable as following:
 ```bash
