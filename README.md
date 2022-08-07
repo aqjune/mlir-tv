@@ -58,6 +58,4 @@ ctest -R Litmus # Test litmus only
 
 ## Contributions
 
-We appreciate any kind of contributions to this project.
-
-Also, if you are interested in using this tool to verify your custom optimization, please send us a mail or leave a thread at Discussion.
+We appreciate any kind of contributions to this project!
