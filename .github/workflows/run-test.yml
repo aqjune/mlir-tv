@@ -98,7 +98,7 @@ jobs:
         run: |
           cd mlir-tv
           cmake -B build -G Ninja \
-            -DMLIR_DIR=/opt/llvm -DZ3_DIR=/opt/z3 \
+            -DMLIR_DIR=/opt/llvm/lib/cmake/mlir -DZ3_DIR=/opt/z3 \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo
           cmake --build build
 
@@ -120,7 +120,7 @@ jobs:
         run: |
           cd mlir-tv
           cmake -B build -G Ninja \
-            -DMLIR_DIR=/opt/llvm -DCVC5_DIR=/opt/cvc5 \
+            -DMLIR_DIR=/opt/llvm/lib/cmake/mlir -DCVC5_DIR=/opt/cvc5 \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo
           cmake --build build
 
