@@ -745,7 +745,14 @@ void encodeOp(State &st, mlir::linalg::IndexOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::math::AbsOp op, bool) {
+void encodeOp(State &st, mlir::math::AbsFOp op, bool) {
+  mlir::Value arg0 = op.getOperand();
+
+  encodeUnaryOp(st, op, arg0, [](auto &&a) { return a.abs(); }, {});
+}
+
+template<>
+void encodeOp(State &st, mlir::math::AbsIOp op, bool) {
   mlir::Value arg0 = op.getOperand();
 
   encodeUnaryOp(st, op, arg0, [](auto &&a) { return a.abs(); }, {});
@@ -923,7 +930,7 @@ void encodeOp(State &st, mlir::tosa::ConcatOp op, bool) {
   if (!dty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  uint64_t axis = op.axis();
+  uint64_t axis = op.getAxis();
   auto t = st.regs.get<Tensor>(op.getOperand(0));
   st.wellDefined(op, t.isFullyInitialized(), "op 0 initialized");
 
@@ -949,7 +956,7 @@ void encodeOp(State &st, mlir::tosa::ClampOp op, bool) {
     throw UnsupportedException(op.getOperation(), "Unsupported type");
   auto elemTy = dty.getElementType();
 
-  auto input = st.regs.get<Tensor>(op.input());
+  auto input = st.regs.get<Tensor>(op.getInput());
 
   auto unaryFn = [elemTy, &op](smt::Expr &&elem0) -> smt::Expr {
     // In TOSA 0.23:
@@ -958,16 +965,16 @@ void encodeOp(State &st, mlir::tosa::ClampOp op, bool) {
     // apply_min: (a < b)  ? a : b, NaN if either a or b is NaN (TOSA 0.23, Sec.1.9) 
 
     if (elemTy.isa<mlir::IntegerType>()) {
-      Integer minval(op.min_int(), elemTy.getIntOrFloatBitWidth());
-      Integer maxval(op.max_int(), elemTy.getIntOrFloatBitWidth());
+      Integer minval(op.getMinInt(), elemTy.getIntOrFloatBitWidth());
+      Integer maxval(op.getMaxInt(), elemTy.getIntOrFloatBitWidth());
       Integer elem(elem0);
       elem = Expr::mkIte(((Expr)elem).sge(minval), elem, minval);
       elem = Expr::mkIte(((Expr)elem).slt(maxval), elem, maxval);
 
       return elem;
     } else {
-      Float minval = Float::constant(op.min_fp(), elemTy);
-      Float maxval = Float::constant(op.max_fp(), elemTy);
+      Float minval = Float::constant(op.getMinFp(), elemTy);
+      Float maxval = Float::constant(op.getMaxFp(), elemTy);
       Float elem(elem0, elemTy);
       auto olt = mlir::arith::CmpFPredicate::OLT;
       auto one = Expr::mkBV(1, 1);
@@ -993,7 +1000,7 @@ void encodeOp(State &st, mlir::tosa::ConstOp op, bool) {
   auto dty = op.getType().dyn_cast<mlir::RankedTensorType>();
   if (!dty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
-  auto eattr = op.value().dyn_cast<mlir::ElementsAttr>();
+  auto eattr = op.getValue().dyn_cast<mlir::ElementsAttr>();
   if (!eattr)
     throw UnsupportedException(op.getOperation(), "Unsupported attribute");
 
@@ -1008,8 +1015,8 @@ void encodeOp(State &st, mlir::tosa::ReverseOp op, bool) {
   if (!dty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  auto t = st.regs.get<Tensor>(op.input());
-  auto axis = op.axis();
+  auto t = st.regs.get<Tensor>(op.getInput());
+  auto axis = op.getAxis();
 
   st.regs.add(op, t.reverse(axis));
   st.wellDefined(op, t.isFullyInitialized(), "the input is initialized");
@@ -1021,9 +1028,9 @@ void encodeOp(State &st, mlir::tosa::TileOp op, bool) {
   if (!dty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  auto t = st.regs.get<Tensor>(op.input1());
+  auto t = st.regs.get<Tensor>(op.getInput1());
   vector<unsigned> repeat;
-  for (mlir::Attribute val: op.multiples())
+  for (mlir::Attribute val: op.getMultiples())
     repeat.push_back(val.cast<mlir::IntegerAttr>().getValue().getSExtValue());
 
   st.regs.add(op, t.tile(repeat));
@@ -1036,12 +1043,12 @@ void encodeOp(State &st, mlir::tosa::BitwiseAndOp op, bool) {
   if (!dty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
-      !getElemTy(op.input2()).isa<mlir::IntegerType>())
+  if(!getElemTy(op.getInput1()).isa<mlir::IntegerType>() ||
+      !getElemTy(op.getInput2()).isa<mlir::IntegerType>())
     throw UnsupportedException(op.getOperation(), "Unsupported element type"); 
-  
-  mlir::Value i1 = op.input1();
-  mlir::Value i2 = op.input2();
+
+  mlir::Value i1 = op.getInput1();
+  mlir::Value i2 = op.getInput2();
 
   encodeBinaryOp(st, op, i1, i2,
       nullptr,
@@ -1054,10 +1061,10 @@ void encodeOp(State &st, mlir::tosa::BitwiseNotOp op, bool) {
   if (!dty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  if(!getElemTy(op.input1()).isa<mlir::IntegerType>())
+  if(!getElemTy(op.getInput1()).isa<mlir::IntegerType>())
     throw UnsupportedException(op.getOperation(), "Unsupported element type");
 
-  mlir::Value i1 = op.input1();
+  mlir::Value i1 = op.getInput1();
 
   encodeUnaryOp(st, op, i1,
       nullptr,
@@ -1070,12 +1077,12 @@ void encodeOp(State &st, mlir::tosa::BitwiseOrOp op, bool) {
   if (!dty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
-      !getElemTy(op.input2()).isa<mlir::IntegerType>())
+  if(!getElemTy(op.getInput1()).isa<mlir::IntegerType>() ||
+      !getElemTy(op.getInput2()).isa<mlir::IntegerType>())
     throw UnsupportedException(op.getOperation(), "Unsupported element type"); 
-  
-  mlir::Value i1 = op.input1();
-  mlir::Value i2 = op.input2();
+
+  mlir::Value i1 = op.getInput1();
+  mlir::Value i2 = op.getInput2();
 
   encodeBinaryOp(st, op, i1, i2,
       nullptr,
@@ -1088,12 +1095,12 @@ void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
   if (!dty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
-      !getElemTy(op.input2()).isa<mlir::IntegerType>())
+  if(!getElemTy(op.getInput1()).isa<mlir::IntegerType>() ||
+      !getElemTy(op.getInput2()).isa<mlir::IntegerType>())
     throw UnsupportedException(op.getOperation(), "Unsupported element type");
-  
-  mlir::Value i1 = op.input1();
-  mlir::Value i2 = op.input2();
+
+  mlir::Value i1 = op.getInput1();
+  mlir::Value i2 = op.getInput2();
 
   encodeBinaryOp(st, op, i1, i2,
       nullptr,
@@ -1137,14 +1144,14 @@ static Tensor getPaddedTensor2D(mlir::Type elemTy,
   }
 }
 
-static Tensor addBias2D(mlir::Type elemTy, 
+static Tensor addBias2D(mlir::Type elemTy,
                         vector<Expr> dims,
                         Tensor acc, Tensor bias) {
   vector<Expr> ind = Index::boundIndexVars(4);
   auto tf = Float(acc.get(ind), elemTy);
   auto biasf = Float(bias.get({ind[3]}), elemTy);
   return Tensor::mkInitializedLambda(
-            elemTy, move(dims), move(ind), 
+            elemTy, move(dims), move(ind),
             tf.add(biasf)
           );
 }
@@ -1152,15 +1159,15 @@ static Tensor addBias2D(mlir::Type elemTy,
 template<>
 void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   // input's dim sizes = [N, H, W, C]
-  auto input = st.regs.get<Tensor>(op.input());
+  auto input = st.regs.get<Tensor>(op.getInput());
   // weight's dim sizes = [H, W, C, M]
-  auto weight = st.regs.get<Tensor>(op.weight());
+  auto weight = st.regs.get<Tensor>(op.getWeight());
   // bias: a 1-dim array whose size is C * M
-  auto bias = st.regs.get<Tensor>(op.bias());
+  auto bias = st.regs.get<Tensor>(op.getBias());
   // strides = [strides_y, strides_x]
-  vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
+  vector<Expr> strides = getFromArrayAttr<Index>(op.getStride());
   // dilations = [dilations_y, dilations_x]
-  vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
+  vector<Expr> dilations = getFromArrayAttr<Index>(op.getDilation());
 
   auto elemTy = getElemTy(op.getResult());
   if (!elemTy.isa<mlir::FloatType>())
@@ -1175,10 +1182,10 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   st.wellDefined(op, bias.getDim(0) == (C * M),
       "bias and weight's shapes check");
 
-  auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
+  auto paddedTensor = getPaddedTensor2D(elemTy, input, op.getPad());
 
   auto output = paddedTensor.depthwiseConv2D(weight, strides, dilations, bias);
-  
+
   st.wellDefined(op, input.isFullyInitialized(), "input is initialized");
   st.wellDefined(op, weight.isFullyInitialized(), "weight is initialized");
   st.wellDefined(op, bias.isFullyInitialized(), "bias is initialized");
@@ -1190,15 +1197,15 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
 template<>
 void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   // input's dim sizes = [N, H, W, C]
-  auto input = st.regs.get<Tensor>(op.input());
+  auto input = st.regs.get<Tensor>(op.getInput());
   // weight's dim sizes = [F, H, W, C]
-  auto weight = st.regs.get<Tensor>(op.weight());
+  auto weight = st.regs.get<Tensor>(op.getWeight());
   // bias: a 1-dim array whose size is F
-  auto bias = st.regs.get<Tensor>(op.bias());
+  auto bias = st.regs.get<Tensor>(op.getBias());
   // strides = [strides_y, strides_x]
-  vector<Expr> strides = getFromArrayAttr<Index>(op.stride());
+  vector<Expr> strides = getFromArrayAttr<Index>(op.getStride());
   // dilations = [dilations_y, dilations_x]
-  vector<Expr> dilations = getFromArrayAttr<Index>(op.dilation());
+  vector<Expr> dilations = getFromArrayAttr<Index>(op.getDilation());
 
   // Check whether C is identical
   st.wellDefined(op, input.getDim(3) == weight.getDim(3),
@@ -1207,13 +1214,13 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   st.wellDefined(op, weight.getDim(0) == bias.getDim(0),
       "bias and weight's shapes check");
 
-  assert(strides.size() == 2 && dilations.size() == 2);  
+  assert(strides.size() == 2 && dilations.size() == 2);
 
   auto elemTy = getElemTy(op.getResult());
   if (!elemTy.isa<mlir::FloatType>())
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
+  auto paddedTensor = getPaddedTensor2D(elemTy, input, op.getPad());
 
 
   auto acc = paddedTensor.conv(weight,
@@ -1236,8 +1243,8 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
   if (!dty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
 
-  mlir::Value i = op.input1();
-  mlir::Value p = op.perms();
+  mlir::Value i = op.getInput1();
+  mlir::Value p = op.getPerms();
 
   auto ity = i.getType().dyn_cast<mlir::RankedTensorType>();
   auto pty = p.getType().dyn_cast<mlir::RankedTensorType>();
@@ -1292,7 +1299,7 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
       }
     }
     assert(pushed && "transpose's perms is not permutation!");
-  }  
+  }
 
   auto output = input.get(outVars);
 
@@ -1307,9 +1314,9 @@ void encodeOp(State &st, mlir::tosa::GatherOp op, bool) {
   // These were checked by default MLIR verifier
 
   // input's dim sizes = [N, K, C]
-  auto values = st.regs.get<Tensor>(op.values());
+  auto values = st.regs.get<Tensor>(op.getValues());
   // indices's dim sizes = [N, W]
-  auto indices = st.regs.get<Tensor>(op.indices());
+  auto indices = st.regs.get<Tensor>(op.getIndices());
   // output tensor dim = [N, W, C]
   // output[n][w][c] = values[n][indices[n][w]][c]
   vector<Expr> outputDims =
@@ -1342,10 +1349,10 @@ void encodeOp(State &st, mlir::tosa::GatherOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::tosa::AvgPool2dOp op, bool) {
-  auto input = st.regs.get<Tensor>(op.input());
-  auto kernelDims = getFromArrayAttr<Index>(op.kernel());
-  auto paddings = getFromArrayAttr<Index>(op.pad());
-  auto strides = getFromArrayAttr<Index>(op.stride());
+  auto input = st.regs.get<Tensor>(op.getInput());
+  auto kernelDims = getFromArrayAttr<Index>(op.getKernel());
+  auto paddings = getFromArrayAttr<Index>(op.getPad());
+  auto strides = getFromArrayAttr<Index>(op.getStride());
 
   if (!input.getElemType().isa<mlir::FloatType>()) {
     throw UnsupportedException(op.getOperation(),
@@ -1369,10 +1376,10 @@ void encodeOp(State &st, mlir::tosa::AvgPool2dOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::tosa::MaxPool2dOp op, bool) {
-  auto input = st.regs.get<Tensor>(op.input());
-  auto kernelDims = getFromArrayAttr<Index>(op.kernel());
-  auto paddings = getFromArrayAttr<Index>(op.pad());
-  auto strides = getFromArrayAttr<Index>(op.stride());
+  auto input = st.regs.get<Tensor>(op.getInput());
+  auto kernelDims = getFromArrayAttr<Index>(op.getKernel());
+  auto paddings = getFromArrayAttr<Index>(op.getPad());
+  auto strides = getFromArrayAttr<Index>(op.getStride());
 
   if (!input.getElemType().isa<mlir::FloatType>()) {
     throw UnsupportedException(op.getOperation(),
@@ -2201,7 +2208,7 @@ void encodeOp(State &st, mlir::tosa::MulOp op, bool) {
     throw UnsupportedException(op.getOperation(),
         "Unsupported operand types");
 
-  if (op.shift() != 0)
+  if (op.getShift() != 0)
     throw UnsupportedException(op.getOperation(),
         "Mul with shift is unsupported");
 
@@ -2218,7 +2225,7 @@ void encodeOp(State &st, mlir::tosa::NegateOp op, bool) {
   auto opty = op.getOperand().getType();
   if (!opty.isa<mlir::RankedTensorType>())
     throw UnsupportedException(op.getOperation(), "Unsupported operand type");
-  else if (op.quantization_info())
+  else if (op.getQuantizationInfo())
     throw UnsupportedException(op.getOperation(), "Quantization is unsupported");
 
   mlir::Value arg0 = op.getOperand();
@@ -2256,9 +2263,9 @@ void encodeOp(State &st, mlir::tosa::ExpOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
-  auto input = op.input();   // [N, IC]
-  auto weight = op.weight(); // [OC, IC]
-  auto bias = op.bias();     // [OC]
+  auto input = op.getInput();   // [N, IC]
+  auto weight = op.getWeight(); // [OC, IC]
+  auto bias = op.getBias();     // [OC]
 
   if (!input.getType().isa<mlir::RankedTensorType>() ||
       !weight.getType().isa<mlir::RankedTensorType>() ||
@@ -2303,13 +2310,13 @@ void encodeOp(State &st, mlir::tosa::FullyConnectedOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::tosa::ReduceSumOp op, bool) {
-  auto input = op.input();
+  auto input = op.getInput();
   auto inputTy = input.getType().dyn_cast<mlir::RankedTensorType>();
   if (!inputTy)
     throw UnsupportedException(op.getOperation(), "Unsupported operand type");
 
   auto t = st.regs.get<Tensor>(input);
-  uint64_t axis = op.axis();
+  uint64_t axis = op.getAxis();
 
   st.wellDefined(op.getOperation(), t.isFullyInitialized(),
       "input initialized");
@@ -2319,7 +2326,7 @@ void encodeOp(State &st, mlir::tosa::ReduceSumOp op, bool) {
 template<>
 void encodeOp(State &st, mlir::tosa::ReshapeOp op, bool) {
   auto t = st.regs.get<Tensor>(op.getOperand());
-  auto attrs = op.new_shape();
+  auto attrs = op.getNewShape();
   vector<Expr> newDims;
   mlir::Operation *oper = op.getOperation();
 
@@ -2477,11 +2484,11 @@ void encodeOp(State &st, mlir::memref::SubViewOp op, bool) {
     candidateReducedShapedType.getShape()
   );
 
-  if (!optionalUnusedDimsMask.hasValue())
+  if (!optionalUnusedDimsMask.has_value())
     throw UnsupportedException(op.getOperation(),
         "Subview result size mismatch");
 
-  auto unusedDims = optionalUnusedDimsMask.getValue();
+  auto unusedDims = optionalUnusedDimsMask.value();
   auto memref = src.subview(offsets, sizes, strides, unusedDims, rankDiff);
   st.regs.add(op.getResult(), move(memref));
 }
@@ -3415,7 +3422,8 @@ static void encodeBlock(
 
     ENCODE(st, op, mlir::func::ReturnOp, encodeMemWriteOps);
 
-    ENCODE(st, op, mlir::math::AbsOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::math::AbsFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::math::AbsIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::math::ExpOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::memref::AllocOp, encodeMemWriteOps);

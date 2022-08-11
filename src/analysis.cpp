@@ -258,7 +258,7 @@ bool analyzeOp(mlir::arith::ConstantOp op, AnalysisResult &res) {
 template<>
 bool analyzeOp(mlir::tosa::ConstOp op, AnalysisResult &res) {
   auto tensorty = op.getType().dyn_cast<mlir::RankedTensorType>();
-  auto eattr = op.value().dyn_cast<mlir::ElementsAttr>();
+  auto eattr = op.getValue().dyn_cast<mlir::ElementsAttr>();
   if (!tensorty || !eattr) return true;
 
   bool processed = analyzeElemAttr(eattr, res);
@@ -274,8 +274,8 @@ bool analyzeOp(mlir::tosa::ConstOp op, AnalysisResult &res) {
 template<>
 bool analyzeOp(mlir::tosa::ClampOp op, AnalysisResult &res) {
   auto ty = mlir::Float32Type::get(op.getContext());
-  analyzeAPFloat(ty, op.min_fp(), res);
-  analyzeAPFloat(ty, op.max_fp(), res);
+  analyzeAPFloat(ty, op.getMinFp(), res);
+  analyzeAPFloat(ty, op.getMaxFp(), res);
   return true;
 }
 
