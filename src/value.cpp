@@ -290,6 +290,9 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
 };
 
 pair<Expr, vector<Expr>> Integer::refines(const Integer &other) const {
+  smart_assert(bitwidth() == other.bitwidth(),
+      "To check refinement of two integer values, their bitwidth must be "
+      "equal, but got " << bitwidth() << " != " << other.bitwidth());
   return {(Expr) other == (Expr) *this, {}};
 }
 
