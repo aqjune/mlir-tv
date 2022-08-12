@@ -33,7 +33,7 @@ vector<cvc5::api::Sort> toCVC5SortVector(const vector<smt::Sort> &vec);
 template<class T>
 void writeOrCheck(optional<T> &org, T &&t) {
   if (org)
-    assert(*org == t);
+    smart_assert(*org == t, "org must be empty");
   else
     org.emplace(move(t));
 }
@@ -782,6 +782,9 @@ Expr Expr::getMSB() const {
 
 Expr Expr::abs() const {
   CHECK_LOCK();
+  if (sort().isBV()) {
+    return Expr::mkBV(0, 1).concat(extract(bitwidth() - 2, 0));
+  }
   Expr e;
   SET_Z3(e, fmap(this->z3, [&](auto e) { return z3::abs(e); }));
   return e;
@@ -1236,7 +1239,7 @@ Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
         new_var = ctx.mkConst(cvc5sort, name);
       sctx.addNamedTerm(name, move(new_var));
     }
-    
+
     const auto term = *sctx.getNamedTerm(name);
     assert(cvc5sort == term.getSort() &&
             "Term(s) of duplicate names are not allowed");
@@ -1293,7 +1296,7 @@ Expr Expr::mkFpaVal(const double val) {
 
 Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
   for (auto &v: vars) {
-    assert(v.isVar());
+    smart_assert(v.isVar(), "Not a variable: " << v);
   }
 
   uint64_t v;
