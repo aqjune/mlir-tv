@@ -419,8 +419,10 @@ encodeUnaryOp(State &st, OpTy op, mlir::Value arg,
   mlir::Operation *opr = op.getOperation();
 
   if (arg.getType().isa<mlir::FloatType>()) {
-    auto a = st.regs.get<Float>(arg);
-    st.regs.add(op, f_float(move(a)));
+    st.regs.add(op, f_float(st.regs.get<Float>(arg)));
+
+  } else if (arg.getType().isa<mlir::IntegerType>()) {
+    st.regs.add(op, f_int(st.regs.get<Integer>(arg)));
 
   } else if (auto tty = arg.getType().dyn_cast<mlir::RankedTensorType>()) {
     auto elemty = tty.getElementType();
@@ -748,14 +750,14 @@ template<>
 void encodeOp(State &st, mlir::math::AbsFOp op, bool) {
   mlir::Value arg0 = op.getOperand();
 
-  encodeUnaryOp(st, op, arg0, [](auto &&a) { return a.abs(); }, {});
+  encodeUnaryOp(st, op, arg0, [](Float &&a) { return a.abs(); }, {});
 }
 
 template<>
 void encodeOp(State &st, mlir::math::AbsIOp op, bool) {
   mlir::Value arg0 = op.getOperand();
 
-  encodeUnaryOp(st, op, arg0, [](auto &&a) { return a.abs(); }, {});
+  encodeUnaryOp(st, op, arg0, {}, [](Integer &&a) { return ((Expr)a).abs(); });
 }
 
 template<>
