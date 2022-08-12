@@ -1150,8 +1150,9 @@ Tensor Tensor::mkLambda(
   } else
     assert(newdims.size() == indexvars.size());
 
-  for (auto &iv: indexvars)
-    assert(iv.isVar());
+  for (auto &iv: indexvars) {
+    smart_assert(iv.isVar(), "Not a variable: " << iv);
+  }
 
   auto idx = Index::var("idx", VarType::BOUND);
   auto idxForInit = Index::var("idx_init", VarType::BOUND);
@@ -1792,7 +1793,9 @@ MemRef::Layout MemRef::createSubViewLayout(
   for (unsigned i = 0; i < numVarsBefore; ++i) {
     if (!indVarsOrZero[i].isVar()) {
       uint64_t u;
-      assert(indVarsOrZero[i].isUInt(u) && u == 0);
+      smart_assert(indVarsOrZero[i].isUInt(u) && u == 0,
+          "Must be either var or constant 0, but for " << i << "'th element "
+          "we got " << indVarsOrZero[i]);
       zeroOffsets.push_back(i);
     } else {
       indVars.push_back(indVarsOrZero[i]);

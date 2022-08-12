@@ -1253,7 +1253,10 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
   if(!getElemTy(p).isa<mlir::IntegerType>())
     throw UnsupportedException(op.getOperation(), "Unsupported element type");
 
-  assert(pty.getRank() == 1 && pty.getDimSize(0) == ity.getRank());
+  smart_assert(pty.getRank() == 1, "Perms' rank must be 1, but got " << pty);
+  smart_assert(pty.getDimSize(0) == ity.getRank(),
+      "Perm's dim size must be equal to Input1's rank, but got "
+      << pty.getDimSize(0) << " != " << ity.getRank());
 
   auto input = st.regs.get<Tensor>(i);
   auto perms = st.regs.get<Tensor>(p);
