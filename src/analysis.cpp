@@ -294,13 +294,13 @@ bool analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
 
 template<>
 bool analyzeOp(mlir::tensor::PadOp op, AnalysisResult &res) {
-  analyzeRegion(op.region(), res);
+  analyzeRegion(op.getRegion(), res);
   return true;
 }
 
 template<>
 bool analyzeOp(mlir::tensor::GenerateOp op, AnalysisResult &res) {
-  analyzeRegion(op.body(), res);
+  analyzeRegion(op.getBody(), res);
   return true;
 }
 

@@ -1413,7 +1413,7 @@ void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
 
   auto t = st.regs.get<Tensor>(op.getOperand(0));
   vector<Expr> indices;
-  for (auto idx0: op.indices())
+  for (auto idx0: op.getIndices())
     indices.emplace_back(st.regs.get<Index>(idx0));
   if (indices.empty())
     // Deal with the zero-rank tensor case
@@ -1780,7 +1780,7 @@ void encodeOp(State &st, mlir::tensor::PadOp op, bool) {
   vector<Index> padSizeLow = getFromMixedOps<Index>(st, op.getMixedLowPad());
   vector<Index> padSizeHigh = getFromMixedOps<Index>(st, op.getMixedHighPad());
 
-  auto sourceTensor = st.regs.get<Tensor>(op.source());
+  auto sourceTensor = st.regs.get<Tensor>(op.getSource());
   auto newTensorSize =
       vecAdd(vecAdd(sourceTensor.getDimsAsIndices(), padSizeLow), padSizeHigh);
 
@@ -1922,7 +1922,7 @@ static pair<Expr, Expr> encodeDimOp(
 template<>
 void encodeOp(State &st, mlir::tensor::DimOp op, bool) {
   auto [res, wf] = encodeDimOp(
-      st, st.regs.get<Tensor>(op.source()).getDims(), op.index());
+      st, st.regs.get<Tensor>(op.getSource()).getDims(), op.getIndex());
   st.regs.add(op, Index(res));
   st.wellDefined(op, move(wf));
   // DimOp does not look into elements, so initialization check is not necessary
@@ -1946,11 +1946,11 @@ void encodeOp(State &st, mlir::tensor::CastOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::tensor::InsertOp op, bool) {
-  auto val = st.regs.getExpr(op.scalar());
-  auto dest = st.regs.get<Tensor>(op.dest());
+  auto val = st.regs.getExpr(op.getScalar());
+  auto dest = st.regs.get<Tensor>(op.getDest());
 
   vector<Expr> indices;
-  for (auto idx0: op.indices())
+  for (auto idx0: op.getIndices())
     indices.emplace_back(st.regs.get<Index>(idx0));
   if (indices.empty())
     indices.push_back(Index(0));
@@ -1979,7 +1979,7 @@ void encodeOp(State &st, mlir::tensor::FromElementsOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
-  auto exts = op.dynamicExtents();
+  auto exts = op.getDynamicExtents();
   auto retty = op.getType().dyn_cast<mlir::RankedTensorType>();
   if (!retty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
