@@ -29,7 +29,7 @@ endif()
 
 # Check if at least one solver is available
 if(NOT Z3_FOUND AND NOT cvc5_FOUND)
-    message(FATAL_ERROR "At least one solver backend must be specified!")
+    message(FATAL_ERROR "At least one solver backend must be available for use!")
 endif()
 
 find_package(MLIR REQUIRED)
