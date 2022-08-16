@@ -1,30 +1,42 @@
-cmake_minimum_required(VERSION 3.15.0)
+cmake_minimum_required(VERSION 3.13.0)
 project(mlir-tv VERSION 0.1.0)
-set (CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 17)
 
 string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
 
-set(MLIR_DIR CACHE PATH "MLIR installation top-level directory, followed by /lib/cmake/mlir")
-set(Z3_DIR CACHE PATH "Z3 installation top-level directory")
-set(CVC5_DIR CACHE PATH "CVC5 installation top-level directory")
-option(USE_LIBC "Use libc++ in case the MLIR (and CVC5) is linked against libc++")
+# CMake usually does decent job in finding out the proper dependency packages,
+# so for most of the times you won't have to care about the <NAME>_ROOT variables.
+# If you are not satisfied with the CMake's choices, you may use these variables
+# to manually override them with the MLIR, Z3, or cvc5 you prefer.
+set(MLIR_ROOT CACHE PATH "MLIR installation top-level directory")
+set(Z3_ROOT CACHE PATH "Z3 installation top-level directory")
+set(cvc5_ROOT CACHE PATH "cvc5 installation top-level directory")
+option(USE_LIBC "Use libc++ in case the MLIR (and cvc5) is linked against libc++")
 
-set(Z3_INC_DIR "${Z3_DIR}/include")
-set(Z3_LIB_DIR "${Z3_DIR}/lib")
-set(CVC5_INC_DIR "${CVC5_DIR}/include")
-set(CVC5_LIB_DIR "${CVC5_DIR}/lib")
+find_package(Z3 4.8.13)
+if(Z3_FOUND)
+    add_compile_definitions(SOLVER_Z3)
+    message(STATUS "Found Z3 ${Z3_VERSION} from ${Z3_DIR}/Z3Config.cmake")
+endif()
 
-find_package(MLIR REQUIRED CONFIG)
-find_package(LLVM REQUIRED CONFIG)
+find_package(cvc5 0.0.3)
+if(cvc5_FOUND)
+    set(CVC5_LIBRARY cvc5::cvc5-shared)
+    get_property(CVC5_INCLUDE_DIRS TARGET ${CVC5_LIBRARY} PROPERTY INTERFACE_INCLUDE_DIRECTORIES)
+    add_compile_definitions(SOLVER_CVC5)
+    message(STATUS "Found cvc5 ${cvc5_VERSION} from ${cvc5_DIR}/cvc5Config.cmake")
+endif()
 
-message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
-message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+# Check if at least one solver is available
+if(NOT Z3_FOUND AND NOT cvc5_FOUND)
+    message(FATAL_ERROR "At least one solver backend must be specified!")
+endif()
 
-list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
-list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
-include(TableGen)
+find_package(MLIR REQUIRED)
+# MLIR_VERSION does not exist, so use LLVM_VERSION instead
+# If package MLIR is found, package LLVM must have been found in the process
+message(STATUS "Found MLIR ${LLVM_VERSION} from ${MLIR_DIR}/MLIRConfig.cmake")
 include(AddLLVM)
-include(AddMLIR)
 
 # /============================================================/
 # 1. Build object files to check warnings/errors before linking
@@ -45,30 +57,14 @@ add_library(${PROJECT_OBJ} OBJECT
     src/vcgen.cpp)
 
 # Check MLIR and LLVM headers and include
-include_directories(${LLVM_INCLUDE_DIRS})
-include_directories(${MLIR_INCLUDE_DIRS})
+target_include_directories(${PROJECT_OBJ} PUBLIC ${LLVM_INCLUDE_DIRS})
+target_include_directories(${PROJECT_OBJ} PUBLIC ${MLIR_INCLUDE_DIRS})
 
-# Check if at least one solver is available
-if(NOT Z3_DIR AND NOT CVC5_DIR)
-    message(FATAL_ERROR "path to at least one of the solvers must be provided!")
+if(Z3_FOUND)
+    target_include_directories(${PROJECT_OBJ} PUBLIC ${Z3_CXX_INCLUDE_DIRS})
 endif()
-
-# Check Z3 header and include if available
-if(Z3_DIR)
-    if(NOT EXISTS ${Z3_INC_DIR})
-        message(FATAL_ERROR "cannot find Z3 include directory!")
-    endif()
-    target_include_directories(${PROJECT_OBJ} PUBLIC ${Z3_INC_DIR})
-    target_compile_definitions(${PROJECT_OBJ} PUBLIC SOLVER_Z3)
-endif()
-
-# Check CVC5 header and include if available
-if(CVC5_DIR)
-    if(NOT EXISTS ${CVC5_INC_DIR})
-        message(FATAL_ERROR "cannot find CVC5 include directory!")
-    endif()
-    target_include_directories(${PROJECT_OBJ} PUBLIC ${CVC5_INC_DIR})
-    target_compile_definitions(${PROJECT_OBJ} PUBLIC SOLVER_CVC5)
+if(cvc5_FOUND)
+    target_include_directories(${PROJECT_OBJ} PUBLIC ${CVC5_INCLUDE_DIRS})
 endif()
 
 # Warn about unused variables
@@ -97,33 +93,19 @@ target_include_directories(${PROJECT_OBJ} PUBLIC ${magic_enum_SOURCE_DIR}/includ
 # /============================================================/
 
 set(PROJECT_LIB "mlirtv")
-add_library(${PROJECT_LIB} STATIC)
+add_library(${PROJECT_LIB})
 target_link_libraries(${PROJECT_LIB} PUBLIC ${PROJECT_OBJ})
-
-# Check MLIR libraries and link 
-link_directories(${LLVM_BUILD_LIBRARY_DIR})
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 set(LIB_LIST ${dialect_libs})
 target_link_libraries(${PROJECT_LIB} PUBLIC ${LIB_LIST} pthread m curses)
 llvm_update_compile_flags(${PROJECT_LIB})
 
-# Check Z3 library and link if possible
-if(Z3_DIR)
-    if(NOT EXISTS ${Z3_LIB_DIR})
-        message(FATAL_ERROR "cannot find Z3 library directory!")
-    endif()
-    target_link_directories(${PROJECT_LIB} PUBLIC ${Z3_LIB_DIR})
-    target_link_libraries(${PROJECT_LIB} PUBLIC z3)
+if(Z3_FOUND)
+    target_link_libraries(${PROJECT_LIB} PRIVATE ${Z3_LIBRARIES})
 endif()
-
-# Check CVC5 library and link if possible
-if(CVC5_DIR)
-    if(NOT EXISTS ${CVC5_LIB_DIR})
-        message(FATAL_ERROR "cannot find CVC5 library directory!")
-    endif()
-    target_link_directories(${PROJECT_LIB} PUBLIC ${CVC5_LIB_DIR})
-    target_link_libraries(${PROJECT_LIB} PUBLIC cvc5)
+if(cvc5_FOUND)
+    target_link_libraries(${PROJECT_LIB} PRIVATE ${CVC5_LIBRARY})
 endif()
 
 # Try using libc if possible
@@ -131,14 +113,12 @@ if(USE_LIBC)
     target_link_options(${PROJECT_LIB} PUBLIC -stdlib=libc++)
 endif()
 
-
 # /============================================================/
 # 3. Build executable
 # /============================================================/
 
 # Build executable
 add_executable(${PROJECT_NAME} src/main.cpp)
-add_dependencies(${PROJECT_NAME} ${PROJECT_LIB})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_LIB})
 
 enable_testing()
