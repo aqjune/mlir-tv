@@ -139,7 +139,8 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
     for (unsigned i = 0; i < globalsForTy.size(); ++i) {
       auto glb = globalsForTy[i];
       auto res = globalVarBids.try_emplace(glb.getName().str(), elemTy, i);
-      assert(res.second && "Duplicated global var name");
+      smart_assert(res.second,
+          "Duplicated global var name: " << glb.getName().str());
 
       verbose("memory init") << "Assigning bid = " << i << " to global var "
           << glb.getName() << "...\n";

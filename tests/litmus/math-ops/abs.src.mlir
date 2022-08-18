@@ -5,3 +5,5 @@ func @f(%x: f32) -> f32 {
   %z = math.abs %y: f32
   return %z: f32
 }
+
+
