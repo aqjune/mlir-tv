@@ -717,6 +717,26 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::arith::ExtUIOp op, bool) {
+  auto op_type = op.getType();
+  auto tgt_bw = op_type.getIntOrFloatBitWidth();
+
+  auto operand_type = op.getOperand().getType();
+  auto src_bw = operand_type.getIntOrFloatBitWidth();
+
+  if (src_bw == tgt_bw) {
+    st.regs.add(op.getResult(), st.regs.get<Integer>(op.getOperand()));
+    return; // extending into identical type is a no-op
+  } else if (src_bw > tgt_bw) {
+    throw UnsupportedException(op.getOperation(),
+      "cannot ExtUI into narrower type!");
+  }
+
+  auto arg = op.getOperand();
+  encodeUnaryOp(st, op, arg, {}, [op_type](Integer &&a) { return a.unsignedExtend(op_type); });
+}
+
+template<>
 void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
   auto op_type = op.getType();
   FPPrecision tgt_prec = getPrecision(op_type);
@@ -3411,6 +3431,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::ConstantOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::DivFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ExtFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ExtUIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::IndexCastOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulIOp, encodeMemWriteOps);
