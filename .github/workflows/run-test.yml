@@ -53,6 +53,7 @@ jobs:
         run: |
           cd /src/mlir-tv
           cmake -B build -G Ninja \
+            -DMLIR_ROOT=/opt/llvm \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo
           cmake --build build
   
@@ -96,6 +97,7 @@ jobs:
         run: |
           cd mlir-tv
           cmake -B build -G Ninja \
+            -DMLIR_ROOT=/opt/llvm \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo
           cmake --build build
 
@@ -117,6 +119,7 @@ jobs:
         run: |
           cd mlir-tv
           cmake -B build -G Ninja \
+            -DMLIR_ROOT=/opt/llvm \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo
           cmake --build build
 
