@@ -290,6 +290,9 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
 };
 
 pair<Expr, vector<Expr>> Integer::refines(const Integer &other) const {
+  smart_assert(bitwidth() == other.bitwidth(),
+      "To check refinement of two integer values, their bitwidth must be "
+      "equal, but got " << bitwidth() << " != " << other.bitwidth());
   return {(Expr) other == (Expr) *this, {}};
 }
 
@@ -1147,8 +1150,9 @@ Tensor Tensor::mkLambda(
   } else
     assert(newdims.size() == indexvars.size());
 
-  for (auto &iv: indexvars)
-    assert(iv.isVar());
+  for (auto &iv: indexvars) {
+    smart_assert(iv.isVar(), "Not a variable: " << iv);
+  }
 
   auto idx = Index::var("idx", VarType::BOUND);
   auto idxForInit = Index::var("idx_init", VarType::BOUND);
@@ -1789,7 +1793,9 @@ MemRef::Layout MemRef::createSubViewLayout(
   for (unsigned i = 0; i < numVarsBefore; ++i) {
     if (!indVarsOrZero[i].isVar()) {
       uint64_t u;
-      assert(indVarsOrZero[i].isUInt(u) && u == 0);
+      smart_assert(indVarsOrZero[i].isUInt(u) && u == 0,
+          "Must be either var or constant 0, but for " << i << "'th element "
+          "we got " << indVarsOrZero[i]);
       zeroOffsets.push_back(i);
     } else {
       indVars.push_back(indVarsOrZero[i]);
@@ -1857,20 +1863,20 @@ ValueTy eval(const ValueTy &v, smt::Model m) {
 }
 
 ValueTy attrToValueTy(mlir::Attribute a) {
-  auto ty = a.getType();
-  if (ty.isa<mlir::FloatType>()) {
-    return Float::constant(a.dyn_cast<mlir::FloatAttr>().getValue(), ty);
-  } else if (ty.isa<mlir::IntegerType>()) {
-    if (64 < ty.getIntOrFloatBitWidth())
+  if (auto fty = a.dyn_cast<mlir::FloatAttr>()) {
+    return Float::constant(fty.getValue(), fty.getType());
+  } else if (auto ity = a.dyn_cast<mlir::IntegerAttr>()) {
+    if (ity.getType().isIndex()) {
+      llvm::APInt i = a.dyn_cast<mlir::IntegerAttr>().getValue();
+      assert(i.getBitWidth() == 64);
+      int64_t ii = i.getSExtValue();
+      assert(-2147483648ll <= ii && ii <= 2147483647ll);
+      return Index(ii);
+    }
+    if (64 < ity.getType().getIntOrFloatBitWidth())
       throw UnsupportedException("Integer size is too large");
 
     return Integer(a.dyn_cast<mlir::IntegerAttr>().getValue());
-  } else if (ty.isIndex()) {
-    llvm::APInt i = a.dyn_cast<mlir::IntegerAttr>().getValue();
-    assert(i.getBitWidth() == 64);
-    int64_t ii = i.getSExtValue();
-    assert(-2147483648ll <= ii && ii <= 2147483647ll);
-    return Index(ii);
   }
 
   throw UnsupportedException("Unsupported type");
