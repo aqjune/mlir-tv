@@ -18,7 +18,7 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     container:
-      image: strikef/mlir-tv-ci-base:2022-02-10
+      image: strikef/mlir-tv-ci-base:heaan
       credentials:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
