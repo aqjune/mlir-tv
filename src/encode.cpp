@@ -770,24 +770,17 @@ void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::arith::TruncIOp op, bool) {
-  auto op_type = op.getType();
-  auto tgt_bw = op_type.getIntOrFloatBitWidth();
+  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
+  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
 
-  auto operand_type = op.getOperand().getType();
-  auto src_bw = operand_type.getIntOrFloatBitWidth();
-
-  if (src_bw == tgt_bw) {
-    st.regs.add(op.getResult(), st.regs.get<Integer>(op.getOperand()));
-    return; // truncating into identical type is a no-op
-  } else if (src_bw < tgt_bw) {
-    throw UnsupportedException(op.getOperation(),
-      "cannot TruncI into wider type!");
-  }
+  smart_assert(src_bw > tgt_bw, "Source's bitwidth must be larger than "
+      "target's bitwidth, but got " << src_bw << " <= " << tgt_bw);
 
   auto arg = op.getOperand();
+  auto amnt = src_bw - tgt_bw;
   encodeUnaryOp(st, op, arg,
       {},
-      [op_type](Integer &&a) { return a.truncate(op_type); });
+      [amnt](Integer &&a) { return ((Expr)a).trunc(amnt); });
 }
 
 template<>
