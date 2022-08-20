@@ -864,36 +864,6 @@ Expr Expr::sext(unsigned bits) const {
   return e;
 }
 
-Expr Expr::shl(const unsigned bits) const {
-  CHECK_LOCK();
-
-  Expr e;
-  const auto shifting_bits = Expr::mkBV(bits, *this);
-  SET_Z3_USEOP(e, shifting_bits, shl);
-  SET_CVC5_USEOP(e, shifting_bits, BITVECTOR_SHL);
-  return e;
-}
-
-Expr Expr::ashr(const unsigned bits) const {
-  CHECK_LOCK();
-
-  Expr e;
-  const auto shifting_bits = Expr::mkBV(bits, *this);
-  SET_Z3_USEOP(e, shifting_bits, ashr);
-  SET_CVC5_USEOP(e, shifting_bits, BITVECTOR_ASHR);
-  return e;
-}
-
-Expr Expr::lshr(const unsigned bits) const {
-  CHECK_LOCK();
-
-  Expr e;
-  const auto shifting_bits = Expr::mkBV(bits, *this);
-  SET_Z3_USEOP(e, shifting_bits, lshr);
-  SET_CVC5_USEOP(e, shifting_bits, BITVECTOR_LSHR);
-  return e;
-}
-
 Expr Expr::implies(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
@@ -1188,6 +1158,36 @@ Expr &Expr::operator|=(const Expr &rhs) {
   SET_Z3(*this, move(e.z3));
   SET_CVC5(*this, move(e.cvc5));
   return *this;
+}
+
+EXPR_BVOP_UINT64(shl)
+Expr Expr::shl(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
+  Expr e;
+  SET_Z3_USEOP(e, rhs, shl);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_SHL);
+  return e;
+}
+
+EXPR_BVOP_UINT64(ashr)
+Expr Expr::ashr(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
+  Expr e;
+  SET_Z3_USEOP(e, rhs, ashr);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_ASHR);
+  return e;
+}
+
+EXPR_BVOP_UINT64(lshr)
+Expr Expr::lshr(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
+  Expr e;
+  SET_Z3_USEOP(e, rhs, lshr);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_LSHR);
+  return e;
 }
 
 Expr Expr::substitute(
