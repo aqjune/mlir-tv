@@ -61,7 +61,7 @@ jobs:
   # build-release:
   #   runs-on: ubuntu-20.04
   #   container:
-  #     image: strikef/mlir-tv-ci-base:heaan
+  #     image: strikef/mlir-tv-ci-base:latest
   #     credentials:
   #       username: ${{ secrets.DOCKER_HUB_USERNAME }}
   #       password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
@@ -83,7 +83,7 @@ jobs:
   build-Z3-only:
     runs-on: ubuntu-20.04
     container:
-      image: strikef/mlir-tv-ci-base:heaan
+      image: strikef/mlir-tv-ci-base:2022-02-10
       credentials:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
@@ -105,7 +105,7 @@ jobs:
   build-CVC5-only:
     runs-on: ubuntu-20.04
     container:
-      image: strikef/mlir-tv-ci-base:heaan
+      image: strikef/mlir-tv-ci-base:2022-02-10
       credentials:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
@@ -128,7 +128,7 @@ jobs:
     needs: build
     runs-on: ubuntu-20.04
     container:
-      image: strikef/mlir-tv-ci-base:heaan
+      image: strikef/mlir-tv-ci-base:2022-02-10
       credentials:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
@@ -159,7 +159,7 @@ jobs:
     runs-on: ubuntu-20.04
     needs: build
     container:
-      image: strikef/mlir-tv-ci-base:heaan
+      image: strikef/mlir-tv-ci-base:2022-02-10
       credentials:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
