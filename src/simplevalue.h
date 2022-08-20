@@ -32,6 +32,8 @@ public:
   static Integer boolTrue();
   static Integer boolFalse();
 
+  Integer truncate(const mlir::Type &tgt_type) const;
+
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);
   // (refinement, {})
   std::pair<smt::Expr, std::vector<smt::Expr>> refines(const Integer &other)

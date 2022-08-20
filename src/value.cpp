@@ -284,6 +284,11 @@ Integer Integer::var(string &&name, unsigned bw, VarType varty) {
 Integer Integer::boolTrue() { return Integer(1, 1); }
 Integer Integer::boolFalse() { return Integer(0, 1); }
 
+Integer Integer::truncate(const mlir::Type &tgt_type) const {
+  const auto tgt_bw = tgt_type.getIntOrFloatBitWidth();
+  return Integer(e.extract(tgt_bw - 1, 0));
+}
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Integer &i) {
   os << or_omit((Expr)i);
   return os;

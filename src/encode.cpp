@@ -739,6 +739,28 @@ void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::arith::TruncIOp op, bool) {
+  auto op_type = op.getType();
+  auto tgt_bw = op_type.getIntOrFloatBitWidth();
+
+  auto operand_type = op.getOperand().getType();
+  auto src_bw = operand_type.getIntOrFloatBitWidth();
+
+  if (src_bw == tgt_bw) {
+    st.regs.add(op.getResult(), st.regs.get<Integer>(op.getOperand()));
+    return; // truncating into identical type is a no-op
+  } else if (src_bw < tgt_bw) {
+    throw UnsupportedException(op.getOperation(),
+      "cannot TruncI into wider type!");
+  }
+
+  auto arg = op.getOperand();
+  encodeUnaryOp(st, op, arg,
+      {},
+      [op_type](Integer &&a) { return a.truncate(op_type); });
+}
+
+template<>
 void encodeOp(State &st, mlir::linalg::IndexOp op, bool) {
   uint64_t i = op.dim();
   assert(i < st.linalgGenericScopes.top().indVars.size());
@@ -3419,6 +3441,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::SubFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::TruncFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::TruncIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::XOrIOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::bufferization::CloneOp, encodeMemWriteOps);
