@@ -134,9 +134,9 @@ jobs:
       - name: Checkout LLVM
         uses: actions/checkout@v2
         with:
-          repository: llvm/llvm-project
+          repository: aqjune-cryptolab/llvm-project
           path: src/llvm-project
-          ref: 27bb799095c1dfd2e83fe0eabf6399fa83082444
+          ref: heaan-mlir
 
       - name: Get LLVM SHA
         id: sha
