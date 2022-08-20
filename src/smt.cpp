@@ -864,6 +864,12 @@ Expr Expr::sext(unsigned bits) const {
   return e;
 }
 
+Expr Expr::trunc(unsigned bits) const {
+  smart_assert(bits < bitwidth(), "bits must be smaller than bitwidth, but "
+      "got " << bits << " >= " << bitwidth());
+  return extract(bitwidth() - bits - 1, 0);
+}
+
 Expr Expr::implies(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 

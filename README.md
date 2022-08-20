@@ -18,15 +18,18 @@ Please follow LLVM's [Getting Started](https://llvm.org/docs/GettingStarted.html
 If you already have your MLIR built but found that you are not sudo priviledge that is to install, you can update the `CMAKE_INSTALL_PREFIX` variable via
 `cmake -DCMAKE_INSTALL_PREFIX=<your local path> ../llvm` and run the install command.
 
+You will also need to build & install Z3.
+Please [build Z3 using CMake](https://github.com/Z3Prover/z3/blob/master/README-CMake.md) and install it to somewhere designated by `CMAKE_INSTALL_PREFIX`.
+
 ```bash
 mkdir build
 cd build
 
-# At least one of -DZ3_DIR and -DCVC5_DIR should be set. Build will fail otherwise.
+# At least one of -DZ3_ROOT and -DCVC5_ROOT should be set. Build will fail otherwise.
 # -DUSE_LIBC is OFF by default. Set it to ON iff the MLIR (and CVC5) is linked with libc++
-cmake -DMLIR_DIR=<dir/to/mlir-install>/lib/cmake/mlir \
-      [-DZ3_DIR=<dir/to/z3-install>] \
-      [-DCVC5_DIR=<dir/to/cvc5-install>] \
+cmake -DMLIR_ROOT=<dir/to/mlir-install> \
+      [-DZ3_ROOT=<dir/to/z3-install>] \
+      [-DCVC5_ROOT=<dir/to/cvc5-install>] \
       [-DUSE_LIBC=ON|OFF] \
       [-DCMAKE_BUILD_TYPE=Debug|Release] \
       ..
