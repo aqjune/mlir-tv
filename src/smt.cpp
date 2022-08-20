@@ -1164,6 +1164,17 @@ EXPR_BVOP_UINT64(shl)
 Expr Expr::shl(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBV(a << b, rhs.bitwidth());
+  else if (rhs.isUInt(b)) {
+    if (b == 0)
+      return *this;
+  } else if (isUInt(a)) {
+    if (a == 0)
+      return *this;
+  }
+
   Expr e;
   SET_Z3_USEOP(e, rhs, shl);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_SHL);
@@ -1174,6 +1185,21 @@ EXPR_BVOP_UINT64(ashr)
 Expr Expr::ashr(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
+  uint64_t a, b;
+  // The value of a >> b for unsigned a is the integer part of a/(2^b)
+  // which is equivalent to lshr.
+  // Therefore we cannot apply uint optimization for ashr.
+  // Even if we use signed int, the value of >> on a signed int
+  // is implementation-defined until c++17 (it is ashr since c++20),
+  // so it is hard to implement a robust optimization.
+  if (rhs.isUInt(b)) {
+    if (b == 0)
+      return *this;
+  } else if (isUInt(a)) {
+    if (a == 0)
+      return *this;
+  }
+
   Expr e;
   SET_Z3_USEOP(e, rhs, ashr);
   SET_CVC5_USEOP(e, rhs, BITVECTOR_ASHR);
@@ -1183,6 +1209,17 @@ Expr Expr::ashr(const Expr &rhs) const {
 EXPR_BVOP_UINT64(lshr)
 Expr Expr::lshr(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
+
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b))
+    return mkBV(a >> b, rhs.bitwidth());
+  else if (rhs.isUInt(b)) {
+    if (b == 0)
+      return *this;
+  } else if (isUInt(a)) {
+    if (a == 0)
+      return *this;
+  }
 
   Expr e;
   SET_Z3_USEOP(e, rhs, lshr);
