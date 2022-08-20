@@ -1171,7 +1171,7 @@ Expr Expr::shl(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
   uint64_t a, b;
-  if (isUInt(a) && rhs.isUInt(b))
+  if (isUInt(a) && rhs.isUInt(b) && b < 64)
     return mkBV(a << b, rhs.bitwidth());
   else if (rhs.isUInt(b)) {
     if (b == 0)
@@ -1217,7 +1217,7 @@ Expr Expr::lshr(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
   uint64_t a, b;
-  if (isUInt(a) && rhs.isUInt(b))
+  if (isUInt(a) && rhs.isUInt(b) && b < 64)
     return mkBV(a >> b, rhs.bitwidth());
   else if (rhs.isUInt(b)) {
     if (b == 0)
