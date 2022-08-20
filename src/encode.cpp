@@ -717,6 +717,36 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::arith::ExtSIOp op, bool) {
+  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
+  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
+
+  smart_assert(src_bw < tgt_bw, "Source's bitwidth must be smaller than "
+      "target's bitwidth, but got " << src_bw << " >= " << tgt_bw);
+
+  auto arg = op.getOperand();
+  auto extamnt = tgt_bw - src_bw;
+  encodeUnaryOp(st, op, arg,
+      {},
+      [extamnt](Integer &&a) { return ((Expr)a).sext(extamnt); });
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::ExtUIOp op, bool) {
+  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
+  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
+
+  smart_assert(src_bw < tgt_bw, "Source's bitwidth must be smaller than "
+      "target's bitwidth, but got " << src_bw << " >= " << tgt_bw);
+
+  auto arg = op.getOperand();
+  auto extamnt = tgt_bw - src_bw;
+  encodeUnaryOp(st, op, arg,
+      {},
+      [extamnt](Integer &&a) { return ((Expr)a).zext(extamnt); });
+}
+
+template<>
 void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
   auto op_type = op.getType();
   FPPrecision tgt_prec = getPrecision(op_type);
@@ -3411,6 +3441,8 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::ConstantOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::DivFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ExtFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ExtSIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ExtUIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::IndexCastOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulIOp, encodeMemWriteOps);
