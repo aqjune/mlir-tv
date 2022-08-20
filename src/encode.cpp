@@ -733,7 +733,9 @@ void encodeOp(State &st, mlir::arith::ExtSIOp op, bool) {
   }
 
   auto arg = op.getOperand();
-  encodeUnaryOp(st, op, arg, {}, [op_type](Integer &&a) { return a.signedExtend(op_type); });
+  encodeUnaryOp(st, op, arg,
+      {},
+      [op_type](Integer &&a) { return a.signedExtend(op_type); });
 }
 
 template<>
@@ -753,7 +755,9 @@ void encodeOp(State &st, mlir::arith::ExtUIOp op, bool) {
   }
 
   auto arg = op.getOperand();
-  encodeUnaryOp(st, op, arg, {}, [op_type](Integer &&a) { return a.unsignedExtend(op_type); });
+  encodeUnaryOp(st, op, arg,
+      {},
+      [op_type](Integer &&a) { return a.unsignedExtend(op_type); });
 }
 
 template<>
