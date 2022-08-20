@@ -32,6 +32,7 @@ public:
   static Integer boolTrue();
   static Integer boolFalse();
 
+  Integer signedExtend(const mlir::Type &tgt_type) const;
   Integer unsignedExtend(const mlir::Type &tgt_type) const;
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Integer &);

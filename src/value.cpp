@@ -284,6 +284,12 @@ Integer Integer::var(string &&name, unsigned bw, VarType varty) {
 Integer Integer::boolTrue() { return Integer(1, 1); }
 Integer Integer::boolFalse() { return Integer(0, 1); }
 
+Integer Integer::signedExtend(const mlir::Type &tgt_type) const {
+  const auto src_bw = e.bitwidth();
+  const auto tgt_bw = tgt_type.getIntOrFloatBitWidth();
+  return Integer(e.sext(tgt_bw - src_bw));
+}
+
 Integer Integer::unsignedExtend(const mlir::Type &tgt_type) const {
   const auto src_bw = e.bitwidth();
   const auto tgt_bw = tgt_type.getIntOrFloatBitWidth();
