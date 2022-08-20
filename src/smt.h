@@ -158,9 +158,9 @@ public:
   Expr concat(const Expr &lowbits) const;
   Expr zext(unsigned bits) const;
   Expr sext(unsigned bits) const;
-  Expr shl(unsigned bits) const;
-  Expr ashr(unsigned bits) const;
-  Expr lshr(unsigned bits) const;
+  Expr shl(const unsigned bits) const;
+  Expr ashr(const unsigned bits) const;
+  Expr lshr(const unsigned bits) const;
 
   Expr operator+(const Expr &rhs) const;
   Expr operator+(uint64_t rhs) const;

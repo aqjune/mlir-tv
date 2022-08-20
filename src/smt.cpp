@@ -864,7 +864,7 @@ Expr Expr::sext(unsigned bits) const {
   return e;
 }
 
-Expr Expr::shl(unsigned bits) const {
+Expr Expr::shl(const unsigned bits) const {
   CHECK_LOCK();
 
   Expr e;
@@ -874,7 +874,7 @@ Expr Expr::shl(unsigned bits) const {
   return e;
 }
 
-Expr Expr::ashr(unsigned bits) const {
+Expr Expr::ashr(const unsigned bits) const {
   CHECK_LOCK();
 
   Expr e;
@@ -884,7 +884,7 @@ Expr Expr::ashr(unsigned bits) const {
   return e;
 }
 
-Expr Expr::lshr(unsigned bits) const {
+Expr Expr::lshr(const unsigned bits) const {
   CHECK_LOCK();
 
   Expr e;
