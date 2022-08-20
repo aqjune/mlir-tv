@@ -1,5 +1,3 @@
-// VERIFY
-
 func.func @i32_to_i64() -> i64 {
   %c = arith.constant 2147483647: i64
   return %c: i64
