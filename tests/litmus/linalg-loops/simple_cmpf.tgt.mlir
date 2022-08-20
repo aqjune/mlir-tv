@@ -12,9 +12,9 @@ func @dead_linalg_tensor(%arg0 : tensor<7x7xf32>) {
       %cst_114 = arith.constant 0.000000e+00 : f32
       %cst_115 = arith.constant 6.000000e+00 : f32
       %269 = arith.cmpf olt, %arg1, %cst_114 : f32
-      %270= arith.select %269, %cst_114, %arg1 : f32
+      %270= select %269, %cst_114, %arg1 : f32
       %271 = arith.cmpf olt, %cst_115, %arg1 : f32
-      %272= arith.select %271, %cst_115, %270 : f32
+      %272= select %271, %cst_115, %270 : f32
       linalg.yield %272 : f32
   } -> tensor<7x7xf32>
   return

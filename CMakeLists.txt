@@ -106,8 +106,8 @@ else()
         MLIRViewLikeInterface MLIRInferTypeOpInterface MLIRControlFlowInterfaces MLIRSideEffectInterfaces
         MLIRIR MLIRDialect MLIRDialectUtils MLIRLinalg MLIRAffine MLIRMemRef
         MLIRShape MLIRMath MLIRSparseTensor MLIRSCF MLIRArithmetic MLIRBufferization
-        MLIRComplex MLIRArithmeticUtils MLIRQuantUtils
-        MLIRMemRefUtils MLIRTensor MLIRTosa MLIRQuant MLIRParser MLIRSupport MLIRControlFlow MLIRStandard
+        MLIRComplex
+        MLIRMemRefUtils MLIRTensor MLIRTosa MLIRQuant MLIRParser MLIRSupport MLIRStandard
         LLVMSupport LLVMDemangle pthread m curses)
     if (APPLE) # Apple LLD does not support 'group' flags
         target_link_libraries(${PROJECT_LIB} PUBLIC ${LIB_LIST})

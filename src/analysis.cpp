@@ -293,7 +293,7 @@ bool analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
 }
 
 template<>
-bool analyzeOp(mlir::tensor::PadOp op, AnalysisResult &res) {
+bool analyzeOp(mlir::linalg::PadTensorOp op, AnalysisResult &res) {
   analyzeRegion(op.region(), res);
   return true;
 }
@@ -325,8 +325,8 @@ void analyzeBlock(
           !mlir::isa<mlir::tosa::ReshapeOp>(op) &&
           !mlir::isa<mlir::tosa::ReverseOp>(op) &&
           !mlir::isa<mlir::tosa::TransposeOp>(op) &&
-          !mlir::isa<mlir::tensor::CollapseShapeOp>(op) &&
-          !mlir::isa<mlir::tensor::ExpandShapeOp>(op) &&
+          !mlir::isa<mlir::linalg::TensorCollapseShapeOp>(op) &&
+          !mlir::isa<mlir::linalg::TensorExpandShapeOp>(op) &&
           !mlir::isa<mlir::tensor::ExtractOp>(op) &&
           !mlir::isa<mlir::tensor::ExtractSliceOp>(op) &&
           !mlir::isa<mlir::tensor::InsertOp>(op) &&
@@ -370,7 +370,7 @@ void analyzeBlock(
 
     // Analyze operations having subregions.
     ANALYZE(op, mlir::linalg::GenericOp, res);
-    ANALYZE(op, mlir::tensor::PadOp, res);
+    ANALYZE(op, mlir::linalg::PadTensorOp, res);
     ANALYZE(op, mlir::tensor::GenerateOp, res);
   }
 }
