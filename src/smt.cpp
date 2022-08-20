@@ -864,6 +864,36 @@ Expr Expr::sext(unsigned bits) const {
   return e;
 }
 
+Expr Expr::shl(unsigned bits) const {
+  CHECK_LOCK();
+
+  Expr e;
+  const auto shifting_bits = Expr::mkBV(bits, *this);
+  SET_Z3_USEOP(e, shifting_bits, shl);
+  SET_CVC5_USEOP(e, shifting_bits, BITVECTOR_SHL);
+  return e;
+}
+
+Expr Expr::ashr(unsigned bits) const {
+  CHECK_LOCK();
+
+  Expr e;
+  const auto shifting_bits = Expr::mkBV(bits, *this);
+  SET_Z3_USEOP(e, shifting_bits, ashr);
+  SET_CVC5_USEOP(e, shifting_bits, BITVECTOR_ASHR);
+  return e;
+}
+
+Expr Expr::lshr(unsigned bits) const {
+  CHECK_LOCK();
+
+  Expr e;
+  const auto shifting_bits = Expr::mkBV(bits, *this);
+  SET_Z3_USEOP(e, shifting_bits, lshr);
+  SET_CVC5_USEOP(e, shifting_bits, BITVECTOR_LSHR);
+  return e;
+}
+
 Expr Expr::implies(const Expr &rhs) const {
   CHECK_LOCK2(rhs);
 
