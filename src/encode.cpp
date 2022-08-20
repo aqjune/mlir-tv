@@ -769,6 +769,21 @@ void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::arith::TruncIOp op, bool) {
+  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
+  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
+
+  smart_assert(src_bw > tgt_bw, "Source's bitwidth must be larger than "
+      "target's bitwidth, but got " << src_bw << " <= " << tgt_bw);
+
+  auto arg = op.getOperand();
+  auto amnt = src_bw - tgt_bw;
+  encodeUnaryOp(st, op, arg,
+      {},
+      [amnt](Integer &&a) { return ((Expr)a).trunc(amnt); });
+}
+
+template<>
 void encodeOp(State &st, mlir::linalg::IndexOp op, bool) {
   uint64_t i = op.dim();
   assert(i < st.linalgGenericScopes.top().indVars.size());
@@ -3451,6 +3466,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::SubFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::TruncFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::TruncIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::XOrIOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::bufferization::CloneOp, encodeMemWriteOps);
