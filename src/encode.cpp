@@ -718,46 +718,32 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::arith::ExtSIOp op, bool) {
-  auto op_type = op.getType();
-  auto tgt_bw = op_type.getIntOrFloatBitWidth();
+  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
+  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
 
-  auto operand_type = op.getOperand().getType();
-  auto src_bw = operand_type.getIntOrFloatBitWidth();
-
-  if (src_bw == tgt_bw) {
-    st.regs.add(op.getResult(), st.regs.get<Integer>(op.getOperand()));
-    return; // extending into identical type is a no-op
-  } else if (src_bw > tgt_bw) {
-    throw UnsupportedException(op.getOperation(),
-      "cannot ExtSI into narrower type!");
-  }
+  smart_assert(src_bw < tgt_bw, "Source's bitwidth must be smaller than "
+      "target's bitwidth, but got " << src_bw << " >= " << tgt_bw);
 
   auto arg = op.getOperand();
+  auto extamnt = tgt_bw - src_bw;
   encodeUnaryOp(st, op, arg,
       {},
-      [op_type](Integer &&a) { return a.signedExtend(op_type); });
+      [extamnt](Integer &&a) { return ((Expr)a).sext(extamnt); });
 }
 
 template<>
 void encodeOp(State &st, mlir::arith::ExtUIOp op, bool) {
-  auto op_type = op.getType();
-  auto tgt_bw = op_type.getIntOrFloatBitWidth();
+  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
+  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
 
-  auto operand_type = op.getOperand().getType();
-  auto src_bw = operand_type.getIntOrFloatBitWidth();
-
-  if (src_bw == tgt_bw) {
-    st.regs.add(op.getResult(), st.regs.get<Integer>(op.getOperand()));
-    return; // extending into identical type is a no-op
-  } else if (src_bw > tgt_bw) {
-    throw UnsupportedException(op.getOperation(),
-      "cannot ExtUI into narrower type!");
-  }
+  smart_assert(src_bw < tgt_bw, "Source's bitwidth must be smaller than "
+      "target's bitwidth, but got " << src_bw << " >= " << tgt_bw);
 
   auto arg = op.getOperand();
+  auto extamnt = tgt_bw - src_bw;
   encodeUnaryOp(st, op, arg,
       {},
-      [op_type](Integer &&a) { return a.unsignedExtend(op_type); });
+      [extamnt](Integer &&a) { return ((Expr)a).zext(extamnt); });
 }
 
 template<>
