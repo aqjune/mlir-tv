@@ -158,6 +158,7 @@ public:
   Expr concat(const Expr &lowbits) const;
   Expr zext(unsigned bits) const;
   Expr sext(unsigned bits) const;
+  Expr trunc(unsigned bits) const;
 
   Expr operator+(const Expr &rhs) const;
   Expr operator+(uint64_t rhs) const;
@@ -181,6 +182,12 @@ public:
   Expr operator-() const;
   Expr &operator&=(const Expr &rhs);
   Expr &operator|=(const Expr &rhs);
+  Expr shl(const Expr &rhs) const;
+  Expr shl(uint64_t rhs) const;
+  Expr ashr(const Expr &rhs) const;
+  Expr ashr(uint64_t rhs) const;
+  Expr lshr(const Expr &rhs) const;
+  Expr lshr(uint64_t rhs) const;
 
   Expr implies(const Expr &rhs) const;
   Expr isZero() const;

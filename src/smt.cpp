@@ -33,7 +33,7 @@ vector<cvc5::api::Sort> toCVC5SortVector(const vector<smt::Sort> &vec);
 template<class T>
 void writeOrCheck(optional<T> &org, T &&t) {
   if (org)
-    assert(*org == t);
+    smart_assert(*org == t, "org must be empty");
   else
     org.emplace(move(t));
 }
@@ -782,6 +782,9 @@ Expr Expr::getMSB() const {
 
 Expr Expr::abs() const {
   CHECK_LOCK();
+  if (sort().isBV()) {
+    return Expr::mkBV(0, 1).concat(extract(bitwidth() - 2, 0));
+  }
   Expr e;
   SET_Z3(e, fmap(this->z3, [&](auto e) { return z3::abs(e); }));
   return e;
@@ -859,6 +862,12 @@ Expr Expr::sext(unsigned bits) const {
       solver.mkOp(cvc5::api::BITVECTOR_SIGN_EXTEND, bits), e);
   }));
   return e;
+}
+
+Expr Expr::trunc(unsigned bits) const {
+  smart_assert(bits < bitwidth(), "bits must be smaller than bitwidth, but "
+      "got " << bits << " >= " << bitwidth());
+  return extract(bitwidth() - bits - 1, 0);
 }
 
 Expr Expr::implies(const Expr &rhs) const {
@@ -1157,6 +1166,73 @@ Expr &Expr::operator|=(const Expr &rhs) {
   return *this;
 }
 
+EXPR_BVOP_UINT64(shl)
+Expr Expr::shl(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b) && b < 64)
+    return mkBV(a << b, rhs.bitwidth());
+  else if (rhs.isUInt(b)) {
+    if (b == 0)
+      return *this;
+  } else if (isUInt(a)) {
+    if (a == 0)
+      return *this;
+  }
+
+  Expr e;
+  SET_Z3_USEOP(e, rhs, shl);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_SHL);
+  return e;
+}
+
+EXPR_BVOP_UINT64(ashr)
+Expr Expr::ashr(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
+  uint64_t a, b;
+  // The value of a >> b for unsigned a is the integer part of a/(2^b)
+  // which is equivalent to lshr.
+  // Therefore we cannot apply uint optimization for ashr.
+  // Even if we use signed int, the value of >> on a signed int
+  // is implementation-defined until c++17 (it is ashr since c++20),
+  // so it is hard to implement a robust optimization.
+  if (rhs.isUInt(b)) {
+    if (b == 0)
+      return *this;
+  } else if (isUInt(a)) {
+    if (a == 0)
+      return *this;
+  }
+
+  Expr e;
+  SET_Z3_USEOP(e, rhs, ashr);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_ASHR);
+  return e;
+}
+
+EXPR_BVOP_UINT64(lshr)
+Expr Expr::lshr(const Expr &rhs) const {
+  CHECK_LOCK2(rhs);
+
+  uint64_t a, b;
+  if (isUInt(a) && rhs.isUInt(b) && b < 64)
+    return mkBV(a >> b, rhs.bitwidth());
+  else if (rhs.isUInt(b)) {
+    if (b == 0)
+      return *this;
+  } else if (isUInt(a)) {
+    if (a == 0)
+      return *this;
+  }
+
+  Expr e;
+  SET_Z3_USEOP(e, rhs, lshr);
+  SET_CVC5_USEOP(e, rhs, BITVECTOR_LSHR);
+  return e;
+}
+
 Expr Expr::substitute(
     const std::vector<Expr> &vars,
     const std::vector<Expr> &values) const {
@@ -1236,7 +1312,7 @@ Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
         new_var = ctx.mkConst(cvc5sort, name);
       sctx.addNamedTerm(name, move(new_var));
     }
-    
+
     const auto term = *sctx.getNamedTerm(name);
     assert(cvc5sort == term.getSort() &&
             "Term(s) of duplicate names are not allowed");
@@ -1293,7 +1369,7 @@ Expr Expr::mkFpaVal(const double val) {
 
 Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
   for (auto &v: vars) {
-    assert(v.isVar());
+    smart_assert(v.isVar(), "Not a variable: " << v);
   }
 
   uint64_t v;

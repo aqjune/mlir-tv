@@ -418,8 +418,10 @@ encodeUnaryOp(State &st, OpTy op, mlir::Value arg,
   mlir::Operation *opr = op.getOperation();
 
   if (arg.getType().isa<mlir::FloatType>()) {
-    auto a = st.regs.get<Float>(arg);
-    st.regs.add(op, f_float(move(a)));
+    st.regs.add(op, f_float(st.regs.get<Float>(arg)));
+
+  } else if (arg.getType().isa<mlir::IntegerType>()) {
+    st.regs.add(op, f_int(st.regs.get<Integer>(arg)));
 
   } else if (auto tty = arg.getType().dyn_cast<mlir::RankedTensorType>()) {
     auto elemty = tty.getElementType();
@@ -714,6 +716,36 @@ void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
 }
 
 template<>
+void encodeOp(State &st, mlir::arith::ExtSIOp op, bool) {
+  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
+  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
+
+  smart_assert(src_bw < tgt_bw, "Source's bitwidth must be smaller than "
+      "target's bitwidth, but got " << src_bw << " >= " << tgt_bw);
+
+  auto arg = op.getOperand();
+  auto extamnt = tgt_bw - src_bw;
+  encodeUnaryOp(st, op, arg,
+      {},
+      [extamnt](Integer &&a) { return ((Expr)a).sext(extamnt); });
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::ExtUIOp op, bool) {
+  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
+  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
+
+  smart_assert(src_bw < tgt_bw, "Source's bitwidth must be smaller than "
+      "target's bitwidth, but got " << src_bw << " >= " << tgt_bw);
+
+  auto arg = op.getOperand();
+  auto extamnt = tgt_bw - src_bw;
+  encodeUnaryOp(st, op, arg,
+      {},
+      [extamnt](Integer &&a) { return ((Expr)a).zext(extamnt); });
+}
+
+template<>
 void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
   auto op_type = op.getType();
   FPPrecision tgt_prec = getPrecision(op_type);
@@ -733,6 +765,21 @@ void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
   encodeUnaryOp(st, op, arg,
       [op_type](auto &&a) { return a.truncate(op_type); },
       {});
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::TruncIOp op, bool) {
+  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
+  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
+
+  smart_assert(src_bw > tgt_bw, "Source's bitwidth must be larger than "
+      "target's bitwidth, but got " << src_bw << " <= " << tgt_bw);
+
+  auto arg = op.getOperand();
+  auto amnt = src_bw - tgt_bw;
+  encodeUnaryOp(st, op, arg,
+      {},
+      [amnt](Integer &&a) { return ((Expr)a).trunc(amnt); });
 }
 
 template<>
@@ -1038,7 +1085,7 @@ void encodeOp(State &st, mlir::tosa::BitwiseAndOp op, bool) {
   if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
       !getElemTy(op.input2()).isa<mlir::IntegerType>())
     throw UnsupportedException(op.getOperation(), "Unsupported element type"); 
-  
+
   mlir::Value i1 = op.input1();
   mlir::Value i2 = op.input2();
 
@@ -1072,7 +1119,7 @@ void encodeOp(State &st, mlir::tosa::BitwiseOrOp op, bool) {
   if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
       !getElemTy(op.input2()).isa<mlir::IntegerType>())
     throw UnsupportedException(op.getOperation(), "Unsupported element type"); 
-  
+
   mlir::Value i1 = op.input1();
   mlir::Value i2 = op.input2();
 
@@ -1090,7 +1137,7 @@ void encodeOp(State &st, mlir::tosa::BitwiseXorOp op, bool) {
   if(!getElemTy(op.input1()).isa<mlir::IntegerType>() ||
       !getElemTy(op.input2()).isa<mlir::IntegerType>())
     throw UnsupportedException(op.getOperation(), "Unsupported element type");
-  
+
   mlir::Value i1 = op.input1();
   mlir::Value i2 = op.input2();
 
@@ -1136,14 +1183,14 @@ static Tensor getPaddedTensor2D(mlir::Type elemTy,
   }
 }
 
-static Tensor addBias2D(mlir::Type elemTy, 
+static Tensor addBias2D(mlir::Type elemTy,
                         vector<Expr> dims,
                         Tensor acc, Tensor bias) {
   vector<Expr> ind = Index::boundIndexVars(4);
   auto tf = Float(acc.get(ind), elemTy);
   auto biasf = Float(bias.get({ind[3]}), elemTy);
   return Tensor::mkInitializedLambda(
-            elemTy, move(dims), move(ind), 
+            elemTy, move(dims), move(ind),
             tf.add(biasf)
           );
 }
@@ -1177,7 +1224,7 @@ void encodeOp(State &st, mlir::tosa::DepthwiseConv2DOp op, bool) {
   auto paddedTensor = getPaddedTensor2D(elemTy, input, op.pad());
 
   auto output = paddedTensor.depthwiseConv2D(weight, strides, dilations, bias);
-  
+
   st.wellDefined(op, input.isFullyInitialized(), "input is initialized");
   st.wellDefined(op, weight.isFullyInitialized(), "weight is initialized");
   st.wellDefined(op, bias.isFullyInitialized(), "bias is initialized");
@@ -1206,7 +1253,7 @@ void encodeOp(State &st, mlir::tosa::Conv2DOp op, bool) {
   st.wellDefined(op, weight.getDim(0) == bias.getDim(0),
       "bias and weight's shapes check");
 
-  assert(strides.size() == 2 && dilations.size() == 2);  
+  assert(strides.size() == 2 && dilations.size() == 2);
 
   auto elemTy = getElemTy(op.getResult());
   if (!elemTy.isa<mlir::FloatType>())
@@ -1291,7 +1338,7 @@ void encodeOp(State &st, mlir::tosa::TransposeOp op, bool) {
       }
     }
     assert(pushed && "transpose's perms is not permutation!");
-  }  
+  }
 
   auto output = input.get(outVars);
 
@@ -3398,6 +3445,8 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::ConstantOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::DivFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::ExtFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ExtSIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ExtUIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::IndexCastOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulIOp, encodeMemWriteOps);
@@ -3406,6 +3455,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::SubFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::TruncFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::TruncIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::XOrIOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::bufferization::CloneOp, encodeMemWriteOps);

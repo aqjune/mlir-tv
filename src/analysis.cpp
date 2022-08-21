@@ -101,12 +101,12 @@ void analyzeAPFloat(
 void analyzeAttr(const mlir::Attribute &a, AnalysisResult &res) {
   assert(!a.isa<mlir::ElementsAttr>());
 
-  auto ty = a.getType();
-  if (!ty.isa<mlir::FloatType>())
+  auto fa = a.dyn_cast<mlir::FloatAttr>();
+  if (!fa)
     return;
 
-  const auto val = a.dyn_cast<mlir::FloatAttr>().getValue();
-  analyzeAPFloat(ty, val, res);
+  const auto val = fa.getValue();
+  analyzeAPFloat(fa.getType(), val, res);
 }
 
 bool analyzeElemAttr(

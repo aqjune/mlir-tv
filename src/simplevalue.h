@@ -25,7 +25,7 @@ public:
   Integer(const llvm::APInt &api);
 
   operator smt::Expr() const { return e; }
-  unsigned bitwidth() { return e.bitwidth(); }
+  unsigned bitwidth() const { return e.bitwidth(); }
 
   static smt::Sort sort(unsigned bw);
   static Integer var(std::string &&name, unsigned bw, VarType vty);

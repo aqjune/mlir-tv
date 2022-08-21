@@ -3,9 +3,22 @@
 #include <optional>
 #include <string>
 #include <variant>
+#include "llvm/Support/Debug.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Support/LLVM.h"
+
+// An assertion that is not disabled by NDEBUG and also prints a custom message.
+// See: https://stackoverflow.com/a/56534748/1488216
+// Use case:
+//    smart_assert(1 == x, "x which is " << x << " must be 1");
+#define smart_assert(condition, message)\
+   (!(condition)) ?\
+      (llvm::errs() << "Assertion failed: (" << #condition << "), "\
+      << "function " << __FUNCTION__\
+      << ", file " << __FILE__\
+      << ", line " << __LINE__ << "."\
+      << "\n  " << message << "\n", abort(), 0) : 1
 
 // optional::map from
 // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0798r0.html
