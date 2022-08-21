@@ -18,7 +18,7 @@ func @sum(%mat: tensor<100x100xf32>) -> tensor<f32>
   } -> tensor<100x100xf32>
 
 
-  %mat_col = tensor.collapse_shape %mat_transposed [[0, 1]] : tensor<100x100xf32> into tensor<10000xf32>
+  %mat_col = linalg.tensor_collapse_shape %mat_transposed [[0, 1]] : tensor<100x100xf32> into tensor<10000xf32>
   %result = linalg.generic {
       indexing_maps = [affine_map<(d0) -> (d0)>,
                        affine_map<(d0) -> ()>],

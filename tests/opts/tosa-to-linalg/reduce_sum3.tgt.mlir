@@ -10,7 +10,7 @@ module  {
       %4 = arith.addf %arg1, %arg2 : f32
       linalg.yield %4 : f32
     } -> tensor<3x5xf32>
-    %3 = tensor.expand_shape %2 [[0, 1], [2]] : tensor<3x5xf32> into tensor<3x1x5xf32>
+    %3 = linalg.tensor_expand_shape %2 [[0, 1], [2]] : tensor<3x5xf32> into tensor<3x1x5xf32>
     return %3 : tensor<3x1x5xf32>
   }
 }

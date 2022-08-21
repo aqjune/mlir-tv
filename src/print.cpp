@@ -108,7 +108,7 @@ void printCounterEx(
 
 
   if (step == VerificationStep::RetValue) {
-    if (src.getResultTypes()[retvalidx].isa<mlir::TensorType>()) {
+    if (src.getCallableResults()[retvalidx].isa<mlir::TensorType>()) {
       llvm::outs() << "\n<Returned tensor>\n";
 
       auto t_src = get<Tensor>(st_src.retValues[retvalidx]).eval(m);
