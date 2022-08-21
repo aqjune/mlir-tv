@@ -4,9 +4,7 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-  # Check update every 3 days
-  schedule:
-    - cron: '0 0 1/3 * *'
+  pull_request:
 
 jobs:
   configure-dependencies:
