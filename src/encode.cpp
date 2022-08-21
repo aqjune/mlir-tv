@@ -7,7 +7,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
@@ -860,7 +860,7 @@ void encodeOp(State &st, mlir::AffineApplyOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::arith::SelectOp op, bool) {
+void encodeOp(State &st, mlir::SelectOp op, bool) {
   auto condTy = op.getCondition().getType();
   auto trueTy = op.getTrueValue().getType();
   auto falseTy = op.getFalseValue().getType();
@@ -1672,7 +1672,7 @@ void encodeOp(State &st, mlir::linalg::InitTensorOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::tensor::CollapseShapeOp op, bool) {
+void encodeOp(State &st, mlir::linalg::TensorCollapseShapeOp op, bool) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
   mlir::RankedTensorType resTy = op.getResultType();
 
@@ -1704,7 +1704,7 @@ void encodeOp(State &st, mlir::tensor::CollapseShapeOp op, bool) {
 }
 
 template<>
-void encodeOp(State &st, mlir::tensor::ExpandShapeOp op, bool) {
+void encodeOp(State &st, mlir::linalg::TensorExpandShapeOp op, bool) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
 
   // The fresh variables created by ShapedValue::getDims will be ignored
@@ -1801,7 +1801,7 @@ void encodeOp(State &st, mlir::linalg::MatmulOp op, bool encodeMemWriteOp) {
 }
 
 template<>
-void encodeOp(State &st, mlir::tensor::PadOp op, bool) {
+void encodeOp(State &st, mlir::linalg::PadTensorOp op, bool) {
   auto retty = op.getType().dyn_cast<mlir::RankedTensorType>();
   if (!retty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
@@ -3433,7 +3433,7 @@ static void encodeBlock(
 
     // Encode ops. Alphabetically sorted.
     ENCODE(st, op, mlir::AffineApplyOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::arith::SelectOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::SelectOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::arith::AddFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::AddIOp, encodeMemWriteOps);
@@ -3489,7 +3489,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::linalg::IndexOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::InitTensorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::MatmulOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tensor::PadOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::linalg::PadTensorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::PoolingNhwcMaxOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::PoolingNhwcSumOp, encodeMemWriteOps);
     
@@ -3499,9 +3499,9 @@ static void encodeBlock(
     ENCODE(st, op, mlir::sparse_tensor::ConvertOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::tensor::CastOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tensor::CollapseShapeOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::linalg::TensorCollapseShapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::DimOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::tensor::ExpandShapeOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::linalg::TensorExpandShapeOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::InsertOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::ExtractOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::ExtractSliceOp, encodeMemWriteOps);

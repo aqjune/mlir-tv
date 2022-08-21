@@ -18,10 +18,10 @@ func @avgpool(%arg0: tensor<1x13x13x1001xf32>) -> tensor<1x1x1x1001xf32> {
     %394 = arith.subi %c0_199, %392 : index
     %c13_200 = arith.constant 13 : index
     %395 = arith.cmpi slt, %c13_200, %c1_197 : index
-    %396= arith.select %395, %c1_197, %c13_200 : index
+    %396= select %395, %c1_197, %c13_200 : index
     %c13_201 = arith.constant 13 : index
     %397 = arith.cmpi slt, %c13_201, %c1_197 : index
-    %398= arith.select %397, %c1_197, %c13_201 : index
+    %398= select %397, %c1_197, %c13_201 : index
     %399 = arith.muli %396, %398 : index
     %400 = arith.index_cast %399 : index to i32
     %401 = arith.sitofp %400 : i32 to f32

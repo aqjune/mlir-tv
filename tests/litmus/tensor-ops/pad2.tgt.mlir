@@ -6,9 +6,9 @@ func @f(%t: tensor<?x?xf32>, %pad_value: f32) -> (f32, f32, f32, f32, f32) {
   %d0 = tensor.dim %t, %c0: tensor<?x?xf32>
   %d1 = tensor.dim %t, %c1: tensor<?x?xf32>
 
-  %res = tensor.pad %t low[1, 2] high[2, 3] {
+  %res = linalg.pad_tensor %t low[1, 2] high[2, 3] {
   ^bb0(%arg0 : index, %arg1 : index):
-    tensor.yield %pad_value : f32
+    linalg.yield %pad_value : f32
   } : tensor<?x?xf32> to tensor<?x?xf32>
 
   %y = arith.addi %d0, %c2: index

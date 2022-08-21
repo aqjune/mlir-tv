@@ -8,7 +8,7 @@ string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_
 # so for most of the times you won't have to care about the <NAME>_ROOT variables.
 # If you are not satisfied with the CMake's choices, you may use these variables
 # to manually override them with the MLIR, Z3, or cvc5 you prefer.
-set(MLIR_ROOT CACHE PATH "MLIR installation top-level directory")
+set(MLIR_ROOT /opt/mlir-heaan CACHE PATH "MLIR installation top-level directory")
 set(Z3_ROOT CACHE PATH "Z3 installation top-level directory")
 set(cvc5_ROOT CACHE PATH "cvc5 installation top-level directory")
 option(USE_LIBC "Use libc++ in case the MLIR (and cvc5) is linked against libc++")
@@ -36,6 +36,7 @@ find_package(MLIR REQUIRED)
 # MLIR_VERSION does not exist, so use LLVM_VERSION instead
 # If package MLIR is found, package LLVM must have been found in the process
 message(STATUS "Found MLIR ${LLVM_VERSION} from ${MLIR_DIR}/MLIRConfig.cmake")
+list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 include(AddLLVM)
 
 # /============================================================/
