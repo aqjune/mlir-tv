@@ -2020,7 +2020,6 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
   auto retty = op.getType().dyn_cast<mlir::RankedTensorType>();
   if (!retty)
     throw UnsupportedException(op.getOperation(), "Unsupported type");
-  
   auto blk = op.getBody();
   if (!blk)
     throw UnsupportedException(op.getOperation(), "Unsupported form");
