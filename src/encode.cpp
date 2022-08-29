@@ -1,6 +1,9 @@
 #include "encode.h"
 #include "abstractops.h"
+#include "mlir/IR/Types.h"
+#include "mlir/Support/LLVM.h"
 #include "opts.h"
+#include "smt.h"
 #include "utils.h"
 #include "debug.h"
 
@@ -18,8 +21,11 @@
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
+#include "llvm/Support/ErrorHandling.h"
 
+#include <algorithm>
 #include <functional>
+#include <iterator>
 #include <map>
 #include <sstream>
 #include <variant>
@@ -458,6 +464,140 @@ static void encodeBlock(
     function<bool(mlir::Operation *, int)> checkBeforeEnc,
     function<void(mlir::Operation *)> callbackAfterEnc);
 
+namespace {
+  class DeclaredUF {
+  private:
+    vector<mlir::Type> domain;
+    mlir::Type range;
+    FnDecl decl;
+
+    enum class Complexity {
+      SCALAR,
+      TENSOR,
+      MEMREF,
+    };
+
+    Complexity verifComplexity;
+
+    static Sort getScalarSort(const mlir::Type &ty) {
+      if (ty.isa<mlir::FloatType>()) {
+        const auto operand_sort = Float::sort(ty);
+        if (!operand_sort) {
+          throw UnsupportedException("Invalid operand type");
+        } else {
+          return *operand_sort;
+        }
+      } else if (ty.isa<mlir::IntegerType>()) {
+        const auto operand_bw = ty.getIntOrFloatBitWidth();
+        return Integer::sort(operand_bw);
+      } else if (ty.isIndex()) {
+        return Index::sort();
+      } else {
+        llvm_unreachable("Not a scalar type");
+      }
+    }
+
+    DeclaredUF(vector<mlir::Type>&& domain, mlir::Type&& range,
+                      FnDecl&& decl, const Complexity verifComplexity)
+      : domain(move(domain)), range(move(range)), decl(move(decl)),
+        verifComplexity(verifComplexity) {}
+
+  public:
+    static DeclaredUF declare(vector<mlir::Type>&& domain,
+                                      mlir::Type&& range,
+                                      const string_view name) {
+      // analyze verification complexity
+      auto verifComplexity = Complexity::SCALAR;
+      for (const auto &operand_ty: domain) {
+        if (operand_ty.isa<mlir::TensorType>()) {
+          verifComplexity = Complexity::TENSOR;
+        } else if (operand_ty.isa<mlir::MemRefType>()) {
+          verifComplexity = Complexity::MEMREF;
+        } else if (!operand_ty.isIntOrIndexOrFloat()) {
+          throw UnsupportedException("Invalid operand type");
+        }
+      }
+
+      switch (verifComplexity) {
+        case Complexity::SCALAR: {
+          vector<Sort> smtDomain;
+          smtDomain.reserve(domain.size());
+          transform(domain.cbegin(), domain.cend(),
+            back_inserter(smtDomain), getScalarSort);
+
+          if (range.isa<mlir::TensorType>()) {
+            throw UnsupportedException(
+            "Function that returns tensor is not supported yet");
+          }
+          if (range.isa<mlir::MemRefType>()) {
+            throw UnsupportedException(
+            "Function that returns memref is not supported yet");
+          }
+
+          const auto smtRange = getScalarSort(range);
+          FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
+
+          return DeclaredUF(move(domain), move(range), move(decl),
+                                  verifComplexity);
+        }
+        case Complexity::TENSOR: {
+          throw UnsupportedException(
+            "Function call with tensor operand(s) is unsupported");
+        }
+        case Complexity::MEMREF: {
+          throw UnsupportedException(
+            "Function call with memref operand(s) is unsupported");
+        }
+      }
+
+      llvm_unreachable("Invalid verification complexity");
+    }
+
+    ValueTy apply(const vector<ValueTy>& operands) const {
+      vector<Expr> operandExprs;
+      operandExprs.reserve(operands.size());
+
+      transform(operands.cbegin(), operands.cend(),
+        back_inserter(operandExprs),
+        [](const auto& operand) { return getExpr(operand); });
+      const auto fn_output = decl.apply(operandExprs);
+
+      if (range.isa<mlir::FloatType>()) {
+        return Float(fn_output, range);
+      } else if (range.isa<mlir::IntegerType>()) {
+        return Integer(fn_output);
+      } else if (range.isIndex()) {
+        return Index(fn_output);
+      } else {
+        throw UnsupportedException(
+          "Function that returns non-scalar value is not supported yet");
+      }
+    }
+  };
+
+  map<string, DeclaredUF, std::less<>> calleeMap;
+
+  optional<DeclaredUF> getFunction(const string_view name) {
+    auto fn_itr = calleeMap.find(name);
+    if (fn_itr != calleeMap.end()) {
+      return fn_itr->second;
+    } else {
+      return nullopt;
+    }
+  }
+
+  bool declareFunction(vector<mlir::Type>&& domain, mlir::Type&& range,
+                        const string_view name) {
+    if (getFunction(name)) {
+      // no-op if there already exists a function of the same name
+      return false;
+    } else {
+      calleeMap.insert({string(name),
+                        DeclaredUF::declare(move(domain), move(range), name)});
+      return true;
+    }
+  }
+}
 
 template<>
 void encodeOp(State &st, mlir::arith::AddFOp op, bool) {
@@ -934,6 +1074,43 @@ void encodeOp(State &st, mlir::arith::SelectOp op, bool) {
     auto isTrue = (Expr)condValue == Integer::boolTrue();
     st.regs.add(op, Expr::mkIte(isTrue, trueValue, falseValue), op.getType());
   }
+}
+
+template<>
+void encodeOp(State &st, mlir::func::CallOp op, bool) {
+  if (op.getNumResults() != 1) {
+    throw UnsupportedException(
+      op.getOperation(),
+      "Invalid number of return values");
+  }
+  
+  const auto callee = op.getCallee(); 
+  if (!getFunction(callee)) {
+    vector<mlir::Type> domain(op.getOperandTypes().begin(),
+                              op.getOperandTypes().end());
+    auto range = op.getResultTypes().front();
+    try {
+      declareFunction(move(domain), move(range), move(callee));
+    } catch (UnsupportedException e) {
+      throw UnsupportedException(op.getOperation(), e.getReason());
+    }
+  }
+
+  vector<ValueTy> operands;
+  operands.reserve(op.getNumOperands());
+  for (const auto& operand: op.getOperands()) {
+    const auto operandTy = operand.getType();
+    if (operandTy.isa<mlir::FloatType>()) {
+      operands.push_back(st.regs.get<Float>(operand));
+    } else if (operandTy.isa<mlir::IntegerType>()) {
+      operands.push_back(st.regs.get<Integer>(operand));
+    } else if (operandTy.isa<mlir::IndexType>()) {
+      operands.push_back(st.regs.get<Index>(operand));
+    }
+  }
+
+  auto calleeUF = *getFunction(callee);
+  st.regs.add(op.getResult(0), calleeUF.apply(operands));
 }
 
 template<>
@@ -3473,6 +3650,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::bufferization::ToMemrefOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::bufferization::ToTensorOp, encodeMemWriteOps);
 
+    ENCODE(st, op, mlir::func::CallOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::func::ReturnOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsFOp, encodeMemWriteOps);
