@@ -976,7 +976,7 @@ void encodeOp(State &st, mlir::func::CallOp op, bool) {
 
   auto calleeUF = *getDeclaredFunction(callee);
   llvm::outs() << "WARNING: Function \"" << callee << "\" is assumed to be stateless"
-                  " and does not read or write global memory";
+                  " and does not read or write global memory\n";
   st.regs.add(op.getResult(0), calleeUF.apply(operands));
 }
 
