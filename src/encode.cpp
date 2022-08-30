@@ -1,7 +1,5 @@
 #include "encode.h"
 #include "abstractops.h"
-#include "mlir/IR/Types.h"
-#include "mlir/Support/LLVM.h"
 #include "opts.h"
 #include "smt.h"
 #include "utils.h"
@@ -21,7 +19,9 @@
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/IR/Types.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "mlir/Support/LLVM.h"
 
 #include <algorithm>
 #include <functional>
