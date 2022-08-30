@@ -48,6 +48,7 @@ add_library(${PROJECT_OBJ} OBJECT
     src/analysis.cpp
     src/debug.cpp
     src/encode.cpp
+    src/function.cpp
     src/memory.cpp
     src/print.cpp
     src/smt.cpp
