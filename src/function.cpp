@@ -8,7 +8,7 @@ using namespace std;
 using namespace smt;
 
 namespace {
-  map<string, DeclaredFunction, std::less<>> calleeMap;
+map<string, DeclaredFunction, std::less<>> calleeMap;
 }
 
 smt::Sort DeclaredFunction::getScalarSort(const mlir::Type &ty) {
