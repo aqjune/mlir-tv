@@ -463,6 +463,7 @@ static void encodeBlock(
     function<bool(mlir::Operation *, int)> checkBeforeEnc,
     function<void(mlir::Operation *)> callbackAfterEnc);
 
+
 template<>
 void encodeOp(State &st, mlir::arith::AddFOp op, bool) {
   mlir::Value arg0 = op.getOperand(0);
