@@ -948,8 +948,8 @@ void encodeOp(State &st, mlir::func::CallOp op, bool) {
       op.getOperation(),
       "Invalid number of return values");
   }
-  
-  const auto callee = op.getCallee(); 
+
+  const auto callee = op.getCallee();
   if (!getDeclaredFunction(callee)) {
     vector<mlir::Type> domain(op.getOperandTypes().begin(),
                               op.getOperandTypes().end());
@@ -964,19 +964,12 @@ void encodeOp(State &st, mlir::func::CallOp op, bool) {
   vector<ValueTy> operands;
   operands.reserve(op.getNumOperands());
   for (const auto& operand: op.getOperands()) {
-    const auto operandTy = operand.getType();
-    if (operandTy.isa<mlir::FloatType>()) {
-      operands.push_back(st.regs.get<Float>(operand));
-    } else if (operandTy.isa<mlir::IntegerType>()) {
-      operands.push_back(st.regs.get<Integer>(operand));
-    } else if (operandTy.isa<mlir::IndexType>()) {
-      operands.push_back(st.regs.get<Index>(operand));
-    }
+    operands.push_back(st.regs.findOrCrash(operand));
   }
 
   auto calleeUF = *getDeclaredFunction(callee);
-  llvm::outs() << "WARNING: Function \"" << callee << "\" is assumed to be stateless"
-                  " and does not read or write global memory\n";
+  llvm::outs() << "WARNING: Function \"" << callee << "\" is assumed to be "
+               << "stateless and does not read or write global memory\n";
   st.regs.add(op.getResult(0), calleeUF.apply(operands));
 }
 
