@@ -1,11 +1,12 @@
 #include "encode.h"
 #include "abstractops.h"
+#include "debug.h"
 #include "function.h"
 #include "opts.h"
 #include "smt.h"
 #include "utils.h"
-#include "debug.h"
 
+#include "llvm/Support/ErrorHandling.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -21,15 +22,14 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Types.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "mlir/Support/LLVM.h"
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <variant>
 #include <vector>
-#include <optional>
 
 using namespace smt;
 using namespace std;
