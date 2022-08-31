@@ -98,6 +98,9 @@ bool declareFunction(vector<mlir::Type> &&domain, mlir::Type &&range,
     // no-op if there already exists a function of the same name
     return false;
   } else {
+    llvm::outs() << "WARNING: Function \"" << name << "\" is assumed to be "
+                 << "stateless and does not read or write global memory\n";
+
     calleeMap.insert({string(name), DeclaredFunction::declare(
                                         move(domain), move(range), name)});
     return true;
