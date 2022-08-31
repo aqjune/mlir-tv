@@ -76,19 +76,11 @@ ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
   operandExprs.reserve(operands.size());
 
   transform(operands.cbegin(), operands.cend(), back_inserter(operandExprs),
-            [](const auto &operand) { return getExpr(operand); });
-  const auto fn_output = decl.apply(operandExprs);
-
-  if (range.isa<mlir::FloatType>()) {
-    return Float(fn_output, range);
-  } else if (range.isa<mlir::IntegerType>()) {
-    return Integer(fn_output);
-  } else if (range.isIndex()) {
-    return Index(fn_output);
-  } else {
-    throw UnsupportedException(
-        "Function that returns non-scalar value is not supported yet");
-  }
+            getExpr);
+  auto fn_output = fromExpr(decl.apply(operandExprs), range);
+  smart_assert(fn_output, "Cannot create ValueTy from the call's result"
+      " because its MLIR type is " << range);
+  return *fn_output;
 }
 
 optional<DeclaredFunction> getDeclaredFunction(const std::string_view name) {
