@@ -13,10 +13,8 @@ map<string, DeclaredFunction, std::less<>> calleeMap;
 }
 
 DeclaredFunction::DeclaredFunction(vector<mlir::Type> &&domain,
-                                   mlir::Type &&range, FnDecl &&decl,
-                                   const Complexity verifComplexity)
-    : domain(move(domain)), range(move(range)), decl(move(decl)),
-      verifComplexity(verifComplexity) {}
+                                   mlir::Type &&range, FnDecl &&decl)
+    : domain(move(domain)), range(move(range)), decl(move(decl)) {}
 
 DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
                                            mlir::Type &&range,
@@ -58,8 +56,7 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
     const auto smtRange = getScalarSort(range);
     FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
 
-    return DeclaredFunction(move(domain), move(range), move(decl),
-                            verifComplexity);
+    return DeclaredFunction(move(domain), move(range), move(decl));
   }
   case Complexity::TENSOR: {
     throw UnsupportedException(

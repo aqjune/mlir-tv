@@ -20,10 +20,9 @@ private:
     TENSOR,
     MEMREF,
   };
-  Complexity verifComplexity;
 
   DeclaredFunction(std::vector<mlir::Type> &&domain, mlir::Type &&range,
-                   smt::FnDecl &&decl, const Complexity verifComplexity);
+                   smt::FnDecl &&decl);
 
 public:
   static DeclaredFunction declare(std::vector<mlir::Type> &&domain,
