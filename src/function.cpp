@@ -13,22 +13,33 @@ map<string, DeclaredFunction, std::less<>> calleeMap;
 }
 
 DeclaredFunction::DeclaredFunction(vector<mlir::Type> &&domain,
-                                   mlir::Type &&range, FnDecl &&decl)
-    : domain(move(domain)), range(move(range)), decl(move(decl)) {}
+                                   mlir::Type &&range, FnDecl &&decl,
+                                   bool hasTensor, bool hasMemRef)
+    : domain(move(domain)), range(move(range)), decl(move(decl)),
+      hasTensor(hasTensor), hasMemRef(hasMemRef) {}
 
 DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
                                            mlir::Type &&range,
                                            const std::string_view name) {
-  // analyze verification complexity
-  auto verifComplexity = Complexity::SCALAR;
+  bool hasTensor = false, hasMemRef = false;
   for (const auto &operand_ty : domain) {
     if (operand_ty.isa<mlir::TensorType>()) {
-      verifComplexity = Complexity::TENSOR;
+      hasTensor = true;
     } else if (operand_ty.isa<mlir::MemRefType>()) {
-      verifComplexity = Complexity::MEMREF;
+      hasMemRef = true;
     } else if (!operand_ty.isIntOrIndexOrFloat()) {
       throw UnsupportedException("Invalid operand type");
     }
+  }
+
+  if (hasTensor) {
+    throw UnsupportedException(
+        "Function call with tensor operand(s) is unsupported");
+  }
+
+  if (hasMemRef) {
+    throw UnsupportedException(
+        "Function call with memref operand(s) is unsupported");
   }
 
   auto getScalarSort = [](mlir::Type ty) {
@@ -37,38 +48,25 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
     return *s;
   };
 
-  switch (verifComplexity) {
-  case Complexity::SCALAR: {
-    vector<Sort> smtDomain;
-    smtDomain.reserve(domain.size());
-    transform(domain.cbegin(), domain.cend(), back_inserter(smtDomain),
-              getScalarSort);
+  vector<Sort> smtDomain;
+  smtDomain.reserve(domain.size());
+  transform(domain.cbegin(), domain.cend(), back_inserter(smtDomain),
+            getScalarSort);
 
-    if (range.isa<mlir::TensorType>()) {
-      throw UnsupportedException(
-          "Function that returns tensor is not supported yet");
-    }
-    if (range.isa<mlir::MemRefType>()) {
-      throw UnsupportedException(
-          "Function that returns memref is not supported yet");
-    }
-
-    const auto smtRange = getScalarSort(range);
-    FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
-
-    return DeclaredFunction(move(domain), move(range), move(decl));
-  }
-  case Complexity::TENSOR: {
+  if (range.isa<mlir::TensorType>()) {
     throw UnsupportedException(
-        "Function call with tensor operand(s) is unsupported");
+        "Function that returns tensor is not supported yet");
   }
-  case Complexity::MEMREF: {
+  if (range.isa<mlir::MemRefType>()) {
     throw UnsupportedException(
-        "Function call with memref operand(s) is unsupported");
-  }
+        "Function that returns memref is not supported yet");
   }
 
-  llvm_unreachable("Invalid verification complexity");
+  const auto smtRange = getScalarSort(range);
+  FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
+
+  return DeclaredFunction(move(domain), move(range), move(decl), hasTensor,
+                          hasMemRef);
 }
 
 ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
@@ -79,7 +77,8 @@ ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
             getExpr);
   auto fn_output = fromExpr(decl.apply(operandExprs), range);
   smart_assert(fn_output, "Cannot create ValueTy from the call's result"
-      " because its MLIR type is " << range);
+                          " because its MLIR type is "
+                              << range);
   return *fn_output;
 }
 

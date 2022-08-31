@@ -14,15 +14,11 @@ private:
   std::vector<mlir::Type> domain;
   mlir::Type range;
   smt::FnDecl decl;
-
-  enum class Complexity {
-    SCALAR,
-    TENSOR,
-    MEMREF,
-  };
+  bool hasTensor;
+  bool hasMemRef;
 
   DeclaredFunction(std::vector<mlir::Type> &&domain, mlir::Type &&range,
-                   smt::FnDecl &&decl);
+                   smt::FnDecl &&decl, bool hasTensor, bool hasMemRef);
 
 public:
   static DeclaredFunction declare(std::vector<mlir::Type> &&domain,
