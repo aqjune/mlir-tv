@@ -3,30 +3,13 @@
 
 #include <algorithm>
 #include <map>
+#include <vector>
 
 using namespace std;
 using namespace smt;
 
 namespace {
 map<string, DeclaredFunction, std::less<>> calleeMap;
-}
-
-smt::Sort DeclaredFunction::getScalarSort(const mlir::Type &ty) {
-  if (ty.isa<mlir::FloatType>()) {
-    const auto operand_sort = Float::sort(ty);
-    if (!operand_sort) {
-      throw UnsupportedException("Invalid operand type");
-    } else {
-      return *operand_sort;
-    }
-  } else if (ty.isa<mlir::IntegerType>()) {
-    const auto operand_bw = ty.getIntOrFloatBitWidth();
-    return Integer::sort(operand_bw);
-  } else if (ty.isIndex()) {
-    return Index::sort();
-  } else {
-    llvm_unreachable("Not a scalar type");
-  }
 }
 
 DeclaredFunction::DeclaredFunction(vector<mlir::Type> &&domain,
@@ -49,6 +32,12 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
       throw UnsupportedException("Invalid operand type");
     }
   }
+
+  auto getScalarSort = [](mlir::Type ty) {
+    auto s = convertPrimitiveTypeToSort(ty);
+    smart_assert(s, "A primitive type must be given, but got " << ty);
+    return *s;
+  };
 
   switch (verifComplexity) {
   case Complexity::SCALAR: {

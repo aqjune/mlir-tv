@@ -22,7 +22,6 @@ private:
   };
   Complexity verifComplexity;
 
-  static smt::Sort getScalarSort(const mlir::Type &ty);
   DeclaredFunction(std::vector<mlir::Type> &&domain, mlir::Type &&range,
                    smt::FnDecl &&decl, const Complexity verifComplexity);
 
