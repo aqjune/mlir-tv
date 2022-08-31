@@ -13,10 +13,8 @@ map<string, DeclaredFunction, std::less<>> calleeMap;
 }
 
 DeclaredFunction::DeclaredFunction(vector<mlir::Type> &&domain,
-                                   mlir::Type &&range, FnDecl &&decl,
-                                   bool hasTensor, bool hasMemRef)
-    : domain(move(domain)), range(move(range)), decl(move(decl)),
-      hasTensor(hasTensor), hasMemRef(hasMemRef) {}
+                                   mlir::Type &&range, FnDecl &&decl)
+    : domain(move(domain)), range(move(range)), decl(move(decl)) {}
 
 DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
                                            mlir::Type &&range,
@@ -65,8 +63,7 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
   const auto smtRange = getScalarSort(range);
   FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
 
-  return DeclaredFunction(move(domain), move(range), move(decl), hasTensor,
-                          hasMemRef);
+  return DeclaredFunction(move(domain), move(range), move(decl));
 }
 
 ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {

@@ -14,11 +14,9 @@ private:
   std::vector<mlir::Type> domain;
   mlir::Type range;
   smt::FnDecl decl;
-  bool hasTensor;
-  bool hasMemRef;
 
   DeclaredFunction(std::vector<mlir::Type> &&domain, mlir::Type &&range,
-                   smt::FnDecl &&decl, bool hasTensor, bool hasMemRef);
+                   smt::FnDecl &&decl);
 
 public:
   static DeclaredFunction declare(std::vector<mlir::Type> &&domain,
