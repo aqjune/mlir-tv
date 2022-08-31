@@ -1,9 +1,12 @@
 #include "encode.h"
 #include "abstractops.h"
-#include "opts.h"
-#include "utils.h"
 #include "debug.h"
+#include "function.h"
+#include "opts.h"
+#include "smt.h"
+#include "utils.h"
 
+#include "llvm/Support/ErrorHandling.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -18,13 +21,15 @@
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/IR/Types.h"
+#include "mlir/Support/LLVM.h"
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <variant>
 #include <vector>
-#include <optional>
 
 using namespace smt;
 using namespace std;
@@ -934,6 +939,36 @@ void encodeOp(State &st, mlir::arith::SelectOp op, bool) {
     auto isTrue = (Expr)condValue == Integer::boolTrue();
     st.regs.add(op, Expr::mkIte(isTrue, trueValue, falseValue), op.getType());
   }
+}
+
+template<>
+void encodeOp(State &st, mlir::func::CallOp op, bool) {
+  if (op.getNumResults() != 1) {
+    throw UnsupportedException(
+      op.getOperation(),
+      "Invalid number of return values");
+  }
+
+  const auto callee = op.getCallee();
+  if (!getDeclaredFunction(callee)) {
+    vector<mlir::Type> domain(op.getOperandTypes().begin(),
+                              op.getOperandTypes().end());
+    auto range = op.getResultTypes().front();
+    try {
+      declareFunction(move(domain), move(range), move(callee));
+    } catch (UnsupportedException e) {
+      throw UnsupportedException(op.getOperation(), e.getReason());
+    }
+  }
+
+  vector<ValueTy> operands;
+  operands.reserve(op.getNumOperands());
+  for (const auto& operand: op.getOperands()) {
+    operands.push_back(st.regs.findOrCrash(operand));
+  }
+
+  auto calleeUF = *getDeclaredFunction(callee);
+  st.regs.add(op.getResult(0), calleeUF.apply(operands));
 }
 
 template<>
@@ -3473,6 +3508,7 @@ static void encodeBlock(
     ENCODE(st, op, mlir::bufferization::ToMemrefOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::bufferization::ToTensorOp, encodeMemWriteOps);
 
+    ENCODE(st, op, mlir::func::CallOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::func::ReturnOp, encodeMemWriteOps);
 
     ENCODE(st, op, mlir::math::AbsFOp, encodeMemWriteOps);
