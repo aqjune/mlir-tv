@@ -439,7 +439,7 @@ Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d):
     arr = arr.store(i, elems1d[i]);
 }
 
-Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d, vector<uint64_t> &dim):
+Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d, const vector<uint64_t> &dim):
     ShapedValue(elemType),
     dims({}),
     arr(Expr::mkFreshVar(
@@ -447,6 +447,15 @@ Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d, vector<uint64_t> &di
     initialized(splatArrayForTensor(Expr::mkBool(true))) {
   for (unsigned i = 0; i < elems1d.size(); ++i)
     arr = arr.store(i, elems1d[i]);
+  for (unsigned i = 0; i < dim.size(); ++i)
+    dims.push_back(Index(dim[i]));
+}
+
+Tensor::Tensor(mlir::Type elemType, Expr &&arr, const vector<uint64_t> &dim):
+    ShapedValue(elemType),
+    dims({}),
+    arr(move(arr)),
+    initialized(splatArrayForTensor(Expr::mkBool(true))) {
   for (unsigned i = 0; i < dim.size(); ++i)
     dims.push_back(Index(dim[i]));
 }

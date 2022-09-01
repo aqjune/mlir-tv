@@ -2,7 +2,9 @@
 #include "utils.h"
 
 #include <algorithm>
+#include <iterator>
 #include <map>
+#include <numeric>
 #include <vector>
 
 using namespace std;
@@ -10,7 +12,16 @@ using namespace smt;
 
 namespace {
 map<string, DeclaredFunction, std::less<>> calleeMap;
+
+vector<uint64_t> getShapeDimVector(const mlir::ShapedType shapedTy) {
+  const auto dims = shapedTy.getShape();
+  return vector<uint64_t>(dims.begin(), dims.end());
 }
+
+mlir::Type getShapeElemType(const mlir::ShapedType shapedTy) {
+  return shapedTy.getElementType();
+}
+} // namespace
 
 DeclaredFunction::DeclaredFunction(vector<mlir::Type> &&domain,
                                    mlir::Type &&range, FnDecl &&decl)
@@ -51,19 +62,27 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
   transform(domain.cbegin(), domain.cend(), back_inserter(smtDomain),
             getScalarSort);
 
-  if (range.isa<mlir::TensorType>()) {
-    throw UnsupportedException(
-        "Function that returns tensor is not supported yet");
-  }
-  if (range.isa<mlir::MemRefType>()) {
+  if (range.isIntOrIndexOrFloat()) {
+    const auto smtRange = getScalarSort(range);
+    FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
+    return DeclaredFunction(move(domain), move(range), move(decl));
+  } else if (range.isa<mlir::TensorType>()) {
+    const auto tensorRange = range.dyn_cast<mlir::TensorType>();
+    const auto tensorElementType = getShapeElemType(tensorRange);
+    const auto dims = getShapeDimVector(tensorRange);
+    const auto smtRange =
+        static_cast<Expr>(Tensor::var(tensorElementType,
+                                      string(name) + "_tv_ret_tensor", dims))
+            .sort();
+
+    FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
+    return DeclaredFunction(move(domain), move(range), move(decl));
+  } else if (range.isa<mlir::MemRefType>()) {
     throw UnsupportedException(
         "Function that returns memref is not supported yet");
+  } else {
+    throw UnsupportedException("Invalid return type");
   }
-
-  const auto smtRange = getScalarSort(range);
-  FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
-
-  return DeclaredFunction(move(domain), move(range), move(decl));
 }
 
 ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
@@ -72,11 +91,23 @@ ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
 
   transform(operands.cbegin(), operands.cend(), back_inserter(operandExprs),
             getExpr);
-  auto fn_output = fromExpr(decl.apply(operandExprs), range);
-  smart_assert(fn_output, "Cannot create ValueTy from the call's result"
-                          " because its MLIR type is "
-                              << range);
-  return *fn_output;
+  if (range.isIntOrIndexOrFloat()) {
+    auto fn_output = fromExpr(decl.apply(operandExprs), range);
+    smart_assert(fn_output, "Cannot create ValueTy from the call's result"
+                            " because its MLIR type is "
+                                << range);
+    return *fn_output;
+  } else if (range.isa<mlir::TensorType>()) {
+    const auto tensorRange = range.dyn_cast<mlir::TensorType>();
+    const auto dims = getShapeDimVector(tensorRange);
+    auto fn_output =
+        Tensor(getShapeElemType(tensorRange), decl.apply(operandExprs), dims);
+    return fn_output;
+  } else {
+    smart_assert(false, "Cannot create ValueTy from the call's result"
+                        " because its MLIR type is "
+                            << range);
+  }
 }
 
 optional<DeclaredFunction> getDeclaredFunction(const std::string_view name) {
