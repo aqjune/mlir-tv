@@ -63,6 +63,10 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
     return DeclaredFunction(move(domain), move(range), move(decl));
   } else if (range.isa<mlir::TensorType>()) {
     const auto tensorRange = range.dyn_cast<mlir::TensorType>();
+    if (!tensorRange.hasRank()) {
+      throw UnsupportedException("Unranked tensor is not supported yet");
+    }
+
     const auto tensorElementType = tensorRange.getElementType();
     const auto dims = getShapeDimVector(tensorRange);
     const auto smtRange = Tensor::getSort(tensorElementType);
