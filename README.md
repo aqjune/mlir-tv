@@ -25,11 +25,11 @@ Please [build Z3 using CMake](https://github.com/Z3Prover/z3/blob/master/README-
 mkdir build
 cd build
 
-# At least one of -DZ3_ROOT and -DCVC5_ROOT should be set. Build will fail otherwise.
+# At least one of -DUSE_Z3 and -DUSE_cvc5 should be set. Build will fail otherwise.
 # -DUSE_LIBC is OFF by default. Set it to ON iff the MLIR (and CVC5) is linked with libc++
 cmake -DMLIR_ROOT=<dir/to/mlir-install> \
-      [-DZ3_ROOT=<dir/to/z3-install>] \
-      [-DCVC5_ROOT=<dir/to/cvc5-install>] \
+      [-DUSE_Z3=ON -DZ3_ROOT=<dir/to/z3-install>] \
+      [-DUSE_cvc5=ON -Dcvc5_ROOT=<dir/to/cvc5-install>] \
       [-DUSE_LIBC=ON|OFF] \
       [-DCMAKE_BUILD_TYPE=Debug|Release] \
       ..
