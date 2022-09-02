@@ -54,6 +54,8 @@ jobs:
           cd /src/mlir-tv
           cmake -B build -G Ninja \
             -DMLIR_ROOT=/opt/llvm \
+            -DUSE_Z3=ON \
+            -DUSE_cvc5=ON \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo
           cmake --build build
   
