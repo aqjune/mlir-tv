@@ -16,10 +16,6 @@ vector<uint64_t> getShapeDimVector(const mlir::ShapedType shapedTy) {
   const auto dims = shapedTy.getShape();
   return vector<uint64_t>(dims.begin(), dims.end());
 }
-
-mlir::Type getShapeElemType(const mlir::ShapedType shapedTy) {
-  return shapedTy.getElementType();
-}
 } // namespace
 
 DeclaredFunction::DeclaredFunction(vector<mlir::Type> &&domain,
@@ -67,7 +63,7 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
     return DeclaredFunction(move(domain), move(range), move(decl));
   } else if (range.isa<mlir::TensorType>()) {
     const auto tensorRange = range.dyn_cast<mlir::TensorType>();
-    const auto tensorElementType = getShapeElemType(tensorRange);
+    const auto tensorElementType = tensorRange.getElementType();
     const auto dims = getShapeDimVector(tensorRange);
     const auto smtRange =
         static_cast<Expr>(Tensor::var(tensorElementType,
@@ -100,7 +96,7 @@ ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
     const auto tensorRange = range.dyn_cast<mlir::TensorType>();
     const auto dims = getShapeDimVector(tensorRange);
     auto fn_output =
-        Tensor(getShapeElemType(tensorRange), decl.apply(operandExprs), dims);
+        Tensor(tensorRange.getElementType(), decl.apply(operandExprs), dims);
     return fn_output;
   } else {
     smart_assert(false, "Cannot create ValueTy from the call's result"
