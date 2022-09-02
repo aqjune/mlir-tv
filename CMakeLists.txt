@@ -16,7 +16,7 @@ option(USE_Z3 "Use Z3 solver backend")
 option(USE_cvc5 "Use cvc5 solver backend")
 
 if ((NOT USE_Z3) AND (NOT USE_cvc5))
-    message(FATAL_ERROR "No solver was specified; please add -DUSE_Z3 or -DUSE_cvc5")
+    message(FATAL_ERROR "No solver was specified; please add -DUSE_Z3=ON or -DUSE_cvc5=ON")
 endif()
 
 if(USE_Z3)
