@@ -65,11 +65,7 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
     const auto tensorRange = range.dyn_cast<mlir::TensorType>();
     const auto tensorElementType = tensorRange.getElementType();
     const auto dims = getShapeDimVector(tensorRange);
-    const auto smtRange =
-        static_cast<Expr>(Tensor::var(tensorElementType,
-                                      string(name) + "_tv_ret_tensor", dims))
-            .sort();
-
+    const auto smtRange = Tensor::getSort(tensorElementType);
     FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
     return DeclaredFunction(move(domain), move(range), move(decl));
   } else if (range.isa<mlir::MemRefType>()) {

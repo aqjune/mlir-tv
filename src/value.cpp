@@ -5,6 +5,7 @@
 #include "smtmatchers.h"
 #include "utils.h"
 #include "value.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace smt;
 using namespace std;
@@ -1003,6 +1004,17 @@ bool Tensor::isTypeSupported(mlir::TensorType tensorTy) {
   return convertPrimitiveTypeToSort(tensorTy.getElementType()) != nullopt;
 }
 
+Sort Tensor::getSort(mlir::Type elemType) {
+  const auto elemSort = convertPrimitiveTypeToSort(elemType);
+  if (!elemSort) {
+    string msg;
+    llvm::raw_string_ostream sstr(msg);
+    elemType.print(sstr);
+    sstr << "is not a valid tensor element type";
+    throw UnsupportedException(move(msg));
+  }
+  return arraySortForTensor(*elemSort);
+}
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   assert(t.dims.size() > 0);

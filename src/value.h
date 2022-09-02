@@ -299,6 +299,8 @@ public:
   static Tensor var(mlir::Type elemType, std::string &&name,
          const std::vector<smt::Expr> &dims, bool initialized = true);
 
+  static smt::Sort getSort(mlir::Type elemType);
+
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
   // Returns (arr[idx] == src.arr[idx], unbound idx vars)
   // this: tgt, other: src
