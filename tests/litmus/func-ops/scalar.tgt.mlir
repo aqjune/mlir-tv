@@ -15,13 +15,13 @@ func.func @commut_i(%v1: i32, %v2: i32) -> i32 {
   return %r: i32
 }
 
-func.func @operand_assoc(%v1: f32, %v2: f32) -> f32 {
+func.func @identical_operand(%v1: f32, %v2: f32) -> f32 {
   %v = arith.addf %v2, %v1: f32
   %r = func.call @simpl(%v): (f32) -> f32
   return %r: f32
 }
 
-func.func @operand_assoc_i(%v1: i32, %v2: i32) -> i32 {
+func.func @identical_operand_i(%v1: i32, %v2: i32) -> i32 {
   %v = arith.addi %v2, %v1: i32
   %r = func.call @simpl_i(%v): (i32) -> i32
   return %r: i32
