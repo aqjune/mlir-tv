@@ -5,6 +5,7 @@
 #include "smtmatchers.h"
 #include "utils.h"
 #include "value.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace smt;
 using namespace std;
@@ -439,14 +440,22 @@ Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d):
     arr = arr.store(i, elems1d[i]);
 }
 
-Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d, vector<uint64_t> &dim):
+Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d, const vector<uint64_t> &dim):
     ShapedValue(elemType),
     dims({}),
-    arr(Expr::mkFreshVar(
-      arraySortForTensor(*convertPrimitiveTypeToSort(elemType)), "tensor_val")),
+    arr(Expr::mkFreshVar(getSort(elemType), "tensor_val")),
     initialized(splatArrayForTensor(Expr::mkBool(true))) {
   for (unsigned i = 0; i < elems1d.size(); ++i)
     arr = arr.store(i, elems1d[i]);
+  for (unsigned i = 0; i < dim.size(); ++i)
+    dims.push_back(Index(dim[i]));
+}
+
+Tensor::Tensor(mlir::Type elemType, Expr &&arr, const vector<uint64_t> &dim):
+    ShapedValue(elemType),
+    dims({}),
+    arr(move(arr)),
+    initialized(splatArrayForTensor(Expr::mkBool(true))) {
   for (unsigned i = 0; i < dim.size(); ++i)
     dims.push_back(Index(dim[i]));
 }
@@ -994,6 +1003,17 @@ bool Tensor::isTypeSupported(mlir::TensorType tensorTy) {
   return convertPrimitiveTypeToSort(tensorTy.getElementType()) != nullopt;
 }
 
+Sort Tensor::getSort(mlir::Type elemType) {
+  const auto elemSort = convertPrimitiveTypeToSort(elemType);
+  if (!elemSort) {
+    string msg;
+    llvm::raw_string_ostream sstr(msg);
+    elemType.print(sstr);
+    sstr << "is not a valid tensor element type";
+    throw UnsupportedException(move(msg));
+  }
+  return arraySortForTensor(*elemSort);
+}
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
   assert(t.dims.size() > 0);

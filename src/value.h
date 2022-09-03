@@ -139,7 +139,10 @@ public:
   // A dense tensor (1 dimensional).
   Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems);
   // Multidimensional tensor
-  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems, std::vector<uint64_t> &dims);
+  Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems,
+         const std::vector<uint64_t> &dims);
+  Tensor(mlir::Type elemType, smt::Expr &&arr,
+         const std::vector<uint64_t> &dims);
 
   smt::Expr asArray() const { return arr; }
   smt::Expr getWellDefined() const;
@@ -297,6 +300,8 @@ public:
          const std::vector<uint64_t> &dims, bool initialized = true);
   static Tensor var(mlir::Type elemType, std::string &&name,
          const std::vector<smt::Expr> &dims, bool initialized = true);
+
+  static smt::Sort getSort(mlir::Type elemType);
 
   friend llvm::raw_ostream& operator<<(llvm::raw_ostream&, const Tensor &);
   // Returns (arr[idx] == src.arr[idx], unbound idx vars)
