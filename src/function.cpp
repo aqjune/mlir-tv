@@ -13,6 +13,8 @@ namespace {
 map<string, DeclaredFunction, std::less<>> calleeMap;
 
 vector<uint64_t> getShapeDimVector(const mlir::ShapedType shapedTy) {
+  smart_assert(shapedTy.hasStaticShape(), "Not having static shape: "
+                                          << shapedTy);
   const auto dims = shapedTy.getShape();
   return vector<uint64_t>(dims.begin(), dims.end());
 }
@@ -25,59 +27,39 @@ DeclaredFunction::DeclaredFunction(vector<mlir::Type> &&domain,
 DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
                                            mlir::Type &&range,
                                            const std::string_view name) {
-  bool hasTensor = false, hasMemRef = false;
-  for (const auto &operand_ty : domain) {
-    if (operand_ty.isa<mlir::TensorType>()) {
-      hasTensor = true;
-    } else if (operand_ty.isa<mlir::MemRefType>()) {
-      hasMemRef = true;
-    } else if (!operand_ty.isIntOrIndexOrFloat()) {
-      throw UnsupportedException("Invalid operand type");
+  auto typeToSort = [](mlir::Type t) {
+    if (auto tty = t.dyn_cast<mlir::TensorType>()) {
+      if (!tty.hasRank()) {
+        throw UnsupportedException("A call with an unranked tensor as operand "
+                                   "or return value is not supported");
+      } else if (!tty.hasStaticShape()) {
+        throw UnsupportedException("A call with a dynamically sized tensor "
+                                   "as operand or return value is not"
+                                   " supported");
+      } else if (!Tensor::isTypeSupported(tty)) {
+        throw UnsupportedException("Unsupported tensor type: " +
+                                   to_string(tty));
+      }
+
+      return Tensor::getSort(tty.getElementType());
+    } else if (t.isa<mlir::MemRefType>()) {
+      throw UnsupportedException(
+          "Function call with memref operand(s) or return type is unsupported");
+    } else if (t.isIntOrIndexOrFloat()) {
+      auto s = convertPrimitiveTypeToSort(t);
+      if (!s)
+        throw UnsupportedException("Unsupported scalar type: " + to_string(t));
+      return *s;
     }
-  }
-
-  if (hasTensor) {
-    throw UnsupportedException(
-        "Function call with tensor operand(s) is unsupported");
-  }
-
-  if (hasMemRef) {
-    throw UnsupportedException(
-        "Function call with memref operand(s) is unsupported");
-  }
-
-  auto getScalarSort = [](mlir::Type ty) {
-    auto s = convertPrimitiveTypeToSort(ty);
-    smart_assert(s, "A primitive type must be given, but got " << ty);
-    return *s;
+    throw UnsupportedException("Unsupported type: " + to_string(t));
   };
 
   vector<Sort> smtDomain;
   smtDomain.reserve(domain.size());
   transform(domain.cbegin(), domain.cend(), back_inserter(smtDomain),
-            getScalarSort);
-
-  if (range.isIntOrIndexOrFloat()) {
-    const auto smtRange = getScalarSort(range);
-    FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
-    return DeclaredFunction(move(domain), move(range), move(decl));
-  } else if (range.isa<mlir::TensorType>()) {
-    const auto tensorRange = range.dyn_cast<mlir::TensorType>();
-    if (!tensorRange.hasRank()) {
-      throw UnsupportedException("Unranked tensor is not supported yet");
-    }
-
-    const auto tensorElementType = tensorRange.getElementType();
-    const auto dims = getShapeDimVector(tensorRange);
-    const auto smtRange = Tensor::getSort(tensorElementType);
-    FnDecl decl(smtDomain, smtRange, string(name) + "_tvfn");
-    return DeclaredFunction(move(domain), move(range), move(decl));
-  } else if (range.isa<mlir::MemRefType>()) {
-    throw UnsupportedException(
-        "Function that returns memref is not supported yet");
-  } else {
-    throw UnsupportedException("Invalid return type");
-  }
+            typeToSort);
+  FnDecl decl(smtDomain, typeToSort(range), string(name) + "_tvfn");
+  return DeclaredFunction(move(domain), move(range), move(decl));
 }
 
 ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
@@ -92,16 +74,17 @@ ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
                             " because its MLIR type is "
                                 << range);
     return *fn_output;
-  } else if (range.isa<mlir::TensorType>()) {
-    const auto tensorRange = range.dyn_cast<mlir::TensorType>();
+  } else if (auto tensorRange = range.dyn_cast<mlir::TensorType>()) {
+    smart_assert(tensorRange.hasStaticShape(), "The range is a dynamically"
+                 " sized tensor type; UnsupportedException must have been "
+                 "thrown");
     const auto dims = getShapeDimVector(tensorRange);
     auto fn_output =
         Tensor(tensorRange.getElementType(), decl.apply(operandExprs), dims);
     return fn_output;
   } else {
     smart_assert(false, "Cannot create ValueTy from the call's result"
-                        " because its MLIR type is "
-                            << range);
+                        " because its MLIR type is " << range);
   }
 }
 
