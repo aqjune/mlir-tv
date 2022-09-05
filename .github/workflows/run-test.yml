@@ -59,27 +59,29 @@ jobs:
             -DCMAKE_BUILD_TYPE=RelWithDebInfo
           cmake --build build
   
-  # Disabled until MLIR bug is fixed
-  # build-release:
-  #   runs-on: ubuntu-20.04
-  #   container:
-  #     image: strikef/mlir-tv-ci-base:latest
-  #     credentials:
-  #       username: ${{ secrets.DOCKER_HUB_USERNAME }}
-  #       password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+  build-release:
+    runs-on: ubuntu-20.04
+    container:
+      image: strikef/mlir-tv-ci-base:latest
+      credentials:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-  #   steps:
-  #     - name: Checkout this repo
-  #       uses: actions/checkout@v2
-  #       with:
-  #         path: mlir-tv
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v2
+        with:
+          path: mlir-tv
 
-  #     - name: Build mlir-tv
-  #       run: |
-  #         cd mlir-tv
-  #         cmake -B build -G Ninja \
-  #           -DCMAKE_BUILD_TYPE=Release
-  #         cmake --build build
+      - name: Build mlir-tv
+        run: |
+          cd mlir-tv
+          cmake -B build -G Ninja \
+            -DMLIR_ROOT=/opt/llvm \
+            -DUSE_Z3=ON \
+            -DUSE_cvc5=ON \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
 
   build-Z3-only:
     runs-on: ubuntu-20.04
