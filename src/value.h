@@ -141,9 +141,9 @@ public:
   // Multidimensional tensor
   Tensor(mlir::Type elemType, std::vector<smt::Expr> &&elems,
          const std::vector<uint64_t> &dims);
-  Tensor(mlir::Type elemType, smt::Expr &&arr,
-         const std::vector<uint64_t> &dims);
 
+  static Tensor fromArray(mlir::Type elemType, smt::Expr &&arr,
+         std::vector<smt::Expr> &&dims);
   smt::Expr asArray() const { return arr; }
   smt::Expr getWellDefined() const;
 

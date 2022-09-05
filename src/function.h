@@ -14,9 +14,10 @@ private:
   std::vector<mlir::Type> domain;
   mlir::Type range;
   smt::FnDecl decl;
+  std::vector<smt::FnDecl> dims;
 
   DeclaredFunction(std::vector<mlir::Type> &&domain, mlir::Type &&range,
-                   smt::FnDecl &&decl);
+                   smt::FnDecl &&decl, std::vector<smt::FnDecl> &&dims);
 
 public:
   static DeclaredFunction declare(std::vector<mlir::Type> &&domain,
