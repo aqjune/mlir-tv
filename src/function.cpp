@@ -76,28 +76,18 @@ ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
   auto getZeroGuardedExpr = [](const ValueTy &val) {
     if (holds_alternative<Tensor>(val)) {
       const auto tensorVal = get<Tensor>(val);
-      Expr numElements = Index::one();
-      for (const auto &dim : tensorVal.getDims()) {
-        numElements = numElements * dim;
-      }
+      Expr numElements = tensorVal.get1DSize();
 
       const Expr arr = tensorVal;
       const auto i = static_cast<Expr>(Index::var("idx", VarType::BOUND));
 
-      Expr zero = Index::zero();
       const auto elemType = tensorVal.getElemType();
-      if (elemType.isa<mlir::FloatType>()) {
-        zero = Float::constant(llvm::APFloat(0.0), elemType);
-      } else if (elemType.isa<mlir::IntegerType>()) {
-        zero = Integer(0, elemType.getIntOrFloatBitWidth());
-      } else if (elemType.isIndex()) {
-        // no-op
-      } else {
+      auto zero = getZero(elemType);
+      if (!zero) {
         smart_assert(false, "Invalid tensor element type " << elemType);
       }
-
       return Expr::mkLambda(
-          i, Expr::mkIte(i.ult(numElements), arr.select(i), zero));
+          i, Expr::mkIte(i.ult(numElements), arr.select(i), *zero));
     } else {
       return getExpr(val);
     }
