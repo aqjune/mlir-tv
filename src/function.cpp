@@ -1,9 +1,5 @@
 #include "function.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "simplevalue.h"
 #include "utils.h"
-#include "value.h"
-#include "llvm/ADT/APFloat.h"
 
 #include <algorithm>
 #include <iterator>
