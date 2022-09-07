@@ -451,13 +451,9 @@ Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d, const vector<uint64_
     dims.push_back(Index(dim[i]));
 }
 
-Tensor::Tensor(mlir::Type elemType, Expr &&arr, const vector<uint64_t> &dim):
-    ShapedValue(elemType),
-    dims({}),
-    arr(move(arr)),
-    initialized(splatArrayForTensor(Expr::mkBool(true))) {
-  for (unsigned i = 0; i < dim.size(); ++i)
-    dims.push_back(Index(dim[i]));
+Tensor Tensor::fromArray(mlir::Type elemType, smt::Expr &&arr, std::vector<smt::Expr> &&dims) {
+  return Tensor(elemType, move(dims), move(arr),
+    splatArrayForTensor(Expr::mkBool(true)));
 }
 
 // A fresh tensor
