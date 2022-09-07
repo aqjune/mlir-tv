@@ -51,9 +51,15 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
   };
 
   vector<Sort> smtDomain;
-  smtDomain.reserve(domain.size());
-  transform(domain.cbegin(), domain.cend(), back_inserter(smtDomain),
-            typeToSort);
+  for (const auto operandTy : domain) {
+    smtDomain.push_back(typeToSort(operandTy));
+    if (auto tensorOperandTy = operandTy.dyn_cast<mlir::TensorType>()) {
+      const auto rank = tensorOperandTy.getRank();
+      for (size_t i = 0; i < rank; i++) {
+        smtDomain.push_back(Index::sort());
+      }
+    }
+  }
   FnDecl decl(smtDomain, typeToSort(range), string(name) + "_tvfn");
 
   vector<FnDecl> dims;
@@ -71,7 +77,6 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
 
 ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
   vector<Expr> operandExprs;
-  operandExprs.reserve(operands.size());
 
   auto getZeroGuardedExpr = [](const ValueTy &val) {
     if (holds_alternative<Tensor>(val)) {
@@ -93,8 +98,14 @@ ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
     }
   };
 
-  transform(operands.cbegin(), operands.cend(), back_inserter(operandExprs),
-            getZeroGuardedExpr);
+  for (const auto &operandVal : operands) {
+    operandExprs.push_back(getZeroGuardedExpr(operandVal));
+    if (holds_alternative<Tensor>(operandVal)) {
+      const auto dims = get<Tensor>(operandVal).getDims();
+      operandExprs.insert(end(operandExprs), dims.cbegin(), dims.cend());
+    }
+  }
+
   if (range.isIntOrIndexOrFloat()) {
     auto fn_output = fromExpr(decl.apply(operandExprs), range);
     smart_assert(fn_output, "Cannot create ValueTy from the call's result"
