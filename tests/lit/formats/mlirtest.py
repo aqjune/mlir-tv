@@ -71,7 +71,7 @@ class ExitCodeDependentTestBase(TestBase):
             return lit.Test.SKIPPED, ""
         elif int(exit_code / 10) == 8:
             # exit code 80~89: parsing related errors
-            return lit.Test.UNRESOLVED, ""
+            return lit.Test.UNRESOLVED, f"stdout >>\n{outs}\n\nstderr >>\n{errs}"
         elif exit_code == 101:
             # timeout
             return lit.Test.TIMEOUT, ""
