@@ -51,6 +51,27 @@ llvm::cl::opt<bool> arg_use_neg_zero(
   llvm::cl::init(false),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<string> arg_use_arg_dims("use-fn-argument-dims",
+  llvm::cl::desc(
+    "Specify the function argument to use as a reference for the "
+          "output dynamic dims"),
+  llvm::cl::value_desc("<function_name>@idx(,<function_name>@idx)*"),
+  llvm::cl::cat(MlirTvCategory)
+);
+
+namespace {
+  optional<map<string, int64_t, std::less<>>> dimsReferenceIdxMap;
+
+  optional<int64_t> getDimsReferenceIdx(const string_view functionName) {
+    auto itr = dimsReferenceIdxMap->find(functionName);
+    if (itr != dimsReferenceIdxMap->end()) {
+      return itr->second;
+    } else {
+      return nullopt;
+    }
+  }
+}
+
 // map := (i, j, k) -> (j, k, i)
 // input := [a, b, c]
 // output := [b, c, a]
@@ -949,13 +970,44 @@ void encodeOp(State &st, mlir::func::CallOp op, bool) {
       "Invalid number of return values");
   }
 
+  if (!dimsReferenceIdxMap) {
+    // parse user-specified dims
+    dimsReferenceIdxMap = map<string, int64_t, std::less<>>();
+
+    const auto dimRefArgs = arg_use_arg_dims.getValue();
+    if (!dimRefArgs.empty()) {
+      const auto dimRefArgsView = string_view(dimRefArgs);
+      size_t cur = 0;
+      while (true) {
+        // extract name-idx pair
+        const auto commaPos = dimRefArgsView.find(",", cur);
+        const auto dimRefView = dimRefArgsView.substr(cur, commaPos);
+
+        // parse function name and argument index
+        const auto atPos = dimRefView.find("@");
+        auto fnName = string(dimRefView.substr(0, atPos));
+        const auto argIndex = stoll(string(dimRefView.substr(atPos + 1)));
+        auto [_, success] = dimsReferenceIdxMap->insert({move(fnName), argIndex});
+        smart_assert(success, "Dims reference argument for '" << fnName
+                      << "' is specified more than once");
+
+        if (commaPos != dimRefArgsView.npos) {
+          cur = commaPos + 1;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
   const auto callee = op.getCallee();
   if (!getDeclaredFunction(callee)) {
     vector<mlir::Type> domain(op.getOperandTypes().begin(),
                               op.getOperandTypes().end());
     auto range = op.getResultTypes().front();
     try {
-      declareFunction(move(domain), move(range), move(callee));
+      declareFunction(move(domain), move(range), move(callee),
+                      getDimsReferenceIdx(callee));
     } catch (UnsupportedException e) {
       throw UnsupportedException(op.getOperation(), e.getReason());
     }
