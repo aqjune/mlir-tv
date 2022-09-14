@@ -176,7 +176,7 @@ bool declareFunction(vector<mlir::Type> &&domain, mlir::Type &&range,
         const auto rangeDim = shapedRange.getDimSize(i);
 
         if (outputDim == -1) {
-          // this dimension is unspecified, so use the range dim
+          // this dimension is not specified by the user, so use the range dim
           newDims.push_back(rangeDim);
         } else if (shapedRange.isDynamicDim(i)) {
           // only range dim is dynamic
