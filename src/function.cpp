@@ -52,23 +52,24 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
   if (rangeDimRefIdx) {
     const auto dimRefIdx = *rangeDimRefIdx;
     smart_assert(dimRefIdx < domain.size(),
-                "Tried to refer to the argument of an invalid index");
+                 "Tried to refer to the argument of an invalid index");
 
     const auto shapedDimRef = domain[dimRefIdx].dyn_cast<mlir::ShapedType>();
     const auto shapedRange = range.dyn_cast<mlir::ShapedType>();
-    smart_assert(shapedDimRef && shapedRange,
-                "Both the specified domain and the range must be shaped types");
+    smart_assert(
+        shapedDimRef && shapedRange,
+        "Both the specified domain and the range must be shaped types");
     smart_assert(shapedDimRef.getRank() == shapedRange.getRank(),
-                "The specified domain and the range must have the same ranks");
+                 "The specified domain and the range must have the same ranks");
 
     for (size_t r = 0; r < shapedDimRef.getRank(); r++) {
       if (shapedDimRef.isDynamicDim(r) != shapedRange.isDynamicDim(r)) {
         throw UnsupportedException("The dimensions of the specified domain and "
-                                  "the range are incompatible");
+                                   "the range are incompatible");
       } else if (!shapedDimRef.isDynamicDim(r) && shapedRange.isDynamicDim(r) &&
-                shapedDimRef.getDimSize(r) != shapedRange.getDimSize(r)) {
+                 shapedDimRef.getDimSize(r) != shapedRange.getDimSize(r)) {
         throw UnsupportedException("The dimensions of the specified domain and "
-                                  "the range are incompatible");
+                                   "the range are incompatible");
       }
     }
   }
