@@ -51,6 +51,12 @@ llvm::cl::opt<bool> arg_use_neg_zero(
   llvm::cl::init(false),
   llvm::cl::cat(MlirTvCategory));
 
+llvm::cl::opt<string> arg_dynamic_output_dims("specify-output-dims",
+  llvm::cl::desc("Specify the dimensions of the dynamically shaped output type"),
+  llvm::cl::value_desc("(dim|?)[x(dim|?)]+"),
+  llvm::cl::cat(MlirTvCategory)
+);
+
 // map := (i, j, k) -> (j, k, i)
 // input := [a, b, c]
 // output := [b, c, a]
@@ -954,8 +960,31 @@ void encodeOp(State &st, mlir::func::CallOp op, bool) {
     vector<mlir::Type> domain(op.getOperandTypes().begin(),
                               op.getOperandTypes().end());
     auto range = op.getResultTypes().front();
+
+    // parse user-specified dims
+    vector<int64_t> specifiedDims;
+    const auto dimArgs = arg_dynamic_output_dims.getValue();
+    if (!dimArgs.empty()) {
+      size_t cur = 0;
+      while (true) {
+        const auto commaPos = dimArgs.find("x", cur);
+        const auto dimStr = dimArgs.substr(cur, commaPos);
+        if (dimStr == "?") {
+          specifiedDims.push_back(-1);
+        } else {
+          specifiedDims.push_back(stoll(dimStr));
+        }
+        
+        if (commaPos != dimArgs.npos) {
+          cur = commaPos + 1;
+        } else {
+          break;
+        }
+      }
+    }
+
     try {
-      declareFunction(move(domain), move(range), move(callee));
+      declareFunction(move(domain), move(range), move(callee), specifiedDims);
     } catch (UnsupportedException e) {
       throw UnsupportedException(op.getOperation(), e.getReason());
     }

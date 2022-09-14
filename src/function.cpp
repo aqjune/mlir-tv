@@ -2,6 +2,7 @@
 #include "utils.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include <map>
 #include <numeric>
@@ -141,7 +142,8 @@ optional<DeclaredFunction> getDeclaredFunction(const std::string_view name) {
 }
 
 bool declareFunction(vector<mlir::Type> &&domain, mlir::Type &&range,
-                     const string_view name) {
+                     const string_view name,
+                     const vector<int64_t> &outputDims) {
   if (getDeclaredFunction(name)) {
     // no-op if there already exists a function of the same name
     return false;
@@ -149,8 +151,60 @@ bool declareFunction(vector<mlir::Type> &&domain, mlir::Type &&range,
     llvm::outs() << "WARNING: Function \"" << name << "\" is assumed to be "
                  << "stateless and does not read or write global memory\n";
 
-    calleeMap.insert({string(name), DeclaredFunction::declare(
-                                        move(domain), move(range), name)});
+    if (outputDims.empty()) {
+      calleeMap.insert({string(name), DeclaredFunction::declare(
+                                          move(domain), move(range), name)});
+    } else {
+      if (!range.isa<mlir::ShapedType>()) {
+        smart_assert(
+            false, "Output dimensions are given, but the range is not shaped");
+      }
+
+      auto shapedRange = range.dyn_cast<mlir::ShapedType>();
+      if (!shapedRange.hasRank()) {
+        throw UnsupportedException("Unranked shaped types are unsupported");
+      }
+      if (outputDims.size() != shapedRange.getRank()) {
+        smart_assert(false,
+                     "The rank of range does not match the output dimensions");
+      }
+
+      vector<int64_t> newDims;
+      newDims.reserve(outputDims.size());
+      for (size_t i = 0; i < outputDims.size(); i++) {
+        const auto outputDim = outputDims[i];
+        const auto rangeDim = shapedRange.getDimSize(i);
+
+        if (shapedRange.isDynamicDim(i)) {
+          if (outputDim == -1) {
+            // both range and specified output dims are dynamic
+            newDims.push_back(rangeDim);
+          } else {
+            // only range dim is dynamic
+            newDims.push_back(outputDim);
+          }
+        } else {
+          if (outputDim != rangeDim) {
+            // range dim does not match the output dim
+            smart_assert(false, "The dimension of range does not match the "
+                                "output dimension");
+          } else {
+            newDims.push_back(rangeDim);
+          }
+        }
+      }
+
+      if (auto tensorRange = shapedRange.dyn_cast<mlir::TensorType>()) {
+        auto reshapedTensorRange = tensorRange.cloneWith(
+            llvm::ArrayRef<int64_t>(newDims), tensorRange.getElementType());
+        calleeMap.insert(
+            {string(name), DeclaredFunction::declare(
+                               move(domain), move(reshapedTensorRange), name)});
+      } else {
+        throw UnsupportedException("Unsupported shaped type: " +
+                                   to_string(shapedRange));
+      }
+    }
     return true;
   }
 }
