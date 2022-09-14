@@ -972,7 +972,13 @@ void encodeOp(State &st, mlir::func::CallOp op, bool) {
         if (dimStr == "?") {
           specifiedDims.push_back(-1);
         } else {
-          specifiedDims.push_back(stoll(dimStr));
+          const auto dim = stoll(dimStr);
+          if (dim < 0) {
+            smart_assert(false,
+              "Cannot use negative integers to specify the dimensions");
+          } else {
+            specifiedDims.push_back(dim);
+          }
         }
         
         if (commaPos != dimArgs.npos) {
