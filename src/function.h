@@ -30,4 +30,5 @@ public:
 std::optional<DeclaredFunction>
 getDeclaredFunction(const std::string_view name);
 bool declareFunction(std::vector<mlir::Type> &&domain, mlir::Type &&range,
-                     const std::string_view name);
+                     const std::string_view name,
+                     const std::vector<int64_t> &outputDims);
