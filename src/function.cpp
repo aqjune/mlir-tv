@@ -175,22 +175,19 @@ bool declareFunction(vector<mlir::Type> &&domain, mlir::Type &&range,
         const auto outputDim = outputDims[i];
         const auto rangeDim = shapedRange.getDimSize(i);
 
-        if (shapedRange.isDynamicDim(i)) {
-          if (outputDim == -1) {
-            // both range and specified output dims are dynamic
-            newDims.push_back(rangeDim);
-          } else {
-            // only range dim is dynamic
-            newDims.push_back(outputDim);
-          }
+        if (outputDim == -1) {
+          // this dimension is unspecified, so use the range dim
+          newDims.push_back(rangeDim);
+        } else if (shapedRange.isDynamicDim(i)) {
+          // only range dim is dynamic
+          newDims.push_back(outputDim);
+        } else if (outputDim == rangeDim) {
+          // both dims are static and are equal
+          newDims.push_back(rangeDim);
         } else {
-          if (outputDim != rangeDim) {
-            // range dim does not match the output dim
-            smart_assert(false, "The dimension of range does not match the "
-                                "output dimension");
-          } else {
-            newDims.push_back(rangeDim);
-          }
+          // dimension mismatch
+          smart_assert(false, "The dimension of range does not match the "
+                              "output dimension");
         }
       }
 
