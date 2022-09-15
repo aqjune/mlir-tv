@@ -36,8 +36,7 @@ cmake -Bbuild \
       [-Dcvc5_ROOT=/cvc5/installation/path] \
       # Set -USE_LIBC to ON iff the MLIR (and cvc5) is linked with libc++
       [-DUSE_LIBC=ON|OFF] \
-      [-DCMAKE_BUILD_TYPE=Debug|Release] \
-      ..
+      [-DCMAKE_BUILD_TYPE=Debug|Release]
 # You may omit -j if you're using Ninja
 cmake --build build --target mlir-tv -j
 ```
