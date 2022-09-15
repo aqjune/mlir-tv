@@ -6,12 +6,14 @@ MLIR-TV focuses on supporting dialects that are tailored for compiling machine l
 
 ## How to build MLIR-TV
 
-Prerequisites: [CMake](https://cmake.org/download/)(>=3.15),
+Prerequisites: [CMake](https://cmake.org/download/)(>=3.13),
 [MLIR](https://github.com/llvm/llvm-project),
 [Python3](https://www.python.org/downloads/),  
 Solvers (at least one of them must be used):
 [z3-4.8.13](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.13) ,
 [cvc5-0.0.3(limited support)](https://github.com/cvc5/cvc5/releases/tag/cvc5-0.0.3)
+
+Optional prerequisites: [Ninja](https://ninja-build.org/)  
 
 You will need to build & install MLIR.
 Please follow LLVM's [Getting Started](https://llvm.org/docs/GettingStarted.html#getting-the-source-code-and-building-llvm), and run `cmake --build . --target install`.
@@ -22,18 +24,22 @@ You will also need to build & install Z3.
 Please [build Z3 using CMake](https://github.com/Z3Prover/z3/blob/master/README-CMake.md) and install it to somewhere designated by `CMAKE_INSTALL_PREFIX`.
 
 ```bash
-mkdir build
-cd build
-
-# At least one of -DUSE_Z3 and -DUSE_cvc5 should be set. Build will fail otherwise.
-# -DUSE_LIBC is OFF by default. Set it to ON iff the MLIR (and CVC5) is linked with libc++
-cmake -DMLIR_ROOT=<dir/to/mlir-install> \
-      [-DUSE_Z3=ON -DZ3_ROOT=<dir/to/z3-install>] \
-      [-DUSE_cvc5=ON -Dcvc5_ROOT=<dir/to/cvc5-install>] \
+cmake -Bbuild \
+      # We recommend you use Ninja if you have it on your system
+      [-GNinja] \
+      # At least one of USE_Z3 and USE_cvc5 should be set to ON. Build will fail otherwise.
+      [-DUSE_Z3=ON|OFF] \
+      [-DUSE_cvc5=ON|OFF] \
+      # Use <dep>_ROOT variables when CMake fails to locate dependencies on its own
+      [-DMLIR_ROOT=/mlir/installation/path] \
+      [-DZ3_ROOT=/z3/installation/path] \
+      [-Dcvc5_ROOT=/cvc5/installation/path] \
+      # Set -USE_LIBC to ON iff the MLIR (and cvc5) is linked with libc++
       [-DUSE_LIBC=ON|OFF] \
       [-DCMAKE_BUILD_TYPE=Debug|Release] \
       ..
-cmake --build . -- -j
+# You may omit -j if you're using Ninja
+cmake --build build --target mlir-tv -j
 ```
 
 ## How to run MLIR-TV
@@ -49,12 +55,11 @@ mlir-tv <.mlir before opt> <.mlir after opt>
 
 ## How to test MLIR-TV
 ```bash
-cd build
-# A detailed log is written to build/Testing/Temporary/LastTest.log
+# A detailed log will be written to build/Testing/Temporary/LastTest.log
 # If you want detailed output on the terminal, please add -V
-ctest -R Opts # Test IR transformation passes
-ctest -R Long # Test passes that take a lot of time
-ctest -R Litmus # Test litmus only
+ctest --test-dir build -R Opts # Test IR transformation passes
+ctest --test-dir build -R Long # Test passes that take a lot of time
+ctest --test-dir build -R Litmus # Test litmus only
 ```
 
 ## Contributions
