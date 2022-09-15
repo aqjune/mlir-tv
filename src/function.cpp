@@ -53,7 +53,7 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
     const auto dimRefIdx = *rangeDimRefIdx;
     if (dimRefIdx >= domain.size()) {
       throw UnsupportedException(
-          "Tried to refer to the argument of an invalid index");
+          "Tried to refer to an argument of an invalid index");
     }
 
     const auto shapedDimRef = domain[dimRefIdx].dyn_cast<mlir::ShapedType>();
