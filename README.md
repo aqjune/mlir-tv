@@ -49,8 +49,8 @@ Run the built `mlir-tv` executable as following:
 ```bash
 mlir-tv <.mlir before opt> <.mlir after opt>
 # ex: ./build/mlir-tv \
-#        tests/opts/conv2d_to_img2col/nhwc_filter.src.mlir \
-#        tests/opts/conv2d_to_img2col/nhwc_filter.tgt.mlir -smt-to=5000
+#        tests/opts/conv2d-to-img2col/nhwc_filter.src.mlir \
+#        tests/opts/conv2d-to-img2col/nhwc_filter.tgt.mlir -smt-to=5000
 ```
 
 ## How to test MLIR-TV
