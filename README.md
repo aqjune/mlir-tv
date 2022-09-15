@@ -55,11 +55,12 @@ mlir-tv <.mlir before opt> <.mlir after opt>
 
 ## How to test MLIR-TV
 ```bash
+cd build
 # A detailed log will be written to build/Testing/Temporary/LastTest.log
 # If you want detailed output on the terminal, please add -V
-ctest --test-dir build -R Opts # Test IR transformation passes
-ctest --test-dir build -R Long # Test passes that take a lot of time
-ctest --test-dir build -R Litmus # Test litmus only
+ctest -R Opts # Test IR transformation passes
+ctest -R Long # Test passes that take a lot of time
+ctest -R Litmus # Test litmus only
 ```
 
 ## Contributions
