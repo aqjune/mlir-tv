@@ -2,6 +2,7 @@
 #include "utils.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include <map>
 #include <numeric>
@@ -16,13 +17,15 @@ map<string, DeclaredFunction, std::less<>> calleeMap;
 
 DeclaredFunction::DeclaredFunction(vector<mlir::Type> &&domain,
                                    mlir::Type &&range, FnDecl &&decl,
-                                   vector<FnDecl> &&dims)
+                                   vector<FnDecl> &&dims,
+                                   optional<int64_t> &&rangeDimRefIdx)
     : domain(move(domain)), range(move(range)), decl(move(decl)),
-      dims(move(dims)) {}
+      dims(move(dims)), rangeDimRefIdx(move(rangeDimRefIdx)) {}
 
 DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
                                            mlir::Type &&range,
-                                           const std::string_view name) {
+                                           const std::string_view name,
+                                           optional<int64_t> &&rangeDimRefIdx) {
   auto typeToSort = [](mlir::Type t) {
     if (auto tty = t.dyn_cast<mlir::TensorType>()) {
       if (!tty.hasRank()) {
@@ -46,6 +49,36 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
     throw UnsupportedException("Unsupported type: " + to_string(t));
   };
 
+  if (rangeDimRefIdx) {
+    const auto dimRefIdx = *rangeDimRefIdx;
+    if (dimRefIdx >= domain.size()) {
+      throw UnsupportedException(
+          "Tried to refer to an argument of an invalid index");
+    }
+
+    const auto shapedDimRef = domain[dimRefIdx].dyn_cast<mlir::ShapedType>();
+    const auto shapedRange = range.dyn_cast<mlir::ShapedType>();
+    if (!(shapedDimRef && shapedRange)) {
+      throw UnsupportedException(
+          "Both the specified domain and the range must be shaped types");
+    }
+    if (shapedDimRef.getRank() != shapedRange.getRank()) {
+      throw UnsupportedException(
+          "The specified domain and the range must have the same ranks");
+    }
+
+    for (size_t r = 0; r < shapedDimRef.getRank(); r++) {
+      if (shapedDimRef.isDynamicDim(r) != shapedRange.isDynamicDim(r)) {
+        throw UnsupportedException("The dimensions of the specified domain and "
+                                   "the range are incompatible");
+      } else if (!shapedDimRef.isDynamicDim(r) && shapedRange.isDynamicDim(r) &&
+                 shapedDimRef.getDimSize(r) != shapedRange.getDimSize(r)) {
+        throw UnsupportedException("The dimensions of the specified domain and "
+                                   "the range are incompatible");
+      }
+    }
+  }
+
   vector<Sort> smtDomain;
   for (const auto operandTy : domain) {
     smtDomain.push_back(typeToSort(operandTy));
@@ -68,7 +101,8 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
       dims.push_back(move(dim));
     }
   }
-  return DeclaredFunction(move(domain), move(range), move(decl), move(dims));
+  return DeclaredFunction(move(domain), move(range), move(decl), move(dims),
+                          move(rangeDimRefIdx));
 }
 
 ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
@@ -112,12 +146,22 @@ ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
     vector<Expr> dims;
     const auto rank = tensorRange.getRank();
     dims.reserve(rank);
-    for (size_t i = 0; i < rank; i++) {
-      if (tensorRange.isDynamicDim(i)) {
-        dims.push_back(this->dims[i].apply(operandExprs));
-      } else {
-        // static dimension does not need to be obtained via UF
-        dims.push_back(Index(tensorRange.getDimSize(i)));
+
+    if (rangeDimRefIdx) {
+      // dim reference argument is given
+      const auto dimRefVal = operands[*rangeDimRefIdx];
+      if (holds_alternative<Tensor>(dimRefVal)) {
+        const auto refDims = get<Tensor>(dimRefVal).getDims();
+        dims.insert(end(dims), refDims.cbegin(), refDims.cend());
+      }
+    } else {
+      for (size_t i = 0; i < rank; i++) {
+        if (tensorRange.isDynamicDim(i)) {
+          dims.push_back(this->dims[i].apply(operandExprs));
+        } else {
+          // static dimension does not need to be obtained via UF
+          dims.push_back(Index(tensorRange.getDimSize(i)));
+        }
       }
     }
 
@@ -141,7 +185,8 @@ optional<DeclaredFunction> getDeclaredFunction(const std::string_view name) {
 }
 
 bool declareFunction(vector<mlir::Type> &&domain, mlir::Type &&range,
-                     const string_view name) {
+                     const string_view name,
+                     optional<int64_t> &&dimsReferenceIdx) {
   if (getDeclaredFunction(name)) {
     // no-op if there already exists a function of the same name
     return false;
@@ -149,8 +194,9 @@ bool declareFunction(vector<mlir::Type> &&domain, mlir::Type &&range,
     llvm::outs() << "WARNING: Function \"" << name << "\" is assumed to be "
                  << "stateless and does not read or write global memory\n";
 
-    calleeMap.insert({string(name), DeclaredFunction::declare(
-                                        move(domain), move(range), name)});
+    calleeMap.insert({string(name),
+                      DeclaredFunction::declare(move(domain), move(range), name,
+                                                move(dimsReferenceIdx))});
     return true;
   }
 }

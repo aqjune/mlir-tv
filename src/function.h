@@ -5,6 +5,7 @@
 
 #include "mlir/IR/Types.h"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -15,14 +16,17 @@ private:
   mlir::Type range;
   smt::FnDecl decl;
   std::vector<smt::FnDecl> dims;
+  std::optional<int64_t> rangeDimRefIdx;
 
   DeclaredFunction(std::vector<mlir::Type> &&domain, mlir::Type &&range,
-                   smt::FnDecl &&decl, std::vector<smt::FnDecl> &&dims);
+                   smt::FnDecl &&decl, std::vector<smt::FnDecl> &&dims,
+                   std::optional<int64_t> &&rangeDimRefIdx);
 
 public:
   static DeclaredFunction declare(std::vector<mlir::Type> &&domain,
                                   mlir::Type &&range,
-                                  const std::string_view name);
+                                  const std::string_view name,
+                                  std::optional<int64_t> &&rangeDimRefIdx);
 
   ValueTy apply(const std::vector<ValueTy> &operands) const;
 };
@@ -30,4 +34,5 @@ public:
 std::optional<DeclaredFunction>
 getDeclaredFunction(const std::string_view name);
 bool declareFunction(std::vector<mlir::Type> &&domain, mlir::Type &&range,
-                     const std::string_view name);
+                     const std::string_view name,
+                     std::optional<int64_t> &&dimsReferenceIdx);
