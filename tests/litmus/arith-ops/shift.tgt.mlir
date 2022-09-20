@@ -1,5 +1,3 @@
-// VERIFY
-
 func.func @shift_left_i32(%v: i32) -> i32 {
   %amnt = arith.constant 16: i32
   %x = arith.muli %v, %amnt: i32
