@@ -773,6 +773,41 @@ void encodeOp(State &st, mlir::arith::ExtUIOp op, bool) {
       [extamnt](Integer &&a) { return ((Expr)a).zext(extamnt); });
 }
 
+template <>
+void encodeOp(State &st, mlir::arith::ShLIOp op, bool) {
+  auto arg = op.getOperand(0);
+  const auto src_bw = arg.getType().getIntOrFloatBitWidth();
+  auto shlamnt = op.getOperand(1);
+
+  encodeBinaryOp(st, op, move(arg), move(shlamnt), {},
+                 [src_bw](Integer &&a, Integer &&amnt) {
+                   return static_cast<Expr>(a).shl(amnt);
+                 });
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::ShRSIOp op, bool) {
+  auto arg = op.getOperand(0);
+  const auto src_bw = arg.getType().getIntOrFloatBitWidth();
+  auto shlamnt = op.getOperand(1);
+
+  encodeBinaryOp(st, op, move(arg), move(shlamnt), {},
+                 [src_bw](Integer &&a, Integer &&amnt) {
+                   return static_cast<Expr>(a).ashr(amnt);
+                 });
+}
+
+template<>
+void encodeOp(State &st, mlir::arith::ShRUIOp op, bool) {
+  auto arg = op.getOperand(0);
+  const auto src_bw = arg.getType().getIntOrFloatBitWidth();
+  auto shlamnt = op.getOperand(1);
+
+  encodeBinaryOp(st, op, move(arg), move(shlamnt), {},
+                 [src_bw](Integer &&a, Integer &&amnt) {
+                   return static_cast<Expr>(a).lshr(amnt);
+                 });
+}
 template<>
 void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
   auto op_type = op.getType();
@@ -3536,6 +3571,9 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::MulFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::NegFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ShLIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ShRSIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ShRUIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SIToFPOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
