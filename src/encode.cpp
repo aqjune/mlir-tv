@@ -71,6 +71,43 @@ namespace {
       return nullopt;
     }
   }
+
+  void encodeShiftAmountBound(State &st, mlir::Operation* op) {
+    const auto arg = op->getOperand(0);
+    const auto argTy = arg.getType();
+    const auto amnt = op->getOperand(1);
+    const auto amntTy = amnt.getType();
+
+    if (argTy.isa<mlir::TensorType>() && amntTy.isa<mlir::TensorType>()) {
+      const auto tensorArgTy = argTy.dyn_cast<mlir::TensorType>();
+      const auto bw = tensorArgTy.getElementType().getIntOrFloatBitWidth();
+
+      const auto amntTensor = st.regs.get<Tensor>(amnt);
+      amntTensor.getElemType().getIntOrFloatBitWidth();
+      const auto vars = Index::boundIndexVars(amntTensor.getRank());
+      const auto amntBound = Integer(bw, bw);
+      st.wellDefined(
+          op,
+          Expr::mkForall(
+              vars, static_cast<Expr>(amntTensor).select(vars).ult(amntBound)));
+    } else if (argTy.isa<mlir::IntegerType>() &&
+               amntTy.isa<mlir::IntegerType>()) {
+      const auto integerArgTy = argTy.dyn_cast<mlir::IntegerType>();
+      const auto bw = integerArgTy.getIntOrFloatBitWidth();
+
+      const auto amntInteger = st.regs.get<Integer>(amnt);
+      const auto amntBound = Integer(bw, bw);
+      st.wellDefined(op, static_cast<Expr>(amntInteger).ult(amntBound));
+    } else if (argTy.isa<mlir::IndexType>() && amntTy.isa<mlir::IndexType>()) {
+      const auto bw = Index::BITS;
+
+      const auto amntIndex = st.regs.get<Index>(amnt);
+      const auto amntBound = Index(bw);
+      st.wellDefined(op, static_cast<Expr>(amntIndex).ult(amntBound));
+    } else {
+      throw UnsupportedException(op, "Unsupported shift operands");
+    }
+  }
 }
 
 // map := (i, j, k) -> (j, k, i)
@@ -775,42 +812,36 @@ void encodeOp(State &st, mlir::arith::ExtUIOp op, bool) {
 
 template <>
 void encodeOp(State &st, mlir::arith::ShLIOp op, bool) {
-  auto arg = op.getOperand(0);
-  const auto src_bw = arg.getType().getIntOrFloatBitWidth();
-  auto shlamnt = op.getOperand(1);
+  encodeShiftAmountBound(st, op.getOperation());
 
-  encodeBinaryOp(st, op, move(arg), move(shlamnt), {},
-                 [&st, &op, src_bw](Integer &&a, Integer &&amnt) {
-                   st.wellDefined(op, static_cast<Expr>(amnt).ult(
-                                          Integer(src_bw, src_bw)));
+  auto arg = op.getOperand(0);
+  auto amnt = op.getOperand(1);
+  encodeBinaryOp(st, op, move(arg), move(amnt), {},
+                 [](Integer &&a, Integer &&amnt) {
                    return static_cast<Expr>(a).shl(amnt);
                  });
 }
 
 template <>
 void encodeOp(State &st, mlir::arith::ShRSIOp op, bool) {
-  auto arg = op.getOperand(0);
-  const auto src_bw = arg.getType().getIntOrFloatBitWidth();
-  auto shlamnt = op.getOperand(1);
+  encodeShiftAmountBound(st, op.getOperation());
 
-  encodeBinaryOp(st, op, move(arg), move(shlamnt), {},
-                 [&st, &op, src_bw](Integer &&a, Integer &&amnt) {
-                   st.wellDefined(op, static_cast<Expr>(amnt).ult(
-                                          Integer(src_bw, src_bw)));
+  auto arg = op.getOperand(0);
+  auto amnt = op.getOperand(1);
+  encodeBinaryOp(st, op, move(arg), move(amnt), {},
+                 [](Integer &&a, Integer &&amnt) {
                    return static_cast<Expr>(a).ashr(amnt);
                  });
 }
 
 template <>
 void encodeOp(State &st, mlir::arith::ShRUIOp op, bool) {
-  auto arg = op.getOperand(0);
-  const auto src_bw = arg.getType().getIntOrFloatBitWidth();
-  auto shlamnt = op.getOperand(1);
+  encodeShiftAmountBound(st, op.getOperation());
 
-  encodeBinaryOp(st, op, move(arg), move(shlamnt), {},
-                 [&st, &op, src_bw](Integer &&a, Integer &&amnt) {
-                   st.wellDefined(op, static_cast<Expr>(amnt).ult(
-                                          Integer(src_bw, src_bw)));
+  auto arg = op.getOperand(0);
+  auto amnt = op.getOperand(1);
+  encodeBinaryOp(st, op, move(arg), move(amnt), {},
+                 [](Integer &&a, Integer &&amnt) {
                    return static_cast<Expr>(a).lshr(amnt);
                  });
 }

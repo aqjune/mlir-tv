@@ -12,6 +12,18 @@ func.func @shift_left_i64(%v: i64) -> i64 {
   return %x: i64
 }
 
+func.func @shift_left_index(%v: index) -> index {
+  %amnt = arith.constant 4: index
+  %x = arith.shli %v, %amnt: index
+  return %x: index
+}
+
+func.func @shift_left_tensor(%t: tensor<5xi32>) -> tensor<5xi32> {
+  %amnt = arith.constant dense<4> : tensor<5xi32>
+  %x = arith.shli %t, %amnt: tensor<5xi32>
+  return %x: tensor<5xi32>
+}
+
 func.func @shift_right_signed_i32() -> i32 {
   %v = arith.constant 0xabcd1234: i32
   %amnt = arith.constant 4: i32
