@@ -773,41 +773,45 @@ void encodeOp(State &st, mlir::arith::ExtUIOp op, bool) {
       [extamnt](Integer &&a) { return ((Expr)a).zext(extamnt); });
 }
 
-template <>
-void encodeOp(State &st, mlir::arith::ShLIOp op, bool) {
+template <> void encodeOp(State &st, mlir::arith::ShLIOp op, bool) {
   auto arg = op.getOperand(0);
   const auto src_bw = arg.getType().getIntOrFloatBitWidth();
   auto shlamnt = op.getOperand(1);
 
   encodeBinaryOp(st, op, move(arg), move(shlamnt), {},
-                 [src_bw](Integer &&a, Integer &&amnt) {
+                 [&st, &op, src_bw](Integer &&a, Integer &&amnt) {
+                   st.wellDefined(op, static_cast<Expr>(amnt).ult(
+                                          Integer(src_bw, src_bw)));
                    return static_cast<Expr>(a).shl(amnt);
                  });
 }
 
-template<>
-void encodeOp(State &st, mlir::arith::ShRSIOp op, bool) {
+template <> void encodeOp(State &st, mlir::arith::ShRSIOp op, bool) {
   auto arg = op.getOperand(0);
   const auto src_bw = arg.getType().getIntOrFloatBitWidth();
   auto shlamnt = op.getOperand(1);
 
   encodeBinaryOp(st, op, move(arg), move(shlamnt), {},
-                 [src_bw](Integer &&a, Integer &&amnt) {
+                 [&st, &op, src_bw](Integer &&a, Integer &&amnt) {
+                   st.wellDefined(op, static_cast<Expr>(amnt).ult(
+                                          Integer(src_bw, src_bw)));
                    return static_cast<Expr>(a).ashr(amnt);
                  });
 }
 
-template<>
-void encodeOp(State &st, mlir::arith::ShRUIOp op, bool) {
+template <> void encodeOp(State &st, mlir::arith::ShRUIOp op, bool) {
   auto arg = op.getOperand(0);
   const auto src_bw = arg.getType().getIntOrFloatBitWidth();
   auto shlamnt = op.getOperand(1);
 
   encodeBinaryOp(st, op, move(arg), move(shlamnt), {},
-                 [src_bw](Integer &&a, Integer &&amnt) {
+                 [&st, &op, src_bw](Integer &&a, Integer &&amnt) {
+                   st.wellDefined(op, static_cast<Expr>(amnt).ult(
+                                          Integer(src_bw, src_bw)));
                    return static_cast<Expr>(a).lshr(amnt);
                  });
 }
+
 template<>
 void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
   auto op_type = op.getType();
