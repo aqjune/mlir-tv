@@ -71,6 +71,38 @@ namespace {
       return nullopt;
     }
   }
+
+  void encodeShiftAmountBound(State &st, mlir::Operation *op) {
+    const auto arg = op->getOperand(0);
+    const auto argTy = arg.getType();
+    const auto amnt = op->getOperand(1);
+    const auto amntTy = amnt.getType();
+    smart_assert(argTy == amntTy,
+                 "Shift argument and amount types must be the same!");
+
+    if (amntTy.isa<mlir::TensorType>()) {
+      const auto amntTensor = st.regs.get<Tensor>(amnt);
+      const auto bw = amntTensor.getElemType().getIntOrFloatBitWidth();
+      const auto vars = Index::boundIndexVars(amntTensor.getRank());
+      const auto amntBound = Integer(bw, bw);
+      st.wellDefined(
+          op,
+          Expr::mkForall(
+              vars, static_cast<Expr>(amntTensor).select(vars).ult(amntBound)));
+    } else if (amntTy.isa<mlir::IntegerType>()) {
+      const auto amntInteger = st.regs.get<Integer>(amnt);
+      const auto bw = amntInteger.bitwidth();
+      const auto amntBound = Integer(bw, bw);
+      st.wellDefined(op, static_cast<Expr>(amntInteger).ult(amntBound));
+    } else if (argTy.isa<mlir::IndexType>() && amntTy.isa<mlir::IndexType>()) {
+      const auto amntIndex = st.regs.get<Index>(amnt);
+      const auto bw = Index::BITS;
+      const auto amntBound = Index(bw);
+      st.wellDefined(op, static_cast<Expr>(amntIndex).ult(amntBound));
+    } else {
+      throw UnsupportedException(op, "Unsupported shift operands");
+    }
+  }
 }
 
 // map := (i, j, k) -> (j, k, i)
@@ -771,6 +803,42 @@ void encodeOp(State &st, mlir::arith::ExtUIOp op, bool) {
   encodeUnaryOp(st, op, arg,
       {},
       [extamnt](Integer &&a) { return ((Expr)a).zext(extamnt); });
+}
+
+template <>
+void encodeOp(State &st, mlir::arith::ShLIOp op, bool) {
+  encodeShiftAmountBound(st, op.getOperation());
+
+  auto arg = op.getOperand(0);
+  auto amnt = op.getOperand(1);
+  encodeBinaryOp(st, op, move(arg), move(amnt), {},
+                 [](Integer &&a, Integer &&amnt) {
+                   return static_cast<Expr>(a).shl(amnt);
+                 });
+}
+
+template <>
+void encodeOp(State &st, mlir::arith::ShRSIOp op, bool) {
+  encodeShiftAmountBound(st, op.getOperation());
+
+  auto arg = op.getOperand(0);
+  auto amnt = op.getOperand(1);
+  encodeBinaryOp(st, op, move(arg), move(amnt), {},
+                 [](Integer &&a, Integer &&amnt) {
+                   return static_cast<Expr>(a).ashr(amnt);
+                 });
+}
+
+template <>
+void encodeOp(State &st, mlir::arith::ShRUIOp op, bool) {
+  encodeShiftAmountBound(st, op.getOperation());
+
+  auto arg = op.getOperand(0);
+  auto amnt = op.getOperand(1);
+  encodeBinaryOp(st, op, move(arg), move(amnt), {},
+                 [](Integer &&a, Integer &&amnt) {
+                   return static_cast<Expr>(a).lshr(amnt);
+                 });
 }
 
 template<>
@@ -3536,6 +3604,9 @@ static void encodeBlock(
     ENCODE(st, op, mlir::arith::MulFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::MulIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::NegFOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ShLIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ShRSIOp, encodeMemWriteOps);
+    ENCODE(st, op, mlir::arith::ShRUIOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SIToFPOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubFOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::arith::SubIOp, encodeMemWriteOps);
