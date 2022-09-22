@@ -72,36 +72,31 @@ namespace {
     }
   }
 
-  void encodeShiftAmountBound(State &st, mlir::Operation* op) {
+  void encodeShiftAmountBound(State &st, mlir::Operation *op) {
     const auto arg = op->getOperand(0);
     const auto argTy = arg.getType();
     const auto amnt = op->getOperand(1);
     const auto amntTy = amnt.getType();
+    smart_assert(argTy == amntTy,
+                 "Shift argument and amount types must be the same!");
 
-    if (argTy.isa<mlir::TensorType>() && amntTy.isa<mlir::TensorType>()) {
-      const auto tensorArgTy = argTy.dyn_cast<mlir::TensorType>();
-      const auto bw = tensorArgTy.getElementType().getIntOrFloatBitWidth();
-
+    if (amntTy.isa<mlir::TensorType>()) {
       const auto amntTensor = st.regs.get<Tensor>(amnt);
-      amntTensor.getElemType().getIntOrFloatBitWidth();
+      const auto bw = amntTensor.getElemType().getIntOrFloatBitWidth();
       const auto vars = Index::boundIndexVars(amntTensor.getRank());
       const auto amntBound = Integer(bw, bw);
       st.wellDefined(
           op,
           Expr::mkForall(
               vars, static_cast<Expr>(amntTensor).select(vars).ult(amntBound)));
-    } else if (argTy.isa<mlir::IntegerType>() &&
-               amntTy.isa<mlir::IntegerType>()) {
-      const auto integerArgTy = argTy.dyn_cast<mlir::IntegerType>();
-      const auto bw = integerArgTy.getIntOrFloatBitWidth();
-
+    } else if (amntTy.isa<mlir::IntegerType>()) {
       const auto amntInteger = st.regs.get<Integer>(amnt);
+      const auto bw = amntInteger.bitwidth();
       const auto amntBound = Integer(bw, bw);
       st.wellDefined(op, static_cast<Expr>(amntInteger).ult(amntBound));
     } else if (argTy.isa<mlir::IndexType>() && amntTy.isa<mlir::IndexType>()) {
-      const auto bw = Index::BITS;
-
       const auto amntIndex = st.regs.get<Index>(amnt);
+      const auto bw = Index::BITS;
       const auto amntBound = Index(bw);
       st.wellDefined(op, static_cast<Expr>(amntIndex).ult(amntBound));
     } else {
