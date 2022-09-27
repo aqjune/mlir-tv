@@ -79,7 +79,7 @@ namespace {
     const auto amnt = op->getOperand(1);
     const auto amntTy = amnt.getType();
     smart_assert(argTy == amntTy,
-                    "Shift argument and amount types must be the same!");
+                 "Shift argument and amount types must be the same!");
 
     if (amntTy.isa<mlir::TensorType>()) {
       const auto amntTensor = st.regs.get<Tensor>(amnt);
