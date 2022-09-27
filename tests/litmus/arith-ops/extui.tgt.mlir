@@ -12,3 +12,13 @@ func.func @neg_i32_to_i64() -> i64 {
   %c = arith.constant 0x0000000080000000: i64
   return %c: i64
 }
+
+func.func @tensor_i32_to_i64() -> tensor<5xi64> {
+  %x = arith.constant dense<2147483647> : tensor<5xi64>
+  return %x: tensor<5xi64>
+}
+
+func.func @tensor_neg_i32_to_i64() -> tensor<5xi64> {
+  %x = arith.constant dense<0x0000000080000000> : tensor<5xi64>
+  return %x: tensor<5xi64>
+}
