@@ -22,6 +22,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Types.h"
+#include "mlir/IR/TypeUtilities.h"
 #include "mlir/Support/LLVM.h"
 
 #include <functional>
@@ -78,7 +79,7 @@ namespace {
     const auto amnt = op->getOperand(1);
     const auto amntTy = amnt.getType();
     smart_assert(argTy == amntTy,
-                 "Shift argument and amount types must be the same!");
+                    "Shift argument and amount types must be the same!");
 
     if (amntTy.isa<mlir::TensorType>()) {
       const auto amntTensor = st.regs.get<Tensor>(amnt);
@@ -103,7 +104,26 @@ namespace {
       throw UnsupportedException(op, "Unsupported shift operands");
     }
   }
+
+enum class FPPrecision {
+  // F16,
+  F32,
+  F64
+};
+
+FPPrecision getPrecision(const mlir::Type &type) {
+  if (type.isF16()) {
+    // tgt_prec = FPPrecision::F16;
+    throw UnsupportedException(type, "F16 is not supported yet");
+  } else if (type.isF32()) {
+    return FPPrecision::F32;
+  } else if (type.isF64()) {
+    return FPPrecision::F64;
+  } else {
+    throw UnsupportedException(type, "unsupported FP type");
+  }
 }
+} // namespace
 
 // map := (i, j, k) -> (j, k, i)
 // input := [a, b, c]
@@ -498,7 +518,9 @@ encodeUnaryOp(State &st, OpTy op, mlir::Value arg,
       }
       throw UnsupportedException(opr, "Unknown value type");
     };
-    st.regs.add(op, a.elementwiseUnaryOp(elemty, f));
+    const auto resultElemTy =
+        mlir::getElementTypeOrSelf(opr->getResult(0).getType());
+    st.regs.add(op, a.elementwiseUnaryOp(resultElemTy, f));
     st.wellDefined(op, a.isFullyInitialized(), "the input is initialized");
 
   } else {
@@ -735,74 +757,64 @@ void encodeOp(State &st, mlir::arith::ConstantOp op, bool) {
   }
 }
 
-enum class FPPrecision {
-  // F16,
-  F32,
-  F64
-};
-
-static FPPrecision getPrecision(mlir::Type &type) {
-  if (type.isF16()) {
-    // tgt_prec = FPPrecision::F16;
-    throw UnsupportedException(type, "F16 is not supported yet");
-  } else if (type.isF32()) {
-    return FPPrecision::F32;
-  } else if (type.isF64()) {
-    return FPPrecision::F64;
-  } else {
-    throw UnsupportedException(type, "unsupported FP type");
-  }
-}
-
-template<>
+template <>
 void encodeOp(State &st, mlir::arith::ExtFOp op, bool) {
-  auto op_type = op.getType();
-  FPPrecision tgt_prec = getPrecision(op_type);
+  const auto srcElemType =
+      mlir::getElementTypeOrSelf(op.getOperand().getType());
+  FPPrecision src_prec = getPrecision(srcElemType);
 
-  auto operand_type = op.getOperand().getType();
-  FPPrecision src_prec = getPrecision(operand_type);
+  const auto tgtElemType = mlir::getElementTypeOrSelf(op.getType());
+  FPPrecision tgt_prec = getPrecision(tgtElemType);
 
   if (src_prec == tgt_prec) {
     st.regs.add(op.getResult(), st.regs.get<Float>(op.getOperand()));
     return; // extending into identical type is a no-op
   } else if (src_prec > tgt_prec) {
     throw UnsupportedException(op.getOperation(),
-      "cannot ExtF into lower precision type!");
+                               "cannot ExtF into lower precision type!");
   }
 
   auto arg = op.getOperand();
-  encodeUnaryOp(st, op, arg, [op_type](auto &&a) { return a.extend(op_type); },
-      {});
+  encodeUnaryOp(st, op, arg,
+                [tgtElemType](auto &&a) { return a.extend(tgtElemType); }, {});
 }
 
-template<>
+template <>
 void encodeOp(State &st, mlir::arith::ExtSIOp op, bool) {
-  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
-  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
+  const auto srcElemType =
+      mlir::getElementTypeOrSelf(op.getOperand().getType());
+  const auto src_bw = srcElemType.getIntOrFloatBitWidth();
+
+  const auto tgtElemType = mlir::getElementTypeOrSelf(op.getType());
+  const auto tgt_bw = tgtElemType.getIntOrFloatBitWidth();
 
   smart_assert(src_bw < tgt_bw, "Source's bitwidth must be smaller than "
-      "target's bitwidth, but got " << src_bw << " >= " << tgt_bw);
+                                "target's bitwidth, but got "
+                                    << src_bw << " >= " << tgt_bw);
 
   auto arg = op.getOperand();
-  auto extamnt = tgt_bw - src_bw;
-  encodeUnaryOp(st, op, arg,
-      {},
-      [extamnt](Integer &&a) { return ((Expr)a).sext(extamnt); });
+  auto amnt = tgt_bw - src_bw;
+  encodeUnaryOp(st, op, arg, {},
+                [amnt](Integer &&a) { return ((Expr)a).sext(amnt); });
 }
 
-template<>
+template <>
 void encodeOp(State &st, mlir::arith::ExtUIOp op, bool) {
-  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
-  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
+  const auto srcElemType =
+      mlir::getElementTypeOrSelf(op.getOperand().getType());
+  const auto src_bw = srcElemType.getIntOrFloatBitWidth();
+
+  const auto tgtElemType = mlir::getElementTypeOrSelf(op.getType());
+  const auto tgt_bw = tgtElemType.getIntOrFloatBitWidth();
 
   smart_assert(src_bw < tgt_bw, "Source's bitwidth must be smaller than "
-      "target's bitwidth, but got " << src_bw << " >= " << tgt_bw);
+                                "target's bitwidth, but got "
+                                    << src_bw << " >= " << tgt_bw);
 
   auto arg = op.getOperand();
-  auto extamnt = tgt_bw - src_bw;
-  encodeUnaryOp(st, op, arg,
-      {},
-      [extamnt](Integer &&a) { return ((Expr)a).zext(extamnt); });
+  auto amnt = tgt_bw - src_bw;
+  encodeUnaryOp(st, op, arg, {},
+                [amnt](Integer &&a) { return ((Expr)a).zext(amnt); });
 }
 
 template <>
@@ -843,39 +855,44 @@ void encodeOp(State &st, mlir::arith::ShRUIOp op, bool) {
 
 template<>
 void encodeOp(State &st, mlir::arith::TruncFOp op, bool) {
-  auto op_type = op.getType();
-  FPPrecision tgt_prec = getPrecision(op_type);
+  const auto srcElemType =
+      mlir::getElementTypeOrSelf(op.getOperand().getType());
+  FPPrecision src_prec = getPrecision(srcElemType);
 
-  auto operand_type = op.getOperand().getType();
-  FPPrecision src_prec = getPrecision(operand_type);
+  const auto tgtElemType = mlir::getElementTypeOrSelf(op.getType());
+  FPPrecision tgt_prec = getPrecision(tgtElemType);
 
   if (src_prec == tgt_prec) {
     st.regs.add(op.getResult(), st.regs.get<Float>(op.getOperand()));
     return; // truncating into identical type is a no-op
   } else if (src_prec < tgt_prec) {
     throw UnsupportedException(op.getOperation(),
-      "cannot TruncF into higher precision type!");
+                               "cannot TruncF into higher precision type!");
   }
 
   auto arg = op.getOperand();
   encodeUnaryOp(st, op, arg,
-      [op_type](auto &&a) { return a.truncate(op_type); },
-      {});
+                [tgtElemType](auto &&a) { return a.truncate(tgtElemType); },
+                {});
 }
 
-template<>
+template <>
 void encodeOp(State &st, mlir::arith::TruncIOp op, bool) {
-  auto tgt_bw = op.getType().getIntOrFloatBitWidth();
-  auto src_bw = op.getOperand().getType().getIntOrFloatBitWidth();
+  const auto srcElemType =
+      mlir::getElementTypeOrSelf(op.getOperand().getType());
+  const auto src_bw = srcElemType.getIntOrFloatBitWidth();
+
+  const auto tgtElemType = mlir::getElementTypeOrSelf(op.getType());
+  const auto tgt_bw = tgtElemType.getIntOrFloatBitWidth();
 
   smart_assert(src_bw > tgt_bw, "Source's bitwidth must be larger than "
-      "target's bitwidth, but got " << src_bw << " <= " << tgt_bw);
+                                "target's bitwidth, but got "
+                                    << src_bw << " <= " << tgt_bw);
 
   auto arg = op.getOperand();
   auto amnt = src_bw - tgt_bw;
-  encodeUnaryOp(st, op, arg,
-      {},
-      [amnt](Integer &&a) { return ((Expr)a).trunc(amnt); });
+  encodeUnaryOp(st, op, arg, {},
+                [amnt](Integer &&a) { return ((Expr)a).trunc(amnt); });
 }
 
 template<>
