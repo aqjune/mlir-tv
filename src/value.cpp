@@ -822,7 +822,7 @@ Tensor Tensor::elementwiseBinOp(
 
 Tensor Tensor::elementwiseUnaryOp(
     mlir::Type resultElemType, const function<Expr(Expr &&)> &f) const {
-  auto idxvar = Index::var("idx_binop", VarType::BOUND);
+  auto idxvar = Index::var("idx_uop", VarType::BOUND);
   Expr elemout = f(getRaw(idxvar));
 
   // UB if uninitialized elem is used

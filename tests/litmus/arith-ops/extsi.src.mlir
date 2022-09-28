@@ -17,3 +17,15 @@ func.func @neg_i32_to_i64() -> i64 {
   %x = arith.extsi %c: i32 to i64
   return %x: i64
 }
+
+func.func @tensor_i32_to_i64() -> tensor<5xi64> {
+  %c = arith.constant dense<2147483647> : tensor<5xi32>
+  %x = arith.extsi %c: tensor<5xi32> to tensor<5xi64>
+  return %x: tensor<5xi64>
+}
+
+func.func @tensor_neg_i32_to_i64() -> tensor<5xi64> {
+  %c = arith.constant dense<2147483648> : tensor<5xi32>
+  %x = arith.extsi %c: tensor<5xi32> to tensor<5xi64>
+  return %x: tensor<5xi64>
+}
