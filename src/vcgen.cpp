@@ -713,15 +713,15 @@ static vector<mlir::memref::GlobalOp> mergeGlobals(
     }
 
     auto glbTgt = tgtItr->second;
-    if (glbSrc.type() != glbTgt.type() ||
+    if (glbSrc.getType() != glbTgt.getType() ||
         glbSrc.isPrivate() != glbTgt.isPrivate() ||
-        glbSrc.constant() != glbTgt.constant() ||
-        glbSrc.initial_value() != glbTgt.initial_value()) {
+        glbSrc.getConstant() != glbTgt.getConstant() ||
+        glbSrc.getInitialValue() != glbTgt.getInitialValue()) {
       throw UnsupportedException(
           name + " has different signatures in src and tgt");
     }
 
-    assert(glbSrc.type().hasStaticShape() &&
+    assert(glbSrc.getType().hasStaticShape() &&
            "Global var must be statically shaped");
 
     mergedGlbs.push_back(glbSrc);
@@ -731,7 +731,7 @@ static vector<mlir::memref::GlobalOp> mergeGlobals(
     auto glbTgt = glbTgt0;
     auto tgtItr = srcGlobals.find(name);
     if (tgtItr == srcGlobals.end()) {
-      if (glbTgt.constant()) {
+      if (glbTgt.getConstant()) {
         mergedGlbs.push_back(glbTgt);
       } else
         throw UnsupportedException("Introducing new non-const globals "

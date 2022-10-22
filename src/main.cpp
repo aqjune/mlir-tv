@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
   // NOTE: we cannot use mlir::registerAllDialects because IREE does not have
   // dependency on some of those dialects
   registry.insert<AffineDialect>();
-  registry.insert<arith::ArithmeticDialect>();
+  registry.insert<arith::ArithDialect>();
   registry.insert<bufferization::BufferizationDialect>();
   registry.insert<func::FuncDialect>();
   registry.insert<linalg::LinalgDialect>();
