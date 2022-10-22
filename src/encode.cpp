@@ -1816,32 +1816,6 @@ encodeOp(State &st, mlir::linalg::Conv2DNhwcHwcfOp op, bool encodeMemWriteOp) {
 }
 
 template<>
-void encodeOp(State &st, mlir::linalg::InitTensorOp op, bool) {
-  auto res = op.getResult();
-  auto ty = res.getType().dyn_cast<mlir::RankedTensorType>();
-  if (!ty || !Tensor::isTypeSupported(ty))
-    throw UnsupportedException(op.getOperation(), "Unsupported tensor type");
-
-  vector<Expr> sizes;
-  if (ty.getRank() == 0) {
-    sizes.push_back(Index(1));
-  } else {
-    for (unsigned i = 0; i < ty.getRank(); ++i) {
-      if (op.isDynamicSize(i))
-        sizes.push_back(st.regs.get<Index>(op.getDynamicSize(i)));
-      else
-        sizes.push_back(Index(op.getStaticSize(i)));
-    }
-  }
-
-  // FIXME: can we use res's name?
-  static int new_var_idx = 0;
-  st.regs.add(res,
-      Tensor::var(ty.getElementType(),
-          ("init_tensor#") + to_string(new_var_idx++), sizes, false));
-}
-
-template<>
 void encodeOp(State &st, mlir::tensor::CollapseShapeOp op, bool) {
   Tensor t = st.regs.get<Tensor>(op.getOperand());
   mlir::RankedTensorType resTy = op.getResultType();
@@ -3662,7 +3636,6 @@ static void encodeBlock(
     ENCODE(st, op, mlir::linalg::FillOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::GenericOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::IndexOp, encodeMemWriteOps);
-    ENCODE(st, op, mlir::linalg::InitTensorOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::MatmulOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::tensor::PadOp, encodeMemWriteOps);
     ENCODE(st, op, mlir::linalg::PoolingNhwcMaxOp, encodeMemWriteOps);
