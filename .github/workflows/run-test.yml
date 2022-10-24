@@ -19,9 +19,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: strikef/mlir-tv-ci-base:latest
-      credentials:
-        username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
     
     steps:
       - name: Fetch mlir-tv cache
@@ -31,7 +28,7 @@ jobs:
           path: |
             /src/mlir-tv
             !/src/mlir-tv/build/Testing
-          key: cache-${{ secrets.CACHE_VERSION }}-${{ github.sha }}
+          key: cache-${{ github.sha }}
 
       # if cache miss
       - name: Create /src if not exists
@@ -63,9 +60,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: strikef/mlir-tv-ci-base:latest
-      credentials:
-        username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
     steps:
       - name: Checkout this repo
@@ -87,9 +81,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: strikef/mlir-tv-ci-base:latest
-      credentials:
-        username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
     
     steps:
       - name: Checkout this repo
@@ -110,9 +101,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: strikef/mlir-tv-ci-base:latest
-      credentials:
-        username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
     
     steps:
       - name: Checkout this repo
@@ -134,9 +122,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: strikef/mlir-tv-ci-base:latest
-      credentials:
-        username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
     steps:
       - name: Fetch mlir-tv cache
@@ -145,7 +130,7 @@ jobs:
           path: |
             /src/mlir-tv
             !/src/mlir-tv/build/Testing
-          key: cache-${{ secrets.CACHE_VERSION }}-${{ github.sha }}
+          key: cache-${{ github.sha }}
       
       - name: Run ctest
         run: |
@@ -165,9 +150,6 @@ jobs:
     needs: build
     container:
       image: strikef/mlir-tv-ci-base:latest
-      credentials:
-        username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
     
     steps:
       - name: Fetch mlir-tv cache
@@ -176,7 +158,7 @@ jobs:
           path: |
             /src/mlir-tv
             !/src/mlir-tv/build/Testing
-          key: cache-${{ secrets.CACHE_VERSION }}-${{ github.sha }}
+          key: cache-${{ github.sha }}
       
       - name: Run ctest
         run: |
