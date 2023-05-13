@@ -5,7 +5,7 @@ func.func @sum(%mat0: tensor<100x100xf32>) -> tensor<f32>
   %i2 = arith.constant 2: index
   %mat = tensor.insert %c0 into %mat0[%i0,%i2]: tensor<100x100xf32>
   %zero = arith.constant -0.0 : f32
-  %i = linalg.init_tensor [] : tensor<f32>
+  %i = tensor.empty () : tensor<f32>
   %outty = linalg.fill ins(%zero: f32) outs(%i: tensor<f32>) -> tensor<f32>
   %mat_col = tensor.collapse_shape %mat [[0, 1]] : tensor<100x100xf32> into tensor<10000xf32>
   %result = linalg.generic {

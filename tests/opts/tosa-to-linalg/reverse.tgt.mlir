@@ -9,7 +9,7 @@ module  {
     %2 = tensor.dim %arg0, %c2 : tensor<?x?x?xi32>
     %c1_0 = arith.constant 1 : index
     %3 = tensor.dim %arg0, %c1_0 : tensor<?x?x?xi32>
-    %4 = linalg.init_tensor [%0, %1, %2] : tensor<?x?x?xi32>
+    %4 = tensor.empty (%0, %1, %2) : tensor<?x?x?xi32>
     %5 = linalg.generic {indexing_maps = [#map], iterator_types = ["parallel", "parallel", "parallel"]} outs(%4 : tensor<?x?x?xi32>) {
     ^bb0(%arg1: i32):  // no predecessors
       %6 = linalg.index 0 : index

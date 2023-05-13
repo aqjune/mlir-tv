@@ -9,8 +9,8 @@ func.func @add(%arg0: tensor<2x1xf32>, %arg1: tensor<1x3xf32>) -> tensor<2x3xf32
   %y11 = tensor.extract %arg1[%c0, %c0] : tensor<1x3xf32>
   %y12 = tensor.extract %arg1[%c0, %c1] : tensor<1x3xf32>
   %y13 = tensor.extract %arg1[%c0, %c2] : tensor<1x3xf32>
-  %tx0 = linalg.init_tensor [2, 3] : tensor<2x3xf32>
-  %ty0 = linalg.init_tensor [2, 3] : tensor<2x3xf32>
+  %tx0 = tensor.empty () : tensor<2x3xf32>
+  %ty0 = tensor.empty () : tensor<2x3xf32>
   %tx1 = tensor.insert %x11 into %tx0[%c0, %c0] : tensor<2x3xf32>
   %tx2 = tensor.insert %x11 into %tx1[%c0, %c1] : tensor<2x3xf32>
   %tx3 = tensor.insert %x11 into %tx2[%c0, %c2] : tensor<2x3xf32>

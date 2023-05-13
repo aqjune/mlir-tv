@@ -226,7 +226,7 @@ bool analyzeOp(mlir::memref::GetGlobalOp op, AnalysisResult &res) {
   res.memref.usedGlobals[glbName.str()] = glb;
 
   if (glb.getConstant() && glb.getInitialValue()) {
-    analyzeElemAttr(*glb.getInitialValue(), res);
+    analyzeElemAttr(glb.getInitialValue()->cast<mlir::ElementsAttr>(), res);
   }
   return true;
 }

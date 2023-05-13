@@ -4,7 +4,7 @@
 func.func @dumb_loop(%arg0: tensor<?xi32>) -> tensor<?xi32> {
   %c0 = arith.constant 0: index
   %sz = tensor.dim %arg0, %c0: tensor<?xi32>
-  %outty = linalg.init_tensor [%sz] : tensor<?xi32>
+  %outty = tensor.empty (%sz) : tensor<?xi32>
 
   %res = linalg.generic {indexing_maps = [#map, #map], iterator_types = ["parallel"]}
       ins(%arg0: tensor<?xi32>)

@@ -1336,7 +1336,7 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
       int64_t totalSize = 1;
       for (int i = 0; i < rank; ++i) {
         auto dsize = tensorty.getDimSize(i);
-        assert(dsize != mlir::ShapedType::kDynamicSize);
+        assert(dsize != mlir::ShapedType::kDynamic);
         dims.push_back(dsize);
         dimExprs.push_back(Index(dsize));
         totalSize *= dsize;
@@ -1588,7 +1588,7 @@ MemRef::Layout MemRef::getLayout(
     return MemRef::Layout(dims);
 
   auto getConstOrFreshVar = [](int64_t val, string &&name) -> Expr {
-    return (val == mlir::ShapedType::kDynamicStrideOrOffset) ?
+    return (val == mlir::ShapedType::kDynamic) ?
         Index::var(move(name), VarType::FRESH) : Index(val);
   };
 

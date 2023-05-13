@@ -1,11 +1,11 @@
 #map1 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
 func.func @avgpool(%arg0: tensor<1x13x13x1001xf32>) -> tensor<1x1x1x1001xf32> {
   %cst_194 = arith.constant 0.000000e+00 : f32
-  %373 = linalg.init_tensor [1, 1, 1, 1001] : tensor<1x1x1x1001xf32>
+  %373 = tensor.empty () : tensor<1x1x1x1001xf32>
   %374 = linalg.fill ins(%cst_194: f32) outs(%373: tensor<1x1x1x1001xf32>) -> tensor<1x1x1x1001xf32>
-  %375 = linalg.init_tensor [13, 13] : tensor<13x13xf32>
+  %375 = tensor.empty () : tensor<13x13xf32>
   %376 = linalg.pooling_nhwc_sum {dilations = dense<1> : vector<2xi64>, strides = dense<1> : vector<2xi64>} ins(%arg0, %375 : tensor<1x13x13x1001xf32>, tensor<13x13xf32>) outs(%374 : tensor<1x1x1x1001xf32>) -> tensor<1x1x1x1001xf32>
-  %377 = linalg.init_tensor [1, 1, 1, 1001] : tensor<1x1x1x1001xf32>
+  %377 = tensor.empty () : tensor<1x1x1x1001xf32>
   %378 = linalg.generic {indexing_maps = [#map1, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%376 : tensor<1x1x1x1001xf32>) outs(%377 : tensor<1x1x1x1001xf32>) {
   ^bb0(%arg1: f32, %arg2: f32):  // no predecessors
     %c0_196 = arith.constant 0 : index

@@ -10,7 +10,7 @@ func.func @generic_op_constant_fusion(%arg0 : tensor<5x?x?xf32>) -> tensor<5x?x?
   %cst = arith.constant dense<42.0> : tensor<5xf32>
   %0 = tensor.dim %arg0, %c1 : tensor<5x?x?xf32>
   %1 = tensor.dim %arg0, %c2 : tensor<5x?x?xf32>
-  %2 = linalg.init_tensor [5, %0, %1] : tensor<5x?x?xf32>
+  %2 = tensor.empty (%0, %1) : tensor<5x?x?xf32>
   %3 = linalg.generic {
     indexing_maps = [#map0, #map1, #map1],
     iterator_types = ["parallel", "parallel", "parallel"]}

@@ -4,7 +4,7 @@ module  {
     %cst = arith.constant 5.000000e-01 : f32
     %c0 = arith.constant 0 : index
     %0 = tensor.dim %arg0, %c0 : tensor<?x1xf32>
-    %1 = linalg.init_tensor [%0, 1] : tensor<?x1xf32>
+    %1 = tensor.empty (%0) : tensor<?x1xf32>
     %2 = linalg.generic {indexing_maps = [#map, #map], iterator_types = ["parallel", "parallel"]} ins(%arg0 : tensor<?x1xf32>) outs(%1 : tensor<?x1xf32>) {
     ^bb0(%arg1: f32, %arg2: f32):  // no predecessors
       %3 = arith.mulf %arg1, %cst : f32

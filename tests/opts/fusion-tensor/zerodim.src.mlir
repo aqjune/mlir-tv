@@ -4,7 +4,7 @@
 
 func.func @add_mul_scalar_fusion(%arg0: tensor<f32>, %arg1: tensor<f32>, %arg2: tensor<f32>) -> tensor<f32>
 {
-  %0 = linalg.init_tensor [] : tensor<f32>
+  %0 = tensor.empty () : tensor<f32>
   %1 = linalg.generic {indexing_maps = [#map0, #map0, #map0], iterator_types = []}
       ins(%arg0, %arg1 : tensor<f32>, tensor<f32>)
       outs(%0 : tensor<f32>) {

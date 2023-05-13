@@ -1,7 +1,7 @@
 func.func @sum() -> tensor<f32>
 {
   %zero = arith.constant -0.0 : f32
-  %i = linalg.init_tensor [] : tensor<f32>
+  %i = tensor.empty () : tensor<f32>
   %outty = linalg.fill ins(%zero: f32) outs(%i: tensor<f32>) -> tensor<f32>
   %cst = arith.constant sparse<[[0], [1], [2]], [-1.200000e+01, 3.000000e+00, 2.000000e+00]> : tensor<3xf32>
   %result = linalg.generic {

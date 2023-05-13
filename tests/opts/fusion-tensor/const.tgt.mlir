@@ -6,7 +6,7 @@ module  {
     %cst = arith.constant 4.200000e+01 : f32
     %0 = tensor.dim %arg0, %c1 : tensor<5x?x?xf32>
     %1 = tensor.dim %arg0, %c2 : tensor<5x?x?xf32>
-    %2 = linalg.init_tensor [5, %0, %1] : tensor<5x?x?xf32>
+    %2 = tensor.empty (%0, %1) : tensor<5x?x?xf32>
     %3 = linalg.generic {indexing_maps = [#map, #map], iterator_types = ["parallel", "parallel", "parallel"]} ins(%arg0 : tensor<5x?x?xf32>) outs(%2 : tensor<5x?x?xf32>) {
     ^bb0(%arg1: f32, %arg2: f32):  // no predecessors
       %4 = arith.mulf %cst, %arg1 : f32

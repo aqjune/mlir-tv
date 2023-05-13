@@ -6,7 +6,7 @@
 func.func @consumer_with_reduction(%arg0: tensor<1x10xf32>,
                               %arg1: tensor<1x10xf32>,
                               %arg2: tensor<1xf32>) -> tensor<1xf32> {
-  %init = linalg.init_tensor [1, 10] : tensor<1x10xf32>
+  %init = tensor.empty () : tensor<1x10xf32>
   %0 = linalg.generic
     {indexing_maps = [#map0, #map0, #map0],
      iterator_types = ["parallel", "parallel"]}

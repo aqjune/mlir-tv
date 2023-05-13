@@ -148,7 +148,8 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
       if (glb.getConstant()) {
         auto tensorTy = mlir::RankedTensorType::get(glb.getType().getShape(),
             glb.getType().getElementType());
-        Tensor t = Tensor::fromElemsAttr(tensorTy, *glb.getInitialValue());
+        Tensor t = Tensor::fromElemsAttr(
+            tensorTy, glb.getInitialValue()->cast<mlir::ElementsAttr>());
         newArrs.push_back(t.asArray());
       } else {
         string name = "#" + glb.getName().str() + "_array";

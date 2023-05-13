@@ -11,7 +11,7 @@ module  {
     %c4 = arith.constant 4 : index
     %c5 = arith.constant 5 : index
     %c9 = arith.constant 9 : index
-    %0 = linalg.init_tensor [9, 2] : tensor<9x2xf32>
+    %0 = tensor.empty () : tensor<9x2xf32>
     %cst = arith.constant 0.000000e+00 : f32
     %1 = linalg.fill ins(%cst: f32) outs(%0: tensor<9x2xf32>) -> tensor<9x2xf32> 
     %c1_4 = arith.constant 1 : index
