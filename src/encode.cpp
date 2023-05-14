@@ -1589,6 +1589,8 @@ void encodeOp(State &st, mlir::tosa::AvgPool2dOp op, bool) {
           "Zero-padded pooling is supported only.");
   }
 
+  // TODO: The current modeling ignores the acc_type attribute.
+
   auto result = input.avgPool(kernelDims, strides);
   st.regs.add(op.getResult(), move(result));
   st.wellDefined(op, input.isFullyInitialized(), "source tensor initialized");
