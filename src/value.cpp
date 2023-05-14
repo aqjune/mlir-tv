@@ -77,8 +77,8 @@ vector<Expr> ShapedValue::getDims(
   dims.reserve(rank);
   unsigned unknownVarIdx = 0;
   for (unsigned i = 0; i < rank; ++i) {
-    uint64_t sz = shapedTy.getDimSize(i);
-    if (sz == (uint64_t)-1ull) {
+    int64_t sz = shapedTy.getDimSize(i);
+    if (sz == mlir::ShapedType::kDynamic) {
       if (freshVarForUnknownSize) {
         dims.emplace_back(Index::var("dim", VarType::FRESH));
       } else if (valsForUnknownSz) {
@@ -87,8 +87,10 @@ vector<Expr> ShapedValue::getDims(
         llvm_unreachable("Don't know what to do with a dimension of "
                          "an unknown size");
       }
-    } else
-      dims.push_back(Index(sz));
+    } else {
+      assert(sz >= 0);
+      dims.push_back(Index((uint64_t)sz));
+    }
   }
 
   return dims;
