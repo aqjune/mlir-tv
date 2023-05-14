@@ -2,7 +2,7 @@
 
 #include "smt.h"
 #include "llvm/ADT/APFloat.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <vector>
 #include <set>

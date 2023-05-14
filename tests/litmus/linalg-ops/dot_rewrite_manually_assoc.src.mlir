@@ -28,7 +28,7 @@ func.func @f() -> tensor<f32> {
   %r2 = arith.addf %r1, %c2 : f32
   %r3 = arith.addf %r2, %c3 : f32
   %r4 = arith.addf %r3, %c4 : f32
-  %res = linalg.init_tensor []: tensor<f32>
+  %res = tensor.empty (): tensor<f32>
   %res2 = linalg.fill ins(%r4: f32) outs(%res: tensor<f32>) -> tensor<f32>
   return %res2 : tensor<f32>
 }

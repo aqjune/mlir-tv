@@ -4,7 +4,7 @@
 func.func @sum(%mat: tensor<100x100xf32>) -> tensor<f32>
 {
   %zero = arith.constant -0.0 : f32
-  %i = linalg.init_tensor [] : tensor<f32>
+  %i = tensor.empty () : tensor<f32>
   %outty = linalg.fill ins(%zero: f32) outs(%i: tensor<f32>) -> tensor<f32>
 
   %mat_transposed = linalg.generic {

@@ -125,7 +125,7 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
     vector<mlir::memref::GlobalOp> globalsForTy;
 
     for (auto glb: globals) {
-      if (glb.type().getElementType() == elemTy)
+      if (glb.getType().getElementType() == elemTy)
         globalsForTy.push_back(glb);
     }
 
@@ -145,18 +145,19 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
       verbose("memory init") << "Assigning bid = " << i << " to global var "
           << glb.getName() << "...\n";
 
-      if (glb.constant()) {
-        auto tensorTy = mlir::RankedTensorType::get(glb.type().getShape(),
-            glb.type().getElementType());
-        Tensor t = Tensor::fromElemsAttr(tensorTy, *glb.initial_value());
+      if (glb.getConstant()) {
+        auto tensorTy = mlir::RankedTensorType::get(glb.getType().getShape(),
+            glb.getType().getElementType());
+        Tensor t = Tensor::fromElemsAttr(
+            tensorTy, glb.getInitialValue()->cast<mlir::ElementsAttr>());
         newArrs.push_back(t.asArray());
       } else {
         string name = "#" + glb.getName().str() + "_array";
         newArrs.push_back(Expr::mkFreshVar(arrSort, name));
       }
       newInits.push_back(Expr::mkSplatArray(Index::sort(), Expr::mkBool(true)));
-      newWrit.push_back(Expr::mkBool(!glb.constant()));
-      newNumElems.push_back(Index(glb.type().getNumElements()));
+      newWrit.push_back(Expr::mkBool(!glb.getConstant()));
+      newNumElems.push_back(Index(glb.getType().getNumElements()));
       newLiveness.push_back(Expr::mkBool(true));
       newCreatedByAllocs.push_back(Expr::mkBool(false));
     }

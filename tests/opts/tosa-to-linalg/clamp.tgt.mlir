@@ -5,7 +5,7 @@ module  {
     %0 = tensor.dim %arg0, %c0 : tensor<?x?xi32>
     %c1 = arith.constant 1 : index
     %1 = tensor.dim %arg0, %c1 : tensor<?x?xi32>
-    %2 = linalg.init_tensor [%0, %1] : tensor<?x?xi32>
+    %2 = tensor.empty (%0, %1) : tensor<?x?xi32>
     %3 = linalg.generic {indexing_maps = [#map, #map], iterator_types = ["parallel", "parallel"]} ins(%arg0 : tensor<?x?xi32>) outs(%2 : tensor<?x?xi32>) {
     ^bb0(%arg1: i32, %arg2: i32):  // no predecessors
       %c-127_i32 = arith.constant -127 : i32
@@ -23,7 +23,7 @@ module  {
     %0 = tensor.dim %arg0, %c0 : tensor<?x?xf32>
     %c1 = arith.constant 1 : index
     %1 = tensor.dim %arg0, %c1 : tensor<?x?xf32>
-    %2 = linalg.init_tensor [%0, %1] : tensor<?x?xf32>
+    %2 = tensor.empty (%0, %1) : tensor<?x?xf32>
     %3 = linalg.generic {indexing_maps = [#map, #map], iterator_types = ["parallel", "parallel"]} ins(%arg0 : tensor<?x?xf32>) outs(%2 : tensor<?x?xf32>) {
     ^bb0(%arg1: f32, %arg2: f32):  // no predecessors
       %cst = arith.constant 1.000000e+00 : f32

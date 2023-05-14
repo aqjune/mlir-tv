@@ -220,13 +220,13 @@ void analyzeRegion(mlir::Region &region, AnalysisResult &res) {
 
 template<>
 bool analyzeOp(mlir::memref::GetGlobalOp op, AnalysisResult &res) {
-  llvm::StringRef glbName = op.name();
+  llvm::StringRef glbName = op.getName();
   auto mop = op.getOperation()->getParentOfType<mlir::ModuleOp>();
   auto glb = mlir::cast<mlir::memref::GlobalOp>(mop.lookupSymbol(glbName));
   res.memref.usedGlobals[glbName.str()] = glb;
 
-  if (glb.constant() && glb.initial_value()) {
-    analyzeElemAttr(*glb.initial_value(), res);
+  if (glb.getConstant() && glb.getInitialValue()) {
+    analyzeElemAttr(glb.getInitialValue()->cast<mlir::ElementsAttr>(), res);
   }
   return true;
 }
@@ -282,13 +282,13 @@ bool analyzeOp(mlir::tosa::ClampOp op, AnalysisResult &res) {
 template<>
 bool analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
   // If generic loop has reduction loops, then result is not elementwise
-  auto indexingMaps = op.indexing_maps().getValue();
+  auto indexingMaps = op.getIndexingMaps().getValue();
   auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
   bool isReudctionLoop = !outputMap.isPermutation();
   if (isReudctionLoop)
     res.isElementwiseFPOps = false;
 
-  analyzeRegion(op.region(), res);
+  analyzeRegion(op.getRegion(), res);
   return true;
 }
 
@@ -338,7 +338,7 @@ void analyzeBlock(
     // and newly created FPs can be stored to output memref.
     if (auto op2 = mlir::dyn_cast<mlir::linalg::GenericOp>(op)) {
       if (op2.hasBufferSemantics()) {
-        for (const auto &operand: op2.outputs()) {
+        for (const auto &operand: op2.getOutputs()) {
           analyzeVariable(operand, res, VarAnalysisConfig::operand());
         }
       }

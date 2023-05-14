@@ -9,7 +9,7 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
@@ -110,8 +110,8 @@ int main(int argc, char* argv[]) {
   DialectRegistry registry;
   // NOTE: we cannot use mlir::registerAllDialects because IREE does not have
   // dependency on some of those dialects
-  registry.insert<AffineDialect>();
-  registry.insert<arith::ArithmeticDialect>();
+  registry.insert<affine::AffineDialect>();
+  registry.insert<arith::ArithDialect>();
   registry.insert<bufferization::BufferizationDialect>();
   registry.insert<func::FuncDialect>();
   registry.insert<linalg::LinalgDialect>();

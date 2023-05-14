@@ -2,7 +2,7 @@
 
 func.func @unit_dim_for_both_reduction(%arg0: tensor<1x?x1x1xf32>) -> tensor<1x1xf32> {
   %cst = arith.constant 1.000000e+00 : f32
-  %1 = linalg.init_tensor [1, 1] : tensor<1x1xf32>
+  %1 = tensor.empty () : tensor<1x1xf32>
   %2 = linalg.fill ins(%cst: f32) outs(%1: tensor<1x1xf32>) -> tensor<1x1xf32>
   %3 = linalg.generic {
     indexing_maps = [affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>,

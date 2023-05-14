@@ -1,7 +1,7 @@
 // EXPECT: "correct (source is always undefined)"
 
 func.func @test_gather() -> tensor<2x1x1xf32> {
-  %v = linalg.init_tensor [2,2,1]: tensor<2x2x1xf32>
+  %v = tensor.empty (): tensor<2x2x1xf32>
   %zero = arith.constant 0: index
   %one = arith.constant 1: index
   %c1 = arith.constant 10.0: f32

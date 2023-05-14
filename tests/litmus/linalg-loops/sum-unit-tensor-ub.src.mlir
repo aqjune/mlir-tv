@@ -2,7 +2,7 @@
 
 func.func @sum(%x: tensor<1xf32>) -> f32
  {
-   %outty = linalg.init_tensor [] : tensor<f32>
+   %outty = tensor.empty () : tensor<f32>
    %result = linalg.generic {
        indexing_maps = [affine_map<(d0) -> (d0)>,
                         affine_map<(d0) -> ()>],

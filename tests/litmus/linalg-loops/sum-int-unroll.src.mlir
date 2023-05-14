@@ -5,7 +5,7 @@ func.func @sum() -> tensor<i8>
 {
   %cst = arith.constant dense<10> : tensor<5xi8>
   %zero = arith.constant 0 : i8
-  %i = linalg.init_tensor []: tensor<i8>
+  %i = tensor.empty (): tensor<i8>
   %outty = linalg.fill ins(%zero: i8) outs(%i: tensor<i8>) -> tensor<i8>
   %result = linalg.generic {
       indexing_maps = [affine_map<(d0) -> (d0)>,

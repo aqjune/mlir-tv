@@ -1,6 +1,6 @@
 func.func @f() -> (f32, f32) {
   %c0 = arith.constant 0 : index
-  %i = linalg.init_tensor []: tensor<f32>
+  %i = tensor.empty (): tensor<f32>
   %a1 = arith.constant sparse<[[1], [0]], [-12.0, 3.0]> : tensor<2xf32>
   %a2 = arith.constant sparse<[[2], [1], [0]], [2.0, 5.0, 4.0]> : tensor<3xf32>
   %b1 = arith.constant sparse<[[1], [0]], [1.0, 8.0]> : tensor<2xf32>

@@ -7,10 +7,10 @@ module  {
     ^bb0(%arg3: index, %arg4: index, %arg5: index, %arg6: index):  // no predecessors
       tensor.yield %cst : f32
     } : tensor<2x5x5x2xf32> to tensor<2x7x7x2xf32>
-    %1 = linalg.init_tensor [2, 6, 6, 2, 3] : tensor<2x6x6x2x3xf32>
+    %1 = tensor.empty () : tensor<2x6x6x2x3xf32>
     %cst_0 = arith.constant 0.000000e+00 : f32
     %2 = linalg.fill ins(%cst_0: f32) outs(%1: tensor<2x6x6x2x3xf32>) -> tensor<2x6x6x2x3xf32> 
-    %3 = linalg.init_tensor [2, 6, 6, 6] : tensor<2x6x6x6xf32>
+    %3 = tensor.empty () : tensor<2x6x6x6xf32>
     %4 = linalg.depthwise_conv_2d_nhwc_hwcm {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%0, %arg1 : tensor<2x7x7x2xf32>, tensor<2x2x2x3xf32>) outs(%2 : tensor<2x6x6x2x3xf32>) -> tensor<2x6x6x2x3xf32>
     %5 = tensor.collapse_shape %4 [[0], [1], [2], [3, 4]] : tensor<2x6x6x2x3xf32> into tensor<2x6x6x6xf32>
     %6 = linalg.generic {indexing_maps = [#map0, #map1, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%arg2, %5 : tensor<6xf32>, tensor<2x6x6x6xf32>) outs(%3 : tensor<2x6x6x6xf32>) {
