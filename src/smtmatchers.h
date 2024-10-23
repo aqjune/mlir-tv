@@ -16,8 +16,8 @@ protected:
       std::function<bool(const Expr&)> rhsMatcher) const;
 #endif
 #ifdef SOLVER_CVC5
-  void setCVC5(Expr &e, std::optional<cvc5::api::Term> &&opt) const;
-  bool matchBinaryOp(const Expr &expr, cvc5::api::Kind opKind,
+  void setCVC5(Expr &e, std::optional<cvc5::Term> &&opt) const;
+  bool matchBinaryOp(const Expr &expr, cvc5::Kind opKind,
     std::function<bool(const Expr&)> lhsMatcher,
     std::function<bool(const Expr&)> rhsMatcher) const;
 #endif

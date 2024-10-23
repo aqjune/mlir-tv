@@ -7,6 +7,8 @@
 #include "value.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <iostream>
+
 using namespace smt;
 using namespace std;
 
@@ -105,17 +107,24 @@ Sort Index::sort() {
 Index Index::one() { return Index(1); }
 Index Index::zero() { return Index(0); }
 Index Index::var(string &&name, VarType varty) {
+  Index i(0);
   switch(varty) {
   case VarType::BOUND:
     static unsigned varCount = 0;
-    return {Expr::mkVar(Index::sort(), move(name) + "#" + to_string(varCount++),
+    i = {Expr::mkVar(Index::sort(), std::move(name) + "#" + to_string(varCount++),
             true)};
+    break;
   case VarType::UNBOUND:
-    return {Expr::mkVar(Index::sort(), move(name), false)};
+    i = {Expr::mkVar(Index::sort(), std::move(name), false)};
+    break;
   case VarType::FRESH:
-    return {Expr::mkFreshVar(Index::sort(), move(name))};
+    i = {Expr::mkFreshVar(Index::sort(), std::move(name))};
+    break;
+  default:
+    llvm_unreachable("Unknown case");
   }
-  llvm_unreachable("Unknown case");
+  smart_assert(i.e.isVar(), "Index::var must return a variable, but got " << i.e);
+  return i;
 }
 vector<Expr> Index::boundIndexVars(unsigned n) {
   vector<Expr> idxs;
@@ -183,10 +192,10 @@ Float Float::var(string &&name, mlir::Type ty, VarType varty) {
   switch(varty) {
   case VarType::BOUND:
   case VarType::UNBOUND:
-    return {Expr::mkVar(*Float::sort(ty), move(name), varty == VarType::BOUND),
+    return {Expr::mkVar(*Float::sort(ty), std::move(name), varty == VarType::BOUND),
             ty};
   case VarType::FRESH:
-    return {Expr::mkFreshVar(*Float::sort(ty), move(name)), ty};
+    return {Expr::mkFreshVar(*Float::sort(ty), std::move(name)), ty};
   }
   llvm_unreachable("Unknown case");
 }
@@ -277,9 +286,9 @@ Integer Integer::var(string &&name, unsigned bw, VarType varty) {
   switch(varty) {
   case VarType::BOUND:
   case VarType::UNBOUND:
-    return {Expr::mkVar(Sort::bvSort(bw), move(name), varty == VarType::BOUND)};
+    return {Expr::mkVar(Sort::bvSort(bw), std::move(name), varty == VarType::BOUND)};
   case VarType::FRESH:
-    return {Expr::mkFreshVar(Sort::bvSort(bw), move(name))};
+    return {Expr::mkFreshVar(Sort::bvSort(bw), std::move(name))};
   }
   llvm_unreachable("Unknown case");
 }
@@ -411,11 +420,11 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
 
   Expr sz = ::get1DSize(cubeSize);
   Expr outputExpr = elemType.isa<mlir::IntegerType>() ?
-    aop::intDot(inputExpr, filterExpr, sz, move(initialValue)) :
+    aop::intDot(inputExpr, filterExpr, sz, std::move(initialValue)) :
     aop::getFpEncoding(elemType)
-      .dot(inputExpr, filterExpr, sz, move(initialValue));
+      .dot(inputExpr, filterExpr, sz, std::move(initialValue));
 
-  return {move(outputIdxs), move(outputExpr)};
+  return {move(outputIdxs), std::move(outputExpr)};
 }
 
 static Sort arraySortForTensor(Sort elemSort) {
@@ -454,7 +463,7 @@ Tensor::Tensor(mlir::Type elemType, vector<Expr> &&elems1d, const vector<uint64_
 }
 
 Tensor Tensor::fromArray(mlir::Type elemType, smt::Expr &&arr, std::vector<smt::Expr> &&dims) {
-  return Tensor(elemType, move(dims), move(arr),
+  return Tensor(elemType, std::move(dims), std::move(arr),
     splatArrayForTensor(Expr::mkBool(true)));
 }
 
@@ -465,16 +474,16 @@ Tensor Tensor::var(
   vector<Expr> e;
   for (auto i: dimvec)
     e.push_back(Index(i));
-  return var(elemType, move(name), e, initialized);
+  return var(elemType, std::move(name), e, initialized);
 }
 
 Tensor Tensor::var(
     mlir::Type elemType, string &&name, const vector<Expr> &dimvec,
     bool initialized) {
   Expr arr = Expr::mkVar(
-      arraySortForTensor(*convertPrimitiveTypeToSort(elemType)), move(name));
+      arraySortForTensor(*convertPrimitiveTypeToSort(elemType)), std::move(name));
   Expr init = splatArrayForTensor(Expr::mkBool(initialized));
-  return Tensor(elemType, vector(dimvec), move(arr), move(init));
+  return Tensor(elemType, vector(dimvec), std::move(arr), std::move(init));
 }
 
 // A sparse tensor.
@@ -558,7 +567,7 @@ pair<Tensor, Expr> Tensor::insert(const smt::Expr &value,
   auto newinit = Expr::mkLambda(idxvar,
       Expr::mkIte(cond, Expr::mkBool(true), orgInit));
   return {
-      {elemType, move(newdims), move(newarr), move(newinit)},
+      {elemType, std::move(newdims), std::move(newarr), std::move(newinit)},
       isInBounds(indices)};
 }
 
@@ -580,7 +589,7 @@ Tensor Tensor::affine(
 
   return {
     elemType,
-    move(newsizes),
+    std::move(newsizes),
     Expr::mkLambda(idxvar, elem), // Value
     splatArrayForTensor(Expr::mkBool(true)) // Initialized
   };
@@ -602,7 +611,7 @@ Tensor Tensor::concat(const Tensor &t2, size_t axis) {
 
   // UB if uninitialized elem is used
   return Tensor::mkInitializedLambda(getElemType(),
-      move(dim), move(idx), move(elem));
+      std::move(dim), std::move(idx), std::move(elem));
 }
 
 Tensor Tensor::depthwiseConv2D(const Tensor &filter,
@@ -634,7 +643,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
   vector<Expr> input2DDims = {Index(1), dims[1], dims[2], Index(1)};
   vector<Expr> input2DInd = Index::boundIndexVars(4);
   Tensor input2D = Tensor::mkInitializedLambda (
-                  elemType, move(input2DDims), move(input2DInd), 
+                  elemType, std::move(input2DDims), std::move(input2DInd), 
                   get({n, input2DInd[1], input2DInd[2], c})
                 );
 
@@ -642,7 +651,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
   vector<Expr> weight2DDims = {wDims[0], wDims[1], Index(1), Index(1)};
   vector<Expr> weight2DInd = Index::boundIndexVars(4);
   Tensor weight2D = Tensor::mkInitializedLambda(
-                  elemType, move(weight2DDims), move(weight2DInd), 
+                  elemType, std::move(weight2DDims), std::move(weight2DInd), 
                   filter.get({weight2DInd[0], weight2DInd[1], c, m})
                 );
 
@@ -655,12 +664,12 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
     // is 1xOHxOWx1.
     if (bias.has_value()) {
       return Tensor::mkInitializedLambda(
-        elemType, move(output2DDims), move(output2DInd),
+        elemType, std::move(output2DDims), std::move(output2DInd),
         unwrapped.get({n, output2DInd[1], output2DInd[2], outInd[3]})
       );
     } else {
       return Tensor::mkInitializedLambda(
-        elemType, move(output2DDims), move(output2DInd),
+        elemType, std::move(output2DDims), std::move(output2DInd),
         unwrapped.get({n, output2DInd[1], output2DInd[2], c, m})
       );
     }
@@ -669,7 +678,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
   // t2D is 1xOHxOWx1
   auto t2D = input2D.conv(weight2D, strides, dilations,
       ShapedValue::ConvLayout::NHWC_HWCF,
-      move(output2D));
+      std::move(output2D));
 
   auto t2DDims = t2D.getDims();
 
@@ -684,7 +693,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
     auto biasf = Float(bias->get({outInd[3]}), elemType);
 
     return Tensor::mkInitializedLambda(
-              elemType, move(tDims), move(outInd), 
+              elemType, std::move(tDims), std::move(outInd), 
               tf.add(biasf)
             );
   } else { 
@@ -692,7 +701,7 @@ Tensor Tensor::depthwiseConv2D(const Tensor &filter,
     vector<Expr> tDims = {N, t2DDims[1], t2DDims[2], C, M};
 
     return Tensor::mkInitializedLambda(
-              elemType, move(tDims), move(outInd), accVal
+              elemType, std::move(tDims), std::move(outInd), accVal
             );
   }
 }
@@ -767,11 +776,11 @@ Tensor Tensor::conv(const Tensor &filter,
       return nullopt;
   };
   auto [indices, res] = ShapedValue
-      ::conv(filter, strides, dilations, layout, move(getInitValue));
+      ::conv(filter, strides, dilations, layout, std::move(getInitValue));
 
   // UB if uninitialized elem is used
   return Tensor::mkInitializedLambda(elemType,
-      move(outputDims), move(indices), move(res));
+      std::move(outputDims), std::move(indices), std::move(res));
 }
 
 Tensor Tensor::reshape(const vector<Expr> &newdims) const {
@@ -797,8 +806,8 @@ Tensor Tensor::matmul(const Tensor &b, bool bTransposed,
     return tensor.get({i, j});
   });
   auto res = elemType.isa<mlir::FloatType>() ?
-    aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1], move(initVal)) :
-    aop::intDot(a_row, bt_row, dims[1], move(initVal));
+    aop::getFpEncoding(elemType).dot(a_row, bt_row, dims[1], std::move(initVal)) :
+    aop::intDot(a_row, bt_row, dims[1], std::move(initVal));
 
   // UB if uninitialized elem is used
   return mkInitializedLambda(elemType,
@@ -835,14 +844,14 @@ Tensor Tensor::elementwiseUnaryOp(
 Expr Tensor::dot(const Tensor &t2, optional<Expr> &&initValue) const {
   auto len = get1DSize();
   return elemType.isa<mlir::FloatType>() ?
-    aop::getFpEncoding(elemType).dot(arr, t2.arr, len, move(initValue)) :
-    aop::intDot(arr, t2.arr, len, move(initValue));
+    aop::getFpEncoding(elemType).dot(arr, t2.arr, len, std::move(initValue)) :
+    aop::intDot(arr, t2.arr, len, std::move(initValue));
 }
 
 Expr Tensor::sum(Expr &&initVal) const {
   return elemType.isa<mlir::FloatType>() ?
-    aop::getFpEncoding(elemType).sum(arr, get1DSize(), nullopt, move(initVal)) :
-    aop::intSum(arr, get1DSize(), move(initVal));
+    aop::getFpEncoding(elemType).sum(arr, get1DSize(), nullopt, std::move(initVal)) :
+    aop::intSum(arr, get1DSize(), std::move(initVal));
 }
 
 Tensor Tensor::sum(unsigned axis) const {
@@ -866,7 +875,7 @@ Tensor Tensor::sum(unsigned axis) const {
       aop::intSum(row, getDim(axis));
 
   return Tensor::mkInitializedLambda(elemType,
-      move(newSizes), move(indVars), summation);
+      std::move(newSizes), std::move(indVars), summation);
 }
 
 Tensor Tensor::sumPool(const vector<Expr> &kernelDims,
@@ -894,10 +903,10 @@ Tensor Tensor::sumPool(const vector<Expr> &kernelDims,
   };
   auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
   auto outputExpr = aop::getFpEncoding(elemType)
-      .sum(kernelExpr, kernel1DSize, nullopt, move(initVal));
+      .sum(kernelExpr, kernel1DSize, nullopt, std::move(initVal));
 
   return Tensor::mkInitializedLambda(elemType,
-      move(outputDims), move(outputIdxs), move(outputExpr));
+      std::move(outputDims), std::move(outputIdxs), std::move(outputExpr));
 }
 
 Tensor Tensor::avgPool(const vector<Expr> &kernelDims,
@@ -925,12 +934,12 @@ Tensor Tensor::avgPool(const vector<Expr> &kernelDims,
   };
   auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
   auto sumExpr = aop::getFpEncoding(elemType)
-      .sum(kernelExpr, kernel1DSize, nullopt, move(initVal));
+      .sum(kernelExpr, kernel1DSize, nullopt, std::move(initVal));
   auto count = aop::getFpEncoding(elemType).castFromSignedInt(kernel1DSize);
   auto outputExpr = aop::getFpEncoding(elemType).div(sumExpr, count);
 
   return Tensor::mkInitializedLambda(elemType,
-      move(outputDims), move(outputIdxs), move(outputExpr));
+      std::move(outputDims), std::move(outputIdxs), std::move(outputExpr));
 }
 
 Tensor Tensor::maxPool(const vector<Expr> &kernelDims,
@@ -958,10 +967,10 @@ Tensor Tensor::maxPool(const vector<Expr> &kernelDims,
   };
   auto kernelExpr = Expr::mkLambda(kernelIdx, get(inputIdxs));
   auto outputExpr = aop::getFpEncoding(elemType)
-      .max(kernelExpr, kernel1DSize, move(initVal));
+      .max(kernelExpr, kernel1DSize, std::move(initVal));
 
   return Tensor::mkInitializedLambda(elemType,
-      move(outputDims), move(outputIdxs), move(outputExpr));
+      std::move(outputDims), std::move(outputIdxs), std::move(outputExpr));
 }
 
 pair<Expr, vector<Expr>> Tensor::refines(const Tensor &other) const {
@@ -1090,7 +1099,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
       if (!duplicated)
         os << " -> " << *fromExpr(move(*valExpr), t.elemType) << ", ";
 
-      arr = move(*arr2);
+      arr = std::move(*arr2);
       hasStore = true;
 
     } else if (ConstSplatArray(Any(valExpr)).match(arr)) {
@@ -1110,7 +1119,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
 
 Tensor Tensor::eval(Model m) const {
   vector<Expr> dims_ev = smt::simplifyList(m.eval(dims));
-  return { elemType, move(dims_ev),
+  return { elemType, std::move(dims_ev),
       m.eval(arr, true).simplify(),
       m.eval(initialized, true).simplify() };
 }
@@ -1122,7 +1131,7 @@ Tensor Tensor::reverse(unsigned axis) const {
   accessIdx[axis] = dims[axis] - accessIdx[axis] - 1;
 
   // UB if uninitialized
-  return Tensor::mkInitializedLambda(elemType, vector(dims), move(indVars),
+  return Tensor::mkInitializedLambda(elemType, vector(dims), std::move(indVars),
       get(accessIdx));
 }
 
@@ -1138,7 +1147,7 @@ Tensor Tensor::tile(const vector<unsigned> &repeat) const {
     accessIdx[i] = accessIdx[i].urem(dims[i]);
 
   // UB if uninitialized
-  return Tensor::mkInitializedLambda(elemType, vector(newDims), move(indVars),
+  return Tensor::mkInitializedLambda(elemType, vector(newDims), std::move(indVars),
       get(accessIdx));
 }
 
@@ -1182,7 +1191,7 @@ Tensor Tensor::mkLambda(
     initialized = initialized.substitute(indexvars, idxExprsForInit);
   }
 
-  return { elemType, move(newdims),
+  return { elemType, std::move(newdims),
       Expr::mkLambda(idx, body),
       Expr::mkLambda(idxForInit, initialized) };
 }
@@ -1190,7 +1199,7 @@ Tensor Tensor::mkLambda(
 Tensor Tensor::mkLambdaFrom1D(
     mlir::Type elemType,
     vector<Expr> &&newdims, Expr &&indexvar, Expr body, Expr initialized) {
-  return { elemType, move(newdims),
+  return { elemType, std::move(newdims),
       Expr::mkLambda(indexvar, body), Expr::mkLambda(indexvar, initialized) };
 }
 
@@ -1199,8 +1208,8 @@ Tensor Tensor::mkInitializedLambda(
     std::vector<smt::Expr> &&newdims,
     std::vector<smt::Expr> &&indexvars,
     smt::Expr body) {
-  return mkLambda(elemType, move(newdims), move(indexvars),
-      move(body), Expr::mkBool(true));
+  return mkLambda(elemType, std::move(newdims), std::move(indexvars),
+      std::move(body), Expr::mkBool(true));
 }
 
 Tensor Tensor::mkIte(
@@ -1220,8 +1229,8 @@ Tensor Tensor::mkIte(
       isTrue, trueValue.isInitialized(indVars),
       falseValue.isInitialized(indVars));
   return Tensor::mkLambda(
-      trueValue.elemType, move(trueDims), move(indVars),
-      move(retExpr), move(retInit));
+      trueValue.elemType, std::move(trueDims), std::move(indVars),
+      std::move(retExpr), std::move(retInit));
 }
 
 // attr1[i_1][i_2]..[i_N] = attr2[i_N][i_1]...[i_N-1]
@@ -1329,7 +1338,7 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
       auto dims = ShapedValue::getDims(tensorty, false);
       auto v = attrToValueTy(denseAttr.getSplatValue<mlir::Attribute>());
 
-      return Tensor(elemType, getExpr(v), move(dims));
+      return Tensor(elemType, getExpr(v), std::move(dims));
 
     } else {
       int64_t rank = tensorty.getRank();
@@ -1368,7 +1377,7 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
             newDims.push_back(dims[0]);
             newVars.push_back(indVars[0]);
 
-            return t.affine(newVars, indVars, move(newDims));
+            return t.affine(newVars, indVars, std::move(newDims));
           } else if (isSimpleReduction(attr, a)) {
             // Reduction a constant tensor happens frequently.
             verbose("Tensor::fromElemsAttr") << "Returning " << (Expr)t
@@ -1382,7 +1391,7 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
               dims.push_back(Index::one());
             }
 
-            return t.affine(newVars, {idx}, move(dims));
+            return t.affine(newVars, {idx}, std::move(dims));
           }
         }
 
@@ -1417,7 +1426,7 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
         idxND.back()++;
       }
 
-      return Tensor(elemType, move(exprs)).reshape(dimExprs);
+      return Tensor(elemType, std::move(exprs)).reshape(dimExprs);
     }
 
   } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
@@ -1512,7 +1521,7 @@ MemRef::Layout::Layout(const std::vector<smt::Expr> &indVars,
   vector<FnDecl> inverseFns;
   for (unsigned i = 0; i < indVars.size(); i ++) {
     auto inverseName = freshName("inverse_fn" + to_string(i));
-    inverseFns.emplace_back(Index::sort(), Index::sort(), move(inverseName));
+    inverseFns.emplace_back(Index::sort(), Index::sort(), std::move(inverseName));
 
     condition = condition &
         (inverseFns.back()(layout(indVars)) == indVars[i]);
@@ -1628,9 +1637,9 @@ pair<Expr, AccessInfo> MemRef::getWithAccessInfo(
   auto [loaded, info] = m->load(elemType, bid, (Expr)offset + idx);
   loaded.lockOps();
 
-  info.inbounds &= move(inbounds);
+  info.inbounds &= std::move(inbounds);
 
-  return {move(loaded), move(info)};
+  return {move(loaded), std::move(info)};
 }
 
 AccessInfo MemRef::store(const Expr &value,
@@ -1638,7 +1647,7 @@ AccessInfo MemRef::store(const Expr &value,
   auto [idx, inbounds] = to1DIdxWithLayout(indices);
   auto info = m->store(elemType, value, bid, (Expr)offset + idx);
 
-  info.inbounds &= move(inbounds);
+  info.inbounds &= std::move(inbounds);
   return info;
 }
 
@@ -1869,7 +1878,7 @@ Expr getExpr(const ValueTy &v) {
   visit([&](auto &&itm) {
     e = (Expr)itm;
   }, v);
-  return move(*e);
+  return std::move(*e);
 }
 
 ValueTy eval(const ValueTy &v, smt::Model m) {
@@ -1877,7 +1886,7 @@ ValueTy eval(const ValueTy &v, smt::Model m) {
   visit([&](auto &&itm) {
     e = itm.eval(m);
   }, v);
-  return move(*e);
+  return std::move(*e);
 }
 
 ValueTy attrToValueTy(mlir::Attribute a) {
@@ -1921,5 +1930,5 @@ pair<Expr, vector<Expr>> refines(const ValueTy &v_tgt, const ValueTy &v_src) {
     tie(refines_opt, params) = tgt.refines(typedSrc);
   }, v_tgt, v_src);
 
-  return {move(*refines_opt), move(params)};
+  return {move(*refines_opt), std::move(params)};
 }

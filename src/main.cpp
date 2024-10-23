@@ -44,16 +44,12 @@ llvm::cl::opt<unsigned> arg_smt_to("smt-to",
   llvm::cl::init(30000), llvm::cl::value_desc("ms"),
   llvm::cl::cat(MlirTvCategory));
 
-llvm::cl::opt<smt::SolverType> arg_solver("solver",
-  llvm::cl::desc("Type of SMT solvers used when verifying"
-                 " (default=Z3)"),
-  llvm::cl::init(smt::SolverType::Z3),
-  llvm::cl::values(
-    clEnumValN(smt::SolverType::Z3, "Z3", "Z3 Solver"),
-    clEnumValN(smt::SolverType::CVC5, "CVC5", "CVC5 Solver")
-  ),
-  llvm::cl::cat(MlirTvCategory)
-);
+llvm::cl::opt<smt::SolverType> arg_solver(
+    "solver",
+    llvm::cl::desc("The SMT solver to use (default=Any)"),
+    llvm::cl::values(clEnumValN(smt::SolverType::Z3, "Z3", "Z3"),
+                     clEnumValN(smt::SolverType::CVC5, "cvc5", "cvc5")),
+    llvm::cl::cat(MlirTvCategory));
 
 llvm::cl::opt<bool> arg_verbose("verbose",
   llvm::cl::desc("Be verbose about what's going on"), llvm::cl::Hidden,
@@ -93,16 +89,29 @@ int main(int argc, char* argv[]) {
   setVerbose(arg_verbose.getValue());
 
   smt::setTimeout(arg_smt_to.getValue());
-  if (arg_solver.getValue() == smt::Z3)
+  if (arg_solver.getNumOccurrences() == 0) {
+#ifdef SOLVER_Z3
     smt::useZ3();
-  if (arg_solver.getValue() == smt::CVC5) {
+#else
+#ifdef SOLVER_CVC5
+    smt::useCVC5();
+#endif
+#endif
+  } else if (arg_solver.getValue() == smt::Z3) {
+#ifdef SOLVER_Z3
+    smt::useZ3();
+#else
+    llvm::errs() << "USE_Z3 was not set while configuring this project! "
+                    "Consider adding '--solver=CVC5' to mlir-tv.\n";
+    return 1;
+#endif
+  } else if (arg_solver.getValue() == smt::CVC5) {
 #ifdef SOLVER_CVC5
     smt::useCVC5();
 #else
-    if (arg_solver.getValue() == smt::CVC5) {
-      llvm::errs() << "CVC5_DIR was not set while building this project! aborting..\n";
-      return 1;
-    }
+    llvm::errs() << "USE_cvc5 was not set while configuring this project! "
+                    "Consider adding '--solver=Z3' to mlir-tv.\n";
+    return 1;
 #endif
   }
 
@@ -138,7 +147,8 @@ int main(int argc, char* argv[]) {
   }
 
   unsigned verificationResult = validateBuffer(
-      move(src_file), move(tgt_file), &context);
+      std::move(src_file), std::move(tgt_file), &context);
+  smt::releaseResources();
 
   return verificationResult;
 }

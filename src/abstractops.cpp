@@ -118,6 +118,13 @@ namespace aop {
 
 UsedAbstractOps getUsedAbstractOps() { return usedOps; }
 
+void clearAbstractions() {
+  floatEnc.reset();
+  doubleEnc.reset();
+  int_sumfn.clear();
+  int_dotfn.clear();
+}
+
 void setAbstraction(
     Abstraction abs,
     bool addAssoc,
@@ -264,7 +271,7 @@ AbsFpEncoding::AbsFpEncoding(const llvm::fltSemantics &semantics,
       unsigned limit_bw, unsigned smaller_value_bw, unsigned prec_bw,
       bool useIEEE754Encoding,
       std::string &&fnsuffix)
-     :semantics(semantics), fn_suffix(move(fnsuffix)),
+     :semantics(semantics), fn_suffix(std::move(fnsuffix)),
       useIEEE754Encoding(useIEEE754Encoding) {
   assert(smaller_value_bw > 0);
   verbose("AbsFpEncoding") << fn_suffix << ": limit bits: " << limit_bw
@@ -491,7 +498,7 @@ void AbsFpEncoding::addConstants(const set<llvm::APFloat>& const_set) {
         auto limit_var = Expr::mkFreshVar(limit_bits, "fp_const_limit_bits_");
         limit_bits = Expr::mkIte(sv_prec_bits.uge(inf_sv_value), 
           limit_var,
-          mkNonzero(move(limit_var)));
+          mkNonzero(std::move(limit_var)));
         e_value = limit_bits.concat(sv_prec_bits);
 
       } else if (!casting_info->zero_prec_bits) {
@@ -1081,7 +1088,7 @@ Expr AbsFpEncoding::dot(const Expr &a, const Expr &b,
     Expr ai = a.select(i), bi = b.select(i);
     Expr arr = Expr::mkLambda(i, mul(ai, bi));
 
-    return sum(arr, n, nullopt, move(initValue));
+    return sum(arr, n, nullopt, std::move(initValue));
   }
   llvm_unreachable("Unknown abstraction level for fp dot");
 }
@@ -1568,7 +1575,7 @@ Expr intDot(const Expr &a, const Expr &b,
     Expr ai = a.select(i), bi = b.select(i);
     Expr arr = Expr::mkLambda(i, ai * bi);
 
-    return intSum(arr, n, move(initValue));
+    return intSum(arr, n, std::move(initValue));
   }
   llvm_unreachable("Unknown abstraction level for int dot");
 }

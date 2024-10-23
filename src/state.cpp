@@ -81,9 +81,9 @@ void State::wellDefined(mlir::Operation *val, Expr &&e, string &&desc) {
   auto &ubmap = itr->second;
   auto itr2 = ubmap.find(desc);
   if (itr2 == ubmap.end()) {
-    ubmap.insert({move(desc), move(e)});
+    ubmap.insert({move(desc), std::move(e)});
   } else {
-    itr2->second = itr2->second & move(e);
+    itr2->second = itr2->second & std::move(e);
   }
 }
 

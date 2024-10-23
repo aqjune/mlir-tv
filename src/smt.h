@@ -73,7 +73,7 @@ public:
 #endif // SOLVER_CVC5
 };
 
-class Expr : private Object<T_Z3(z3::expr), T_CVC5(cvc5::api::Term)> {
+class Expr : private Object<T_Z3(z3::expr), T_CVC5(cvc5::Term)> {
 private:
   Expr(): isOpLocked(false) {}
   bool isOpLocked;
@@ -87,7 +87,7 @@ public:
   bool hasZ3Expr() const;
 #endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
-  cvc5::api::Term getCVC5Term() const;
+  cvc5::Term getCVC5Term() const;
   bool hasCVC5Term() const;
   bool isConstantCVC5Term() const;
 #endif // SOLVER_CVC5
@@ -239,13 +239,13 @@ public:
   friend matchers::Matcher;
 };
 
-class Sort : private Object<T_Z3(z3::sort), T_CVC5(cvc5::api::Sort)> {
+class Sort : private Object<T_Z3(z3::sort), T_CVC5(cvc5::Sort)> {
 private:
   Sort() {}
 
 public:
   IF_Z3_ENABLED(z3::sort getZ3Sort() const);
-  IF_CVC5_ENABLED(cvc5::api::Sort getCVC5Sort() const);
+  IF_CVC5_ENABLED(cvc5::Sort getCVC5Sort() const);
 
   unsigned bitwidth() const;
   bool isArray() const;
@@ -269,7 +269,7 @@ public:
   friend FnDecl;
 };
 
-class FnDecl : private Object<T_Z3(z3::func_decl), T_CVC5(cvc5::api::Term)> {
+class FnDecl : private Object<T_Z3(z3::func_decl), T_CVC5(cvc5::Term)> {
 private:
   FnDecl() {}
   Sort range;
@@ -288,7 +288,7 @@ public:
 };
 
 class CheckResult : private Object<T_Z3(z3::check_result),
-                                    T_CVC5(cvc5::api::Result)> {
+                                    T_CVC5(cvc5::Result)> {
 private:
   CheckResult() {}
 
@@ -344,6 +344,10 @@ void useZ3();
 void useCVC5();
 uint64_t getTimeout();
 void setTimeout(const uint64_t ms);
+
+// TODO: We will need to make the smt::Context context visible to users & carry
+// it as an object
+void releaseResources();
 } // namespace smt
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const smt::Expr &e);

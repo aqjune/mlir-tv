@@ -1,5 +1,6 @@
 #include "analysis.h"
 #include "debug.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "value.h"
 #include "utils.h"
 
@@ -101,7 +102,7 @@ void analyzeAPFloat(
 void analyzeAttr(const mlir::Attribute &a, AnalysisResult &res) {
   assert(!a.isa<mlir::ElementsAttr>());
 
-  auto fa = a.dyn_cast<mlir::FloatAttr>();
+  auto fa = mlir::dyn_cast<mlir::FloatAttr>(a);
   if (!fa)
     return;
 
@@ -111,7 +112,7 @@ void analyzeAttr(const mlir::Attribute &a, AnalysisResult &res) {
 
 bool analyzeElemAttr(
     const mlir::ElementsAttr &attr, AnalysisResult &res) {
-  if (auto denseAttr = attr.dyn_cast<mlir::DenseElementsAttr>()) {
+  if (auto denseAttr = mlir::dyn_cast<mlir::DenseElementsAttr>(attr)) {
     if (denseAttr.isSplat()) {
       analyzeAttr(denseAttr.getSplatValue<mlir::Attribute>(), res);
     } else {
@@ -123,7 +124,7 @@ bool analyzeElemAttr(
         analyzeAttr(attr, res);
       }
     }
-  } else if (auto sparseAttr = attr.dyn_cast<mlir::SparseElementsAttr>()) {
+  } else if (auto sparseAttr = mlir::dyn_cast<mlir::SparseElementsAttr>(attr)) {
     if (Tensor::MAX_CONST_SIZE >= 0 &&
         sparseAttr.getNumElements() > Tensor::MAX_CONST_SIZE)
       return false;
@@ -176,10 +177,10 @@ void analyzeVariable(
       f64Count++;
 
     return;
-  } else if (!ty.isa<mlir::TensorType>() && !ty.isa<mlir::MemRefType>())
+  } else if (!mlir::isa<mlir::TensorType>(ty) && !mlir::isa<mlir::MemRefType>(ty))
     return;
 
-  auto tensorty = ty.cast<mlir::ShapedType>();
+  auto tensorty = mlir::cast<mlir::ShapedType>(ty);
   auto elemty = tensorty.getElementType();
 
   if (doCount) {
@@ -201,12 +202,12 @@ void analyzeVariable(
       f64Count ++;
       if (cnt > 0)
         f64ElemsCount += cnt - 1;
-    } else if (elemty.isa<mlir::FloatType>()) {
+    } else if (mlir::isa<mlir::FloatType>(elemty)) {
       throw UnsupportedException(ty, "Unsupported type");
     }
   }
 
-  if (ty.isa<mlir::MemRefType>() && !config.isOperand)
+  if (mlir::isa<mlir::MemRefType>(ty) && !config.isOperand)
     memrefCnt[elemty]++;
 }
 
@@ -226,7 +227,7 @@ bool analyzeOp(mlir::memref::GetGlobalOp op, AnalysisResult &res) {
   res.memref.usedGlobals[glbName.str()] = glb;
 
   if (glb.getConstant() && glb.getInitialValue()) {
-    analyzeElemAttr(glb.getInitialValue()->cast<mlir::ElementsAttr>(), res);
+    analyzeElemAttr(mlir::cast<mlir::ElementsAttr>(glb.getInitialValue().value()), res);
   }
   return true;
 }
@@ -241,8 +242,8 @@ bool analyzeOp(mlir::arith::ConstantFloatOp op, AnalysisResult &res) {
 
 template<>
 bool analyzeOp(mlir::arith::ConstantOp op, AnalysisResult &res) {
-  auto tensorty = op.getType().dyn_cast<mlir::RankedTensorType>();
-  auto eattr = op.getValue().dyn_cast<mlir::ElementsAttr>();
+  auto tensorty = mlir::dyn_cast<mlir::RankedTensorType>(op.getType());
+  auto eattr = mlir::dyn_cast<mlir::ElementsAttr>(op.getValue());
   if (!tensorty || !eattr) return true;
 
   bool processed = analyzeElemAttr(eattr, res);
@@ -257,8 +258,8 @@ bool analyzeOp(mlir::arith::ConstantOp op, AnalysisResult &res) {
 
 template<>
 bool analyzeOp(mlir::tosa::ConstOp op, AnalysisResult &res) {
-  auto tensorty = op.getType().dyn_cast<mlir::RankedTensorType>();
-  auto eattr = op.getValue().dyn_cast<mlir::ElementsAttr>();
+  auto tensorty = mlir::dyn_cast<mlir::RankedTensorType>(op.getType());
+  auto eattr = mlir::dyn_cast<mlir::ElementsAttr>(op.getValue());
   if (!tensorty || !eattr) return true;
 
   bool processed = analyzeElemAttr(eattr, res);
@@ -283,7 +284,7 @@ template<>
 bool analyzeOp(mlir::linalg::GenericOp op, AnalysisResult &res) {
   // If generic loop has reduction loops, then result is not elementwise
   auto indexingMaps = op.getIndexingMaps().getValue();
-  auto outputMap = indexingMaps.back().cast<mlir::AffineMapAttr>().getValue();
+  auto outputMap = mlir::cast<mlir::AffineMapAttr>(indexingMaps.back()).getValue();
   bool isReudctionLoop = !outputMap.isPermutation();
   if (isReudctionLoop)
     res.isElementwiseFPOps = false;
@@ -337,7 +338,7 @@ void analyzeBlock(
     // GenericOp accepts memref argument as input & output
     // and newly created FPs can be stored to output memref.
     if (auto op2 = mlir::dyn_cast<mlir::linalg::GenericOp>(op)) {
-      if (op2.hasBufferSemantics()) {
+      if (op2.hasPureBufferSemantics()) {
         for (const auto &operand: op2.getOutputs()) {
           analyzeVariable(operand, res, VarAnalysisConfig::operand());
         }

@@ -11,21 +11,29 @@ Prerequisites: [CMake](https://cmake.org/download/)(>=3.13),
 [Python3](https://www.python.org/downloads/),  
 Solvers (at least one of them must be used):
 [z3-4.8.13](https://github.com/Z3Prover/z3/releases/tag/z3-4.8.13) ,
-[cvc5-0.0.3(limited support)](https://github.com/cvc5/cvc5/releases/tag/cvc5-0.0.3)
+[cvc5-1.2.0](https://github.com/cvc5/cvc5/releases/tag/cvc5-1.2.0)
 
 Optional prerequisites: [Ninja](https://ninja-build.org/)  
+
+### Building dependencies
 
 You will need to build & install MLIR.
 Please follow LLVM's [Getting Started](https://llvm.org/docs/GettingStarted.html#getting-the-source-code-and-building-llvm), and run `cmake --build . --target install`.
 If you already have your MLIR built but found that you are not sudo priviledge that is to install, you can update the `CMAKE_INSTALL_PREFIX` variable via
 `cmake -DCMAKE_INSTALL_PREFIX=<your local path> ../llvm` and run the install command.
 
-You will also need to build & install Z3.
-Please [build Z3 using CMake](https://github.com/Z3Prover/z3/blob/master/README-CMake.md) and install it to somewhere designated by `CMAKE_INSTALL_PREFIX`.
+<b>Z3.</b>
+Please [build Z3 using CMake](https://github.com/Z3Prover/z3/blob/master/README-CMake.md) and install it to
+somewhere designated by `CMAKE_INSTALL_PREFIX`.
+
+<b>cvc5.</b>
+Download the binary release (shared libs) and extract the compressed files.
+
+### Building MLIR-TV
 
 ```bash
 cmake -Bbuild \
-      # We recommend you use Ninja if you have it on your system
+      # We recommend to use Ninja if you have it on your system
       [-GNinja] \
       # At least one of USE_Z3 and USE_cvc5 should be set to ON. Build will fail otherwise.
       [-DUSE_Z3=ON|OFF] \
@@ -53,13 +61,14 @@ mlir-tv <.mlir before opt> <.mlir after opt>
 ```
 
 ## How to test MLIR-TV
+
 ```bash
 cd build
 # A detailed log will be written to build/Testing/Temporary/LastTest.log
 # If you want detailed output on the terminal, please add -V
-ctest -R Opts # Test IR transformation passes
-ctest -R Long # Test passes that take a lot of time
 ctest -R Litmus # Test litmus only
+ctest -R Opts # Test IR transformation passes
+ctest -R Long # Testcases that take a lot of time
 ```
 
 ## Contributions

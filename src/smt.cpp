@@ -3,6 +3,8 @@
 #include "smtmatchers.h"
 #include "utils.h"
 
+#include <iostream>
+
 #ifdef SOLVER_Z3
 #define SET_Z3(e, v) (e).setZ3(v)
 #else
@@ -25,8 +27,8 @@ z3::sort_vector toZ3SortVector(const vector<smt::Sort> &vec);
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-vector<cvc5::api::Term> toCVC5TermVector(const vector<smt::Expr> &vec);
-vector<cvc5::api::Sort> toCVC5SortVector(const vector<smt::Sort> &vec);
+vector<cvc5::Term> toCVC5TermVector(const vector<smt::Expr> &vec);
+vector<cvc5::Sort> toCVC5SortVector(const vector<smt::Sort> &vec);
 #endif // SOLVER_CVC5
 
 
@@ -60,11 +62,11 @@ int64_t to_int64(string &&str) {
 }
 
 namespace smt {
-class Context: public Object<T_Z3(z3::context), T_CVC5(cvc5::api::Solver)> {
+class Context: public Object<T_Z3(z3::context), T_CVC5(cvc5::Solver)> {
 private:
   uint64_t fresh_var_counter;
 #ifdef SOLVER_CVC5
-  map<string, cvc5::api::Term, less<>> cvc5_term_cache;
+  map<string, cvc5::Term, less<>> cvc5_term_cache;
 #endif // SOLVER_CVC5
 
 public:
@@ -86,11 +88,11 @@ public:
     this->cvc5.emplace();
     // TODO: Conditionally use HO_AUFBV
     this->cvc5->setLogic("HO_ALL");
-    this->cvc5->setOption("tlimit", to_string(timeout_ms));
+    this->cvc5->setOption("tlimit-per", to_string(timeout_ms));
     this->cvc5->setOption("produce-models", "true");
   }
 
-  optional<cvc5::api::Term> getNamedTerm(string_view name) {
+  optional<cvc5::Term> getNamedTerm(string_view name) {
     auto term_iter = cvc5_term_cache.find(name);
     if (term_iter == cvc5_term_cache.end()) {
       return nullopt;
@@ -98,8 +100,8 @@ public:
     return term_iter->second;
   }
 
-  void addNamedTerm(const string &name, cvc5::api::Term &&term) {
-    cvc5_term_cache.insert({name, move(term)});
+  void addNamedTerm(const string &name, cvc5::Term &&term) {
+    cvc5_term_cache.insert({name, std::move(term)});
   }
 
   void clearCachedTerms() {
@@ -113,6 +115,15 @@ public:
 };
 
 Context sctx;
+
+void releaseResources() {
+#ifdef SOLVER_Z3
+  sctx.z3.reset();
+#endif
+#ifdef SOLVER_CVC5
+  sctx.cvc5.reset();
+#endif
+}
 
 vector<Expr> from1DIdx(
     Expr idx1d,
@@ -233,7 +244,7 @@ string or_omit(const vector<Expr> &evec) {
 // ------- FnDecl -------
 
 FnDecl::FnDecl(const Sort &domain, const Sort &range, string &&name):
-  FnDecl(vector<Sort>({domain}), range, move(name)) {}
+  FnDecl(vector<Sort>({domain}), range, std::move(name)) {}
 
 FnDecl::FnDecl(
     const vector<Sort> &domain,
@@ -253,7 +264,7 @@ Expr FnDecl::apply(const std::vector<Expr> &args) const {
   SET_CVC5(e, fupdate2(sctx.cvc5, cvc5, [&args](auto &solver, auto fdecl) {
     auto args_cvc5 = toCVC5TermVector(args);
     args_cvc5.insert(args_cvc5.begin(), fdecl);
-    return solver.mkTerm(cvc5::api::APPLY_UF, args_cvc5);
+    return solver.mkTerm(cvc5::Kind::APPLY_UF, args_cvc5);
   }));
   return e;
 }
@@ -280,7 +291,7 @@ bool Expr::hasZ3Expr() const {
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-cvc5::api::Term Expr::getCVC5Term() const {
+cvc5::Term Expr::getCVC5Term() const {
   return *cvc5;
 }
 
@@ -344,7 +355,7 @@ bool Expr::isUInt(uint64_t &v) const {
   {
     uint64_t tmp;
     if (this->z3 && this->z3->is_numeral_u64(tmp))
-      writeOrCheck(res, move(tmp));
+      writeOrCheck(res, std::move(tmp));
   }
 #endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
@@ -367,7 +378,7 @@ bool Expr::isInt(int64_t &v) const {
   {
     int64_t tmp;
     if (this->z3 && this->z3->is_numeral_i64(tmp))
-      writeOrCheck(res, move(tmp));
+      writeOrCheck(res, std::move(tmp));
   }
 #endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
@@ -418,9 +429,10 @@ bool Expr::isVar() const {
   IF_Z3_ENABLED(
     if (z3) res |= z3->is_app() && z3->is_const() && !z3->is_numeral()
   );
-  IF_CVC5_ENABLED(
-    if (cvc5) res |= !isConstantCVC5Term()
-  );
+  IF_CVC5_ENABLED(if (cvc5) {
+    res |= cvc5->getKind() == cvc5::Kind::VARIABLE ||
+           cvc5->getKind() == cvc5::Kind::CONSTANT;
+  });
   return res;
 }
 
@@ -445,7 +457,7 @@ bool Expr::hasQuantifier() const {
 #ifdef SOLVER_CVC5
   if(cvc5) {
     auto e = getCVC5Term();
-    if (e.getKind() == cvc5::api::FORALL || e.getKind() == cvc5::api::EXISTS)
+    if (e.getKind() == cvc5::Kind::FORALL || e.getKind() == cvc5::Kind::EXISTS)
       return true;
 
     for (unsigned i = 0; i < e.getNumChildren(); i++) {
@@ -483,7 +495,7 @@ Expr Expr:: NAME (uint64_t arg) const {\
 
 #define SET_CVC5_USEOP(e, rhs, op) \
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5, [&rhs](auto &solver, auto e2) { \
-    return solver.mkTerm(cvc5::api::op, e2, *rhs.cvc5); \
+    return solver.mkTerm(cvc5::Kind::op, {e2, *rhs.cvc5}); \
   }))
 
 #define CHECK_LOCK() assert(!isOpLocked)
@@ -681,11 +693,11 @@ Expr Expr::select(const vector<Expr> &idxs) const {
       [&idxs](auto &solver, auto e) {
     if (e.getSort().isArray()) {
       assert(idxs.size() == 1);
-      return solver.mkTerm(cvc5::api::SELECT, e, *idxs[0].cvc5);
+      return solver.mkTerm(cvc5::Kind::SELECT, {e, *idxs[0].cvc5});
     } else {
       auto v = toCVC5TermVector(idxs);
       v.insert(v.begin(), e);
-      return solver.mkTerm(cvc5::api::APPLY_UF, v);
+      return solver.mkTerm(cvc5::Kind::APPLY_UF, {v});
     }
   }));
 #ifdef SOLVER_CVC5
@@ -701,16 +713,16 @@ Expr Expr::select(const vector<Expr> &idxs) const {
 }
 
 #ifdef SOLVER_CVC5
-static cvc5::api::Term mkCVC5Lambda(
-    const cvc5::api::Term &var, const cvc5::api::Term &body) {
-  auto vlist = sctx.cvc5->mkTerm(cvc5::api::BOUND_VAR_LIST, {var});
-  return sctx.cvc5->mkTerm(cvc5::api::LAMBDA, vlist, body);
+static cvc5::Term mkCVC5Lambda(
+    const cvc5::Term &var, const cvc5::Term &body) {
+  auto vlist = sctx.cvc5->mkTerm(cvc5::Kind::VARIABLE_LIST, {var});
+  return sctx.cvc5->mkTerm(cvc5::Kind::LAMBDA, {vlist, body});
 }
 
 // Convert arr to lambda idx, arr idx
-static cvc5::api::Term toCVC5Lambda(const cvc5::api::Term &arr) {
+static cvc5::Term toCVC5Lambda(const cvc5::Term &arr) {
   auto idx = sctx.cvc5->mkVar(arr.getSort().getArrayIndexSort());
-  return mkCVC5Lambda(idx, sctx.cvc5->mkTerm(cvc5::api::SELECT, arr, idx));
+  return mkCVC5Lambda(idx, sctx.cvc5->mkTerm(cvc5::Kind::SELECT, {arr, idx}));
 }
 #endif // SOLVER_CVC5
 
@@ -722,14 +734,14 @@ Expr Expr::store(const Expr &idx, const Expr &val) const {
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
       [&idx, &val](auto &solver, auto e) { // e: array or lambda
     if (e.getSort().isArray())
-      return solver.mkTerm(cvc5::api::STORE, e, *idx.cvc5, *val.cvc5);
+      return solver.mkTerm(cvc5::Kind::STORE, {e, *idx.cvc5, *val.cvc5});
     else {
       auto dummy_var = solver.mkVar(idx.cvc5->getSort());
-      auto oldval = solver.mkTerm(cvc5::api::APPLY_UF, e, dummy_var);
+      auto oldval = solver.mkTerm(cvc5::Kind::APPLY_UF, {e, dummy_var});
       auto lambda_body =
-          solver.mkTerm(cvc5::api::ITE,
-            solver.mkTerm(cvc5::api::EQUAL, dummy_var, *idx.cvc5),
-            *val.cvc5, oldval);
+          solver.mkTerm(cvc5::Kind::ITE,
+            {solver.mkTerm(cvc5::Kind::EQUAL, {dummy_var, *idx.cvc5}),
+             *val.cvc5, oldval});
       return mkCVC5Lambda(dummy_var, lambda_body);
     }
   }));
@@ -750,8 +762,8 @@ Expr Expr::insert(const Expr &elem) const {
     return z3::store(arrayz3, idx, z3::select(arrayz3, idx) + 1);
   }));
   SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
-    auto newBag = solver.mkTerm(cvc5::api::MK_BAG, *elem.cvc5, solver.mkInteger(1));
-    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *cvc5, newBag);
+    auto newBag = solver.mkTerm(cvc5::Kind::BAG_MAKE, {*elem.cvc5, solver.mkInteger(1)});
+    return solver.mkTerm(cvc5::Kind::BAG_UNION_DISJOINT, {*cvc5, newBag});
   }));
   return e;
 }
@@ -768,7 +780,7 @@ Expr Expr::bagUnion(const Expr &other) const {
     return z3::lambda(idx, lhs + rhs);
   }));
   SET_CVC5(e, fupdate(sctx.cvc5, [&](auto &solver) {
-    return solver.mkTerm(cvc5::api::UNION_DISJOINT, *cvc5, *other.cvc5);
+    return solver.mkTerm(cvc5::Kind::BAG_UNION_DISJOINT, {*cvc5, *other.cvc5});
   }));
   return e;
 }
@@ -820,7 +832,7 @@ Expr Expr::extract(unsigned hbit, unsigned lbit) const {
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
       [hbit, lbit](auto &solver, auto e) {
     return solver.mkTerm(
-        solver.mkOp(cvc5::api::BITVECTOR_EXTRACT, hbit, lbit), e);
+        solver.mkOp(cvc5::Kind::BITVECTOR_EXTRACT, {hbit, lbit}), {e});
   }));
   return e;
 }
@@ -846,7 +858,7 @@ Expr Expr::zext(unsigned bits) const {
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
       [&bits](auto &solver, auto e) {
     return solver.mkTerm(
-      solver.mkOp(cvc5::api::BITVECTOR_ZERO_EXTEND, bits), e);
+      solver.mkOp(cvc5::Kind::BITVECTOR_ZERO_EXTEND, {bits}), {e});
   }));
   return e;
 }
@@ -859,7 +871,7 @@ Expr Expr::sext(unsigned bits) const {
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5,
       [&bits](auto &solver, auto e) {
     return solver.mkTerm(
-      solver.mkOp(cvc5::api::BITVECTOR_SIGN_EXTEND, bits), e);
+      solver.mkOp(cvc5::Kind::BITVECTOR_SIGN_EXTEND, {bits}), {e});
   }));
   return e;
 }
@@ -1136,7 +1148,7 @@ Expr Expr::operator~() const {
   Expr e;
   SET_Z3(e, fmap(this->z3, [&](auto e) { return ~e; }));
   SET_CVC5(e, fupdate2(sctx.cvc5, this->cvc5, [&](auto &solver, auto e2) { \
-    return solver.mkTerm(cvc5::api::BITVECTOR_NOT, e2); \
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_NOT, {e2}); \
   }));
   return e;
 }
@@ -1152,8 +1164,8 @@ Expr &Expr::operator&=(const Expr &rhs) {
   CHECK_LOCK2(rhs);
 
   Expr e = *this & rhs;
-  SET_Z3(*this, move(e.z3));
-  SET_CVC5(*this, move(e.cvc5));
+  SET_Z3(*this, std::move(e.z3));
+  SET_CVC5(*this, std::move(e.cvc5));
   return *this;
 }
 
@@ -1161,8 +1173,8 @@ Expr &Expr::operator|=(const Expr &rhs) {
   CHECK_LOCK2(rhs);
 
   Expr e = *this | rhs;
-  SET_Z3(*this, move(e.z3));
-  SET_CVC5(*this, move(e.cvc5));
+  SET_Z3(*this, std::move(e.z3));
+  SET_CVC5(*this, std::move(e.cvc5));
   return *this;
 }
 
@@ -1305,17 +1317,20 @@ Expr Expr::mkVar(const Sort &s, const std::string &name, bool boundVar) {
   SET_CVC5(e, fupdate2(sctx.cvc5, s.cvc5,
       [&name, &boundVar](auto &ctx, auto &cvc5sort){
     if (!sctx.getNamedTerm(name).has_value()) {
-      cvc5::api::Term new_var;
+      cvc5::Term new_var;
       if (boundVar)
         new_var = ctx.mkVar(cvc5sort, name);
       else
         new_var = ctx.mkConst(cvc5sort, name);
-      sctx.addNamedTerm(name, move(new_var));
+      sctx.addNamedTerm(name, std::move(new_var));
     }
 
     const auto term = *sctx.getNamedTerm(name);
+    smart_assert((boundVar && term.getKind() == cvc5::Kind::VARIABLE) ||
+                 (!boundVar && term.getKind() == cvc5::Kind::CONSTANT),
+                 "Boundness does not match");
     assert(cvc5sort == term.getSort() &&
-            "Term(s) of duplicate names are not allowed");
+           "Term(s) of duplicate names are not allowed");
     return term;
   }));
   return e;
@@ -1384,8 +1399,8 @@ Expr Expr::mkForall(const vector<Expr> &vars, const Expr &body) {
   }));
   SET_CVC5(e, fupdate2(sctx.cvc5, body.cvc5, [&](auto &solver, auto cvc5body){
     auto cvc5vars = toCVC5TermVector(vars);
-    auto vlist = solver.mkTerm(cvc5::api::BOUND_VAR_LIST, cvc5vars);
-    return solver.mkTerm(cvc5::api::FORALL, vlist, cvc5body);
+    auto vlist = solver.mkTerm(cvc5::Kind::VARIABLE_LIST, {cvc5vars});
+    return solver.mkTerm(cvc5::Kind::FORALL, {vlist, cvc5body});
   }));
   return e;
 }
@@ -1409,8 +1424,8 @@ Expr Expr::mkLambda(const vector<Expr> &vars, const Expr &body) {
   }));
   SET_CVC5(e, fupdate2(sctx.cvc5, body.cvc5, [&](auto &solver, auto cvc5body){
     auto cvc5vars = toCVC5TermVector(vars);
-    auto vlist = solver.mkTerm(cvc5::api::BOUND_VAR_LIST, cvc5vars);
-    return solver.mkTerm(cvc5::api::LAMBDA, vlist, cvc5body);
+    auto vlist = solver.mkTerm(cvc5::Kind::VARIABLE_LIST, cvc5vars);
+    return solver.mkTerm(cvc5::Kind::LAMBDA, {vlist, cvc5body});
   }));
   return e;
 }
@@ -1470,7 +1485,7 @@ Expr Expr::mkIte(const Expr &cond, const Expr &then, const Expr &els) {
       elsval = toCVC5Lambda(elsval);
     else if (thenSort.isArray() && elsSort.isFunction())
       thenval = toCVC5Lambda(thenval);
-    return solver.mkTerm(cvc5::api::ITE, condcvc, thenval, elsval);
+    return solver.mkTerm(cvc5::Kind::ITE, {condcvc, thenval, elsval});
   }));
   return e;
 }
@@ -1499,7 +1514,7 @@ Expr Expr::mkAddNoOverflow(const Expr &a, const Expr &b, bool is_signed) {
 
 IF_Z3_ENABLED(z3::sort Sort::getZ3Sort() const { return *z3; })
 
-IF_CVC5_ENABLED(cvc5::api::Sort Sort::getCVC5Sort() const { return *cvc5; })
+IF_CVC5_ENABLED(cvc5::Sort Sort::getCVC5Sort() const { return *cvc5; })
 
 Sort Sort::getArrayDomain() const {
   Sort s;
@@ -1537,7 +1552,7 @@ Sort Sort::toFnSort() const {
       [](auto &solver, auto s) {
     if (s.isArray()) {
       return solver.mkFunctionSort(
-          s.getArrayIndexSort(), s.getArrayElementSort());
+          {s.getArrayIndexSort()}, s.getArrayElementSort());
     }
     return s;
   }));
@@ -1669,15 +1684,15 @@ vector<Expr> Model::eval(const vector<Expr> &exprs, bool modelCompletion) const 
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-    optional<cvc5::api::Term> cvc5_value;
+    optional<cvc5::Term> cvc5_value;
     if (cvc5_values) {
-      cvc5_value = move((*cvc5_values)[i]);
+      cvc5_value = std::move((*cvc5_values)[i]);
     }
 #endif // SOLVER_CVC5
 
     Expr value;
-    SET_Z3(value, move(z3_value));
-    SET_CVC5(value, move(cvc5_value));
+    SET_Z3(value, std::move(z3_value));
+    SET_CVC5(value, std::move(cvc5_value));
     values.push_back(move(value));
   }
 
@@ -1790,11 +1805,11 @@ bool Matcher::matchBinaryOp(const Expr &expr, Z3_decl_kind z3Kind,
 #endif // SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-void Matcher::setCVC5(Expr &e, optional<cvc5::api::Term> &&opt) const {
+void Matcher::setCVC5(Expr &e, optional<cvc5::Term> &&opt) const {
   e.setCVC5(move(opt));
 }
 
-bool Matcher::matchBinaryOp(const Expr &expr, cvc5::api::Kind opKind,
+bool Matcher::matchBinaryOp(const Expr &expr, cvc5::Kind opKind,
     function<bool(const Expr&)> lhsMatcher,
     function<bool(const Expr&)> rhsMatcher) const {
   if (expr.hasCVC5Term()) {
@@ -1803,8 +1818,8 @@ bool Matcher::matchBinaryOp(const Expr &expr, cvc5::api::Kind opKind,
       return false;
 
     Expr lhs = newExpr(), rhs = newExpr();
-    setCVC5(lhs, move(term[0]));
-    setCVC5(rhs, move(term[1]));
+    setCVC5(lhs, std::move(term[0]));
+    setCVC5(rhs, std::move(term[1]));
     return lhsMatcher(lhs) && rhsMatcher(rhs);
   } else {
     return false;
@@ -1871,16 +1886,16 @@ bool Lambda::operator()(const Expr &expr) const {
 #ifdef SOLVER_CVC5
   if (expr.hasCVC5Term()) {
     auto e = expr.getCVC5Term();
-    if (e.getKind() != cvc5::api::LAMBDA || e.getNumChildren() != 2)
+    if (e.getKind() != cvc5::Kind::LAMBDA || e.getNumChildren() != 2)
       return false;
 
     auto vlist = e[0];
-    if (vlist.getKind() != cvc5::api::BOUND_VAR_LIST)
+    if (vlist.getKind() != cvc5::Kind::VARIABLE_LIST)
       return false;
 
     Expr newidx = newExpr(), newe = newExpr();
-    setCVC5(newidx, move(vlist[0]));
-    setCVC5(newe, move(e[1]));
+    setCVC5(newidx, std::move(vlist[0]));
+    setCVC5(newe, std::move(e[1]));
 
     return bodyMatcher(newe) && idxMatcher(newidx);
   }
@@ -1913,15 +1928,15 @@ bool Store::operator()(const Expr &expr) const {
   if (expr.hasCVC5Term()) {
     auto term = expr.getCVC5Term();
 
-    if (term.getKind() != cvc5::api::STORE || term.getNumChildren() != 3)
+    if (term.getKind() != cvc5::Kind::STORE || term.getNumChildren() != 3)
       return false;
     
     Expr arr = newExpr(), idx = newExpr(), val = newExpr();
-    setCVC5(arr, move(term[0]));
-    // Note idx is cvc5::api::BOUND_VAR_LIST
+    setCVC5(arr, std::move(term[0]));
+    // Note idx is cvc5::BOUND_VAR_LIST
     // must unwrap BOUND_VAR_LIST when using concrete index
-    setCVC5(idx, move(term[1])); 
-    setCVC5(val, move(term[2]));
+    setCVC5(idx, std::move(term[1])); 
+    setCVC5(val, std::move(term[2]));
     
     return arrMatcher(arr) && idxMatcher(idx) && valMatcher(val);
   }
@@ -1936,7 +1951,8 @@ bool Concat::operator()(const Expr &expr) const {
 #endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
   if (expr.hasCVC5Term())
-    return matchBinaryOp(expr, cvc5::api::BITVECTOR_CONCAT, lhsMatcher, rhsMatcher);
+    return matchBinaryOp(expr, cvc5::Kind::BITVECTOR_CONCAT, lhsMatcher,
+                         rhsMatcher);
 #endif // SOLVER_CVC5
 
   return false;
@@ -1949,7 +1965,8 @@ bool URem::operator()(const Expr &expr) const {
 #endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
   if (expr.hasCVC5Term())
-    return matchBinaryOp(expr, cvc5::api::BITVECTOR_UREM, lhsMatcher, rhsMatcher);
+    return matchBinaryOp(expr, cvc5::Kind::BITVECTOR_UREM, lhsMatcher,
+                         rhsMatcher);
 #endif // SOLVER_CVC5
 
   return false;
@@ -1962,7 +1979,8 @@ bool UDiv::operator()(const Expr &expr) const {
 #endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
   if (expr.hasCVC5Term())
-    return matchBinaryOp(expr, cvc5::api::BITVECTOR_UDIV, lhsMatcher, rhsMatcher);
+    return matchBinaryOp(expr, cvc5::Kind::BITVECTOR_UDIV, lhsMatcher,
+                         rhsMatcher);
 #endif // SOLVER_CVC5
 
   return false;
@@ -1975,7 +1993,8 @@ bool Mul::operator()(const Expr &expr) const {
 #endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
   if (expr.hasCVC5Term())
-    return matchBinaryOp(expr, cvc5::api::BITVECTOR_MULT, lhsMatcher, rhsMatcher);
+    return matchBinaryOp(expr, cvc5::Kind::BITVECTOR_MULT, lhsMatcher,
+                         rhsMatcher);
 #endif // SOLVER_CVC5
 
   return false;
@@ -2001,7 +2020,7 @@ bool ZeroExt::operator()(const Expr &expr) const {
 #ifdef SOLVER_CVC5
   if (expr.hasCVC5Term()) {
     auto op = expr.getCVC5Term();
-    if (op.getKind() != cvc5::api::BITVECTOR_ZERO_EXTEND)
+    if (op.getKind() != cvc5::Kind::BITVECTOR_ZERO_EXTEND)
       return false;
     if (op.getNumChildren() != 1)
       return false;
@@ -2021,7 +2040,7 @@ bool Equals::operator()(const Expr &expr) const {
 #endif // SOLVER_Z3
 #ifdef SOLVER_CVC5
   if (expr.hasCVC5Term())
-    return matchBinaryOp(expr, cvc5::api::EQUAL, lhsMatcher, rhsMatcher);
+    return matchBinaryOp(expr, cvc5::Kind::EQUAL, lhsMatcher, rhsMatcher);
 #endif // SOLVER_CVC5
 
   return false;
@@ -2048,8 +2067,8 @@ z3::sort_vector toZ3SortVector(const vector<smt::Sort> &vec) {
 #endif // end SOLVER_Z3
 
 #ifdef SOLVER_CVC5
-vector<cvc5::api::Term> toCVC5TermVector(const vector<smt::Expr> &vec) {
-  vector<cvc5::api::Term> cvc5_terms;
+vector<cvc5::Term> toCVC5TermVector(const vector<smt::Expr> &vec) {
+  vector<cvc5::Term> cvc5_terms;
   cvc5_terms.reserve(vec.size());
   for (const auto e : vec) {
     cvc5_terms.push_back(e.getCVC5Term());
@@ -2057,8 +2076,8 @@ vector<cvc5::api::Term> toCVC5TermVector(const vector<smt::Expr> &vec) {
   return cvc5_terms;
 }
 
-vector<cvc5::api::Sort> toCVC5SortVector(const vector<smt::Sort> &vec) {
-  vector<cvc5::api::Sort> cvc5_sorts;
+vector<cvc5::Sort> toCVC5SortVector(const vector<smt::Sort> &vec) {
+  vector<cvc5::Sort> cvc5_sorts;
   cvc5_sorts.reserve(vec.size());
   for (const auto e : vec) {
     cvc5_sorts.push_back(e.getCVC5Sort());

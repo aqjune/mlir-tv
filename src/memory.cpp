@@ -183,12 +183,12 @@ Memory::Memory(const TypeMap<size_t> &numGlobalBlocksPerType,
         newLiveness.push_back(Expr::mkFreshVar(boolSort, suffix2("liveness")));
     }
 
-    arrays.insert({elemTy, move(newArrs)});
-    initialized.insert({elemTy, move(newInits)});
-    writables.insert({elemTy, move(newWrit)});
-    numelems.insert({elemTy, move(newNumElems)});
-    liveness.insert({elemTy, move(newLiveness)});
-    createdByAllocs.insert({elemTy, move(newCreatedByAllocs)});
+    arrays.insert({elemTy, std::move(newArrs)});
+    initialized.insert({elemTy, std::move(newInits)});
+    writables.insert({elemTy, std::move(newWrit)});
+    numelems.insert({elemTy, std::move(newNumElems)});
+    liveness.insert({elemTy, std::move(newLiveness)});
+    createdByAllocs.insert({elemTy, std::move(newCreatedByAllocs)});
   }
 
   assert(addedGlobalVars == globals.size());
@@ -475,8 +475,8 @@ Memory::refines(const Memory &other) const {
           bid == Expr::mkBV(i, bidBits), refinesBlk(ty, i, offset), refinement);
 
     vector<Expr> params{bid, offset};
-    ElemTy elem = {move(refinement), move(params)};
-    tmap.try_emplace(ty, move(elem));
+    ElemTy elem = {move(refinement), std::move(params)};
+    tmap.try_emplace(ty, std::move(elem));
   }
 
   return tmap;

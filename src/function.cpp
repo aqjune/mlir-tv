@@ -101,8 +101,8 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
       dims.push_back(move(dim));
     }
   }
-  return DeclaredFunction(move(domain), move(range), move(decl), move(dims),
-                          move(rangeDimRefIdx));
+  return DeclaredFunction(move(domain), std::move(range), std::move(decl), std::move(dims),
+                          std::move(rangeDimRefIdx));
 }
 
 ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
@@ -166,7 +166,7 @@ ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
     }
 
     auto fn_output = Tensor::fromArray(tensorRange.getElementType(),
-                                       decl.apply(operandExprs), move(dims));
+                                       decl.apply(operandExprs), std::move(dims));
     return fn_output;
   } else {
     smart_assert(false, "Cannot create ValueTy from the call's result"
@@ -195,8 +195,8 @@ bool declareFunction(vector<mlir::Type> &&domain, mlir::Type &&range,
                  << "stateless and does not read or write global memory\n";
 
     calleeMap.insert({string(name),
-                      DeclaredFunction::declare(move(domain), move(range), name,
-                                                move(dimsReferenceIdx))});
+                      DeclaredFunction::declare(move(domain), std::move(range), name,
+                                                std::move(dimsReferenceIdx))});
     return true;
   }
 }

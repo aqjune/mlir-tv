@@ -76,6 +76,8 @@ void setAbstraction(Abstraction abs,
 // A set of options that must not change the precision of validation.
 // useMultiset: To encode commutativity of fp summation, use multiset?
 void setEncodingOptions(bool useMultiset);
+// Release globally allocated objects for abstraction.
+void clearAbstractions();
 
 bool getFpAddAssociativity();
 bool getFpCastIsPrecise();

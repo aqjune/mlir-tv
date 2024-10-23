@@ -14,7 +14,7 @@ module  {
     %3 = tensor.collapse_shape %arg1 [[0, 1, 2], [3]] : tensor<3x3x4x16xf32> into tensor<36x16xf32>
     %4 = tensor.collapse_shape %arg2 [[0, 1, 2], [3]] : tensor<1x14x14x16xf32> into tensor<196x16xf32>
     %5 = linalg.matmul ins(%2, %3 : tensor<196x36xf32>, tensor<36x16xf32>) outs(%4 : tensor<196x16xf32>) -> tensor<196x16xf32>
-    %6 = tensor.expand_shape %5 [[0, 1, 2], [3]] : tensor<196x16xf32> into tensor<1x14x14x16xf32>
+    %6 = tensor.expand_shape %5 [[0, 1, 2], [3]] output_shape [1,14,14,16] : tensor<196x16xf32> into tensor<1x14x14x16xf32>
     return %6 : tensor<1x14x14x16xf32>
   }
 }

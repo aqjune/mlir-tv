@@ -182,9 +182,9 @@ static State createInputState(
       if (holds_alternative<MemRef>(*value)) {
         MemRef memref = get<MemRef>(*value);
         memref.setMemory(s.m.get());
-        s.regs.add(arg, move(memref));
+        s.regs.add(arg, std::move(memref));
       } else {
-        s.regs.add(arg, move(*value));
+        s.regs.add(arg, std::move(*value));
       }
       continue;
     }
@@ -201,7 +201,7 @@ static State createInputState(
           dims);
 
       preconds.push_back(tensor.getWellDefined());
-      s.regs.add(arg, move(tensor));
+      s.regs.add(arg, std::move(tensor));
 
     } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
       if (!MemRef::isTypeSupported(ty))
@@ -224,7 +224,7 @@ static State createInputState(
       // Function argument MemRefs must point to global memblocks.
       preconds.push_back(memref.isGlobalBlock());
       preconds.push_back(memref.getWellDefined());
-      s.regs.add(arg, move(memref));
+      s.regs.add(arg, std::move(memref));
 
     } else {
       if (convertPrimitiveTypeToSort(argty) == nullopt) {
@@ -369,7 +369,7 @@ static Results checkRefinement(
         if (numret != 1)
           msg = msg + " (" + to_string(i + 1) + "/" + to_string(numret) + ")";
 
-        printErrorMsg(s, res.first, msg.c_str(), move(params),
+        printErrorMsg(s, res.first, msg.c_str(), std::move(params),
                       VerificationStep::RetValue, i);
         return res.first.hasSat() ? Results::RETVALUE : Results::TIMEOUT;
       }
@@ -397,7 +397,7 @@ static Results checkRefinement(
         return Results::INCONSISTENT;
 
       } else if (!res.first.hasUnsat()) {
-        printErrorMsg(s, res.first, "Memory mismatch", move(params),
+        printErrorMsg(s, res.first, "Memory mismatch", std::move(params),
                       VerificationStep::Memory, -1, elementType);
         return res.first.hasSat() ? Results::RETVALUE : Results::TIMEOUT;
       }
@@ -435,7 +435,7 @@ static State encodeFinalState(
     bool printOps, bool issrc, ArgInfo &args, vector<Expr> &preconds) {
   mlir::func::FuncOp fn = issrc ? vinput.src : vinput.tgt;
 
-  State st = createInputState(fn, move(initMem), args, preconds);
+  State st = createInputState(fn, std::move(initMem), args, preconds);
 
   if (printOps)
     llvm::outs() << (issrc ? "<src>" : "<tgt>") << "\n";
@@ -473,9 +473,9 @@ static tuple<State, State, Expr> encodeFinalStates(
   initMemTgt->setIsSrc(false);
 
   State st_src = encodeFinalState(
-      vinput, move(initMemSrc), printOps, true,  args, preconds);
+      vinput, std::move(initMemSrc), printOps, true,  args, preconds);
   State st_tgt = encodeFinalState(
-      vinput, move(initMemTgt), printOps, false, args, preconds);
+      vinput, std::move(initMemTgt), printOps, false, args, preconds);
 
   preconds.push_back(aop::getFpConstantPrecondition());
 
@@ -489,7 +489,7 @@ static tuple<State, State, Expr> encodeFinalStates(
       exprAnd(preconds) & st_src.precondition() & st_tgt.precondition();
   precond = precond.simplify();
 
-  return {move(st_src), move(st_tgt), move(precond)};
+  return {move(st_src), std::move(st_tgt), std::move(precond)};
 }
 
 static Results tryValidation(
@@ -497,7 +497,7 @@ static Results tryValidation(
     int64_t &elapsedMillisec) {
   auto enc = encodeFinalStates(vinput, printOps);
   return checkRefinement(
-        vinput, get<0>(enc), get<1>(enc), move(get<2>(enc)), useAllLogic,
+        vinput, get<0>(enc), get<1>(enc), std::move(get<2>(enc)), useAllLogic,
         elapsedMillisec);
 }
 
@@ -536,7 +536,7 @@ static void checkIsSrcAlwaysUB(
   auto initMemory = make_unique<Memory>(
       vinput.numBlocksPerType, vinput.numBlocksPerType, vinput.globals,
       /*blocks initially alive*/true);
-  auto st = encodeFinalState(vinput, move(initMemory), false, true,
+  auto st = encodeFinalState(vinput, std::move(initMemory), false, true,
       args_dummy, preconds);
 
   useAllLogic |= st.hasConstArray;
@@ -572,6 +572,10 @@ static Results validate(ValidationInput vinput) {
         << " msec.\n\n";
   });
   using namespace aop;
+  Defer clearAbs([]() {
+    clearAbstractions();
+  });
+
   auto printSematics = [](Abstraction &abs, Results &result) {
     verbose("validate")  << "** Verification Result: "
         << magic_enum::enum_name(result.code) << "\n";
@@ -764,7 +768,7 @@ Results validate(
 
   for (auto [name, srcfn]: srcfns) {
     if (is_check_single_fn) {
-      if (!name.equals(verify_fn_name)) {
+      if (!name.compare(verify_fn_name) == 0) {
         continue;
       }
     }
