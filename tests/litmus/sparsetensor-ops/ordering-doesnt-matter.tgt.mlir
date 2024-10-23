@@ -1,8 +1,7 @@
 // VERIFY
 
 #CSR = #sparse_tensor.encoding<{
-  dimLevelType = [ "dense", "compressed" ],
-  dimOrdering = affine_map<(i,j) -> (j,i)>
+  map = (d0, d1) -> (d1: dense, d0: compressed)
 }>
 
 func.func @f(%x: tensor<?x?xf32>) -> f32

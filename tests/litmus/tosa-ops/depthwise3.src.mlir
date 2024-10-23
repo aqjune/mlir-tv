@@ -6,6 +6,6 @@ func.func @depthwise_conv() -> tensor<1x1x1x2xf32> {
   %arg2 =  arith.constant dense<[7.0,8.0,9.0,10.0,11.0,12.0]>: tensor<6xf32>
   %0 = "tosa.depthwise_conv2d"(%arg0, %arg1, %arg2) { pad = array<i64: 0, 0, 0, 0>, stride = array<i64: 1, 1>, dilation = array<i64: 1, 1> } : (tensor<1x1x1x3xf32>, tensor<1x1x3x2xf32>, tensor<6xf32>)  -> (tensor<1x1x1x6xf32>)
   %1 = tensor.extract_slice %0[0,0,0,4][1,1,1,2][1,1,1,1]: tensor<1x1x1x6xf32> to tensor<2xf32>
-  %2 = tensor.expand_shape %1 [[0,1,2,3]] : tensor<2xf32> into tensor<1x1x1x2xf32>
+  %2 = tensor.expand_shape %1 [[0,1,2,3]] output_shape [1,1,1,2] : tensor<2xf32> into tensor<1x1x1x2xf32>
   return %2 : tensor<1x1x1x2xf32>
 }
