@@ -336,7 +336,12 @@ public:
 
   void add(const Expr &e);
   void reset();
+
+  // If two solvers are available, serially run both of them. The returning
+  // CheckResult object will store both results.
   CheckResult check();
+
+  // NOTE: Models work only for Z3
   Model getModel() const;
 };
 
