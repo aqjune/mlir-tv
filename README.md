@@ -4,6 +4,8 @@ MLIR-TV is an SMT-based translation validation framework for MLIR.
 This project is inspired by [Alive2](https://github.com/aliveToolkit/alive2), an SMT-based bounded translation validation framework for LLVM IR.
 MLIR-TV focuses on supporting dialects that are tailored for compiling machine learning applications.
 
+This project is published at CAV'22 ([link](https://link.springer.com/chapter/10.1007/978-3-031-13188-2_19)).
+
 ## How to build MLIR-TV
 
 Prerequisites: [CMake](https://cmake.org/download/)(>=3.13),
