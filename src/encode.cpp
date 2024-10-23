@@ -243,10 +243,10 @@ static void storeTensorTo(
     // A precondition for the updated elements
     auto precUpdated = Expr::mkForall(idxs,
         tInBounds.implies(mValAfter == tVal));
-    st.addPrecondition(move(precUpdated));
+    st.addPrecondition(std::move(precUpdated));
     auto precInit = Expr::mkForall(idxs,
         tInBounds.implies(mInfoAfter.initialized));
-    st.addPrecondition(move(precInit));
+    st.addPrecondition(std::move(precInit));
 
     // A precondition for the untouched elements
     auto precPreserved = Expr::mkForall({ofs1d},
@@ -256,7 +256,7 @@ static void storeTensorTo(
           // The values and initialized bits are preserved.
           .implies((mValBefore1d == mValAfter1d) &
                    (mInitializedBefore1d == mInitializedAfter1d)));
-    st.addPrecondition(move(precPreserved));
+    st.addPrecondition(std::move(precPreserved));
     st.hasQuantifier = true;
   }
 }
@@ -337,19 +337,19 @@ static optional<Expr> encodeAffineExpr(
         *lhs + *rhs : *lhs * *rhs;
   }
   case mlir::AffineExprKind::DimId: {
-    auto ade = ae.dyn_cast<mlir::AffineDimExpr>();
+    auto ade = mlir::dyn_cast<mlir::AffineDimExpr>(ae);
     auto id = ade.getPosition();
     assert(id < dimvars.size());
     return dimvars[id];
   }
   case mlir::AffineExprKind::SymbolId: {
-    auto ade = ae.dyn_cast<mlir::AffineSymbolExpr>();
+    auto ade = mlir::dyn_cast<mlir::AffineSymbolExpr>(ae);
     auto id = ade.getPosition();
     assert(id < symbolvars.size());
     return symbolvars[id];
   }
   case mlir::AffineExprKind::Constant: {
-    auto ac = ae.dyn_cast<mlir::AffineConstantExpr>();
+    auto ac = mlir::dyn_cast<mlir::AffineConstantExpr>(ae);
     if (ac.getValue() < 0)
       return {};
     return Index(ac.getValue());
@@ -361,7 +361,7 @@ static optional<Expr> encodeAffineExpr(
 }
 
 static mlir::Type getElemTy(mlir::Value v) {
-  return v.getType().dyn_cast<mlir::ShapedType>().getElementType();
+  return mlir::dyn_cast<mlir::ShapedType>(v.getType()).getElementType();
 }
 
 
@@ -984,7 +984,7 @@ void encodeOp(State &st, mlir::affine::AffineApplyOp op, bool) {
   auto res = encodeAffineExpr(m.getResult(0), indices, symbols);
   if (!res)
     throw UnsupportedException(op.getOperation(), "unsupported affine Expr");
-  st.regs.add(op, Index(move(*res)));
+  st.regs.add(op, Index(std::move(*res)));
 }
 
 template<>
@@ -1074,7 +1074,7 @@ void encodeOp(State &st, mlir::func::CallOp op, bool) {
         auto fnName = dimRefArg.substr(0, atPos);
         const auto argIndex = stoll(dimRefArg.substr(atPos + 1));
         const auto [_, success] = dimsReferenceIdxMap->insert(
-          {move(fnName), argIndex});
+          {std::move(fnName), argIndex});
         smart_assert(success, "Dims reference argument for '" << fnName
                       << "' is specified more than once");
     }
@@ -1086,7 +1086,7 @@ void encodeOp(State &st, mlir::func::CallOp op, bool) {
                               op.getOperandTypes().end());
     auto range = op.getResultTypes().front();
     try {
-      declareFunction(move(domain), std::move(range), std::move(callee),
+      declareFunction(std::move(domain), std::move(range), std::move(callee),
                       getDimsReferenceIdx(callee));
     } catch (UnsupportedException e) {
       throw UnsupportedException(op.getOperation(), e.getReason());
@@ -1554,10 +1554,10 @@ void encodeOp(State &st, mlir::tosa::GatherOp op, bool) {
 
   // Touched elements must be in bounds & have been initialized.
   st.wellDefined(op, Expr::mkForall(indVars,
-      inBounds.implies(move(idxInBounds) & std::move(inputInBounds))),
+      inBounds.implies(std::move(idxInBounds) & std::move(inputInBounds))),
       "indices and input's indices are inbounds");
   st.wellDefined(op, Expr::mkForall(indVars,
-      inBounds.implies(move(isInitialized))),
+      inBounds.implies(std::move(isInitialized))),
       "chosen inputs are initialized");
   st.wellDefined(op, indices.isFullyInitialized(),
       "indices tensor is initialized");
@@ -1637,7 +1637,7 @@ void encodeOp(State &st, mlir::tensor::ExtractOp op, bool) {
     indices.push_back(Index(0));
 
   auto elem = t.get(indices);
-  if (auto v = fromExpr(move(elem), op.getType()))
+  if (auto v = fromExpr(std::move(elem), op.getType()))
     st.regs.add(op, std::move(*v));
   else
     throw UnsupportedException(op.getOperation(), "Unsupported type");
@@ -2107,7 +2107,7 @@ static pair<Expr, Expr> encodeDimOp(
   for (unsigned i = 1; i < dims.size(); ++i)
     res = Expr::mkIte((Expr)idx == i, dims[i], res);
 
-  return {move(res), ((Expr)idx).ult(dims.size())};
+  return {std::move(res), ((Expr)idx).ult(dims.size())};
 }
 
 template<>
@@ -2221,7 +2221,7 @@ void encodeOp(State &st, mlir::tensor::GenerateOp op, bool) {
   Expr welldef = Expr::mkBool(true);
   {
     State newst = st;
-    newst.linalgGenericScopes.push(State::LinalgGenericScope{move(upperbound)});
+    newst.linalgGenericScopes.push(State::LinalgGenericScope{std::move(upperbound)});
     for (int i = 0; i < blk.getNumArguments(); ++i) {
       Expr idxvar = newst.linalgGenericScopes.top().indVars[i];
       newst.regs.add(blk.getArgument(i), Index(idxvar));
@@ -2577,7 +2577,7 @@ static MemRef createNewLocalBlk(
       MemRef(m, memrefTy.getElementType(), bid, Index::zero(), dims,
           std::move(layout), /*is not a view reference*/Expr::mkBool(false));
 
-  return {move(memref)};
+  return {std::move(memref)};
 }
 
 template<class T>
@@ -2627,7 +2627,7 @@ void encodeOp(State &st, mlir::memref::LoadOp op, bool) {
     indices.emplace_back(st.regs.get<Index>(idx0));
 
   auto [val, info] = m.getWithAccessInfo(indices);
-  if (auto vt = fromExpr(move(val), op.getType())) {
+  if (auto vt = fromExpr(std::move(val), op.getType())) {
     st.regs.add(op, std::move(*vt));
     st.wellDefined(op, info.checkRead());
   } else
@@ -2872,7 +2872,7 @@ void encodeOp(State &st, mlir::memref::CollapseShapeOp op, bool) {
       if (resTy.getDimSize(i) != mlir::ShapedType::kDynamic)
         st.wellDefined(op, size == resTy.getDimSize(i),
             "size check");
-      newDims.push_back(move(size));
+      newDims.push_back(std::move(size));
     }
   }
 
@@ -3066,7 +3066,7 @@ vector<Index> findLoopBounds(State &st, mlir::linalg::GenericOp op) {
 
   vector<Index> res_ordered;
   for (unsigned i = 0; i < numDims; ++i)
-    res_ordered.push_back(move(res[resFilled[i]]));
+    res_ordered.push_back(std::move(res[resFilled[i]]));
 
   return res_ordered;
 }
@@ -3174,7 +3174,7 @@ static void initInputStateForLoopBody(
             throw UnsupportedException(op.getOperation(), std::move(msg));
           }
 
-          indices.emplace_back(move(*ae_res));
+          indices.emplace_back(std::move(*ae_res));
         }
 
         // The out-of-bounds checking is done when encoding loop bounds.
@@ -3207,7 +3207,7 @@ static void initInputStateForLoopBody(
           throw UnsupportedException(op.getOperation(), std::move(msg));
         }
 
-        indices.emplace_back(move(*ae_res));
+        indices.emplace_back(std::move(*ae_res));
       }
 
       // Reading uninitialized elements is UB.
@@ -3331,7 +3331,7 @@ static void encodeReductionLoopBodyAndOutput(
     // TODO(aqjune): Support memref cases (memref.isFullyInitialized)
     auto outTensor = newst.regs.get<Tensor>(the_op->getOperands().back());
     auto initElem = outTensor.get({Index(0)});
-    t_res = Tensor(t_v.getElemType(), t_v.sum(move(initElem)),
+    t_res = Tensor(t_v.getElemType(), t_v.sum(std::move(initElem)),
           makeCube(Index(1), outputType.getRank()));
     addToBoolMap(welldefs, "output tensor is initialized",
         outTensor.isFullyInitialized());
@@ -3375,7 +3375,7 @@ static void encodeReductionLoopBodyAndOutput(
     } else {
       MemRef outMemRef = newst.regs.get<MemRef>(outOp);
       auto [v, ainfo] = outMemRef.getWithAccessInfo(outputIndVars);
-      initElem.emplace(move(v));
+      initElem.emplace(std::move(v));
       addToBoolMap(welldefs, "output tensor is initialized",
           Expr::mkForall(outputIndVars,
             ainfo.inbounds.implies(ainfo.initialized)));
@@ -3384,10 +3384,10 @@ static void encodeReductionLoopBodyAndOutput(
     auto tensorSz = addOne(doMap(linalgInfo.indVarUpperBounds, outputMap));
     auto t_sum = Tensor::mkInitializedLambda(
           t_v.getElemType(),
-          addOne(move(boundsForRes)),
+          addOne(std::move(boundsForRes)),
           std::move(indVarsForRes),
           t_v.get(linalgInfo.indVars))
-        .sum(move(*initElem));
+        .sum(std::move(*initElem));
 
     t_res = Tensor::mkInitializedLambda(
         t_v.getElemType(), std::move(tensorSz), std::move(outputIndVars), t_sum);

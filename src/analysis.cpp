@@ -100,7 +100,7 @@ void analyzeAPFloat(
 }
 
 void analyzeAttr(const mlir::Attribute &a, AnalysisResult &res) {
-  assert(!a.isa<mlir::ElementsAttr>());
+  assert(!mlir::isa<mlir::ElementsAttr>(a));
 
   auto fa = mlir::dyn_cast<mlir::FloatAttr>(a);
   if (!fa)

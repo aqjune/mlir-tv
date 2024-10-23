@@ -3,8 +3,6 @@
 #include "smtmatchers.h"
 #include "utils.h"
 
-#include <iostream>
-
 #ifdef SOLVER_Z3
 #define SET_Z3(e, v) (e).setZ3(v)
 #else
@@ -37,7 +35,7 @@ void writeOrCheck(optional<T> &org, T &&t) {
   if (org)
     smart_assert(*org == t, "org must be empty");
   else
-    org.emplace(move(t));
+    org.emplace(std::move(t));
 }
 
 uint64_t to_uint64(string &&str) {
@@ -49,7 +47,7 @@ uint64_t to_uint64(string &&str) {
 
 [[maybe_unused]]
 int64_t to_int64(string &&str) {
-  uint64_t i = to_uint64(move(str));
+  uint64_t i = to_uint64(std::move(str));
   // Don't do (int64_t)i; it may raise UB
   union {
     uint64_t x;
@@ -462,7 +460,7 @@ bool Expr::hasQuantifier() const {
 
     for (unsigned i = 0; i < e.getNumChildren(); i++) {
       Expr newe = Expr();
-      newe.setCVC5(move(e[i]));
+      newe.setCVC5(std::move(e[i]));
       if (newe.hasQuantifier())
         return true;
     }
@@ -1693,7 +1691,7 @@ vector<Expr> Model::eval(const vector<Expr> &exprs, bool modelCompletion) const 
     Expr value;
     SET_Z3(value, std::move(z3_value));
     SET_CVC5(value, std::move(cvc5_value));
-    values.push_back(move(value));
+    values.push_back(std::move(value));
   }
 
   return values;
@@ -1778,7 +1776,7 @@ void setTimeout(const uint64_t ms) { sctx.timeout_ms = ms; }
 namespace matchers {
 #ifdef SOLVER_Z3
 void Matcher::setZ3(Expr &e, optional<z3::expr> &&opt) const {
-  e.setZ3(move(opt));
+  e.setZ3(std::move(opt));
 }
 
 bool Matcher::matchBinaryOp(const Expr &expr, Z3_decl_kind z3Kind,
@@ -1806,7 +1804,7 @@ bool Matcher::matchBinaryOp(const Expr &expr, Z3_decl_kind z3Kind,
 
 #ifdef SOLVER_CVC5
 void Matcher::setCVC5(Expr &e, optional<cvc5::Term> &&opt) const {
-  e.setCVC5(move(opt));
+  e.setCVC5(std::move(opt));
 }
 
 bool Matcher::matchBinaryOp(const Expr &expr, cvc5::Kind opKind,

@@ -7,8 +7,6 @@
 #include "value.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <iostream>
-
 using namespace smt;
 using namespace std;
 
@@ -21,9 +19,9 @@ string freshName(string &&prefix) {
 }
 
 optional<smt::Sort> convertPrimitiveTypeToSort(mlir::Type elemty) {
-  if (auto ielemty = elemty.dyn_cast<mlir::IntegerType>()) {
+  if (auto ielemty = mlir::dyn_cast<mlir::IntegerType>(elemty)) {
     return Integer::sort(ielemty.getWidth());
-  } else if (auto felemty = elemty.dyn_cast<mlir::FloatType>()) {
+  } else if (auto felemty = mlir::dyn_cast<mlir::FloatType>(elemty)) {
     return Float::sort(felemty);
   } else if (elemty.isIndex()) {
     return Index::sort();
@@ -49,9 +47,9 @@ optional<Expr> getIdentity(mlir::Type eltType) {
   if (convertPrimitiveTypeToSort(eltType) == nullopt)
     return nullopt;
 
-  if (eltType.isa<mlir::FloatType>())
+  if (mlir::isa<mlir::FloatType>(eltType))
     return aop::getFpEncoding(eltType).zero(true);
-  else if (eltType.isa<mlir::IntegerType>())
+  else if (mlir::isa<mlir::IntegerType>(eltType))
     return Integer(0, eltType.getIntOrFloatBitWidth());
   else if (eltType.isIndex())
     return Index(0);
@@ -84,7 +82,7 @@ vector<Expr> ShapedValue::getDims(
       if (freshVarForUnknownSize) {
         dims.emplace_back(Index::var("dim", VarType::FRESH));
       } else if (valsForUnknownSz) {
-        dims.emplace_back(move((*valsForUnknownSz)[unknownVarIdx++]));
+        dims.emplace_back(std::move((*valsForUnknownSz)[unknownVarIdx++]));
       } else {
         llvm_unreachable("Don't know what to do with a dimension of "
                          "an unknown size");
@@ -424,7 +422,7 @@ pair<vector<smt::Expr>, smt::Expr> ShapedValue::conv(
     aop::getFpEncoding(elemType)
       .dot(inputExpr, filterExpr, sz, std::move(initialValue));
 
-  return {move(outputIdxs), std::move(outputExpr)};
+  return {std::move(outputIdxs), std::move(outputExpr)};
 }
 
 static Sort arraySortForTensor(Sort elemSort) {
@@ -437,8 +435,8 @@ static Expr splatArrayForTensor(const Expr &elem) {
 
 Tensor::Tensor(mlir::Type elemType, Expr &&splat_elem, vector<Expr> &&dimvec):
     ShapedValue(elemType),
-    dims(move(dimvec)),
-    arr(splatArrayForTensor(move(splat_elem))),
+    dims(std::move(dimvec)),
+    arr(splatArrayForTensor(std::move(splat_elem))),
     initialized(splatArrayForTensor(Expr::mkBool(true))) {}
 
 // A dense tensor (1dim)
@@ -1017,7 +1015,7 @@ Sort Tensor::getSort(mlir::Type elemType) {
     llvm::raw_string_ostream sstr(msg);
     elemType.print(sstr);
     sstr << "is not a valid tensor element type";
-    throw UnsupportedException(move(msg));
+    throw UnsupportedException(std::move(msg));
   }
   return arraySortForTensor(*elemSort);
 }
@@ -1062,7 +1060,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
       os << ") -> ";
 
       if (init.isTrue()) {
-        auto val = fromExpr(move(elem), t.elemType);
+        auto val = fromExpr(std::move(elem), t.elemType);
         os << *val;
       } else if (init.isFalse())
         os << "(uninit.)";
@@ -1097,16 +1095,16 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Tensor &t) {
         os << or_omit(*idx);
 
       if (!duplicated)
-        os << " -> " << *fromExpr(move(*valExpr), t.elemType) << ", ";
+        os << " -> " << *fromExpr(std::move(*valExpr), t.elemType) << ", ";
 
       arr = std::move(*arr2);
       hasStore = true;
 
     } else if (ConstSplatArray(Any(valExpr)).match(arr)) {
       if (hasStore)
-        os << "else " << *fromExpr(move(*valExpr), t.elemType);
+        os << "else " << *fromExpr(std::move(*valExpr), t.elemType);
       else
-        os << "a splat tensor of " << *fromExpr(move(*valExpr), t.elemType);
+        os << "a splat tensor of " << *fromExpr(std::move(*valExpr), t.elemType);
       break;
 
     } else {
@@ -1476,7 +1474,7 @@ Tensor Tensor::fromElemsAttr(mlir::RankedTensorType tensorty,
       }
 
       auto value = sparseAttr.getValues<mlir::Attribute>()[curIndices];
-      sparseIndices.push_back(move(curIndices));
+      sparseIndices.push_back(std::move(curIndices));
 
       auto e = attrToValueTy(value);
       sparseValues.push_back(getExpr(e));
@@ -1600,7 +1598,7 @@ MemRef::Layout MemRef::getLayout(
 
   auto getConstOrFreshVar = [](int64_t val, string &&name) -> Expr {
     return (val == mlir::ShapedType::kDynamic) ?
-        Index::var(move(name), VarType::FRESH) : Index(val);
+        Index::var(std::move(name), VarType::FRESH) : Index(val);
   };
 
   int64_t offset;
@@ -1639,7 +1637,7 @@ pair<Expr, AccessInfo> MemRef::getWithAccessInfo(
 
   info.inbounds &= std::move(inbounds);
 
-  return {move(loaded), std::move(info)};
+  return {std::move(loaded), std::move(info)};
 }
 
 AccessInfo MemRef::store(const Expr &value,
@@ -1930,5 +1928,5 @@ pair<Expr, vector<Expr>> refines(const ValueTy &v_tgt, const ValueTy &v_src) {
     tie(refines_opt, params) = tgt.refines(typedSrc);
   }, v_tgt, v_src);
 
-  return {move(*refines_opt), std::move(params)};
+  return {std::move(*refines_opt), std::move(params)};
 }

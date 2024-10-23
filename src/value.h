@@ -20,7 +20,7 @@ class Float {
 
 public:
   Float(const smt::Expr &e, mlir::Type type): e(e), type(type) {
-    assert(type.isa<mlir::FloatType>());
+    assert(mlir::isa<mlir::FloatType>(type));
     this->e.unlockOps();
   }
 

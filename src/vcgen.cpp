@@ -169,7 +169,7 @@ static optional<string> checkFunctionSignatures(
 static State createInputState(
     mlir::func::FuncOp fn, std::unique_ptr<Memory> &&initMem,
     ArgInfo &args, vector<Expr> &preconds) {
-  State s(move(initMem));
+  State s(std::move(initMem));
   unsigned n = fn.getNumArguments();
   TypeMap<unsigned> numMemRefArgs;
 
@@ -190,7 +190,7 @@ static State createInputState(
     }
 
     // Encode arguments of the source function.
-    if (auto ty = argty.dyn_cast<mlir::TensorType>()) {
+    if (auto ty = mlir::dyn_cast<mlir::TensorType>(argty)) {
       if (!Tensor::isTypeSupported(ty))
         throw UnsupportedException(ty);
 
@@ -203,7 +203,7 @@ static State createInputState(
       preconds.push_back(tensor.getWellDefined());
       s.regs.add(arg, std::move(tensor));
 
-    } else if (auto ty = argty.dyn_cast<mlir::MemRefType>()) {
+    } else if (auto ty = mlir::dyn_cast<mlir::MemRefType>(argty)) {
       if (!MemRef::isTypeSupported(ty))
         throw UnsupportedException(ty);
 
@@ -233,15 +233,15 @@ static State createInputState(
 
       string name = "arg" + to_string(arg.getArgNumber());
       auto varty = VarType::UNBOUND;
-      if (auto ty = argty.dyn_cast<mlir::IndexType>()) {
-        s.regs.add(arg, Index::var(move(name), varty));
+      if (auto ty = mlir::dyn_cast<mlir::IndexType>(argty)) {
+        s.regs.add(arg, Index::var(std::move(name), varty));
 
-      } else if (auto ty = argty.dyn_cast<mlir::FloatType>()) {
-        s.regs.add(arg, Float::var(move(name), argty, varty));
+      } else if (auto ty = mlir::dyn_cast<mlir::FloatType>(argty)) {
+        s.regs.add(arg, Float::var(std::move(name), argty, varty));
 
-      } else if (auto ty = argty.dyn_cast<mlir::IntegerType>()) {
+      } else if (auto ty = mlir::dyn_cast<mlir::IntegerType>(argty)) {
         unsigned bw = ty.getIntOrFloatBitWidth();
-        s.regs.add(arg, Integer::var(move(name), bw, varty));
+        s.regs.add(arg, Integer::var(std::move(name), bw, varty));
 
       } else {
         llvm::errs() << "convertPrimitiveTypeToSort must have returned nullopt"
@@ -459,7 +459,7 @@ static tuple<State, State, Expr> encodeFinalStates(
   auto src = vinput.src, tgt = vinput.tgt;
 
   if (auto errmsg = checkFunctionSignatures(src, tgt))
-    throw UnsupportedException(move(*errmsg));
+    throw UnsupportedException(std::move(*errmsg));
 
   ArgInfo args;
   vector<Expr> preconds;
@@ -489,7 +489,7 @@ static tuple<State, State, Expr> encodeFinalStates(
       exprAnd(preconds) & st_src.precondition() & st_tgt.precondition();
   precond = precond.simplify();
 
-  return {move(st_src), std::move(st_tgt), std::move(precond)};
+  return {std::move(st_src), std::move(st_tgt), std::move(precond)};
 }
 
 static Results tryValidation(

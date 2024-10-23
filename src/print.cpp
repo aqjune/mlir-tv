@@ -90,7 +90,7 @@ void printOperations(Model m, mlir::func::FuncOp fn, const State &st) {
 
     if (op.getNumResults() > 0 && st.regs.contains(op.getResult(0))) {
       auto value = st.regs.findOrCrash(op.getResult(0));
-      llvm::outs() << "\t\tValue: " << eval(move(value), m) << "\n";
+      llvm::outs() << "\t\tValue: " << eval(std::move(value), m) << "\n";
     }
   }
 }
@@ -110,7 +110,7 @@ void printCounterEx(
 
 
   if (step == VerificationStep::RetValue) {
-    if (src.getResultTypes()[retvalidx].isa<mlir::TensorType>()) {
+    if (mlir::isa<mlir::TensorType>(src.getResultTypes()[retvalidx])) {
       llvm::outs() << "\n<Returned tensor>\n";
 
       auto t_src = get<Tensor>(st_src.retValues[retvalidx]).eval(m);

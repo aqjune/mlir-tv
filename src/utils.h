@@ -70,13 +70,13 @@ class UnsupportedException : public std::exception {
 
 public:
   UnsupportedException(std::string &&reason)
-      : obj((mlir::Operation *)nullptr), reason(move(reason)) {}
+      : obj((mlir::Operation *)nullptr), reason(std::move(reason)) {}
   UnsupportedException(mlir::Operation *obj): obj(obj) {}
   UnsupportedException(mlir::Operation *obj, std::string &&reason)
-      : obj(obj), reason(move(reason)) {}
+      : obj(obj), reason(std::move(reason)) {}
   UnsupportedException(mlir::Type ty): obj(ty) {}
   UnsupportedException(mlir::Type ty, std::string &&reason)
-      : obj(ty), reason(move(reason)) {}
+      : obj(ty), reason(std::move(reason)) {}
 
   std::string getReason() const { return reason; }
   auto getObject() const { return obj; }

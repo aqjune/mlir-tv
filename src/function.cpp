@@ -19,15 +19,15 @@ DeclaredFunction::DeclaredFunction(vector<mlir::Type> &&domain,
                                    mlir::Type &&range, FnDecl &&decl,
                                    vector<FnDecl> &&dims,
                                    optional<int64_t> &&rangeDimRefIdx)
-    : domain(move(domain)), range(move(range)), decl(move(decl)),
-      dims(move(dims)), rangeDimRefIdx(move(rangeDimRefIdx)) {}
+    : domain(std::move(domain)), range(std::move(range)), decl(std::move(decl)),
+      dims(std::move(dims)), rangeDimRefIdx(std::move(rangeDimRefIdx)) {}
 
 DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
                                            mlir::Type &&range,
                                            const std::string_view name,
                                            optional<int64_t> &&rangeDimRefIdx) {
   auto typeToSort = [](mlir::Type t) {
-    if (auto tty = t.dyn_cast<mlir::TensorType>()) {
+    if (auto tty = mlir::dyn_cast<mlir::TensorType>(t)) {
       if (!tty.hasRank()) {
         throw UnsupportedException("A call with an unranked tensor as operand "
                                    "or return value is not supported");
@@ -37,7 +37,7 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
       }
 
       return Tensor::getSort(tty.getElementType());
-    } else if (t.isa<mlir::MemRefType>()) {
+    } else if (mlir::isa<mlir::MemRefType>(t)) {
       throw UnsupportedException(
           "Function call with memref operand(s) or return type is unsupported");
     } else if (t.isIntOrIndexOrFloat()) {
@@ -56,8 +56,8 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
           "Tried to refer to an argument of an invalid index");
     }
 
-    const auto shapedDimRef = domain[dimRefIdx].dyn_cast<mlir::ShapedType>();
-    const auto shapedRange = range.dyn_cast<mlir::ShapedType>();
+    const auto shapedDimRef = mlir::dyn_cast<mlir::ShapedType>(domain[dimRefIdx]);
+    const auto shapedRange = mlir::dyn_cast<mlir::ShapedType>(range);
     if (!(shapedDimRef && shapedRange)) {
       throw UnsupportedException(
           "Both the specified domain and the range must be shaped types");
@@ -82,7 +82,7 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
   vector<Sort> smtDomain;
   for (const auto operandTy : domain) {
     smtDomain.push_back(typeToSort(operandTy));
-    if (auto tensorOperandTy = operandTy.dyn_cast<mlir::TensorType>()) {
+    if (auto tensorOperandTy = mlir::dyn_cast<mlir::TensorType>(operandTy)) {
       const auto rank = tensorOperandTy.getRank();
       for (size_t i = 0; i < rank; i++) {
         smtDomain.push_back(Index::sort());
@@ -92,16 +92,16 @@ DeclaredFunction DeclaredFunction::declare(std::vector<mlir::Type> &&domain,
   FnDecl decl(smtDomain, typeToSort(range), string(name) + "_tvfn");
 
   vector<FnDecl> dims;
-  if (auto sty = range.dyn_cast<mlir::ShapedType>()) {
+  if (auto sty = mlir::dyn_cast<mlir::ShapedType>(range)) {
     const auto rank = sty.getRank();
     dims.reserve(rank);
     const auto dimPrefix = string(name) + "_tvfn_dim_";
     for (size_t i = 0; i < rank; i++) {
       auto dim = FnDecl(smtDomain, Index::sort(), dimPrefix + to_string(i));
-      dims.push_back(move(dim));
+      dims.push_back(std::move(dim));
     }
   }
-  return DeclaredFunction(move(domain), std::move(range), std::move(decl), std::move(dims),
+  return DeclaredFunction(std::move(domain), std::move(range), std::move(decl), std::move(dims),
                           std::move(rangeDimRefIdx));
 }
 
@@ -142,7 +142,7 @@ ValueTy DeclaredFunction::apply(const std::vector<ValueTy> &operands) const {
                             " because its MLIR type is "
                                 << range);
     return *fn_output;
-  } else if (auto tensorRange = range.dyn_cast<mlir::TensorType>()) {
+  } else if (auto tensorRange = mlir::dyn_cast<mlir::TensorType>(range)) {
     vector<Expr> dims;
     const auto rank = tensorRange.getRank();
     dims.reserve(rank);
@@ -195,7 +195,7 @@ bool declareFunction(vector<mlir::Type> &&domain, mlir::Type &&range,
                  << "stateless and does not read or write global memory\n";
 
     calleeMap.insert({string(name),
-                      DeclaredFunction::declare(move(domain), std::move(range), name,
+                      DeclaredFunction::declare(std::move(domain), std::move(range), name,
                                                 std::move(dimsReferenceIdx))});
     return true;
   }

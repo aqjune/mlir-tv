@@ -23,9 +23,9 @@ void RegFile::add(mlir::Value v, ValueTy &&t) {
 
 void RegFile::add(mlir::Value v, const Expr &e, mlir::Type ty) {
   assert(!contains(v));
-  if (ty.isa<mlir::FloatType>())
+  if (mlir::isa<mlir::FloatType>(ty))
     m.insert({v, Float(e, ty)});
-  else if (ty.isa<mlir::IntegerType>())
+  else if (mlir::isa<mlir::IntegerType>(ty))
     m.insert({v, Integer(e)});
   else if (ty.isIndex())
     m.insert({v, Index(e)});
@@ -66,7 +66,7 @@ State::LinalgGenericScope::LinalgGenericScope(
 
 State::State(unique_ptr<Memory> &&initMem):
   precond(Expr::mkBool(true)), hasQuantifier(false), hasConstArray(false),
-  m(move(initMem)) {}
+  m(std::move(initMem)) {}
 
 void State::addPrecondition(smt::Expr &&e) {
   precond = precond & e;
@@ -81,7 +81,7 @@ void State::wellDefined(mlir::Operation *val, Expr &&e, string &&desc) {
   auto &ubmap = itr->second;
   auto itr2 = ubmap.find(desc);
   if (itr2 == ubmap.end()) {
-    ubmap.insert({move(desc), std::move(e)});
+    ubmap.insert({std::move(desc), std::move(e)});
   } else {
     itr2->second = itr2->second & std::move(e);
   }

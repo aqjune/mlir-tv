@@ -62,8 +62,8 @@ static unsigned validateBuffer(unique_ptr<llvm::MemoryBuffer> srcBuffer,
     unique_ptr<llvm::MemoryBuffer> tgtBuffer,
     MLIRContext *context) {
   llvm::SourceMgr src_sourceMgr,  tgt_sourceMgr;
-  src_sourceMgr.AddNewSourceBuffer(move(srcBuffer), llvm::SMLoc());
-  tgt_sourceMgr.AddNewSourceBuffer(move(tgtBuffer), llvm::SMLoc());
+  src_sourceMgr.AddNewSourceBuffer(std::move(srcBuffer), llvm::SMLoc());
+  tgt_sourceMgr.AddNewSourceBuffer(std::move(tgtBuffer), llvm::SMLoc());
 
   auto ir_before = parseSourceFile<ModuleOp>(src_sourceMgr, context);
   if (!ir_before) {

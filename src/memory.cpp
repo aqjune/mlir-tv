@@ -455,7 +455,7 @@ Memory::refines(const Memory &other) const {
 
     auto wRefinement = srcWritable.implies(tgtWritable);
     auto [vRefinement, vRefParam] = ::refines(
-        *fromExpr(move(tgtValue), elemTy), *fromExpr(move(srcValue), elemTy));
+        *fromExpr(std::move(tgtValue), elemTy), *fromExpr(std::move(srcValue), elemTy));
     assert(vRefParam.empty() && "Values stored in memory must be simple");
 
     return (srcInfo.inbounds & srcInfo.liveness).implies(
@@ -475,7 +475,7 @@ Memory::refines(const Memory &other) const {
           bid == Expr::mkBV(i, bidBits), refinesBlk(ty, i, offset), refinement);
 
     vector<Expr> params{bid, offset};
-    ElemTy elem = {move(refinement), std::move(params)};
+    ElemTy elem = {std::move(refinement), std::move(params)};
     tmap.try_emplace(ty, std::move(elem));
   }
 
