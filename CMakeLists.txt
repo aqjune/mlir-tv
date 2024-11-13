@@ -87,17 +87,6 @@ if(USE_LIBC)
     target_compile_options(${PROJECT_OBJ} PUBLIC -stdlib=libc++)
 endif()
 
-# Get magic_enum using CPM
-include(cmake/CPM.cmake)
-CPMAddPackage(
-    NAME magic_enum
-    GITHUB_REPOSITORY Neargye/magic_enum
-    GIT_TAG v0.7.3
-)
-# Well, magic_enum does not copy the include directory into its build directory :(
-# Manual registration is needed.
-target_include_directories(${PROJECT_OBJ} PUBLIC ${magic_enum_SOURCE_DIR}/include)
-
 # /============================================================/
 # 2. Build libmlirtv
 # /============================================================/

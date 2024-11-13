@@ -1581,3 +1581,40 @@ Expr intDot(const Expr &a, const Expr &b,
 }
 
 }
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream& out, aop::AbsLevelIntDot x) {
+  switch (x) {
+  case aop::AbsLevelIntDot::FULLY_ABS: out << "FULLY_ABS"; break;
+  case aop::AbsLevelIntDot::SUM_MUL: out << "SUM_MUL"; break;
+  default: llvm_unreachable("AbsLevelIntDot");
+  }
+  return out;
+}
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream& out, aop::AbsLevelFpCast x) {
+  switch (x) {
+  case aop::AbsLevelFpCast::FULLY_ABS: out << "FULLY_ABS"; break;
+  case aop::AbsLevelFpCast::PRECISE: out << "PRECISE"; break;
+  default: llvm_unreachable("AbsLevelFpCast");
+  }
+  return out;
+}
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream& out, aop::AbsLevelFpDot x) {
+  switch (x) {
+  case aop::AbsLevelFpDot::FULLY_ABS: out << "FULLY_ABS"; break;
+  case aop::AbsLevelFpDot::SUM_MUL: out << "SUM_MUL"; break;
+  default: llvm_unreachable("AbsLevelFpDot");
+  }
+  return out;
+}
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream& out, aop::AbsFpAddSumEncoding x) {
+  switch (x) {
+  case aop::AbsFpAddSumEncoding::USE_SUM_ONLY: out << "USE_SUM_ONLY"; break;
+  case aop::AbsFpAddSumEncoding::DEFAULT: out << "DEFAULT"; break;
+  case aop::AbsFpAddSumEncoding::UNROLL_TO_ADD: out << "UNROLL_TO_ADD"; break;
+  default: llvm_unreachable("AbsFpAddSumEncoding");
+  }
+  return out;
+}

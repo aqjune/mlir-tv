@@ -270,3 +270,8 @@ AbsFpEncoding &getDoubleEncoding();
 AbsFpEncoding &getFpEncoding(mlir::Type);
 
 };
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream&, aop::AbsLevelIntDot);
+llvm::raw_ostream &operator<<(llvm::raw_ostream&, aop::AbsLevelFpCast);
+llvm::raw_ostream &operator<<(llvm::raw_ostream&, aop::AbsLevelFpDot);
+llvm::raw_ostream &operator<<(llvm::raw_ostream&, aop::AbsFpAddSumEncoding);

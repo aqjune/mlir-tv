@@ -11,7 +11,6 @@
 #include "vcgen.h"
 #include "analysis.h"
 
-#include "magic_enum.hpp"
 #include <chrono>
 #include <fstream>
 #include <functional>
@@ -577,17 +576,13 @@ static Results validate(ValidationInput vinput) {
   });
 
   auto printSematics = [](Abstraction &abs, Results &result) {
-    verbose("validate")  << "** Verification Result: "
-        << magic_enum::enum_name(result.code) << "\n";
-
     llvm::outs()
       << "\n--------------------------------------------------------------\n"
       << "  Abstractions used for the validation:\n"
-      << "  - dot ops (fp): " << magic_enum::enum_name(abs.fpDot) << "\n"
-      << "  - cast ops (fp): " << magic_enum::enum_name(abs.fpCast) << "\n"
-      << "  - add/sum ops (fp): "
-      << magic_enum::enum_name(abs.fpAddSumEncoding) << "\n"
-      << "  - dot ops (int): " << magic_enum::enum_name(abs.intDot) << "\n"
+      << "  - dot ops (fp): " << abs.fpDot << "\n"
+      << "  - cast ops (fp): " << abs.fpCast << "\n"
+      << "  - add/sum ops (fp): " << abs.fpAddSumEncoding << "\n"
+      << "  - dot ops (int): " << abs.intDot << "\n"
       << "--------------------------------------------------------------\n\n";
   };
 
@@ -824,7 +819,7 @@ Results validate(
     }
 
     if (num_memblocks.getValue() != 0) {
-      for (auto &[ty, cnt]: vinput.numBlocksPerType)
+      for (auto &[_, cnt]: vinput.numBlocksPerType)
         cnt = num_memblocks.getValue();
     }
 
