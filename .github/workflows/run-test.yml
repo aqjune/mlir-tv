@@ -140,7 +140,7 @@ jobs:
 
       - name: Upload test log
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: opts-test
           path: /src/mlir-tv/build/Testing/Temporary/LastTest.log
@@ -168,7 +168,7 @@ jobs:
 
       - name: Upload test log
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: litmus-test
           path: /src/mlir-tv/build/Testing/Temporary/LastTest.log
