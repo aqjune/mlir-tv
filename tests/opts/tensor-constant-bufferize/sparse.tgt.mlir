@@ -4,7 +4,7 @@ module  {
     %c1 = arith.constant 1 : index
     %c2 = arith.constant 2 : index
     %0 = memref.get_global @__constant_4x8xf32 : memref<4x8xf32>
-    %1 = bufferization.to_tensor %0 : memref<4x8xf32>
+    %1 = bufferization.to_tensor %0 : memref<4x8xf32> to tensor<4x8xf32>
     return %1 : tensor<4x8xf32>
   }
 }

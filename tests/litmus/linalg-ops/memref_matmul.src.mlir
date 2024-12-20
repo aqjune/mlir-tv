@@ -9,6 +9,6 @@ func.func @f() -> tensor<8x16xf32> {
   %c = memref.alloc(): memref<8x16xf32>
   linalg.fill ins(%cst: f32) outs(%c: memref<8x16xf32>)
   linalg.matmul ins(%a, %b: memref<8x4xf32>, memref<4x16xf32>) outs(%c: memref<8x16xf32>)
-  %ret = bufferization.to_tensor %c : memref<8x16xf32>
+  %ret = bufferization.to_tensor %c : memref<8x16xf32> to tensor<8x16xf32>
   return %ret: tensor<8x16xf32>
 }
