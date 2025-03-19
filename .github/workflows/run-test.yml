@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Fetch mlir-tv cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3.4.3
         with:
           path: |
             /src/mlir-tv
@@ -125,7 +125,7 @@ jobs:
 
     steps:
       - name: Fetch mlir-tv cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3.4.3
         with:
           path: |
             /src/mlir-tv
@@ -153,7 +153,7 @@ jobs:
     
     steps:
       - name: Fetch mlir-tv cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3.4.3
         with:
           path: |
             /src/mlir-tv
